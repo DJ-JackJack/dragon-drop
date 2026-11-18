@@ -52,10 +52,10 @@ Sources: [Foundry VTT's controls page](https://foundryvtt.com/article/controls) 
 - **Right-drag pans** (as in Foundry). We don't open a context menu on right-click.
 - **Tool letters.** There is no standard across map programs. `H` (hand), `V` (select), `B` (brush) and `T` (text, for labels) are the same as in graphics programs; the rest are the first letter of the tool where it was free.
 
-### Not built yet (suggestions, in the order I'd do them)
+### Added after the first comparison
 
-1. ~~Duplicate and copy/paste~~ *(done)*. There is no `Alt`-drag to duplicate: `Alt` already means "put it anywhere" when placing or moving an object.
-2. ~~Select several things at once~~ *(done)*.
-3. ~~Arrow keys nudging the selected thing~~ *(done)*: with nothing selected they still move the view.
-4. `Page Up` and `Page Down` to change level, once battlemaps have levels (Dungeondraft uses them for that).
-5. ~~`Shift`-drag to skip snapping when moving~~ *(done)*, as Foundry does. `Alt` still works too.
+The first version of this page listed five things the other programs have and we didn't. Four are done: copy, paste and duplicate; selecting several things at once; arrow keys that nudge the selection; and `Shift` to skip snapping while dragging. (There is no `Alt`-drag to duplicate: `Alt` already means "put it anywhere".)
+
+### Not built yet
+
+- `Page Up` and `Page Down` to change level, as Dungeondraft does. Battlemaps have no levels yet (one floor per battlemap), so there is nothing to switch between. It comes with the levels work in [FOUNDRY.md](FOUNDRY.md), stage 2: stacked floors in one battlemap with a level switcher.
