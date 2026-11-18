@@ -507,7 +507,7 @@ function startTerminal({ cols, rows, resume }) {
   let fileArgs;
   if (custom) {
     // the shell reads the text as typed (on Windows node-pty takes one command-line string)
-    if (process.platform === "win32") { file = process.env.ComSpec || "cmd.exe"; fileArgs = "/c " + custom; }
+    if (process.platform === "win32") { file = process.env.ComSpec || "cmd.exe"; fileArgs = '/s /c "' + custom + '"'; }
     else { file = process.env.SHELL || "/bin/sh"; fileArgs = ["-lc", custom]; }
   } else {
     const args = ["--mcp-config", path.join(workspace, "mapmaker.mcp.json")];
@@ -629,7 +629,10 @@ ipcMain.handle("dd:set-terminal-command", (e, text) => {
   if (cmd !== (settings.terminalCommand || "")) {
     if (cmd) settings.terminalCommand = cmd; else delete settings.terminalCommand;
     saveSettings();
+    const wasAlive = termAlive;
     killTerminal();
+    // with no terminal alive (Claude Code missing, or an error screen) nothing else tells the panel to re-read the command
+    if (!wasAlive) sendToEditor("dd:term-exit", 0);
   }
   return { ok: true, command: cmd };
 });
@@ -790,6 +793,20 @@ async function smokeTest() {
           if (!customBuf.includes("DD_CUSTOM_OK")) await new Promise((r) => setTimeout(r, 500));
         }
         if (!customBuf.includes("DD_CUSTOM_OK")) return fatal(`the custom start command's output never showed: ${JSON.stringify(customBuf.slice(0, 200))}`);
+        if (process.platform === "win32") {
+          // a quoted program path plus a quoted argument must reach cmd.exe untouched (its legacy rule strips quotes without /s)
+          const quoted = JSON.stringify(`"${process.env.ComSpec}" /c echo "DD_QUOTED_OK"`);
+          const setQ = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand(${quoted})`);
+          if (!setQ || setQ.ok !== true) return fatal(`setTerminalCommand (quoted) returned ${JSON.stringify(setQ)}`);
+          const qStart = await win.webContents.executeJavaScript(`window.dragonDrop.termStart({ cols: 80, rows: 24 })`);
+          if (!qStart || qStart.ok !== true) return fatal(`termStart with a quoted command returned ${JSON.stringify(qStart)}`);
+          let qBuf = "";
+          for (let i = 0; i < 40 && !qBuf.includes("DD_QUOTED_OK"); i++) {
+            qBuf = (await win.webContents.executeJavaScript(`window.dragonDrop.termAttach()`)).buffer || "";
+            if (!qBuf.includes("DD_QUOTED_OK")) await new Promise((r) => setTimeout(r, 500));
+          }
+          if (!qBuf.includes("DD_QUOTED_OK")) return fatal(`a quoted start command was mangled: ${JSON.stringify(qBuf.slice(0, 300))}`);
+        }
         const clearCmd = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand("")`);
         if (!clearCmd || clearCmd.ok !== true) return fatal(`clearing the start command returned ${JSON.stringify(clearCmd)}`);
         const cl = await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");

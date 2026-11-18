@@ -10,7 +10,7 @@ interface DragonDropBridge {
   openProjectsFolder(): Promise<void>;
   openLogs(): Promise<void>;
   openClaude(launch?: boolean): Promise<{ ok: boolean; reason?: string; workspace?: string; claudePath?: string }>;
-  termStart(opts: { cols: number; rows: number; resume?: boolean }): Promise<{ ok: boolean; reason?: string; command: string }>;
+  termStart(opts: { cols: number; rows: number; resume?: boolean }): Promise<{ ok: boolean; reason?: string; command?: string }>;
   /** Set what the terminal runs ("" is Claude Code). A valid change saves and ends the running terminal. */
   setTerminalCommand(text: string): Promise<{ ok: boolean; command: string }>;
   /** Run Claude Code's official installer visibly in the terminal panel; `onClaudeInstalled` reports how it went. */
