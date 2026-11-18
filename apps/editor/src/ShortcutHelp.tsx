@@ -51,7 +51,7 @@ export function ShortcutHelp({ battle, onClose }: { battle: boolean; onClose: ()
           <Row keys={["Delete"]} what="Delete what is selected" />
           {battle && <Row keys={["Q", "E"]} what="Turn the selected object (or the one you are about to place) 15° left / right" />}
           {battle && <Row keys={["X"]} what="Flip the selected object (or the one you are about to place)" />}
-          {battle && <Row keys={["Alt"]} what="Hold it while placing or moving an object to put it anywhere (it snaps to a quarter square otherwise)" />}
+          {battle && <Row keys={["Shift", "Alt"]} what="Hold either while placing or moving things (for Shift, once the drag has started) to put them anywhere instead of snapping to the grid" />}
         </fieldset>
 
         <fieldset>

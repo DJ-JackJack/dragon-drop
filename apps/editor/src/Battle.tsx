@@ -55,7 +55,7 @@ export function materialLabel(meta: MapMeta | null | undefined, id: number): str
 export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label: string; key: string; tip: string }[] }[] = [
   { name: "Move", tools: [
     { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
-    { id: "select", label: "Select", key: "V", tip: "Click a wall, door, light or object to edit it. Shift-click, or drag a box round bare ground, to select several; drag to move what is selected (Shift or Alt while dragging: anywhere, not snapped). Delete removes it" },
+    { id: "select", label: "Select", key: "V", tip: "Click a wall, door, light or object to edit it. Shift-click, or drag a box round bare ground, to select several; drag to move what is selected (hold Shift or Alt once you are dragging to put it anywhere, not snapped). Delete removes it" },
   ] },
   { name: "Floor", tools: [
     { id: "brush", label: "Brush", key: "B", tip: "Paint the chosen floor material. Choose \"void\" to erase" },
@@ -94,7 +94,7 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   light: "Click to place a light, then select it to change its size and colour.",
   zone: "Draw an area with its own light level (Rectangle, Circle or Free-form like the Area tool). Then select it to set how bright it is where no light reaches: indoors dimmer than outdoors, or a lit hall in a dark cave. Edges are soft.",
   note: "Click a room to place a numbered note, then give it a title and text in the panel. Notes are for you: they show here and in previews, never in the exported picture. Export the key as a list from Export.",
-  prop: "Choose an object in the Assets tab, then click the map to place it (hold Alt to place without snapping). Q and E rotate, X mirrors.",
+  prop: "Choose an object in the Assets tab, then click the map to place it (hold Shift or Alt to place without snapping). Q and E rotate, X mirrors.",
   select: "Click a wall piece, door, light, note or shaded area to select it. Drag a light, note or object to move it. Delete removes the selection.",
 };
 
@@ -564,13 +564,13 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     if (wrapRef.current) ro.observe(wrapRef.current);
     const typing = (e: KeyboardEvent) => { const t = e.target as HTMLElement | null; return !!t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable); };
     const kd = (e: KeyboardEvent) => {
-      altRef.current = e.altKey;
+      altRef.current = e.altKey || e.shiftKey; // ("free": Shift or Alt put things anywhere instead of on the snap grid)
       if (e.code === "Space" && !typing(e)) { setSpaceDown(true); e.preventDefault(); }
       const view = typing(e) ? null : viewKeyAction(e);
       // (arrow keys nudge what is selected; they move the view only when nothing is)
       if (view && !(view.kind === "pan" && selectedIds().length)) { e.preventDefault(); keyView(view); }
     };
-    const ku = (e: KeyboardEvent) => { altRef.current = e.altKey; if (e.code === "Space") setSpaceDown(false); };
+    const ku = (e: KeyboardEvent) => { altRef.current = e.altKey || e.shiftKey; if (e.code === "Space") setSpaceDown(false); };
     const keys = (e: KeyboardEvent) => {
       if (typing(e)) return;
       const sd = shapeDraft.current;
@@ -796,7 +796,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     if (o.tool === "prop") {
       if (!o.asset) { flash("Choose an object in the Assets tab first."); return; }
       const prop: MapProp = {
-        id: newFeatureId("o"), asset: o.asset, x: snapProp(q.x, e.altKey), y: snapProp(q.y, e.altKey),
+        id: newFeatureId("o"), asset: o.asset, x: snapProp(q.x, e.altKey || e.shiftKey), y: snapProp(q.y, e.altKey || e.shiftKey),
         ...(o.propRotation && { rotation: o.propRotation }), ...(o.propScale !== 1 && { scale: o.propScale }), ...(o.propFlip && { flip: true }), ...(o.propLayer === "below" && { layer: "below" as const }),
       };
       sendFeatures({ upsertProps: [prop] }, "Add object");
@@ -850,8 +850,9 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         const f = featRef.current;
         const onlyObjects = d.ids.every((id) => f.props?.some((pr) => pr.id === id));
         const nx = d.ax + (q.x - d.lastX), ny = d.ay + (q.y - d.lastY); // where the grabbed thing would go
-        const step = onlyObjects ? 0.25 : 0.5; // objects snap to a quarter square, everything else to half a square (Alt: anywhere)
-        const gx = e.altKey ? nx : snap(nx, step), gy = e.altKey ? ny : snap(ny, step);
+        const step = onlyObjects ? 0.25 : 0.5; // objects snap to a quarter square, everything else to half a square (Shift or Alt: anywhere)
+        const free = e.altKey || e.shiftKey; // (Shift pressed after the drag has started: pressed at the click, it adds to the selection instead)
+        const gx = free ? nx : snap(nx, step), gy = free ? ny : snap(ny, step);
         moveGroup.current = { ids: d.ids, dx: gx - d.ax, dy: gy - d.ay };
       }
     }

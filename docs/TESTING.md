@@ -569,6 +569,8 @@ Tell me if an Auto backup never appears, if the list fills up with them, or if R
 
 10. Arrow keys: select a place (or, in a battlemap, an object or a light) and tap an **arrow key** a few times quickly. **Expect** it to move a little each time and to be one undo step ("Nudge ..."). Hold **Shift** for bigger steps. Press **Esc** to clear the selection: the arrow keys now move the view.
 
+11. Snapping: in a battlemap drag an object a very small way (less than a quarter square): **Expect** it to snap back. Start the drag, then hold **Shift** (or **Alt**) and drag the same small way: **Expect** it to land exactly where you let go.
+
 Tell me about any key you expected to work and didn't, and any that did something you didn't expect.
 
 ## 15. What's not built yet (so you don't report it as a bug)

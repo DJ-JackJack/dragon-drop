@@ -24,7 +24,7 @@ Press **?** in the editor (or the **?** button in the top bar) for this list ins
 | Cancel, clear the selection | `Esc` |
 | Finish a wall, line or outline | `Enter` or double-click; `Backspace` takes back the last point |
 | Delete what is selected | `Delete` or `Backspace` |
-| Turn or flip an object (battlemaps) | `Q` and `E` turn it 15°, `X` flips it; hold `Alt` while placing or moving to skip the quarter-square snap |
+| Turn or flip an object (battlemaps) | `Q` and `E` turn it 15°, `X` flips it; hold `Shift` or `Alt` while placing or moving to skip the snap (with `Shift`, once the drag has started: pressed at the click it adds to the selection) |
 
 World-map tools: `H` Pan, `V` Select, `E` Select area, `R` Raise, `L` Lower, `S` Smooth, `F` Flatten, `A` Land, `W` Water, `P` Place, `T` Label, `O` Roads, `C` Climate, `D` Detail map, `M` Battlemap here. Battlemap tools: `H` Pan, `V` Select, `B` Brush, `A` Area, `R` Room, `W` Wall, `D` Door, `S` Secret door, `N` Window, `I` Invisible wall, `L` Light, `Z` Shade, `K` Note, `P` Object. A tool's tooltip shows its key.
 
@@ -58,4 +58,4 @@ Sources: [Foundry VTT's controls page](https://foundryvtt.com/article/controls) 
 2. ~~Select several things at once~~ *(done)*.
 3. ~~Arrow keys nudging the selected thing~~ *(done)*: with nothing selected they still move the view.
 4. `Page Up` and `Page Down` to change level, once battlemaps have levels (Dungeondraft uses them for that).
-5. `Shift`-drag to skip snapping when moving objects, as Foundry does (we use `Alt` when placing objects).
+5. ~~`Shift`-drag to skip snapping when moving~~ *(done)*, as Foundry does. `Alt` still works too.

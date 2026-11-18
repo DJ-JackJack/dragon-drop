@@ -590,6 +590,29 @@ try {
       await page.keyboard.press("0"); // fit again, as the rest of the test expects
       await page.waitForTimeout(300);
     }
+    // snapping: a small drag snaps back to nothing; with Shift held once the drag has started, the light lands where it was let go
+    {
+      await page.getByTestId("btool-select").click();
+      const a = sq(12, 7), b = sq(12.2, 7); // (a fifth of a square: less than the half-square snap)
+      const dragWith = async (shift) => {
+        await page.mouse.move(a.x, a.y);
+        await page.mouse.down();
+        await page.mouse.move((a.x + b.x) / 2, a.y, { steps: 3 });
+        if (shift) await page.keyboard.down("Shift");
+        await page.mouse.move(b.x, b.y, { steps: 3 });
+        await page.mouse.up();
+        if (shift) await page.keyboard.up("Shift");
+      };
+      const moves = () => page.getByTestId("history").getByText(/^Move light$/).count();
+      await dragWith(false);
+      await page.waitForTimeout(600);
+      if ((await moves()) !== 0) fail("a drag smaller than the snap should have snapped back to nothing");
+      await dragWith(true);
+      await page.getByTestId("history").getByText(/^Move light$/).first().waitFor({ timeout: 10000 });
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Move light").waitFor({ timeout: 10000 });
+      await page.keyboard.press("Escape");
+    }
     // the light level: Dim darkens the map except where the torch reaches; Bright restores it
     const lum = async (x, y) => {
       const p = sq(x, y);
