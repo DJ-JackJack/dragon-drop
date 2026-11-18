@@ -27,6 +27,8 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
   const termRef = useRef<Terminal | null>(null);
   const [state, setState] = useState<State>("starting");
   const [detail, setDetail] = useState("");
+  // what the terminal runs; "" is Claude Code
+  const [command, setCommand] = useState("");
   // just installed Claude Code here: the first start asks the DM to sign in, so say so until Claude reports it is ready
   const [firstRun, setFirstRun] = useState(false);
 
@@ -36,6 +38,7 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
     term.reset();
     setState("starting");
     const r = await bridge.termStart({ cols: term.cols, rows: term.rows, resume });
+    setCommand(r.command ?? "");
     if (r.ok) setState("running");
     else if (r.reason === "not-installed") setState("missing");
     else { setDetail(r.reason ?? ""); setState("error"); }
@@ -89,6 +92,7 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
     const ro = new ResizeObserver(refit);
     ro.observe(host);
     void bridge.termAttach().then((a) => {
+      setCommand(a.command ?? "");
       if (a.alive) { term.write(a.buffer); setState("running"); bridge.termResize(term.cols, term.rows); }
       else void start(false);
     });
@@ -99,16 +103,17 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
   useEffect(() => { const t = window.setTimeout(() => { try { termRef.current && window.dispatchEvent(new Event("resize")); } catch { /* ignore */ } }, 80); return () => window.clearTimeout(t); }, [wide]);
 
   const label = state === "running" ? "Running" : state === "starting" || state === "launching" ? "Starting…" : state === "installing" ? "Installing…" : state === "ended" ? "Ended" : state === "missing" ? "Not installed" : "Problem";
+  const custom = command !== "";
   return (
     <div className="chat term-panel" data-testid="claude-terminal">
       <div className="chat-head">
-        <span className="chat-title">Claude Code</span>
+        <span className="chat-title">{custom ? <>Terminal <span className="muted">{command}</span></> : "Claude Code"}</span>
         <span className={`term-state ${state}`}>{label}</span>
         <span style={{ flex: 1 }} />
         <button className="ghost" onClick={onToggleWide} title={wide ? "Make this panel narrower" : "Make this panel wider (easier to read)"}>{wide ? "⇥ Narrower" : "⇤ Wider"}</button>
-        <button className="ghost" onClick={() => void window.dragonDrop?.openClaude(true)} title="Open Claude Code in its own window instead">Pop out</button>
+        {!custom && <button className="ghost" onClick={() => void window.dragonDrop?.openClaude(true)} title="Open Claude Code in its own window instead">Pop out</button>}
       </div>
-      <div className="assist-bar" data-testid="assist-bar">
+      {(!custom || claude !== "unknown") && <div className="assist-bar" data-testid="assist-bar">
         <button className="ghost" data-testid="assist-suggest" disabled={state !== "running"} onClick={() => void assist.suggest()}
           title="Ask Claude to look at the map (and what you changed) and suggest what to do next">Suggest</button>
         <label className="check assist-toggle" title="When on, Claude looks at your edits after you pause and suggests next steps here. It only suggests, never changes the map by itself, and uses your Claude subscription.">
@@ -116,7 +121,7 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
         </label>
         <span className={`claude-dot ${claude}`} title={`Claude Code: ${CLAUDE_LABEL[claude]}`} />
         <span className="assist-status" data-testid="assist-status">{assist.status || (assist.enabled ? "" : `Claude: ${CLAUDE_LABEL[claude]}`)}</span>
-      </div>
+      </div>}
       {state === "installing" && (
         <div className="term-banner" data-testid="claude-installing">Installing Claude Code with Anthropic's official installer. It shows very little while it downloads (about a minute). Keep this window open.</div>
       )}
@@ -156,9 +161,9 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
         )}
         {state === "ended" && (
           <div className="term-ended" data-testid="claude-ended">
-            <span>Claude Code has ended.</span>
+            <span>{custom ? "The program has ended." : "Claude Code has ended."}</span>
             <button className="primary" onClick={() => void start(false)}>New conversation</button>
-            <button onClick={() => void start(true)} title="Pick up the last conversation where it left off">Continue last</button>
+            {!custom && <button onClick={() => void start(true)} title="Pick up the last conversation where it left off">Continue last</button>}
           </div>
         )}
       </div>
