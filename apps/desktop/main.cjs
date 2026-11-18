@@ -318,13 +318,14 @@ function hookCommand() {
 }
 
 /** The settings with our hooks (re)written for the current port; the DM's own settings and hooks are kept. */
-function withDragonDropHooks(cfg) {
+function withDragonDropHooks(cfg, approveMcp) {
   const hooks = cfg.hooks && typeof cfg.hooks === "object" && !Array.isArray(cfg.hooks) ? { ...cfg.hooks } : {};
   for (const ev of HOOK_EVENTS) {
     const others = (Array.isArray(hooks[ev]) ? hooks[ev] : []).filter((g) => !(g && Array.isArray(g.hooks) && g.hooks.some((h) => h && typeof h.command === "string" && h.command.includes(HOOK_PATH))));
     hooks[ev] = [...others, { hooks: [{ type: "command", command: hookCommand(), timeout: 5 }] }];
   }
-  // a .mcp.json server needs approving once: list ours as approved so other assistants and Claude Code don't ask
+  if (!approveMcp) return { ...cfg, hooks };
+  // a .mcp.json server needs approving once: list ours as approved so a Claude Code started by another program (ollama launch claude) doesn't ask
   const enabled = Array.isArray(cfg.enabledMcpjsonServers) ? [...cfg.enabledMcpjsonServers] : [];
   if (!enabled.includes("mapmaker")) enabled.push("mapmaker");
   return { ...cfg, hooks, enabledMcpjsonServers: enabled };
@@ -351,14 +352,42 @@ function findClaude() {
   return candidates.find((c) => c && fs.existsSync(c)) || null;
 }
 
+/**
+ * The workspace's .mcp.json, the file Claude Code reads for project MCP servers. Claude Code in the panel is handed the map tools with --mcp-config, so it needs
+ * nothing here, and a second definition of the same server is something it would have to reconcile (and could ask the person to approve). So our entry is written
+ * only while another assistant is chosen (`ollama launch claude` is Claude Code started by another program, and does read this file) and taken out again when the
+ * default is back. Whatever else the person put in the file stays, and a file that is not valid JSON is left alone.
+ */
+function syncProjectMcp(dir, ours, wanted) {
+  const file = path.join(dir, ".mcp.json");
+  let cfg = null;
+  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (!e || e.code !== "ENOENT") return; } // (no file yet is fine; one we can't read is not ours to touch)
+  if (cfg !== null && (typeof cfg !== "object" || Array.isArray(cfg))) return;
+  const servers = cfg && cfg.mcpServers && typeof cfg.mcpServers === "object" && !Array.isArray(cfg.mcpServers) ? { ...cfg.mcpServers } : {};
+  if (wanted) {
+    servers.mapmaker = ours;
+    fs.writeFileSync(file, JSON.stringify({ ...(cfg || {}), mcpServers: servers }, null, 2), { mode: 0o600 });
+    return;
+  }
+  // (only our own entry comes out: a "mapmaker" that points somewhere else is the person's)
+  const mine = servers.mapmaker;
+  if (!mine || typeof mine.url !== "string" || !/^http:\/\/127\.0\.0\.1:\d+\/mcp$/.test(mine.url)) return;
+  delete servers.mapmaker;
+  const rest = { ...(cfg || {}), mcpServers: servers };
+  if (Object.keys(servers).length === 0) delete rest.mcpServers;
+  if (Object.keys(rest).length === 0) { try { fs.unlinkSync(file); } catch { /* already gone */ } }
+  else fs.writeFileSync(file, JSON.stringify(rest, null, 2), { mode: 0o600 });
+}
+
 /** Write the little workspace Claude Code starts in: it knows this app's address, even if the port changes. */
 function writeClaudeWorkspace(claudePath) {
   // (careful: `settings` is the app's settings here; the Claude settings file is claudeSettings. A second `settings` in this function would make the first use fail.)
   const dir = claudeWorkspace();
   fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
-  const mcpJson = JSON.stringify({ mcpServers: { mapmaker: { type: "http", url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: `Bearer ${settings.accessToken}` } } } }, null, 2);
-  fs.writeFileSync(path.join(dir, "mapmaker.mcp.json"), mcpJson, { mode: 0o600 });
-  fs.writeFileSync(path.join(dir, ".mcp.json"), mcpJson, { mode: 0o600 }); // other assistants (and Claude Code) pick the map tools up from here
+  const ours = { type: "http", url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: `Bearer ${settings.accessToken}` } };
+  fs.writeFileSync(path.join(dir, "mapmaker.mcp.json"), JSON.stringify({ mcpServers: { mapmaker: ours } }, null, 2), { mode: 0o600 });
+  const another = !!settings.terminalCommand; // another assistant than Claude Code in the panel
+  syncProjectMcp(dir, ours, another);
   // the same notes under each assistant's own file name
   for (const name of ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]) {
     const md = path.join(dir, name);
@@ -369,11 +398,11 @@ function writeClaudeWorkspace(claudePath) {
   const claudeSettings = path.join(dir, ".claude", "settings.json");
   // the map tools are safe (every change is undoable), so don't ask about each one; the hooks are rewritten each time (the port can change)
   if (!fs.existsSync(claudeSettings)) {
-    fs.writeFileSync(claudeSettings, JSON.stringify(withDragonDropHooks({ permissions: { allow: ["mcp__mapmaker"] } }), null, 2));
+    fs.writeFileSync(claudeSettings, JSON.stringify(withDragonDropHooks({ permissions: { allow: ["mcp__mapmaker"] } }, another), null, 2));
   } else {
     let cfg = null;
     try { cfg = JSON.parse(fs.readFileSync(claudeSettings, "utf8")); } catch { /* the DM's file isn't valid JSON: leave it alone */ }
-    if (cfg && typeof cfg === "object" && !Array.isArray(cfg)) fs.writeFileSync(claudeSettings, JSON.stringify(withDragonDropHooks(cfg), null, 2));
+    if (cfg && typeof cfg === "object" && !Array.isArray(cfg)) fs.writeFileSync(claudeSettings, JSON.stringify(withDragonDropHooks(cfg, another), null, 2));
   }
   // the path ends up inside a .cmd file: anything that cmd would treat specially is left out (the launcher then just says "claude")
   const exe = claudePath && !/["%\r\n&|<>^]/.test(claudePath) ? claudePath : "claude";
@@ -794,6 +823,11 @@ async function smokeTest() {
           if (!customBuf.includes("DD_CUSTOM_OK")) await new Promise((r) => setTimeout(r, 500));
         }
         if (!customBuf.includes("DD_CUSTOM_OK")) return fatal(`the custom start command's output never showed: ${JSON.stringify(customBuf.slice(0, 200))}`);
+        // another assistant is chosen: the workspace also carries .mcp.json (for a Claude Code started by another program) and approves the server in it
+        const dotMcpText = (() => { try { return fs.readFileSync(path.join(custom.workspace, ".mcp.json"), "utf8"); } catch { return ""; } })();
+        if (!dotMcpText.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`with another assistant chosen, .mcp.json should carry the map tools: ${dotMcpText}`);
+        const enabledNow = (() => { try { return JSON.parse(fs.readFileSync(path.join(custom.workspace, ".claude", "settings.json"), "utf8")).enabledMcpjsonServers; } catch { return null; } })();
+        if (!Array.isArray(enabledNow) || enabledNow.filter((s) => s === "mapmaker").length !== 1) return fatal(`with another assistant chosen, enabledMcpjsonServers should list mapmaker once: ${JSON.stringify(enabledNow)}`);
         if (process.platform === "win32") {
           // a quoted program path plus a quoted argument must reach cmd.exe untouched (its legacy rule strips quotes without /s)
           const quoted = JSON.stringify(`"${process.env.ComSpec}" /c echo "DD_QUOTED_OK"`);
@@ -815,13 +849,11 @@ async function smokeTest() {
         const mcp = (() => { try { return fs.readFileSync(path.join(cl.workspace, "mapmaker.mcp.json"), "utf8"); } catch { return ""; } })();
         if (!mcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`Claude workspace file is wrong: ${mcp}`);
         if (!mcp.includes(`Bearer ${settings.accessToken}`)) return fatal("Claude workspace file has no access key for the map tools");
-        for (const f of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", ".mcp.json", "open-claude.cmd", path.join(".claude", "settings.json")]) {
+        for (const f of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "open-claude.cmd", path.join(".claude", "settings.json")]) {
           if (!fs.existsSync(path.join(cl.workspace, f))) return fatal(`Claude workspace is missing ${f}`);
         }
-        const dotMcp = fs.readFileSync(path.join(cl.workspace, ".mcp.json"), "utf8");
-        if (!dotMcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`.mcp.json is wrong: ${dotMcp}`);
-        const enabled = (() => { try { return JSON.parse(fs.readFileSync(path.join(cl.workspace, ".claude", "settings.json"), "utf8")).enabledMcpjsonServers; } catch { return null; } })();
-        if (!Array.isArray(enabled) || enabled.filter((s) => s === "mapmaker").length !== 1) return fatal(`enabledMcpjsonServers should list mapmaker once: ${JSON.stringify(enabled)}`);
+        // the default assistant: Claude Code in the panel is handed the map tools with --mcp-config, so there is no .mcp.json (a second definition could ask for approval)
+        if (fs.existsSync(path.join(cl.workspace, ".mcp.json"))) return fatal("with the default assistant chosen there should be no .mcp.json in the Claude workspace");
         // first-time setup: the Claude Code check works, and the one-click installer runs (a harmless stand-in under test) and reports back
         const chk = await win.webContents.executeJavaScript("window.dragonDrop.claudeCheck()");
         if (!chk || chk.installed !== true || typeof chk.path !== "string") return fatal(`claudeCheck returned ${JSON.stringify(chk)}`);

@@ -1,7 +1,7 @@
 // main.cjs only runs inside Electron, which CI exercises on Windows. This runs the parts that write the settings, the access key and the Claude workspace
 // in plain Node, with a stand-in for the `electron` module, so a mistake in them (a typo, a variable used before it is set) fails here in seconds
 // instead of at the end of a Windows build.
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -77,5 +77,94 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
     main.loadSettings();
     expect(main.getSettings().accessToken).toMatch(/^[0-9a-f]{64}$/);
     expect(main.getSettings().projectsDir).toBe("C:\\maps"); // (the rest of the old settings stays)
+  });
+
+  describe("the map tools for other assistants (.mcp.json): written only while another assistant is chosen", () => {
+    const setup = () => {
+      const userData = mkdtempSync(path.join(os.tmpdir(), "dd-user-")), documents = mkdtempSync(path.join(os.tmpdir(), "dd-docs-"));
+      const { main } = loadMain(userData, documents);
+      main.loadSettings();
+      main.setPort(4747);
+      const dir = path.join(documents, "Dragon Drop", "Claude");
+      const mcpFile = path.join(dir, ".mcp.json"), settingsFile = path.join(dir, ".claude", "settings.json");
+      const write = () => main.writeClaudeWorkspace(null);
+      const claudeSettings = () => JSON.parse(readFileSync(settingsFile, "utf8"));
+      return { main, dir, mcpFile, write, claudeSettings, key: main.getSettings().accessToken };
+    };
+
+    it("leaves Claude Code in the panel exactly as it was: no .mcp.json and no pre-approval, so it cannot be asked to approve a second definition", () => {
+      const { write, mcpFile, claudeSettings, dir } = setup();
+      write();
+      expect(existsSync(mcpFile)).toBe(false);
+      expect(claudeSettings().enabledMcpjsonServers).toBeUndefined();
+      expect(existsSync(path.join(dir, "mapmaker.mcp.json"))).toBe(true); // (what --mcp-config is given)
+      expect(existsSync(path.join(dir, "CLAUDE.md"))).toBe(true);
+    });
+
+    it("adds the map tools and approves them while another assistant is chosen, once however often it starts", () => {
+      const { main, write, mcpFile, claudeSettings, key } = setup();
+      main.getSettings().terminalCommand = "ollama launch claude";
+      write(); write();
+      const mcp = JSON.parse(readFileSync(mcpFile, "utf8"));
+      expect(mcp.mcpServers.mapmaker).toEqual({ type: "http", url: "http://127.0.0.1:4747/mcp", headers: { Authorization: `Bearer ${key}` } });
+      expect(claudeSettings().enabledMcpjsonServers).toEqual(["mapmaker"]);
+    });
+
+    it("follows a changed port, and takes our entry out again when the default is back (the file goes with it)", () => {
+      const { main, write, mcpFile } = setup();
+      main.getSettings().terminalCommand = "codex";
+      write();
+      main.setPort(4800);
+      write();
+      expect(JSON.parse(readFileSync(mcpFile, "utf8")).mcpServers.mapmaker.url).toBe("http://127.0.0.1:4800/mcp");
+      main.getSettings().terminalCommand = "";
+      write();
+      expect(existsSync(mcpFile)).toBe(false);
+      write(); // (and again with nothing to remove)
+      expect(existsSync(mcpFile)).toBe(false);
+    });
+
+    it("keeps whatever else the person put in .mcp.json, in both modes", () => {
+      const { main, write, mcpFile } = setup();
+      write(); // makes the folder
+      writeFileSync(mcpFile, JSON.stringify({ mcpServers: { github: { type: "http", url: "https://example.com/mcp" } }, other: 1 }));
+      main.getSettings().terminalCommand = "gemini";
+      write();
+      const both = JSON.parse(readFileSync(mcpFile, "utf8"));
+      expect(Object.keys(both.mcpServers).sort()).toEqual(["github", "mapmaker"]);
+      expect(both.other).toBe(1);
+      main.getSettings().terminalCommand = "";
+      write();
+      const left = JSON.parse(readFileSync(mcpFile, "utf8"));
+      expect(left).toEqual({ mcpServers: { github: { type: "http", url: "https://example.com/mcp" } }, other: 1 });
+    });
+
+    it("leaves a .mcp.json that is not valid JSON alone, and a \"mapmaker\" entry that points somewhere else", () => {
+      const { main, write, mcpFile } = setup();
+      write();
+      writeFileSync(mcpFile, "{ not json");
+      main.getSettings().terminalCommand = "opencode";
+      write();
+      expect(readFileSync(mcpFile, "utf8")).toBe("{ not json");
+      main.getSettings().terminalCommand = "";
+      write();
+      expect(readFileSync(mcpFile, "utf8")).toBe("{ not json");
+      const theirs = JSON.stringify({ mcpServers: { mapmaker: { type: "http", url: "https://my-own-server.example/mcp" } } });
+      writeFileSync(mcpFile, theirs);
+      write();
+      expect(readFileSync(mcpFile, "utf8")).toBe(theirs);
+    });
+
+    it("does not add the pre-approval to the person's own Claude settings for the default, and keeps what they have for another assistant", () => {
+      const { main, write, dir, claudeSettings } = setup();
+      write();
+      writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ ...claudeSettings(), enabledMcpjsonServers: ["theirs"], model: "keep-me" }));
+      write();
+      expect(claudeSettings().enabledMcpjsonServers).toEqual(["theirs"]);
+      main.getSettings().terminalCommand = "codex";
+      write();
+      expect(claudeSettings().enabledMcpjsonServers).toEqual(["theirs", "mapmaker"]);
+      expect(claudeSettings().model).toBe("keep-me");
+    });
   });
 });
