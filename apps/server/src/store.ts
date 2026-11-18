@@ -22,7 +22,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 import {
   type BaseClimate, type CheckpointInfo, type Features, type MapDoc, type MapMeta, type MapMigration, type ProjectInfo, type RefInfo, CURRENT_FORMAT, HeightField,
-  MIGRATIONS, NewerFormatError, createDoc, emptyFeatures, formatOf, migrateMap, packBaseClimate, unpackBaseClimate,
+  MIGRATIONS, NewerFormatError, REFERENCE_PICTURE_EXT, createDoc, emptyFeatures, formatOf, migrateMap, packBaseClimate, unpackBaseClimate,
 } from "@mapmaker/core";
 
 interface CheckpointEntry extends CheckpointInfo {
@@ -254,7 +254,7 @@ export class ProjectStore {
     if (!existsSync(d)) return [];
     const out: RefInfo[] = [];
     for (const name of (await readdir(d)).sort()) {
-      if (!/\.(png|jpe?g|webp|gif)$/i.test(name)) continue;
+      if (!REFERENCE_PICTURE_EXT.test(name)) continue;
       const s = await stat(path.join(d, name));
       out.push({ name, url: `/api/projects/${id}/refs/${encodeURIComponent(name)}`, bytes: s.size });
     }

@@ -10,7 +10,7 @@ import {
   isBattle, routeWaypoints, sketchToHeights, textWidth,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
-  GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
+  type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -38,7 +38,7 @@ export interface ToolContext {
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
   createBattleHere?(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
   /** Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. */
-  exportBattle?(format: "uvtt" | "foundry" | "png" | "key"): Promise<{ name: string; bytes: number; path: string }>;
+  exportBattle?(format: BattleExportFormat): Promise<{ name: string; bytes: number; path: string }>;
   /** Optional: make a more detailed map of an area of the open map, and open it. */
   createRegional?(o: { name: string; rect: Rect }): Promise<ProjectInfo>;
   /** Optional: the open map's climate, lakes and rivers (route finding avoids lakes and river crossings). */

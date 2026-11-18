@@ -7,7 +7,7 @@ import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
   type ClaudeState, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
   PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
-  battleKey, sampleBaseClimate, sketchToHeights, toFoundryScene, toUniversalVtt,
+  type BattleExportFormat, battleKey, sampleBaseClimate, sketchToHeights, toFoundryScene, toUniversalVtt,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng } from "@mapmaker/tools";
@@ -269,7 +269,7 @@ export class Hub {
   }
 
   /** The open battlemap as a file for a virtual tabletop: image, Universal VTT, or a Foundry scene (zip). */
-  async battleExport(format: "png" | "uvtt" | "foundry" | "key"): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
+  async battleExport(format: BattleExportFormat): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const doc = op.session.doc;

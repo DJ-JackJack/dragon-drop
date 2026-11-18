@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   type MapAmbientZone, type MapLight, type MapNote, type MapWall, type RGBAImage, type Rect, type Shape, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, ambientOf, applyLightPreset, battleSizeError, battleSpec, circlePolygon, cropScale, drawLabel, insertDoor,
   lightPresetName, nextNoteNumber, readingOrderNumbers, sortedNotes,
-  materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor,
+  materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
@@ -511,7 +511,7 @@ export const BATTLE_TOOLS = [
       "for the Universal Battlemap Importer in Foundry, Roll20, Fantasy Grounds and others; the format has no window or secret door, so a window is written as a line that stops movement but not sight, a secret door as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
       "'key' (the numbered notes as a Markdown list, for the DM; notes are never in the picture). " +
       "Neither VTT format has been tested against the real program yet: tell the user so.",
-    schema: z.object({ format: z.enum(["uvtt", "foundry", "png", "key"]) }),
+    schema: z.object({ format: z.enum(BATTLE_EXPORT_FORMATS) }),
     async run(ctx, i) {
       if (!ctx.exportBattle) return fail("Exports aren't available here.");
       const f = await ctx.exportBattle(i.format);

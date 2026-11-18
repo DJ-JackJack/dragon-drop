@@ -35,3 +35,5 @@ projects\<map-name>\
 Close Dragon Drop and copy the map's whole folder (or the whole `projects` folder). Put it in another maps folder to use it there. The only thing that isn't in the folder is the app's own settings (API key, which maps folder to use), which live in `%APPDATA%\Dragon Drop`.
 
 If you use OneDrive or another sync tool on the maps folder, let it finish syncing before you open the same maps on another PC, and don't edit one map on two PCs at the same time.
+
+The other file types Dragon Drop reads (pictures, asset libraries) and writes (PNG, Universal VTT, Foundry scenes) are listed in [FORMATS.md](FORMATS.md).

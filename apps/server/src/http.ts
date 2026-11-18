@@ -4,7 +4,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { type ClientMsg, noiseFileSize } from "@mapmaker/core";
+import { BATTLE_EXPORT_FORMATS, type BattleExportFormat, type ClientMsg, noiseFileSize } from "@mapmaker/core";
 import { type Config, apiKeyConfigured, editorBuilt } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { handleMcp } from "./mcp.ts";
@@ -112,11 +112,11 @@ export function createAppServer(cfg: Config, hub: Hub) {
         return;
       }
       if (url.pathname.startsWith("/api/assets/")) return await handleAssets(hub, url, req, res);
-      const ex = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/export\/(png|uvtt|foundry|key)$/);
+      const ex = url.pathname.match(new RegExp(`^/api/projects/([a-z0-9-]+)/export/(${BATTLE_EXPORT_FORMATS.join("|")})$`));
       if (ex) {
         if (hub.activeId !== ex[1]) return void res.writeHead(404, { "content-type": "text/plain" }).end("Not the open project");
         try {
-          const f = await hub.battleExport(ex[2] as "png" | "uvtt" | "foundry" | "key");
+          const f = await hub.battleExport(ex[2] as BattleExportFormat);
           res.writeHead(200, { "content-type": f.mime, "content-disposition": `attachment; filename="${f.name}"`, "content-length": f.bytes.byteLength, "cache-control": "no-cache" }).end(f.bytes);
         } catch (e) {
           res.writeHead(400, { "content-type": "text/plain" }).end((e as Error).message);

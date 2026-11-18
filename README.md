@@ -43,5 +43,6 @@ The full guide covers prerequisites, the editor, Remote Control and the map page
 - [docs/PLAN.md](docs/PLAN.md): architecture, Claude's tool set, roadmap
 - [docs/RESEARCH.md](docs/RESEARCH.md): research and sources behind the plan
 - [docs/CONTROLS.md](docs/CONTROLS.md): keyboard and mouse controls, and how they compare with other map programs
+- [docs/FORMATS.md](docs/FORMATS.md): the file types Dragon Drop reads and writes, and what doesn't work
 - [docs/MAP-FILES.md](docs/MAP-FILES.md): what is in a map folder, how maps are kept safe (versioned files, automatic backups) and how to back one up
 - [spikes/painted-relief](spikes/painted-relief/): prototype of the target "Painted Relief" world-map style

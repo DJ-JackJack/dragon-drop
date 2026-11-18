@@ -2,12 +2,13 @@
  * Asset libraries: ids, categories and how assets plug into a battlemap. An asset comes from a "pack", which is any of
  * a folder of images, a .zip file of images, or a pack file made by another map tool (a Godot-style archive; see pck.ts).
  */
+import { ASSET_PICTURE_EXT } from "./formats.ts";
 
 export type AssetCategory = "objects" | "terrain" | "walls" | "paths" | "portals" | "roofs" | "patterns" | "lights" | "other" | "data";
 
 export const ASSET_CATEGORIES: AssetCategory[] = ["objects", "terrain", "walls", "paths", "portals", "roofs", "patterns", "lights", "other"];
 
-export const IMAGE_EXT = /\.(png|webp|jpe?g)$/i;
+export const IMAGE_EXT = ASSET_PICTURE_EXT;
 
 /** Objects are drawn at 256 px per grid square, the usual size of tabletop map art: an image's size in squares is its pixels / 256 (a scale of 1). */
 export const PROP_PX_PER_SQUARE = 256;

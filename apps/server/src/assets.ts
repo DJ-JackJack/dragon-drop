@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { type FileHandle, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  type AssetCategory, type AssetItem, type RandomAccess, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, assetId, assetLabel, boxResize,
+  type AssetCategory, type AssetItem, type RandomAccess, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
   categoryOf, defaultTileSquares, imageSize, parseAssetId, readPck, readPckFile,
 } from "@mapmaker/core";
 import { decodeImage } from "@mapmaker/tools";
@@ -81,8 +81,8 @@ const MAX_FOLDER_DEPTH = 12;
 const MAX_FOLDER_FILES = 400_000;
 const MAX_FOLDERS = 50_000;
 
-const isZip = (name: string) => /\.zip$/i.test(name);
-const isPackFileName = (name: string) => /\.pck$/i.test(name) || /\.[a-z0-9]+_pack$/i.test(name);
+const isZip = (name: string) => ZIP_FILE_NAME.test(name);
+const isPackFileName = (name: string) => PACK_FILE_NAME.test(name);
 const skipDir = (name: string) => name.startsWith(".") || name.startsWith("$") || name === "node_modules" || name === "System Volume Information" || name === "__MACOSX";
 /** Files in a pack that describe it. */
 const INFO_FILE = /^(packs\/[^/]+\.json|pack\.json)$/i;

@@ -13,7 +13,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "e2e": "node apps/editor/e2e/smoke.mjs",
-    "upscale": "tsx apps/server/src/upscaleCli.ts"
+    "upscale": "tsx apps/server/src/upscaleCli.ts",
+    "formats": "tsx scripts/write-formats-doc.ts"
   },
   "devDependencies": {
     "@types/node": "26.6.6",

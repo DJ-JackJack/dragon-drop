@@ -146,6 +146,7 @@ code { background: #08080a; padding: 1px 4px; border-radius: 4px; font-size: 12.
 .working .dot:nth-child(3) { animation-delay: 0.4s; }
 @keyframes pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 .pending { display: flex; gap: 6px; padding: 6px 10px 0; flex-wrap: wrap; }
+.pick-note { margin: 4px 10px 0; font-size: 12px; }
 .thumb { position: relative; }
 .thumb img { height: 56px; border-radius: 4px; border: 1px solid var(--line); }
 .thumb button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 10px; font-size: 12px; }

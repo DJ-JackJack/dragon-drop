@@ -1,7 +1,7 @@
 import { ClaudeCard } from "./ClaudeButton.tsx";
 import { confirmBox } from "./dialogs.tsx";
 import { useEffect, useRef, useState } from "react";
-import { type ChatItem, type Effort, type ModelId, MODEL_PRICES } from "@mapmaker/core";
+import { type ChatItem, type Effort, type ModelId, MODEL_PRICES, REFERENCE_PICTURE_ACCEPT, REFERENCE_PICTURE_TYPES } from "@mapmaker/core";
 import { Markdown } from "./Markdown.tsx";
 import { type AppState, store } from "./store.ts";
 
@@ -53,6 +53,7 @@ export function ChatPanel({ s }: { s: AppState }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [pickNote, setPickNote] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const stick = useRef(true);
@@ -64,8 +65,10 @@ export function ChatPanel({ s }: { s: AppState }) {
 
   async function addFiles(files: FileList | File[]) {
     const out: Pending[] = [];
+    let skipped = 0;
     for (const f of Array.from(files)) {
-      if (!f.type.startsWith("image/")) continue;
+      // (only the pictures the map tools can read: other kinds would be saved but could not be shown to Claude or used)
+      if (!(REFERENCE_PICTURE_TYPES as readonly string[]).includes(f.type)) { if (f.type.startsWith("image/")) skipped++; continue; }
       const data = await new Promise<string>((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(String(r.result).split(",")[1] ?? "");
@@ -75,6 +78,7 @@ export function ChatPanel({ s }: { s: AppState }) {
       out.push({ name: f.name || "pasted-image.png", mediaType: f.type, data, preview: URL.createObjectURL(f) });
     }
     setPending((p) => [...p, ...out].slice(0, 8));
+    setPickNote(skipped ? `${skipped === 1 ? "That picture was" : `${skipped} pictures were`} left out: only PNG and JPEG pictures can be attached.` : "");
   }
 
   function send() {
@@ -144,6 +148,7 @@ export function ChatPanel({ s }: { s: AppState }) {
         {s.chatBusy && <div className="working"><span className="dot" /><span className="dot" /><span className="dot" /></div>}
       </div>
 
+      {pickNote && <p className="muted pick-note" data-testid="attach-note">{pickNote}</p>}
       {pending.length > 0 && (
         <div className="pending">
           {pending.map((p, i) => (
@@ -157,7 +162,7 @@ export function ChatPanel({ s }: { s: AppState }) {
 
       <div className="composer">
         <button className="ghost attach" onClick={() => fileRef.current?.click()} title="Attach images (or drag & drop / paste)">📎</button>
-        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
+        <input ref={fileRef} type="file" accept={REFERENCE_PICTURE_ACCEPT} multiple hidden onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = ""; }} />
         <textarea
           value={text}
           placeholder={s.chatBusy ? "Claude is working…" : "Message Claude (Enter to send, Shift+Enter for a new line)"}

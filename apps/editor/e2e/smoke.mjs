@@ -310,6 +310,10 @@ try {
   await page.screenshot({ path: path.join(shots, "e2e-3-places.png") });
 
   // a full chat turn (scripted model): streamed text, tool chips, preview image, Claude's edit in history
+  // a kind of picture the map tools can't read (WebP) is left out, with a note; a PNG attaches as usual
+  await page.locator('.composer input[type="file"]').setInputFiles({ name: "left-out.webp", mimeType: "image/webp", buffer: Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]) });
+  await page.getByTestId("attach-note").waitFor({ timeout: 5000 });
+  if ((await page.locator(".pending .thumb").count()) !== 0) throw new Error("a WebP picture was attached to the chat");
   await page.locator('.composer input[type="file"]').setInputFiles(path.join(tmp, "e2e-sketch.png")); // (kept in the project's references: the sketch step below uses it)
   await page.getByTestId("chat-input").fill("Add a small island in the inner sea");
   await page.keyboard.press("Enter");

@@ -317,6 +317,8 @@ Draw them yourself with the **Roads** tool (O), or ask Claude (section 10, step 
 
 This **replaces the whole map**, so first click **Save checkpoint** (it also saves one called "Before sketch import" itself, and Undo works).
 
+**Quick check first (file types):** attach a **WebP** or **GIF** picture with the paperclip in the chat. It is left out and a note says only PNG and JPEG can be attached; a PNG or JPEG attaches as before.
+
 1. Find the **References** area in the left panel (attach a rough sketch in the chat first if there is none: green land on blue sea, with red strokes for mountain ranges if you like). Click **Make terrain…** under it.
 2. **Expect** a dialog with a small coloured preview: blue sea, green land, and (if "Red strokes mark mountain ranges" is ticked) brown mountain strokes along any red lines. The preview should look like your sketch: its islands and their shapes. Move the "How different from the sea counts as land" slider and watch the preview change.
 3. Leave the defaults and click **Create terrain**. After a few seconds **Expect** the map to be replaced by one with the same islands and ranges (rougher and plainer than a map refined by hand over many passes: this is a starting point). History shows "Terrain from sketch …", and the Checkpoints list has "Before sketch import".
