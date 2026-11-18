@@ -508,7 +508,7 @@ export const BATTLE_TOOLS = [
     name: "export_battlemap",
     description:
       "Write the battlemap as a file for a virtual tabletop into the project's exports folder: 'uvtt' (Universal VTT .dd2vtt: image, walls, doors and lights in one file, " +
-      "for the Universal Battlemap Importer in Foundry, Roll20, Fantasy Grounds and others), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
+      "for the Universal Battlemap Importer in Foundry, Roll20, Fantasy Grounds and others; the format has no window or secret door, so a window is written as a line that stops movement but not sight, a secret door as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
       "'key' (the numbered notes as a Markdown list, for the DM; notes are never in the picture). " +
       "Neither VTT format has been tested against the real program yet: tell the user so.",
     schema: z.object({ format: z.enum(["uvtt", "foundry", "png", "key"]) }),

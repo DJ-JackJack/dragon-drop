@@ -772,9 +772,12 @@ export function renderBattle(
 // ---------------------------------------------------------------- exports
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
-/** Lines that block sight (and movement): walls, but not doors, windows or invisible walls. */
+/**
+ * Lines that block sight and movement in a Universal VTT file: walls, and secret doors (which look and act like wall until the
+ * DM reveals them; the format has no secret door, and writing one as an ordinary door would show the players where it is).
+ */
 function sightLines(f: Features | undefined) {
-  return (f?.walls ?? []).filter((w) => w.kind === "wall").map((w) => {
+  return (f?.walls ?? []).filter((w) => w.kind === "wall" || w.kind === "secret").map((w) => {
     const pts = w.closed && w.points.length > 2 ? [...w.points, w.points[0]] : w.points;
     return pts.map(([x, y]) => ({ x: r4(x), y: r4(y) }));
   });
@@ -787,8 +790,10 @@ function argb(hex: string): string {
 }
 
 /**
- * Universal VTT (.dd2vtt / .uvtt) data. Positions are in grid squares. Doors, secret doors and windows
- * become portals; invisible walls become "objects_line_of_sight" (they block movement, not light).
+ * Universal VTT (.dd2vtt / .uvtt) data. Positions are in grid squares. Only doors become portals, because
+ * a VTT turns every portal into a door that opens. The format has no window and no secret door, so:
+ *   - a window becomes an "objects_line_of_sight" line, like an invisible wall: it blocks movement but not sight or light;
+ *   - a secret door becomes a plain wall line (see sightLines), so it can't be told from the wall around it.
  * Written from the format as I know it: the field names and the colour byte order haven't been checked
  * against a program that reads it, so test it in yours.
  */
@@ -800,8 +805,8 @@ export function toUniversalVtt(doc: MapDoc, imagePngBase64: string) {
     format: 0.3,
     resolution: { map_origin: { x: 0, y: 0 }, map_size: { x: spec.squaresX, y: spec.squaresY }, pixels_per_grid: spec.pxPerSquare },
     line_of_sight: sightLines(f),
-    objects_line_of_sight: walls.filter((w) => w.kind === "invisible").map((w) => w.points.map(([x, y]) => ({ x: r4(x), y: r4(y) }))),
-    portals: walls.filter((w) => w.kind === "door" || w.kind === "secret" || w.kind === "window").map((w) => {
+    objects_line_of_sight: walls.filter((w) => w.kind === "invisible" || w.kind === "window").map((w) => w.points.map(([x, y]) => ({ x: r4(x), y: r4(y) }))),
+    portals: walls.filter((w) => w.kind === "door").map((w) => {
       const [a, b] = [w.points[0], w.points[w.points.length - 1]];
       return {
         position: { x: r4((a[0] + b[0]) / 2), y: r4((a[1] + b[1]) / 2) },

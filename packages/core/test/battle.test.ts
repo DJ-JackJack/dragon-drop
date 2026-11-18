@@ -150,11 +150,14 @@ describe("exports", () => {
   it("Universal VTT: sizes, sight lines, portals and lights", () => {
     const u = toUniversalVtt(sample(), "AAAA");
     expect(u.resolution).toEqual({ map_origin: { x: 0, y: 0 }, map_size: { x: 20, y: 15 }, pixels_per_grid: 70 });
-    expect(u.line_of_sight).toHaveLength(1);
+    expect(u.line_of_sight).toHaveLength(2); // the room's outline and the secret door (which is wall until it is revealed)
     expect(u.line_of_sight[0]).toHaveLength(5); // closed outline repeats the first point
     expect(u.line_of_sight[0][0]).toEqual(u.line_of_sight[0][4]);
-    expect(u.objects_line_of_sight).toHaveLength(1);
-    expect(u.portals).toHaveLength(4);
+    expect(u.line_of_sight[1]).toEqual([{ x: 10, y: 13 }, { x: 11, y: 13 }]);
+    expect(u.objects_line_of_sight).toHaveLength(2); // the window and the invisible wall: they stop movement, not sight or light
+    expect(u.objects_line_of_sight[0]).toEqual([{ x: 18, y: 5 }, { x: 18, y: 6 }]);
+    expect(u.portals).toHaveLength(2); // doors only: a VTT turns every portal into a door that opens (a window written here imports as a door)
+    expect(u.portals.some((p) => p.position.x === 18 || p.position.x === 10.5)).toBe(false);
     const d1 = u.portals.find((p) => p.position.x === 6.5)!;
     expect(d1.closed).toBe(true);
     expect(d1.rotation).toBe(0);
