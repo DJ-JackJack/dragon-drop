@@ -3,6 +3,7 @@ export * from "./geom.ts";
 export * from "./doc.ts";
 export * from "./format.ts";
 export * from "./viewKeys.ts";
+export * from "./featureOps.ts";
 export * from "./terrain.ts";
 export * from "./session.ts";
 export * from "./render.ts";

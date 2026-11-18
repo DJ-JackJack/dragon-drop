@@ -402,6 +402,23 @@ try {
     await page.getByTestId("history").getByText(/Undo: Terrain from sketch/).first().waitFor({ timeout: 20000 });
   }
 
+  // copy, paste and duplicate on a world map: Ctrl+D makes a "(copy)" of the selected place a little along; Ctrl+C then Ctrl+V puts one under the pointer; Delete removes each
+  {
+    await page.getByTestId("places").getByText("Test Harbour", { exact: true }).click();
+    await page.keyboard.press("Control+d");
+    await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ timeout: 10000 });
+    await page.keyboard.press("Delete"); // (the copy is the selected place now)
+    await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ state: "detached", timeout: 10000 });
+    await page.getByTestId("places").getByText("Test Harbour", { exact: true }).click();
+    await page.keyboard.press("Control+c");
+    const wb = await page.locator('[data-testid="map-canvas"]').boundingBox();
+    await page.mouse.move(wb.x + wb.width * 0.3, wb.y + wb.height * 0.7);
+    await page.keyboard.press("Control+v");
+    await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ timeout: 10000 });
+    await page.keyboard.press("Delete");
+    await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ state: "detached", timeout: 10000 });
+  }
+
   // battlemaps: create one, build a room, cut a door, add a light and floor, export for a tabletop, then back to the world map
   {
     const worldId = await page.locator("select.project").inputValue();
@@ -469,6 +486,21 @@ try {
     await click(12, 7);
     await page.getByTestId("history").getByText("Add light").waitFor({ timeout: 10000 });
     await page.getByTestId("light-radius").waitFor({ timeout: 5000 });
+    // duplicate and copy/paste: the torch is selected. Ctrl+D puts a copy a square along and down; Ctrl+C then Ctrl+V pastes one under the pointer
+    {
+      await page.keyboard.press("Control+d");
+      await page.getByTestId("history").getByText("Duplicate 1 item").waitFor({ timeout: 10000 });
+      await page.keyboard.press("Control+c");
+      const at = sq(19, 12);
+      await page.mouse.move(at.x, at.y);
+      await page.keyboard.press("Control+v");
+      await page.getByTestId("history").getByText("Paste 1 item").waitFor({ timeout: 10000 });
+      // back to the one torch: undo the paste and the duplicate
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Paste 1 item").waitFor({ timeout: 10000 });
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Duplicate 1 item").waitFor({ timeout: 10000 });
+    }
     // the light level: Dim darkens the map except where the torch reaches; Bright restores it
     const lum = async (x, y) => {
       const p = sq(x, y);

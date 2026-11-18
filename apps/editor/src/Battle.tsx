@@ -8,7 +8,8 @@ import {
   type BattleSpec, type Features, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
   CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
-import { type ViewKeyAction, applyViewKey, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, applyViewKey, clipBounds, copyFeatures, pasteFeatures, selectionFromIds, selectionIds, viewKeyAction } from "@mapmaker/core";
+import { getClip, setClip, unstack } from "./clipboard.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
@@ -27,6 +28,8 @@ export interface BattleUi {
   /** Draw the numbered room notes. */
   showNotes: boolean;
   selected: string | null;
+  /** Two or more things selected together (then `selected` is null; never both). */
+  multi: string[];
   /** The object chosen in the Assets tab (what the Object tool places). */
   asset: string | null;
   propScale: number;
@@ -38,7 +41,7 @@ export interface BattleUi {
 }
 
 export const defaultBattleUi: BattleUi = {
-  tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null,
+  tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect",
 };
 
@@ -281,6 +284,49 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     requestDraw();
   }, [requestDraw, buildWalls]);
 
+  /** Everything that is selected: one thing, or a group. */
+  const selectedIds = () => selectionIds({ selected: uiRef.current.selected, multi: uiRef.current.multi });
+
+  /** Ctrl+C: keep copies of the selected objects, lights, walls and light zones (room notes are numbered, so they aren't copied). */
+  function copySelection(): boolean {
+    const clip = copyFeatures(featRef.current, selectedIds());
+    if (!clip) return false;
+    setClip("battle", clip);
+    return true;
+  }
+
+  /** Put a copy of `clip` on the map, `dx`, `dy` squares from where it came from, and select what was put there. */
+  function pasteGroup(clip: FeatureClip, dx: number, dy: number, what: string) {
+    const spec = metaRef.current?.battle;
+    if (!spec) return;
+    const r = pasteFeatures(clip, dx, dy, { bounds: { w: spec.squaresX, h: spec.squaresY } });
+    sendFeatures(r.patch, `${what} ${r.ids.length === 1 ? "1 item" : `${r.ids.length} items`}`);
+    onUiRef.current({ ...selectionFromIds(r.ids), tool: "select" });
+  }
+
+  /** Ctrl+V: paste what was copied, centred on the pointer (or a square along and down when the pointer is off the map). */
+  function pasteClip(): boolean {
+    const clip = getClip("battle");
+    if (!clip) return false;
+    const b = clipBounds(clip), p = pointer.current;
+    let dx = 1, dy = 1;
+    if (p) {
+      const t = toSq(p.x, p.y);
+      dx = snap(t.x - (b.x0 + b.x1) / 2); dy = snap(t.y - (b.y0 + b.y1) / 2);
+    }
+    ({ dx, dy } = unstack("battle", dx, dy, 1));
+    pasteGroup(clip, dx, dy, "Paste");
+    return true;
+  }
+
+  /** Ctrl+D: a copy of the selection one square along and down (the clipboard is left alone). */
+  function duplicateSelection(): boolean {
+    const clip = copyFeatures(featRef.current, selectedIds());
+    if (!clip) return false;
+    pasteGroup(clip, 1, 1, "Duplicate");
+    return true;
+  }
+
   /** + - 0 and the arrow keys move the view (see core's viewKeys.ts). */
   function keyView(a: ViewKeyAction) {
     if (a.kind === "fit") { fittedFor.current = null; fit(); }
@@ -489,6 +535,12 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         e.preventDefault();
         requestDraw();
         return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === "c") { if (copySelection()) e.preventDefault(); return; }
+        if (k === "v") { if (pasteClip()) e.preventDefault(); return; }
+        if (k === "d") { e.preventDefault(); duplicateSelection(); return; } // (Ctrl+D is "bookmark this page" in a browser)
       }
       if (e.key === "Escape") { onUiRef.current({ selected: null }); return; }
       // rotate / mirror: the selected object if there is one, else what the Object tool will place

@@ -561,6 +561,9 @@ Tell me if an Auto backup never appears, if the list fills up with them, or if R
 4. Open a battlemap and try **+**, **-**, **0** and the arrow keys again, and press **?**: the list should now show the battlemap tools and the **Q**, **E**, **X** and **Alt** keys for objects.
 5. In the installed app, click in the Claude terminal and type a **+**, a **-** and **0**, and press an arrow key: **Expect** them to go to the terminal and the map not to move.
 
+6. Copy and paste: on a world map select a place (click it in the Places list), press **Ctrl+D**. **Expect** a new place called "<name> (copy)" a little along from it, selected. Press **Delete** to remove it. Press **Ctrl+C**, move the pointer over the map and press **Ctrl+V**: **Expect** a copy under the pointer. Paste again without moving the pointer: **Expect** the next copy a little to one side, not exactly on top.
+7. In a battlemap select an object or a light, then **Ctrl+D**, **Ctrl+C** and **Ctrl+V**: **Expect** copies, each one undo step ("Duplicate 1 item", "Paste 1 item"). A wall you copy comes in as an ordinary wall.
+
 Tell me about any key you expected to work and didn't, and any that did something you didn't expect.
 
 ## 15. What's not built yet (so you don't report it as a bug)

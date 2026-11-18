@@ -3,7 +3,8 @@ import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
-import { type ViewKeyAction, applyViewKey, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, applyViewKey, clipBounds, copyFeatures, pasteFeatures, viewKeyAction } from "@mapmaker/core";
+import { getClip, setClip, unstack } from "./clipboard.ts";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
 import { ask } from "./dialogs.tsx";
@@ -219,6 +220,49 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       }
     }
     riverChunks.current = chunks;
+  }
+
+  /** Ctrl+C: keep a copy of the selected place or label. */
+  function copySelection(): boolean {
+    const clip = copyFeatures(featuresRef.current, selRef.current ? [selRef.current] : []);
+    if (!clip) return false;
+    setClip("world", clip);
+    return true;
+  }
+
+  /** Put a copy of `clip` on the map, `dx`, `dy` map px from where it came from, and select the first thing put there. */
+  function pasteGroup(clip: FeatureClip, dx: number, dy: number, what: string) {
+    const m = metaRef.current;
+    if (!m) return;
+    const r = pasteFeatures(clip, dx, dy, { bounds: { w: m.width, h: m.height } });
+    store.send({ t: "cmd", cmd: { op: "features", patch: r.patch }, label: `${what} ${r.ids.length === 1 ? "1 item" : `${r.ids.length} items`}` });
+    onSelect(r.ids[0] ?? null);
+  }
+
+  /** How far a copy is moved along and down when there is no pointer to put it under: about 24 screen px, whatever the zoom. */
+  const copyStep = () => 24 / viewRef.current.scale;
+
+  /** Ctrl+V: paste what was copied, centred on the pointer (or a little along and down when the pointer is off the map). */
+  function pasteClip(): boolean {
+    const clip = getClip("world");
+    if (!clip) return false;
+    const b = clipBounds(clip), p = pointer.current;
+    let dx = copyStep(), dy = copyStep();
+    if (p) {
+      const t = toMap(p.x, p.y);
+      dx = t.x - (b.x0 + b.x1) / 2; dy = t.y - (b.y0 + b.y1) / 2;
+    }
+    ({ dx, dy } = unstack("world", dx, dy, copyStep()));
+    pasteGroup(clip, dx, dy, "Paste");
+    return true;
+  }
+
+  /** Ctrl+D: a copy of the selected place or label a little along and down (the clipboard is left alone). */
+  function duplicateSelection(): boolean {
+    const clip = copyFeatures(featuresRef.current, selRef.current ? [selRef.current] : []);
+    if (!clip) return false;
+    pasteGroup(clip, copyStep(), copyStep(), "Duplicate");
+    return true;
   }
 
   /** + - 0 and the arrow keys move the view (see core's viewKeys.ts). */
@@ -513,6 +557,12 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         e.preventDefault();
         requestDraw();
         return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === "c") { if (copySelection()) e.preventDefault(); return; }
+        if (k === "v") { if (pasteClip()) e.preventDefault(); return; }
+        if (k === "d") { e.preventDefault(); duplicateSelection(); return; } // (Ctrl+D is "bookmark this page" in a browser)
       }
       if ((e.key !== "Delete" && e.key !== "Backspace") || !selRef.current) return;
       const id = selRef.current, f = featuresRef.current;
