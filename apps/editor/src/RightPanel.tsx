@@ -18,7 +18,7 @@ export function RightPanel({ s, desktop, assist, wide, onToggleWide, tab, onTab,
   battle: boolean; ui: BattleUi; onUi: (p: Partial<BattleUi>) => void; focus: { cat: string; n: number };
 }) {
   const tabs: { id: RightTab; label: string }[] = [];
-  if (desktop) tabs.push({ id: "claude", label: "Claude Code" });
+  if (desktop) tabs.push({ id: "claude", label: "Terminal" });
   if (!desktop || s.apiKeyConfigured) tabs.push({ id: "api", label: desktop ? "API chat" : "Chat" });
   if (battle) tabs.push({ id: "assets", label: "Assets" });
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;

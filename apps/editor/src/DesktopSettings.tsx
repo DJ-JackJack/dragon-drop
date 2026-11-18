@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 import { type AssetStatus, fetchAssetStatus } from "./assetsApi.ts";
 import { useClaudeLauncher } from "./ClaudeButton.tsx";
 
+const PRESETS: [label: string, command: string][] = [
+  ["Claude Code", ""], ["Codex", "codex"], ["Antigravity CLI", "agy"], ["Gemini CLI (API key)", "gemini"], ["OpenCode", "opencode"],
+  ["Claude Code via Ollama", "ollama launch claude"], ["Codex via Ollama", "ollama launch codex"], ["OpenCode via Ollama", "ollama launch opencode"],
+];
+
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
 export function DesktopSettings({ onClose }: { onClose: () => void }) {
@@ -40,6 +45,10 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
     const t = window.setInterval(poll, 1500);
     return () => { alive = false; window.clearInterval(t); };
   }, []);
+  const [termCmd, setTermCmd] = useState<string | null>(null);
+  const [termError, setTermError] = useState<string | null>(null);
+  const shownCmd = termCmd ?? s?.terminalCommand ?? "";
+  const preset = PRESETS.find(([, c]) => c === shownCmd.trim());
   const cmd = s?.mcpCommand ?? "";
 
   return (
@@ -102,18 +111,44 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
         </fieldset>
 
         <fieldset>
-          <legend>Claude Code and Remote Control</legend>
-          <p className="muted" data-testid="claude-status">
-            Claude Code: {cc === null ? "checking…" : cc.installed ? `installed${cc.version ? ` (${cc.version})` : ""}` : "not installed yet. Open the Claude Code tab on the right to set it up."}
-          </p>
-          <div className="row end"><button onClick={() => void claude.open()} disabled={claude.busy}>Open Claude Code</button></div>
-          {claude.help}
+          <legend>AI assistant</legend>
+          <p className="muted">The terminal on the right runs this. Saving ends the running session. Tools other than Claude Code need the map tools added once: their address is below.</p>
+          <label className="field">Assistant
+            <select value={preset ? preset[1] : "custom"} onChange={(e) => { if (e.target.value !== "custom") setTermCmd(e.target.value); }} data-testid="terminal-preset">
+              {PRESETS.map(([label, c]) => <option key={label} value={c}>{label}</option>)}
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label className="field">Start command
+            <input type="text" value={shownCmd} placeholder="claude" spellCheck={false} onChange={(e) => setTermCmd(e.target.value)} data-testid="terminal-command" />
+          </label>
+          <div className="row end">
+            <button className="primary" disabled={shownCmd === (s?.terminalCommand ?? "")} data-testid="terminal-command-save"
+              onClick={() => void bridge.setTerminalCommand(shownCmd).then((r) => { setTermError(r.ok ? null : "That command can't be used (too long, or it has control characters)."); setTermCmd(null); return refresh(); })}>Save</button>
+          </div>
+          {termError && <p className="error-text">{termError}</p>}
+          {!s?.terminalCommand && (
+            <>
+              <p className="muted" data-testid="claude-status">
+                Claude Code: {cc === null ? "checking…" : cc.installed ? `installed${cc.version ? ` (${cc.version})` : ""}` : "not installed yet. Open the Terminal tab on the right to set it up."}
+              </p>
+              <div className="row end"><button onClick={() => void claude.open()} disabled={claude.busy}>Open Claude Code</button></div>
+              {claude.help}
+            </>
+          )}
           {s && s.port !== s.defaultPort && (
             <p className="error-text" data-testid="port-warning">
               Port {s.defaultPort} is already used by another program (most likely an older copy of this app still running, such as a <code>pnpm start</code> window), so this one is using {s.port}. Close the other one and reopen Dragon Drop to get back to {s.defaultPort}; the command below uses the right number either way.
             </p>
           )}
-          <p className="muted">The button above sets everything up for you. To use Claude Code from your own terminal instead (it must be running), run this once in PowerShell (not inside Claude Code; type /exit first if you are):</p>
+          <p className="muted">Map tools address (for tools other than Claude Code), sent with the header below (it holds your access key):</p>
+          <code className="copyline" data-testid="mcp-url">{s?.mcpUrl ?? ""}</code>
+          <code className="copyline" data-testid="mcp-header">Authorization: Bearer (your access key)</code>
+          <div className="row end">
+            <button onClick={() => void navigator.clipboard.writeText(s?.mcpUrl ?? "")}>Copy address</button>
+            <button onClick={() => void navigator.clipboard.writeText(s?.mcpHeader ?? "")}>Copy header</button>
+          </div>
+          <p className="muted">For Claude Code, the Open Claude Code button sets everything up for you. To use it from your own terminal instead (it must be running), run this once in PowerShell (not inside Claude Code; type /exit first if you are):</p>
           <code className="copyline" data-testid="mcp-command">{s?.mcpCommandShown ?? ""}</code>
           <div className="row end"><button onClick={() => void navigator.clipboard.writeText(cmd)}>Copy</button></div>
         </fieldset>
