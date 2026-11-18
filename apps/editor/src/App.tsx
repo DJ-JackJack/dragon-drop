@@ -6,6 +6,8 @@ import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
 import { DesktopSettings } from "./DesktopSettings.tsx";
 import { BATTLE_TOOLS, BattleInspector, BattleKey, BattleSettings, BattleTools, BattleView, type BattleUi, defaultBattleUi } from "./Battle.tsx";
 import { type AreaShape, type Brush, type Tool, MapView } from "./MapView.tsx";
+import { type ToolDef, TOOL_GROUPS } from "./toolDefs.ts";
+import { ShortcutHelp } from "./ShortcutHelp.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { useAssist } from "./useAssist.ts";
 import { ask, confirmBox, DialogHost, notice } from "./dialogs.tsx";
@@ -14,30 +16,6 @@ import { ClimatePanel, ExtrasPanel, GridPanel, GroundLegend, Inspector, LABEL_KI
 import { PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { type AppState, store } from "./store.ts";
 
-type ToolDef = { id: Tool; label: string; key: string; tip: string };
-const TOOL_GROUPS: { name: string; tools: ToolDef[] }[] = [
-  { name: "Move", tools: [
-    { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
-    { id: "select", label: "Select", key: "V", tip: "Click a place, label or region to edit it; drag to move it; Delete removes it. Click bare ground to point Claude at that spot" },
-    { id: "area", label: "Select area", key: "E", tip: "Drag a rectangle, circle or freehand shape to show Claude exactly where you mean. Click for a single point. Esc clears" },
-  ] },
-  { name: "Terrain", tools: [
-    { id: "raise", label: "Raise", key: "R", tip: "Paint terrain upward" },
-    { id: "lower", label: "Lower", key: "L", tip: "Paint terrain downward" },
-    { id: "smooth", label: "Smooth", key: "S", tip: "Soften bumps and sharp edges" },
-    { id: "flatten", label: "Flatten", key: "F", tip: "Level terrain to the height where the stroke starts" },
-    { id: "land", label: "Land", key: "A", tip: "Push the coastline out: paint new low land into the sea" },
-    { id: "water", label: "Water", key: "W", tip: "Pull the coastline in: paint sea over land" },
-  ] },
-  { name: "Names and areas", tools: [
-    { id: "place", label: "Place", key: "P", tip: "Click to add a named place (city, fort, ruin...)" },
-    { id: "label", label: "Label", key: "T", tip: "Click to add a label (sea, region, range...), or drag to draw a line for it to follow" },
-    { id: "line", label: "Roads", key: "O", tip: "Draw a road, trail or border. Roads and trails are routed over the terrain for you" },
-    { id: "region", label: "Climate", key: "C", tip: "Climate region: click its corners, then double-click (or click the first corner, or press Enter) to close it. Esc cancels" },
-    { id: "detail", label: "Detail map", key: "D", tip: "Drag a box around an area to make a separate, more detailed map of it" },
-    { id: "battlehere", label: "Battlemap here", key: "M", tip: "Click a spot to make a battlemap of the ground there (its climate, rivers, lakes and coast choose the floors)" },
-  ] },
-];
 const TOOLS: ToolDef[] = TOOL_GROUPS.flatMap((g) => g.tools);
 /** What to do next with the active tool (shown under the tool buttons). */
 const AREA_SHAPES: { id: AreaShape; label: string; tip: string }[] = [
@@ -171,6 +149,15 @@ export function App() {
   const desktop = typeof window !== "undefined" ? window.dragonDrop : undefined;
   const assist = useAssist(s, !!desktop);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Ctrl+S: the server says when the map is on disk; show that for a moment
+  const [savedFlash, setSavedFlash] = useState(false);
+  useEffect(() => {
+    if (!s.savedAt) return;
+    setSavedFlash(true);
+    const t = setTimeout(() => setSavedFlash(false), 2500);
+    return () => clearTimeout(t);
+  }, [s.savedAt]);
   const [wide, setWide] = useState(() => { try { return localStorage.getItem("dd-wide") === "1"; } catch { return false; } });
   const toggleWide = useCallback(() => setWide((w) => { try { localStorage.setItem("dd-wide", w ? "0" : "1"); } catch { /* private mode */ } return !w; }), []);
   const [rightTab, setRightTab] = useState<RightTab>(defaultTab(!!window.dragonDrop));
@@ -189,11 +176,14 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
+      // Ctrl+S saves now, even from a text box (never inside the terminal: there Ctrl+S means "pause output")
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s" && !t.closest?.(".xterm")) { e.preventDefault(); store.send({ t: "save_now" }); return; }
       if (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT") return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); store.send({ t: e.shiftKey ? "redo" : "undo" }); return; }
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); store.send({ t: "redo" }); return; }
       if (mod) return;
+      if (e.key === "?") { e.preventDefault(); setHelpOpen((o) => !o); return; }
       if (store.getState().meta?.kind === "battle") {
         const bt = BATTLE_TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
         if (bt) setBui((b) => ({ ...b, tool: bt.id }));
@@ -215,7 +205,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar s={s} onNew={() => setNewOpen(true)} onSettings={desktop ? () => setSettingsOpen(true) : undefined} />
+      <TopBar s={s} onNew={() => setNewOpen(true)} onHelp={() => setHelpOpen(true)} onSettings={desktop ? () => setSettingsOpen(true) : undefined} />
       <div className={`main${desktop && wide ? " wide" : ""}`}>
         <aside className="side">
           {isBattle && s.meta && (
@@ -447,9 +437,11 @@ export function App() {
       </div>
       {newOpen && <NewMapDialog onClose={() => setNewOpen(false)} />}
       {settingsOpen && desktop && <DesktopSettings onClose={() => setSettingsOpen(false)} />}
+      {helpOpen && <ShortcutHelp battle={isBattle} onClose={() => setHelpOpen(false)} />}
       {sketchRef && <SketchDialog refInfo={sketchRef} mapHasLand={mapHasLand()} onClose={() => setSketchRef(null)} />}
       <DialogHost />
       {routingId && <div className="toast info" data-testid="routing">Finding the best route over the terrain…</div>}
+      {savedFlash && <div className="toast info" data-testid="saved">Saved. Dragon Drop also saves by itself after every change.</div>}
       {making && <div className="toast info" data-testid="making">Making “{making}”… this takes a few seconds.</div>}
       {s.error && (
         <div className="toast" onClick={() => store.dismissError()}>{s.error} <span className="muted">(click to dismiss)</span></div>
@@ -458,7 +450,7 @@ export function App() {
   );
 }
 
-function TopBar({ s, onNew, onSettings }: { s: AppState; onNew: () => void; onSettings?: () => void }) {
+function TopBar({ s, onNew, onHelp, onSettings }: { s: AppState; onNew: () => void; onHelp: () => void; onSettings?: () => void }) {
   return (
     <header className="top">
       <Brand />
@@ -473,6 +465,7 @@ function TopBar({ s, onNew, onSettings }: { s: AppState; onNew: () => void; onSe
       <button className="ghost" onClick={onNew}>+ New map</button>
       <div className="spacer" />
       <span className={`conn ${s.connected ? "ok" : "bad"}`}>{s.connected ? "Connected" : "Reconnecting…"}</span>
+      <button className="ghost" onClick={onHelp} title="Keyboard and mouse controls (?)" data-testid="shortcuts-button">?</button>
       {onSettings && <button className="ghost" onClick={onSettings} title="API key, maps folder, Claude Code connection" data-testid="settings-button">Settings</button>}
     </header>
   );

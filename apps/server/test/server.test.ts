@@ -154,6 +154,19 @@ describe("WebSocket sync", () => {
     await c.wait(() => c.msgs.some((m) => m.t === "change" && m.change.kind === "undo"));
     c.ws.close();
   });
+
+  it("Ctrl+S: save_now writes the map and only then answers \"saved\"", async () => {
+    const c = await connect();
+    await c.wait(() => c.frames.some((f) => f.header.t === "snapshot"));
+    c.ws.send(JSON.stringify({ t: "cmd", cmd: { op: "sculpt", params: { mode: "raise", shape: { type: "circle", x: 100, y: 100, r: 5 }, amountM: 300 } }, label: "Before saving" }));
+    await c.wait(() => c.msgs.some((m) => m.t === "change" && m.change.label === "Before saving"));
+    c.ws.send(JSON.stringify({ t: "save_now" }));
+    await c.wait(() => c.msgs.some((m) => m.t === "saved"));
+    // (it is on disk by the time the answer comes: read the file back)
+    const back = await hub.store.load(hub.activeId!);
+    expect(back.height.data[100 * back.meta.width + 100]).toBe(hub.session.doc.height.data[100 * back.meta.width + 100]);
+    c.ws.close();
+  });
 });
 
 describe("Claude Code hooks (Assist mode)", () => {

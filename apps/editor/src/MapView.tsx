@@ -3,6 +3,7 @@ import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
+import { type ViewKeyAction, applyViewKey, viewKeyAction } from "@mapmaker/core";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
 import { ask } from "./dialogs.tsx";
@@ -218,6 +219,17 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       }
     }
     riverChunks.current = chunks;
+  }
+
+  /** + - 0 and the arrow keys move the view (see core's viewKeys.ts). */
+  function keyView(a: ViewKeyAction) {
+    if (a.kind === "fit") { fittedFor.current = null; fit(); }
+    else {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      viewRef.current = applyViewKey(viewRef.current, a, { w: wrap.clientWidth, h: wrap.clientHeight }, { min: 0.05, max: MAX_ZOOM });
+    }
+    requestDraw();
   }
 
   function fit() {
@@ -465,6 +477,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     if (wrapRef.current) ro.observe(wrapRef.current);
     const kd = (e: KeyboardEvent) => {
       if (e.code === "Space" && !isTyping(e)) { setSpaceDown(true); e.preventDefault(); }
+      const view = isTyping(e) ? null : viewKeyAction(e);
+      if (view) { e.preventDefault(); keyView(view); }
     };
     const ku = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(false); };
     const del = (e: KeyboardEvent) => {

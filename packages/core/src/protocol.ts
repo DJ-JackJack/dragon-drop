@@ -90,6 +90,8 @@ export type ClientMsg =
   | { t: "txn_end" }
   | { t: "undo" }
   | { t: "redo" }
+  /** Ctrl+S: write the map to disk now (it also saves itself a moment after every change). Answered with "saved" once it is on disk. */
+  | { t: "save_now" }
   | { t: "chat_send"; text: string; images: { name: string; mediaType: string; data: string }[] }
   | { t: "chat_stop" }
   | { t: "chat_settings"; settings: Partial<ChatSettings> }
@@ -126,6 +128,8 @@ export type ServerMsg =
   | { t: "chat"; ev: ChatEvent }
   | { t: "chat_settings"; settings: ChatSettings }
   | { t: "checkpoints"; list: CheckpointInfo[] }
+  /** The map is on disk (the answer to "save_now"). */
+  | { t: "saved" }
   /** New derived layers are ready (sent to every client; "lite" clients get no binary frames). */
   | { t: "derived_ready"; projectId: string; version: number }
   /** What Claude Code last said (through its hooks): lets Assist mode wait until it is idle. */

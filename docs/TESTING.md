@@ -551,6 +551,18 @@ Tell me if the lock ever lets a change through outside the box, or gets in your 
 
 Tell me if an Auto backup never appears, if the list fills up with them, or if Restore didn't put the map back.
 
+## 14q. Controls and shortcuts
+
+(This is in the release after 0.1.8.) The keys other map programs use now work too; see [CONTROLS.md](CONTROLS.md).
+
+1. Open a world map and click on the page background (not in a text box). Press **+** a few times, then **-**: **Expect** the map to zoom in and out about the middle of the window. Press **0** (or **Ctrl+0**): **Expect** the whole map to fit again. Press the **arrow keys**: **Expect** the view to move (hold **Shift** for bigger steps).
+2. Make a change, then press **Ctrl+S**. **Expect** a "Saved" note at the bottom for a couple of seconds, and no browser "save page" box if you are in a browser.
+3. Press **?** (or click the **?** button in the top bar). **Expect** a list of the keys, with the tool letters for the kind of map you have open. **Esc** closes it.
+4. Open a battlemap and try **+**, **-**, **0** and the arrow keys again, and press **?**: the list should now show the battlemap tools and the **Q**, **E**, **X** and **Alt** keys for objects.
+5. In the installed app, click in the Claude terminal and type a **+**, a **-** and **0**, and press an arrow key: **Expect** them to go to the terminal and the map not to move.
+
+Tell me about any key you expected to work and didn't, and any that did something you didn't expect.
+
 ## 15. What's not built yet (so you don't report it as a bug)
 
 - Scatter on battlemaps, wall, path, portal and roof graphics from Dungeondraft packs (only floors and objects work), levels (multi-floor). The Universal VTT and Foundry exports exist but are untested (above).

@@ -24,6 +24,8 @@ export interface AppState {
   usage: Usage;
   apiKeyConfigured: boolean;
   error: string | null;
+  /** When the server last confirmed the map is on disk after Ctrl+S (ms since 1970; 0 = never). */
+  savedAt: number;
   checkpoints: CheckpointInfo[];
   features: Features;
   /** Bumped whenever new derived layers (climate, rivers, lakes) arrive. */
@@ -43,7 +45,7 @@ function loadLockPref(): boolean {
 const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
-  apiKeyConfigured: false, error: null, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, claude: "unknown",
+  apiKeyConfigured: false, error: null, savedAt: 0, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(),
 };
 
@@ -223,6 +225,9 @@ class Store {
         break;
       case "checkpoints":
         this.set({ checkpoints: m.list });
+        break;
+      case "saved":
+        this.set({ savedAt: Date.now() });
         break;
       case "derived_ready":
         // lite clients get no derived frames; this is their cue that the map changed

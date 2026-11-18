@@ -8,6 +8,7 @@ import {
   type BattleSpec, type Features, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
   CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
+import { type ViewKeyAction, applyViewKey, viewKeyAction } from "@mapmaker/core";
 import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
@@ -280,6 +281,17 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     requestDraw();
   }, [requestDraw, buildWalls]);
 
+  /** + - 0 and the arrow keys move the view (see core's viewKeys.ts). */
+  function keyView(a: ViewKeyAction) {
+    if (a.kind === "fit") { fittedFor.current = null; fit(); }
+    else {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      viewRef.current = applyViewKey(viewRef.current, a, { w: wrap.clientWidth, h: wrap.clientHeight }, { min: 3, max: MAX_ZOOM });
+    }
+    requestDraw();
+  }
+
   function fit() {
     const wrap = wrapRef.current, m = metaRef.current;
     if (!wrap || !m?.battle) return;
@@ -449,7 +461,12 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     const ro = new ResizeObserver(() => requestDraw());
     if (wrapRef.current) ro.observe(wrapRef.current);
     const typing = (e: KeyboardEvent) => { const t = e.target as HTMLElement | null; return !!t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable); };
-    const kd = (e: KeyboardEvent) => { altRef.current = e.altKey; if (e.code === "Space" && !typing(e)) { setSpaceDown(true); e.preventDefault(); } };
+    const kd = (e: KeyboardEvent) => {
+      altRef.current = e.altKey;
+      if (e.code === "Space" && !typing(e)) { setSpaceDown(true); e.preventDefault(); }
+      const view = typing(e) ? null : viewKeyAction(e);
+      if (view) { e.preventDefault(); keyView(view); }
+    };
     const ku = (e: KeyboardEvent) => { altRef.current = e.altKey; if (e.code === "Space") setSpaceDown(false); };
     const keys = (e: KeyboardEvent) => {
       if (typing(e)) return;

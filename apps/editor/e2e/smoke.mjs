@@ -145,6 +145,51 @@ try {
   await page.getByTestId("checkpoints").getByText(/^Auto \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/).first().waitFor({ timeout: 20000 });
   await page.getByTestId("checkpoints").getByText("Before test").waitFor({ timeout: 5000 });
 
+  // the conventional keys: + and - zoom, the arrow keys pan, 0 fits the map again; Ctrl+S saves now; ? shows the keys
+  {
+    await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 60000 });
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur());
+    const sig = () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="map-canvas"]');
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let h = 0;
+      for (let i = 0; i < d.length; i += 4 * 211) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
+      return h;
+    });
+    const fitted = await sig();
+    await page.keyboard.press("+");
+    await page.keyboard.press("+");
+    await page.waitForTimeout(400);
+    const zoomed = await sig();
+    if (zoomed === fitted) fail("pressing + twice didn't change the picture: keyboard zoom isn't working");
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForTimeout(300);
+    if ((await sig()) === zoomed) fail("an arrow key didn't move the view");
+    await page.keyboard.press("0");
+    await page.waitForTimeout(600);
+    if ((await sig()) !== fitted) fail("pressing 0 didn't bring back the fitted view");
+    await page.keyboard.press("-");
+    await page.waitForTimeout(300);
+    if ((await sig()) === fitted) fail("pressing - didn't zoom out");
+    await page.keyboard.press("Control+0");
+    await page.waitForTimeout(600);
+    if ((await sig()) !== fitted) fail("pressing Ctrl+0 didn't bring back the fitted view");
+
+    await page.keyboard.press("Control+s");
+    await page.getByTestId("saved").waitFor({ timeout: 10000 });
+
+    await page.keyboard.press("Shift+Slash"); // the ? key
+    await page.getByTestId("shortcuts").waitFor({ timeout: 5000 });
+    const sheet = await page.getByTestId("shortcuts").innerText();
+    for (const want of ["Ctrl+Z", "Ctrl+S", "Fit the whole map", "Raise", "Detail map"]) if (!sheet.includes(want)) fail(`the shortcut sheet doesn't mention "${want}"`);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("shortcuts").waitFor({ state: "detached", timeout: 5000 });
+    await page.getByTestId("shortcuts-button").click();
+    await page.getByTestId("shortcuts").waitFor({ timeout: 5000 });
+    await page.getByTestId("shortcuts").getByRole("button", { name: "Close" }).click();
+    await page.getByTestId("shortcuts").waitFor({ state: "detached", timeout: 5000 });
+  }
+
   // add a place with the Place tool, then change its type in the inspector
   await page.getByRole("button", { name: "Place", exact: true }).click();
   await page.getByTestId("tool-hint").getByText(/Click on the map where the place goes/).waitFor({ timeout: 5000 });

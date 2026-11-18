@@ -597,6 +597,13 @@ export class Hub {
           return this.session.begin("user", msg.label);
         case "txn_end":
           return this.session.commit();
+        case "save_now": {
+          await this.flush();
+          // (a failed save leaves the map marked as changed: say so instead of claiming it is saved)
+          if (this.open?.dirty) throw new Error("The map couldn't be saved just now (is the disk full or read-only?). Your changes are still open in the editor, and it will keep trying.");
+          this.broadcast({ t: "saved" });
+          return;
+        }
         case "undo":
           return this.session.undo("user");
         case "redo":
