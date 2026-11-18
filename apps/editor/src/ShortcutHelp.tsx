@@ -28,7 +28,7 @@ export function ShortcutHelp({ battle, onClose }: { battle: boolean; onClose: ()
           <Row keys={["Wheel"]} what="Zoom in and out, toward the pointer" />
           <Row keys={["+", "-"]} what="Zoom in / out" />
           <Row keys={["0", "Ctrl+0"]} what="Fit the whole map in the window" />
-          <Row keys={["Arrow keys"]} what="Move the view (hold Shift to go faster)" />
+          <Row keys={["Arrow keys"]} what="Move the view; with something selected they nudge it instead (hold Shift for bigger steps)" />
           <Row keys={["Space + drag", "Middle-drag", "Right-drag"]} what="Move the view with any tool" />
           <Row keys={["H"]} what="The Pan tool: drag to move the view" />
         </fieldset>

@@ -3,8 +3,9 @@ import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
-import { type FeatureClip, type ViewKeyAction, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { getClip, setClip, unstack } from "./clipboard.ts";
+import { noShiftTextSelect } from "./noShiftSelect.ts";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
 import { ask } from "./dialogs.tsx";
@@ -106,6 +107,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   } | null>(null);
   const hitsRef = useRef<Hit[]>([]);
   const moveOverride = useRef<{ id: string; ids?: string[]; dx: number; dy: number } | null>(null);
+  const nudgeTimer = useRef<number | undefined>(undefined);
   const featuresRef = useRef(features);
   featuresRef.current = features;
   const selRef = useRef(selectedId);
@@ -234,6 +236,39 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
 
   /** What is selected: the group, or the one place, label, region or line. */
   const worldIds = () => (groupRef.current.length >= 2 ? groupRef.current : selRef.current ? [selRef.current] : []);
+
+  /**
+   * An arrow key with something selected: nudge it (about 2 screen pixels, 20 with Shift, whatever the zoom). Presses within a third of a
+   * second add up, previewed as they go, and are sent as one command: holding a key down is one undo step. Returns whether it took the key.
+   */
+  function nudge(ax: number, ay: number, big: boolean): boolean {
+    const f = featuresRef.current, m = metaRef.current, ids = worldIds().filter((id) => featureKindOf(f, id));
+    if (!m || !ids.length) return false;
+    if (drag.current) return true; // (the mouse is dragging something: leave it alone)
+    const k = (big ? 20 : 2) / viewRef.current.scale;
+    const mo = moveOverride.current;
+    const pending = mo?.ids && mo.ids.length === ids.length && mo.ids.every((id, i) => id === ids[i]) ? mo : null;
+    if (moveOverride.current && !pending) commitNudge();
+    const r = moveFeatures(f, ids, (pending?.dx ?? 0) + ax * k, (pending?.dy ?? 0) + ay * k, { w: m.width, h: m.height });
+    moveOverride.current = { id: ids[0], ids, dx: r.dx, dy: r.dy };
+    requestDraw();
+    window.clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = window.setTimeout(commitNudge, 350);
+    return true;
+  }
+
+  function commitNudge() {
+    window.clearTimeout(nudgeTimer.current);
+    const mo = moveOverride.current, m = metaRef.current, f = featuresRef.current;
+    moveOverride.current = null;
+    requestDraw();
+    if (!mo?.ids || !m) return;
+    const r = moveFeatures(f, mo.ids, mo.dx, mo.dy, { w: m.width, h: m.height });
+    if (!r.dx && !r.dy) return;
+    const first = mo.ids[0];
+    const name = f.places.find((x) => x.id === first)?.name ?? f.labels.find((x) => x.id === first)?.text ?? f.regions?.find((x) => x.id === first)?.name ?? f.lines?.find((x) => x.id === first)?.name ?? "";
+    store.send({ t: "cmd", cmd: { op: "features", patch: r.patch }, label: mo.ids.length > 1 ? `Nudge ${mo.ids.length} items` : `Nudge ${name}`.trim() });
+  }
 
   /** Ctrl+C: keep a copy of the selected places and labels. */
   function copySelection(): boolean {
@@ -543,7 +578,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     const kd = (e: KeyboardEvent) => {
       if (e.code === "Space" && !isTyping(e)) { setSpaceDown(true); e.preventDefault(); }
       const view = isTyping(e) ? null : viewKeyAction(e);
-      if (view) { e.preventDefault(); keyView(view); }
+      // (arrow keys nudge what is selected; they move the view only when nothing is)
+      if (view && !(view.kind === "pan" && worldIds().some((id) => featureKindOf(featuresRef.current, id)))) { e.preventDefault(); keyView(view); }
     };
     const ku = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(false); };
     const del = (e: KeyboardEvent) => {
@@ -579,6 +615,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         requestDraw();
         return;
       }
+      const arrow = ARROW_DIRECTION[e.key];
+      if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey && nudge(arrow[0], arrow[1], e.shiftKey)) { e.preventDefault(); return; }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
         if (k === "c") { if (copySelection()) e.preventDefault(); return; }
@@ -636,6 +674,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     const p = local(e);
     const v = viewRef.current;
     canvasRef.current!.setPointerCapture(e.pointerId);
+    if (moveOverride.current && !drag.current) commitNudge(); // (a nudge still waiting goes first, so it can't be mistaken for this drag)
     const panning = e.button === 1 || e.button === 2 || optsRef.current.tool === "pan" || spaceDownRef.current;
     if (panning) {
       drag.current = { mode: "pan", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: 0, lastY: 0 };
@@ -967,6 +1006,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       <canvas
         ref={canvasRef}
         style={{ cursor }}
+        onMouseDown={noShiftTextSelect}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}

@@ -25,6 +25,9 @@ export const KEY_ZOOM_STEP = 1.25;
 /** How far an arrow key pans, in screen pixels. */
 export const KEY_PAN_STEP = 80;
 
+/** Which way each arrow key points on screen: [across, down]. With something selected the arrow keys nudge it this way; otherwise they pan the view. */
+export const ARROW_DIRECTION: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+
 /** What a key press means for the view, or null if it isn't a view key. */
 export function viewKeyAction(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }): ViewKeyAction | null {
   if (e.altKey) return null;

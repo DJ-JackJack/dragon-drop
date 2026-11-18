@@ -417,13 +417,24 @@ try {
     await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ timeout: 10000 });
     await page.keyboard.press("Delete");
     await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ state: "detached", timeout: 10000 });
+    // arrow keys nudge the selected place (three quick presses are one undo step); with nothing selected they move the view instead
+    await page.getByTestId("places").getByText("Test Harbour", { exact: true }).click();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    await page.getByTestId("history").getByText("Nudge Test Harbour").waitFor({ timeout: 10000 });
+    await page.waitForTimeout(600);
+    if ((await page.getByTestId("history").getByText("Nudge Test Harbour").count()) !== 1) fail("three quick arrow presses should be one nudge");
+    await page.keyboard.press("Control+z");
+    await page.getByTestId("history").getByText("Undo: Nudge Test Harbour").waitFor({ timeout: 10000 });
     // several at once: with the Select tool, Shift-drag a box round the whole map: every place and label in it joins the group; Delete removes them in one step, Undo brings them back
     await page.getByRole("button", { name: "Select", exact: true }).click();
     await page.keyboard.down("Shift");
-    await page.mouse.move(wb.x + 20, wb.y + 20);
+    // (starting clear of the "Selected: ..." bar over the map's top-left corner, and of the Export and Fit buttons at the bottom right)
+    await page.mouse.move(wb.x + 20, wb.y + 170);
     await page.mouse.down();
     await page.mouse.move(wb.x + wb.width / 2, wb.y + wb.height / 2, { steps: 5 });
-    await page.mouse.move(wb.x + wb.width - 20, wb.y + wb.height - 20, { steps: 5 });
+    await page.mouse.move(wb.x + wb.width - 20, wb.y + wb.height - 90, { steps: 5 });
     await page.mouse.up();
     await page.keyboard.up("Shift");
     await page.getByTestId("world-group").waitFor({ timeout: 5000 });
@@ -550,6 +561,34 @@ try {
       await page.keyboard.press("Control+z");
       await page.getByTestId("history").getByText("Undo: Add light").first().waitFor({ timeout: 10000 });
       await page.keyboard.press("Escape");
+    }
+    // arrow keys: with the torch selected they nudge it (quick presses are one undo step); with nothing selected they move the view
+    {
+      const sigB = () => page.evaluate(() => {
+        const c = document.querySelector('[data-testid="battle-canvas"]');
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let h = 0;
+        for (let i = 0; i < d.length; i += 4 * 211) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
+        return h;
+      });
+      await page.getByTestId("btool-select").click();
+      await click(12, 7);
+      await page.getByTestId("light-radius").waitFor({ timeout: 5000 });
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.getByTestId("history").getByText("Nudge light").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(600);
+      if ((await page.getByTestId("history").getByText("Nudge light").count()) !== 1) fail("two quick arrow presses should be one nudge");
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Nudge light").waitFor({ timeout: 10000 });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+      const before = await sigB();
+      await page.keyboard.press("ArrowLeft");
+      await page.waitForTimeout(300);
+      if ((await sigB()) === before) fail("an arrow key with nothing selected didn't move the view");
+      await page.keyboard.press("0"); // fit again, as the rest of the test expects
+      await page.waitForTimeout(300);
     }
     // the light level: Dim darkens the map except where the torch reaches; Bright restores it
     const lum = async (x, y) => {

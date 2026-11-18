@@ -567,6 +567,8 @@ Tell me if an Auto backup never appears, if the list fills up with them, or if R
 8. Select several: in a battlemap with the Select tool, drag a box round a few objects and lights on bare floor. **Expect** a box that follows the pointer, a "N things selected" panel on the left that says what they are, and gold outlines on each. Drag one of them: **Expect** all of them to move, snapping as they would one at a time (hold **Alt** to move anywhere), as one undo step ("Move N items"). Press **Delete**: all are removed in one step. **Shift**-click adds one, or takes one out. Click bare ground: nothing is selected.
 9. Same on a world map: with the Select tool, **Shift**-drag a box round several places and labels. **Expect** a note at the bottom-left ("N places and labels selected"), then drag one to move them all and **Delete** to remove them. A plain drag on bare ground still moves the view.
 
+10. Arrow keys: select a place (or, in a battlemap, an object or a light) and tap an **arrow key** a few times quickly. **Expect** it to move a little each time and to be one undo step ("Nudge ..."). Hold **Shift** for bigger steps. Press **Esc** to clear the selection: the arrow keys now move the view.
+
 Tell me about any key you expected to work and didn't, and any that did something you didn't expect.
 
 ## 15. What's not built yet (so you don't report it as a bug)

@@ -4,14 +4,15 @@
  * editor sends as a single command: one undo step for the whole group.
  *
  * What a group can hold: on a battlemap walls, lights, objects, room notes and light zones; on a world map places and labels.
+ * Regions and roads/borders (world maps) can be moved and deleted as part of a group too, but not copied or selected by a box.
  * Positions are in whatever unit the map uses (squares on a battlemap, map px on a world map); the caller says which with `bounds`.
  */
 import {
-  type Features, type FeaturesPatch, type MapAmbientZone, type MapLabel, type MapLight, type MapNote, type MapProp, type MapWall, type Place,
+  type ClimateRegion, type Features, type FeaturesPatch, type MapAmbientZone, type MapLabel, type MapLight, type MapLine, type MapNote, type MapProp, type MapWall, type Place,
   moveLabel, newFeatureId,
 } from "./features.ts";
 
-export type FeatureKind = "wall" | "light" | "prop" | "note" | "zone" | "place" | "label";
+export type FeatureKind = "wall" | "light" | "prop" | "note" | "zone" | "place" | "label" | "region" | "line";
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 
@@ -44,6 +45,8 @@ export function featureKindOf(f: Features, id: string): FeatureKind | null {
   if (f.zones?.some((x) => x.id === id)) return "zone";
   if (f.places.some((x) => x.id === id)) return "place";
   if (f.labels.some((x) => x.id === id)) return "label";
+  if (f.regions?.some((x) => x.id === id)) return "region";
+  if (f.lines?.some((x) => x.id === id)) return "line";
   return null;
 }
 
@@ -57,6 +60,8 @@ export function featuresBounds(f: Features, ids: string[]): Box | null {
     const kind = featureKindOf(f, id);
     if (kind === "wall") for (const [x, y] of f.walls!.find((w) => w.id === id)!.points) add(x, y);
     else if (kind === "zone") for (const [x, y] of f.zones!.find((z) => z.id === id)!.points) add(x, y);
+    else if (kind === "region") for (const [x, y] of f.regions!.find((r) => r.id === id)!.polygon) add(x, y);
+    else if (kind === "line") for (const [x, y] of f.lines!.find((l) => l.id === id)!.points) add(x, y);
     else if (kind === "label") {
       const l = f.labels.find((x) => x.id === id)!;
       if (l.path?.length) for (const [x, y] of l.path) add(x, y);
@@ -94,6 +99,8 @@ function shifted(f: Features, id: string, dx: number, dy: number): { kind: Featu
     case "note": { const n = f.notes!.find((x) => x.id === id)!; return { kind, item: { ...n, x: n.x + dx, y: n.y + dy } satisfies MapNote }; }
     case "place": { const p = f.places.find((x) => x.id === id)!; return { kind, item: { ...p, x: p.x + dx, y: p.y + dy } satisfies Place }; }
     case "label": return { kind, item: moveLabel(f.labels.find((x) => x.id === id)!, dx, dy) };
+    case "region": { const r = f.regions!.find((x) => x.id === id)!; return { kind, item: { ...r, polygon: sh(r.polygon) } satisfies ClimateRegion }; }
+    case "line": { const l = f.lines!.find((x) => x.id === id)!; return { kind, item: { ...l, points: sh(l.points) } satisfies MapLine }; }
   }
 }
 
@@ -107,6 +114,8 @@ function intoPatch(patch: FeaturesPatch, kind: FeatureKind, item: unknown) {
     case "note": (patch.upsertNotes ??= []).push(item as MapNote); break;
     case "place": (patch.upsertPlaces ??= []).push(item as Place); break;
     case "label": (patch.upsertLabels ??= []).push(item as MapLabel); break;
+    case "region": (patch.upsertRegions ??= []).push(item as ClimateRegion); break;
+    case "line": (patch.upsertLines ??= []).push(item as MapLine); break;
   }
 }
 
@@ -139,6 +148,8 @@ export function deleteFeatures(f: Features, ids: string[]): FeaturesPatch {
       case "zone": (patch.removeZones ??= []).push(id); break;
       case "place": (patch.removePlaces ??= []).push(id); break;
       case "label": (patch.removeLabels ??= []).push(id); break;
+      case "region": (patch.removeRegions ??= []).push(id); break;
+      case "line": (patch.removeLines ??= []).push(id); break;
     }
   }
   return patch;

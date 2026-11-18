@@ -147,6 +147,34 @@ describe("moving a group", () => {
   });
 });
 
+describe("regions and roads in a group", () => {
+  const withShapes = (): Features => ({
+    ...world(),
+    regions: [{ id: "r1", name: "Frost", polygon: [[10, 10], [30, 10], [30, 30]], temperature: 0.1 }],
+    lines: [{ id: "r2", kind: "road", name: "King's Road", points: [[0, 0], [50, 40]] }],
+  });
+
+  it("are known by kind, measured, moved and deleted with the rest", () => {
+    const f = withShapes();
+    expect(featureKindOf(f, "r1")).toBe("region");
+    expect(featureKindOf(f, "r2")).toBe("line");
+    expect(featuresBounds(f, ["r1", "r2"])).toEqual({ x0: 0, y0: 0, x1: 50, y1: 40 });
+    const g = applyFeaturesPatch(f, moveFeatures(f, ["r1", "r2", "p1"], 5, -3).patch);
+    expect(g.regions![0]).toMatchObject({ name: "Frost", temperature: 0.1, polygon: [[15, 7], [35, 7], [35, 27]] });
+    expect(g.lines![0]).toMatchObject({ kind: "road", name: "King's Road", points: [[5, -3], [55, 37]] });
+    expect(g.places.find((p) => p.id === "p1")).toMatchObject({ x: 105, y: 97 });
+    const h = applyFeaturesPatch(f, deleteFeatures(f, ["r1", "r2"]));
+    expect(h.regions).toEqual([]);
+    expect(h.lines).toEqual([]);
+  });
+
+  it("are not copied, and a box doesn't take them", () => {
+    const f = withShapes();
+    expect(copyFeatures(f, ["r1", "r2"])).toBeNull();
+    expect(boxSelect(f, { x0: 0, y0: 0, x1: 500, y1: 500 }, ["place", "label"]).sort()).toEqual(["l1", "l2", "p1", "p2"]);
+  });
+});
+
 describe("deleting a group", () => {
   it("removes each id from the list for its kind, in one patch", () => {
     const f = battle();

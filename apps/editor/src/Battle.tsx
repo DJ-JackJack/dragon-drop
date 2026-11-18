@@ -8,8 +8,9 @@ import {
   type BattleSpec, type Features, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
   CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
-import { type FeatureClip, type ViewKeyAction, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { getClip, setClip, unstack } from "./clipboard.ts";
+import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
@@ -152,6 +153,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
   const lastClick = useRef<{ t: number; x: number; y: number } | null>(null);
   /** Things being dragged: which, and how far (squares) from where they started. */
   const moveGroup = useRef<{ ids: string[]; dx: number; dy: number } | null>(null);
+  const nudgeTimer = useRef<number | undefined>(undefined);
   const paintToken = useRef(0);
   const metaRef = useRef(meta); metaRef.current = meta;
   const featRef = useRef(features); featRef.current = features;
@@ -326,6 +328,38 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     if (!clip) return false;
     pasteGroup(clip, 1, 1, "Duplicate");
     return true;
+  }
+
+  /**
+   * An arrow key with something selected: nudge it. Presses within a third of a second add up (the move is previewed as it grows) and are
+   * sent as one command, so holding a key down is one undo step, not dozens. Returns whether it took the key.
+   */
+  function nudge(ax: number, ay: number, big: boolean): boolean {
+    const f = featRef.current, spec = metaRef.current?.battle, ids = selectedIds();
+    if (!spec || !ids.length) return false;
+    if (drag.current) return true; // (the mouse is dragging something: leave it alone)
+    const onlyObjects = ids.every((id) => f.props?.some((pr) => pr.id === id));
+    const step = big ? 1 : onlyObjects ? 0.25 : 0.5; // a square with Shift; else the snap the thing has when dragged
+    const pending = moveGroup.current && moveGroup.current.ids.length === ids.length && moveGroup.current.ids.every((id, i) => id === ids[i]) ? moveGroup.current : null;
+    if (moveGroup.current && !pending) commitNudge(); // (the selection changed with a nudge still waiting: send that one first)
+    const r = moveFeatures(f, ids, (pending?.dx ?? 0) + ax * step, (pending?.dy ?? 0) + ay * step, { w: spec.squaresX, h: spec.squaresY });
+    moveGroup.current = { ids, dx: r.dx, dy: r.dy };
+    requestDraw();
+    window.clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = window.setTimeout(commitNudge, 350);
+    return true;
+  }
+
+  function commitNudge() {
+    window.clearTimeout(nudgeTimer.current);
+    const mg = moveGroup.current, spec = metaRef.current?.battle, f = featRef.current;
+    moveGroup.current = null;
+    requestDraw();
+    if (!mg || !spec) return;
+    const r = moveFeatures(f, mg.ids, mg.dx, mg.dy, { w: spec.squaresX, h: spec.squaresY });
+    if (!r.dx && !r.dy) return;
+    const kind = mg.ids.length === 1 ? featureKindOf(f, mg.ids[0]) : null;
+    sendFeatures(r.patch, mg.ids.length > 1 ? `Nudge ${mg.ids.length} items` : kind === "light" ? "Nudge light" : kind === "prop" ? "Nudge object" : kind === "wall" ? "Nudge wall piece" : kind === "zone" ? "Nudge light zone" : "Nudge note");
   }
 
   /** + - 0 and the arrow keys move the view (see core's viewKeys.ts). */
@@ -533,7 +567,8 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
       altRef.current = e.altKey;
       if (e.code === "Space" && !typing(e)) { setSpaceDown(true); e.preventDefault(); }
       const view = typing(e) ? null : viewKeyAction(e);
-      if (view) { e.preventDefault(); keyView(view); }
+      // (arrow keys nudge what is selected; they move the view only when nothing is)
+      if (view && !(view.kind === "pan" && selectedIds().length)) { e.preventDefault(); keyView(view); }
     };
     const ku = (e: KeyboardEvent) => { altRef.current = e.altKey; if (e.code === "Space") setSpaceDown(false); };
     const keys = (e: KeyboardEvent) => {
@@ -558,6 +593,8 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         requestDraw();
         return;
       }
+      const arrow = ARROW_DIRECTION[e.key];
+      if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey && nudge(arrow[0], arrow[1], e.shiftKey)) { e.preventDefault(); return; }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
         if (k === "c") { if (copySelection()) e.preventDefault(); return; }
@@ -679,6 +716,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     if (!m?.battle || !store.heights) return;
     const p = local(e), v = viewRef.current, o = uiRef.current;
     canvasRef.current!.setPointerCapture(e.pointerId);
+    if (moveGroup.current && !drag.current) commitNudge(); // (a nudge still waiting goes first, so it can't be mistaken for this drag)
     const q = toSq(p.x, p.y);
     if (e.button === 1 || e.button === 2 || o.tool === "pan" || spaceRef.current) {
       drag.current = { mode: "pan", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: 0, ay: 0, lastX: 0, lastY: 0 };
@@ -884,7 +922,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     <div className="mapview" ref={wrapRef}>
       <canvas
         ref={canvasRef} style={{ cursor }} data-testid="battle-canvas"
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        onMouseDown={noShiftTextSelect} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
         onPointerLeave={() => { pointer.current = null; setHover(null); requestDraw(); }}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
