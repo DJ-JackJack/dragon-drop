@@ -141,9 +141,13 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               Port {s.defaultPort} is already used by another program (most likely an older copy of this app still running, such as a <code>pnpm start</code> window), so this one is using {s.port}. Close the other one and reopen Dragon Drop to get back to {s.defaultPort}; the command below uses the right number either way.
             </p>
           )}
-          <p className="muted">Map tools address (for tools other than Claude Code):</p>
+          <p className="muted">Map tools address (for tools other than Claude Code), sent with the header below (it holds your access key):</p>
           <code className="copyline" data-testid="mcp-url">{s?.mcpUrl ?? ""}</code>
-          <div className="row end"><button onClick={() => void navigator.clipboard.writeText(s?.mcpUrl ?? "")}>Copy</button></div>
+          <code className="copyline" data-testid="mcp-header">Authorization: Bearer (your access key)</code>
+          <div className="row end">
+            <button onClick={() => void navigator.clipboard.writeText(s?.mcpUrl ?? "")}>Copy address</button>
+            <button onClick={() => void navigator.clipboard.writeText(s?.mcpHeader ?? "")}>Copy header</button>
+          </div>
           <p className="muted">For Claude Code, the Open Claude Code button sets everything up for you. To use it from your own terminal instead (it must be running), run this once in PowerShell (not inside Claude Code; type /exit first if you are):</p>
           <code className="copyline" data-testid="mcp-command">{s?.mcpCommandShown ?? ""}</code>
           <div className="row end"><button onClick={() => void navigator.clipboard.writeText(cmd)}>Copy</button></div>

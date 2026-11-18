@@ -2,7 +2,7 @@
 interface DragonDropBridge {
   platform: string;
   version: string;
-  getSettings(): Promise<{ version: string; projectsDir: string; hasApiKey: boolean; port: number; defaultPort: number; autoUpdate: boolean; assetsDir: string | null; mcpUrl: string; mcpCommand: string; mcpCommandShown: string; terminalCommand: string; logDir: string; encrypted: boolean } | null>;
+  getSettings(): Promise<{ version: string; projectsDir: string; hasApiKey: boolean; port: number; defaultPort: number; autoUpdate: boolean; assetsDir: string | null; mcpUrl: string; mcpCommand: string; mcpCommandShown: string; mcpHeader: string; terminalCommand: string; logDir: string; encrypted: boolean } | null>;
   setApiKey(key: string): Promise<boolean>;
   chooseProjectsFolder(): Promise<string | null>;
   chooseAssetsFolder(): Promise<string | null>;

@@ -536,7 +536,7 @@ function startTerminal({ cols, rows, resume }) {
     proc.onExit(({ exitCode }) => {
       if (term === proc) { termAlive = false; term = null; }
       // a killed Claude may never send its own SessionEnd, and a stale "idle" would let Assist type into the next program
-      void fetch(`http://127.0.0.1:${port}${HOOK_PATH}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionEnd" }) }).catch(() => {});
+      void fetch(`http://127.0.0.1:${port}${HOOK_PATH}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${settings.accessToken}` }, body: JSON.stringify({ hook_event_name: "SessionEnd" }) }).catch(() => {});
       sendToEditor("dd:term-exit", exitCode);
     });
     return { ok: true, workspace, claudePath, command: custom };
@@ -619,6 +619,7 @@ ipcMain.handle("dd:settings", (e) => {
     mcpCommand: `claude mcp add --transport http --scope user mapmaker http://127.0.0.1:${port}/mcp --header "Authorization: Bearer ${settings.accessToken}"`,
     mcpCommandShown: `claude mcp add --transport http --scope user mapmaker http://127.0.0.1:${port}/mcp --header "Authorization: Bearer (your access key)"`,
     logDir: path.dirname(logFile()), encrypted: safeStorage.isEncryptionAvailable(),
+    mcpHeader: `Authorization: Bearer ${settings.accessToken}`, // other assistants send this with every request to the map tools
     terminalCommand: settings.terminalCommand || "",
   };
 });
