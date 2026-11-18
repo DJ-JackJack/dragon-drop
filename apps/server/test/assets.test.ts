@@ -12,7 +12,7 @@ import { createAppServer } from "../src/http.ts";
 import { ProjectStore } from "../src/store.ts";
 
 const root = mkdtempSync(path.join(tmpdir(), "dd-assets-"));
-const packsDir = path.join(root, "Dungeondraft Assets");
+const packsDir = path.join(root, "Asset Library");
 const cacheDir = path.join(root, "cache");
 mkdirSync(path.join(packsDir, "extras"), { recursive: true });
 
@@ -32,24 +32,24 @@ const table = png(512, 256, [150, 100, 50, 255]);
 const grass = png(1024, 1024, [60, 140, 60, 255]);
 
 beforeAll(() => {
-  pack(path.join(packsDir, "Furniture.dungeondraft_pack"), { name: "Furniture Pack", id: "AAAA1111", version: "1", author: "Someone" }, [
+  pack(path.join(packsDir, "Furniture.example_pack"), { name: "Furniture Pack", id: "AAAA1111", version: "1", author: "Someone" }, [
     { path: "textures/objects/Oak_Table.png", data: table },
     { path: "textures/objects/chair_01.png", data: png(256, 256, [90, 60, 30, 255]) },
     { path: "textures/terrain/grass.png", data: grass },
     { path: "textures/walls/stone.png", data: png(64, 64, [100, 100, 100, 255]) },
     { path: "textures/objects/lamp.webp", data: new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]) },
-    { path: "data/default.dungeondraft_tags", data: json({ tags: { Seating: ["res://textures/objects/chair_01.png"], Tables: ["textures/objects/Oak_Table.png"] }, sets: {} }) },
-    { path: "data/walls/stone.dungeondraft_wall", data: json({ path: "res://textures/walls/stone.png" }) },
+    { path: "data/default.example_tags", data: json({ tags: { Seating: ["res://textures/objects/chair_01.png"], Tables: ["textures/objects/Oak_Table.png"] }, sets: {} }) },
+    { path: "data/walls/stone.example_wall", data: json({ path: "res://textures/walls/stone.png" }) },
   ]);
   // two copies of the same pack: the newer version should win
-  pack(path.join(packsDir, "extras", "Rocks v1.dungeondraft_pack"), { name: "Rocks", id: "BBBB2222", version: "3.58-002" }, [{ path: "textures/objects/rock_a.png", data: png(256, 256, [90, 90, 90, 255]) }]);
-  pack(path.join(packsDir, "extras", "Rocks v2.dungeondraft_pack"), { name: "Rocks", id: "BBBB2222", version: "3.59-005" }, [
+  pack(path.join(packsDir, "extras", "Rocks v1.example_pack"), { name: "Rocks", id: "BBBB2222", version: "3.58-002" }, [{ path: "textures/objects/rock_a.png", data: png(256, 256, [90, 90, 90, 255]) }]);
+  pack(path.join(packsDir, "extras", "Rocks v2.example_pack"), { name: "Rocks", id: "BBBB2222", version: "3.59-005" }, [
     { path: "textures/objects/rock_a.png", data: png(256, 256, [90, 90, 90, 255]) }, { path: "textures/objects/rock_b.png", data: png(256, 256, [80, 80, 80, 255]) },
   ]);
-  // the author doesn't allow use outside Dungeondraft
-  pack(path.join(packsDir, "Locked.dungeondraft_pack"), { name: "Locked Pack", id: "CCCC3333", allow_3rd_party_mapping_software: false }, [{ path: "textures/objects/secret.png", data: png(128, 128, [200, 0, 0, 255]) }]);
+  // the author doesn't allow use in other mapping programs
+  pack(path.join(packsDir, "Locked.example_pack"), { name: "Locked Pack", id: "CCCC3333", allow_3rd_party_mapping_software: false }, [{ path: "textures/objects/secret.png", data: png(128, 128, [200, 0, 0, 255]) }]);
   // a damaged file, and a file that isn't a pack
-  writeFileSync(path.join(packsDir, "Broken.dungeondraft_pack"), new Uint8Array(400).fill(7));
+  writeFileSync(path.join(packsDir, "Broken.example_pack"), new Uint8Array(400).fill(7));
   writeFileSync(path.join(packsDir, "notes.txt"), "hello");
 });
 
@@ -73,7 +73,7 @@ describe("asset library", () => {
     await lib.scan();
     const st = lib.status();
     expect(st).toMatchObject({ packs: 4, usablePacks: 2, restricted: 1, scanning: false });
-    expect(st.errors.map((e) => path.basename(e.file))).toEqual(["Broken.dungeondraft_pack"]);
+    expect(st.errors.map((e) => path.basename(e.file))).toEqual(["Broken.example_pack"]);
     const names = lib.packList().map((p) => `${p.name}${p.supersededBy ? "*" : ""}${p.restricted ? "!" : ""}`);
     expect(names.sort()).toEqual(["Furniture Pack", "Locked Pack!", "Rocks", "Rocks*"].sort());
     const rocks = lib.packList().find((p) => p.name === "Rocks" && !p.supersededBy)!;
@@ -122,7 +122,7 @@ describe("asset library", () => {
     await again.close();
     const dir2 = path.join(root, "changing");
     mkdirSync(dir2, { recursive: true });
-    const file = path.join(dir2, "Changing.dungeondraft_pack");
+    const file = path.join(dir2, "Changing.example_pack");
     pack(file, { name: "Changing", id: "DDDD4444", version: "1" }, [{ path: "textures/objects/chair.png", data: png(256, 256, [1, 2, 3, 255]) }]);
     const lib2 = new AssetLibrary(dir2, cacheDir);
     await lib2.scan();
@@ -141,7 +141,7 @@ describe("asset library", () => {
     expect(r).toContain("older copy, superseded by");
     expect(r).toContain("PACKS THAT COULDN'T BE READ");
     expect(r).toContain("textures/objects");
-    expect(r).toContain("dungeondraft_wall");
+    expect(r).toContain("example_wall");
     expect(r).toContain("sample PNG sizes");
   });
 });

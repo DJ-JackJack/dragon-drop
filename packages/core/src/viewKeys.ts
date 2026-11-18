@@ -3,8 +3,7 @@
  *   + or =        zoom in            - or _      zoom out         (about the middle of the view)
  *   0 or Ctrl+0   fit the map to the window
  *   arrow keys    pan the view (Shift: three times as far)
- * These are the keys other map programs use (Azgaar's generator, Dungeon Scrawl and Foundry all zoom from the keyboard, and Wonderdraft
- * fits the map with Ctrl+0). Anything with Alt, or Ctrl/Cmd on a key other than 0, is left alone: those belong to the browser and the app.
+ * These are the keys other map programs use (zooming from the keyboard and fitting the map with Ctrl+0 are common, see docs/CONTROLS.md). Anything with Alt, or Ctrl/Cmd on a key other than 0, is left alone: those belong to the browser and the app.
  */
 
 export interface ViewTransform {

@@ -26,7 +26,7 @@ export interface ToolContext {
   listProjects(): ProjectInfo[];
   openProject(id: string): Promise<void>;
   createProject(o: { name: string; width: number; height: number; kmPerPx: number }): Promise<ProjectInfo>;
-  /** Optional: the user's Dungeondraft asset packs (present when a folder is set). */
+  /** Optional: the user's asset library (present when a folder is set). */
   assets?: {
     status(): { scanning: boolean; scanned: number; total: number; usablePacks: number; files: number };
     search(o: { q?: string; cat?: string; pack?: string; offset?: number; limit?: number }): Promise<{ total: number; items: AssetItem[] }>;

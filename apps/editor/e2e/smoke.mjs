@@ -18,8 +18,8 @@ const tmp = mkdtempSync(path.join(tmpdir(), "mapmaker-e2e-"));
 // (the projects folder starts empty: the server makes its generated "First Map", the same map a new install starts with)
 const shots = process.env.E2E_SHOTS ?? tmp;
 
-// a small Dungeondraft pack for the asset browser (generated here; nothing from a real pack)
-const assetsDir = path.join(tmp, "Dungeondraft Assets");
+// a small asset pack file for the asset browser (generated here; nothing from a real pack)
+const assetsDir = path.join(tmp, "Assets");
 {
   const { PNG } = createRequire(path.join(root, "packages/tools/package.json"))("pngjs");
   const { mkdirSync, writeFileSync } = await import("node:fs");
@@ -45,7 +45,7 @@ const assetsDir = path.join(tmp, "Dungeondraft Assets");
   files.forEach((f, i) => { u32(names[i].length + pad(names[i].length, 4)); out.set(names[i], at); at += names[i].length + pad(names[i].length, 4); u64(offsets[i]); u64(f.data.length); at += 16; });
   files.forEach((f, i) => out.set(f.data, offsets[i]));
   mkdirSync(assetsDir, { recursive: true });
-  writeFileSync(path.join(assetsDir, "E2E.dungeondraft_pack"), out);
+  writeFileSync(path.join(assetsDir, "E2E.test_pack"), out);
   // a rough sketch (green land on blue sea) to attach as a reference: the generated first map has none of its own
   const sk = new PNG({ width: 256, height: 256 });
   for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {

@@ -14,7 +14,7 @@ export interface Config {
   host: string;
   projectsDir: string;
   editorDist: string;
-  /** Folder with Dungeondraft packs (read in place), or null. */
+  /** Folder with the user's asset library: folders of pictures, zip files and pack files (read in place), or null. */
   assetsDir: string | null;
   /** Where indexes and thumbnails are cached. */
   cacheDir: string;

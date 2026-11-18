@@ -74,11 +74,11 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
         </fieldset>
 
         <fieldset disabled={!!busy}>
-          <legend>Dungeondraft assets</legend>
-          <p className="muted" style={{ wordBreak: "break-all" }} data-testid="assets-dir">{s?.assetsDir ?? "Not set. Choose the folder that holds your .dungeondraft_pack files; they are read where they are and never copied."}</p>
+          <legend>Asset library</legend>
+          <p className="muted" style={{ wordBreak: "break-all" }} data-testid="assets-dir">{s?.assetsDir ?? "Not set. Choose the folder that holds your assets (folders of pictures, .zip files or asset packs, in any mix); they are read where they are and never copied."}</p>
           {assets?.configured && (
             <p className="muted" data-testid="assets-status">
-              {assets.scanning ? `Reading packs… ${assets.scanned} of ${assets.total}` : `${assets.packs} packs read: ${assets.usablePacks} usable (${assets.files.toLocaleString()} files)`}
+              {assets.scanning ? `Reading assets… ${assets.scanned} of ${assets.total}` : `${assets.packs} packs read: ${assets.usablePacks} usable (${assets.files.toLocaleString()} files)`}
               {assets.restricted > 0 && `, ${assets.restricted} not used because their authors don't allow other programs`}
               {assets.errors.length > 0 && `, ${assets.errors.length} couldn't be read`}.
             </p>
@@ -86,7 +86,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
           <div className="row end">
             {s?.assetsDir && <button onClick={() => void run("Removing…", async () => { await bridge.clearAssetsFolder(); })}>Remove</button>}
             {s?.assetsDir && <button onClick={() => void fetch("/api/assets/rescan", { method: "POST" })}>Rescan</button>}
-            {s?.assetsDir && <button onClick={() => void fetch("/api/assets/report").then((r) => r.text()).then((t) => navigator.clipboard.writeText(t)).then(() => setCopied(true))} title="Copies a description of what's inside your packs, to send to whoever is improving Dragon Drop">{copied ? "Copied" : "Copy report"}</button>}
+            {s?.assetsDir && <button onClick={() => void fetch("/api/assets/report").then((r) => r.text()).then((t) => navigator.clipboard.writeText(t)).then(() => setCopied(true))} title="Copies a description of what's inside your asset library, to send to whoever is improving Dragon Drop">{copied ? "Copied" : "Copy report"}</button>}
             <button className="primary" onClick={() => void run("Switching…", async () => { await bridge.chooseAssetsFolder(); })}>{s?.assetsDir ? "Change…" : "Choose folder…"}</button>
           </div>
         </fieldset>

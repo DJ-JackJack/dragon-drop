@@ -64,7 +64,7 @@ export class Hub {
   /** Clients that only want JSON (the phone viewer): no heightmap or derived-layer frames. */
   private lite = new WeakSet<WebSocket>();
   private opening: Promise<void> = Promise.resolve();
-  /** The user's Dungeondraft packs, when a folder is configured. */
+  /** The user's asset library, when a folder is configured. */
   assets: AssetLibrary | null = null;
   /** Texture noise kept on disk, served to the editor (none in tests that don't want it). */
   noise: NoiseStore | null = null;

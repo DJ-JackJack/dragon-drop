@@ -1,4 +1,7 @@
-/** Asset packs (Dungeondraft .dungeondraft_pack): ids, categories and how they plug into a battlemap. */
+/**
+ * Asset libraries: ids, categories and how assets plug into a battlemap. An asset comes from a "pack", which is any of
+ * a folder of images, a .zip file of images, or a pack file made by another map tool (a Godot-style archive; see pck.ts).
+ */
 
 export type AssetCategory = "objects" | "terrain" | "walls" | "paths" | "portals" | "roofs" | "patterns" | "lights" | "other" | "data";
 
@@ -6,7 +9,7 @@ export const ASSET_CATEGORIES: AssetCategory[] = ["objects", "terrain", "walls",
 
 export const IMAGE_EXT = /\.(png|webp|jpe?g)$/i;
 
-/** Dungeondraft draws one grid square as 256 px; an object image's size in squares is its pixels / 256. */
+/** Objects are drawn at 256 px per grid square, the usual size of tabletop map art: an image's size in squares is its pixels / 256 (a scale of 1). */
 export const PROP_PX_PER_SQUARE = 256;
 
 /** Floor material ids at or above this refer to the battlemap's palette (pack textures). */
@@ -31,22 +34,29 @@ export function parseAssetId(id: string): { pack: string; path: string } | null 
   return { pack: id.slice(0, i), path: id.slice(i + 1) };
 }
 
+/**
+ * Folder names that say what kind of asset is inside, for packs that aren't laid out as textures/<kind>/ (loose folders, zip files):
+ * "Dungeon/Floors/stone.png" is a floor, "Props/barrel.png" an object. The deepest folder that says so wins.
+ */
+const FOLDER_KINDS = new Map<string, AssetCategory>(Object.entries({
+  object: "objects", objects: "objects", prop: "objects", props: "objects", furniture: "objects", item: "objects", items: "objects", decor: "objects", decoration: "objects", decorations: "objects",
+  terrain: "terrain", terrains: "terrain", floor: "terrain", floors: "terrain", flooring: "terrain", tile: "terrain", tiles: "terrain", ground: "terrain",
+  wall: "walls", walls: "walls",
+  path: "paths", paths: "paths", road: "paths", roads: "paths",
+  portal: "portals", portals: "portals", door: "portals", doors: "portals", window: "portals", windows: "portals",
+  roof: "roofs", roofs: "roofs",
+  pattern: "patterns", patterns: "patterns",
+  light: "lights", lights: "lights",
+} as Record<string, AssetCategory>));
+
 export function categoryOf(path: string): AssetCategory {
   const p = path.toLowerCase();
   if (!IMAGE_EXT.test(p)) return "data";
   const m = /^textures\/([^/]+)\//.exec(p);
-  if (!m) return "other";
-  switch (m[1]) {
-    case "objects": return "objects";
-    case "terrain": return "terrain";
-    case "walls": return "walls";
-    case "paths": return "paths";
-    case "portals": return "portals";
-    case "roofs": return "roofs";
-    case "patterns": return "patterns";
-    case "lights": return "lights";
-    default: return "other";
-  }
+  if (m) return FOLDER_KINDS.get(m[1]) ?? "other"; // (pack files made by other map tools keep their textures/<kind>/ layout)
+  const folders = p.split("/").slice(0, -1);
+  for (let i = folders.length - 1; i >= 0; i--) { const k = FOLDER_KINDS.get(folders[i]); if (k) return k; }
+  return "other";
 }
 
 /** A readable name from a file path: "textures/objects/Oak_Table-01.png" -> "Oak Table 01". */

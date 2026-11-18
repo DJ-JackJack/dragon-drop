@@ -1,5 +1,6 @@
 /**
- * Reader for Godot "PCK" archives, which is what Dungeondraft asset packs (.dungeondraft_pack) are.
+ * Reader for Godot "PCK" archives, the pack format that map tools built on the Godot engine use for their asset packs.
+ * It is recognised by its first four bytes ("GDPC"), not by the file's name, so a pack works whatever it is called.
  * Only the index is read up front (a 4 GB pack has an index of a few MB); files are fetched by offset on demand.
  *
  * Layout (Godot 3.x, "format version 1", from core/io/file_access_pack.cpp):
@@ -29,6 +30,11 @@ export interface PckInfo {
 }
 
 export const PCK_MAGIC = 0x43504447; // "GDPC" little endian
+
+/** Whether these first bytes are a pack file's signature. */
+export function isPckSignature(head: Uint8Array): boolean {
+  return head.length >= 4 && (head[0] | (head[1] << 8) | (head[2] << 16) | (head[3] << 24)) >>> 0 === PCK_MAGIC;
+}
 
 /** Sequential reader that fetches the index in large chunks. */
 class Cursor {
@@ -70,7 +76,7 @@ const MAX_FILES = 5_000_000;
 export async function readPck(ra: RandomAccess): Promise<PckInfo> {
   if (ra.size < 100) throw new Error("This file is too small to be an asset pack.");
   const c = new Cursor(ra, 0);
-  if ((await c.u32()) !== PCK_MAGIC) throw new Error("This isn't a Godot/Dungeondraft pack (it doesn't start with GDPC).");
+  if ((await c.u32()) !== PCK_MAGIC) throw new Error("This isn't a pack file Dragon Drop can read (it doesn't start with GDPC).");
   const formatVersion = await c.u32();
   const major = await c.u32();
   const minor = await c.u32();
@@ -118,7 +124,7 @@ export function memoryAccess(bytes: Uint8Array): RandomAccess {
   return { size: bytes.length, read: async (o, n) => bytes.subarray(o, Math.min(bytes.length, o + n)) };
 }
 
-/** Write a version-1 PCK (what Godot 3 and Dungeondraft produce). Used by tests and for building sample packs. */
+/** Write a version-1 PCK (what Godot 3 produces). Used by tests and for building sample packs. */
 export function writePck(files: { path: string; data: Uint8Array }[], opts: { align?: number } = {}): Uint8Array {
   const align = opts.align ?? 16;
   const enc = new TextEncoder();
@@ -150,11 +156,4 @@ export function writePck(files: { path: string; data: Uint8Array }[], opts: { al
   });
   files.forEach((f, i) => out.set(f.data, offsets[i]));
   return out;
-}
-
-/** Width and height of a PNG from its first bytes, or null. */
-export function pngSize(b: Uint8Array): { w: number; h: number } | null {
-  if (b.length < 24 || b[0] !== 0x89 || b[1] !== 0x50 || b[2] !== 0x4e || b[3] !== 0x47) return null;
-  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  return { w: dv.getUint32(16), h: dv.getUint32(20) };
 }

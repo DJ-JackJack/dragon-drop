@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CUSTOM_MATERIAL_BASE, MapSession, assetId, assetLabel, categoryOf, createBattleDoc, defaultTileSquares, drawBattleProps, memoryAccess, paintFloor,
-  parseAssetId, pngSize, readPck, readPckFile, renderBattle, renderBattleFloor, writePck, type SpriteData, type TileData,
+  PCK_MAGIC, imageSize, isPckSignature, parseAssetId, pngSize, readPck, readPckFile, renderBattle, renderBattleFloor, writePck, type SpriteData, type TileData,
 } from "../src/index.ts";
 
 const text = (s: string) => new TextEncoder().encode(s);
@@ -11,7 +11,7 @@ describe("pack reader", () => {
     const files = [
       { path: "packs/abc12345.json", data: text('{"name":"Test","id":"abc12345"}') },
       { path: "textures/objects/Chêne table.png", data: new Uint8Array([1, 2, 3, 4, 5]) },
-      { path: "data/default.dungeondraft_tags", data: text("{}") },
+      { path: "data/default.example_tags", data: text("{}") },
     ];
     const bytes = writePck(files);
     const ra = memoryAccess(bytes);
@@ -64,13 +64,68 @@ describe("pack reader", () => {
   });
 });
 
+describe("asset kinds from folder names (loose folders and zip files)", () => {
+  it("reads the kind from the deepest folder that names one, and falls back to 'other'", () => {
+    expect(categoryOf("Dungeon/Floors/stone.png")).toBe("terrain");
+    expect(categoryOf("Props/Furniture/chair.webp")).toBe("objects");
+    expect(categoryOf("Walls/Dungeon/Floors/odd.png")).toBe("terrain"); // the deepest wins
+    expect(categoryOf("Doors/oak.jpg")).toBe("portals");
+    expect(categoryOf("Windows/small.png")).toBe("portals");
+    expect(categoryOf("Roofs/thatch.png")).toBe("roofs");
+    expect(categoryOf("Lights/torch.png")).toBe("lights");
+    expect(categoryOf("tiles/cobble.png")).toBe("terrain");
+    expect(categoryOf("barrel.png")).toBe("other");
+    expect(categoryOf("Stuff/barrel.png")).toBe("other");
+    expect(categoryOf("Floors/readme.txt")).toBe("data"); // not a picture
+    expect(categoryOf("textures/objects/a.png")).toBe("objects"); // the pack-file layout still works
+    expect(categoryOf("textures/floors/a.png")).toBe("terrain");
+  });
+});
+
+describe("image sizes from the first bytes", () => {
+  const u16 = (n: number) => [n & 255, n >> 8];
+  const u16be = (n: number) => [n >> 8, n & 255];
+  const u32 = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const bytes = (...parts: number[][]) => new Uint8Array(parts.flat());
+  const ascii = (s: string) => Array.from(s, (c) => c.charCodeAt(0));
+  const pad = (a: number[], n: number) => [...a, ...new Array(Math.max(0, n - a.length)).fill(0)];
+
+  it("knows PNG, GIF, BMP, WebP (lossy, lossless and extended) and JPEG", () => {
+    expect(imageSize(bytes(pad([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 2, 0x80, 0, 0, 1, 0xe0], 33)))).toEqual({ w: 640, h: 480 });
+    expect(imageSize(bytes(ascii("GIF89a"), u16(3), u16(5), [0, 0]))).toEqual({ w: 3, h: 5 });
+    expect(imageSize(bytes(pad([0x42, 0x4d], 14), u32(40), u32(7), u32(0xfffffff7 >>> 0), pad([], 20)))).toEqual({ w: 7, h: 9 }); // a negative height: rows run top down
+    expect(imageSize(bytes(ascii("RIFF"), u32(100), ascii("WEBP"), ascii("VP8 "), u32(50), [0, 0, 0], [0x9d, 0x01, 0x2a], u16(300), u16(200), pad([], 4)))).toEqual({ w: 300, h: 200 });
+    expect(imageSize(bytes(ascii("RIFF"), u32(100), ascii("WEBP"), ascii("VP8L"), u32(50), [0x2f], u32(511 | (255 << 14)), pad([], 8)))).toEqual({ w: 512, h: 256 });
+    expect(imageSize(bytes(ascii("RIFF"), u32(100), ascii("WEBP"), ascii("VP8X"), u32(10), u32(0), [0x7f, 0x03, 0x00], [0xff, 0x01, 0x00], pad([], 4)))).toEqual({ w: 896, h: 512 });
+    // JPEG: a JFIF segment first, then the frame header (height before width)
+    expect(imageSize(bytes([0xff, 0xd8, 0xff, 0xe0], u16be(16), ascii("JFIF"), [0, 1, 1, 0, 0, 1, 0, 1, 0, 0], [0xff, 0xc0], u16be(17), [8], u16be(480), u16be(640), pad([], 12)))).toEqual({ w: 640, h: 480 });
+  });
+
+  it("answers null for things that are not pictures, truncated files and zero sizes", () => {
+    expect(imageSize(new Uint8Array(0))).toBeNull();
+    expect(imageSize(new Uint8Array(100))).toBeNull();
+    expect(imageSize(bytes(ascii("hello world, this is text"), pad([], 20)))).toBeNull();
+    expect(imageSize(bytes(ascii("RIFF"), u32(0), ascii("WEBP")))).toBeNull(); // a stub
+    expect(imageSize(bytes([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0]))).toBeNull(); // no frame header in what was given
+    expect(imageSize(bytes(ascii("GIF89a"), u16(0), u16(5), [0, 0]))).toBeNull();
+  });
+
+  it("recognises a pack file by its first bytes", () => {
+    expect(isPckSignature(bytes(u32(PCK_MAGIC)))).toBe(true);
+    expect(isPckSignature(bytes(ascii("GDPC"), [1, 0, 0, 0]))).toBe(true);
+    expect(isPckSignature(bytes(ascii("PK"), [3, 4]))).toBe(false);
+    expect(isPckSignature(new Uint8Array(2))).toBe(false);
+  });
+});
+
 describe("asset helpers", () => {
   it("categories, ids, labels, sizes", () => {
     expect(categoryOf("textures/objects/a/b.png")).toBe("objects");
     expect(categoryOf("textures/terrain/grass.PNG")).toBe("terrain");
     expect(categoryOf("textures/walls/w.webp")).toBe("walls");
     expect(categoryOf("textures/mystery/x.png")).toBe("other");
-    expect(categoryOf("data/default.dungeondraft_tags")).toBe("data");
+    expect(categoryOf("textures/constructor/x.png")).toBe("other"); // (a folder name is never looked up as an object property)
+    expect(categoryOf("data/default.example_tags")).toBe("data");
     expect(parseAssetId(assetId("fa-objects", "textures/objects/a:b.png"))).toEqual({ pack: "fa-objects", path: "textures/objects/a:b.png" });
     expect(parseAssetId("nopack")).toBeNull();
     expect(assetLabel("textures/objects/Oak_Table-01.png")).toBe("Oak Table 01");

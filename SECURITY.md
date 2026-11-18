@@ -19,7 +19,7 @@ anyone else; reporters are credited in the release notes if they want to be. Thi
   how the API key is stored, the in-app updater.
 - The local server: its HTTP API, WebSocket and MCP endpoint, the Host/Origin checks and the access token that protects them.
 - The release process: the GitHub workflow that builds and publishes the installer, and the files it publishes.
-- Map files and imported files (images, Dungeondraft packs) that could crash the app or run something they shouldn't.
+- Map files and imported files (images, zip files, asset packs) that could crash the app or run something they shouldn't.
 
 ## What is out of scope
 

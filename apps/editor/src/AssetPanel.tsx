@@ -1,4 +1,4 @@
-/** The Assets tab: browse and search the user's Dungeondraft packs, and pick objects to place or textures to paint with. */
+/** The Assets tab: browse and search the user's asset library, and pick objects to place or textures to paint with. */
 import { useEffect, useRef, useState } from "react";
 import { type AssetItem, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE, defaultTileSquares } from "@mapmaker/core";
 import { type AssetPack, type AssetStatus, assetUrl, fetchAssetStatus, fetchAssets, fetchPacks } from "./assetsApi.ts";
@@ -90,8 +90,8 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
         <div className="assets-empty">
           <p>No asset folder is set up yet.</p>
           {desktop
-            ? <p className="muted">Open <b>Settings</b> (top right) and choose the folder that holds your <code>.dungeondraft_pack</code> files. They're read where they are, never copied.</p>
-            : <p className="muted">Set <code>MAPMAKER_ASSETS_DIR</code> in the <code>.env</code> file to the folder with your <code>.dungeondraft_pack</code> files, then restart.</p>}
+            ? <p className="muted">Open <b>Settings</b> (top right) and choose the folder that holds your assets: folders of pictures (PNG, JPEG or WebP), <code>.zip</code> files or asset pack files, in any mix. They're read where they are, never copied.</p>
+            : <p className="muted">Set <code>MAPMAKER_ASSETS_DIR</code> in the <code>.env</code> file to the folder that holds your assets (pictures, <code>.zip</code> files or asset packs), then restart.</p>}
         </div>
       </div>
     );
@@ -103,7 +103,7 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
       <div className="chat-head">
         <span className="chat-title">Assets</span>
         <span className="muted" style={{ flex: 1 }} data-testid="assets-count">
-          {status?.scanning ? `Reading packs… ${status.scanned}/${status.total}` : `${total.toLocaleString()} found`}
+          {status?.scanning ? `Reading assets… ${status.scanned}/${status.total}` : `${total.toLocaleString()} found`}
         </span>
       </div>
       <div className="assets-controls">
@@ -125,7 +125,7 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
             <span>{it.name}</span>
           </button>
         ))}
-        {!busy && items.length === 0 && <p className="muted assets-none">{status?.scanning ? "Still reading your packs…" : "Nothing found. Try another word, or all packs."}</p>}
+        {!busy && items.length === 0 && <p className="muted assets-none">{status?.scanning ? "Still reading your assets…" : "Nothing found. Try another word, or all packs."}</p>}
         {items.length < total && <button className="ghost assets-more" onClick={() => void load(items.length)} disabled={busy}>{busy ? "Loading…" : `Show more (${(total - items.length).toLocaleString()} left)`}</button>}
       </div>
       <div className="assets-foot">

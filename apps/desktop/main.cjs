@@ -618,7 +618,7 @@ ipcMain.handle("dd:choose-projects", async (e) => {
 });
 ipcMain.handle("dd:choose-assets", async (e) => {
   if (!fromEditor(e)) return null;
-  const r = await dialog.showOpenDialog(win, { title: "Choose your Dungeondraft assets folder (the one holding the .dungeondraft_pack files)", properties: ["openDirectory"] });
+  const r = await dialog.showOpenDialog(win, { title: "Choose your assets folder (folders of pictures, .zip files or asset packs)", properties: ["openDirectory"] });
   if (r.canceled || !r.filePaths[0]) return null;
   settings.assetsDir = r.filePaths[0];
   saveSettings();

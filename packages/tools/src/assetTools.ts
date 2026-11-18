@@ -1,6 +1,6 @@
 /**
- * Claude's tools for the user's Dungeondraft asset packs: find images, look at them, use pack textures as floors
- * and place objects on a battlemap. The packs stay on the user's PC and are read in place.
+ * Claude's tools for the user's asset library: find images, look at them, use textures as floors
+ * and place objects on a battlemap. The pictures stay on the user's PC and are read in place.
  */
 import { z } from "zod";
 import { type PaletteEntry, type RGBAImage, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "@mapmaker/core";
@@ -14,14 +14,14 @@ const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] 
 const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
 const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 
-const NO_ASSETS = "No asset folder is set up. The user can choose their Dungeondraft assets folder in Dragon Drop's Settings.";
+const NO_ASSETS = "No asset folder is set up. The user can choose their assets folder in Dragon Drop's Settings.";
 const squaresOf = (px: number | undefined) => (px ? Math.round((px / PROP_PX_PER_SQUARE) * 100) / 100 : undefined);
 
 export const ASSET_TOOLS = [
   define({
     name: "search_assets",
     description:
-      "Search the user's Dungeondraft asset packs (objects like furniture and trees, terrain textures for floors, walls, paths...). Results give an id to use with add_props or add_floor_texture, " +
+      "Search the user's asset library (objects like furniture and trees, terrain textures for floors, walls, paths...; it can hold folders of pictures, zip files and asset packs). Results give an id to use with add_props or add_floor_texture, " +
       "the pack, the image size and its size in grid squares (pixels / 256). Use view_assets to see what they look like. The search matches names, pack names and tags.",
     schema: z.object({
       query: z.string().max(100).optional().describe("Words to look for, e.g. 'oak table' or 'torch'. All words must match"),

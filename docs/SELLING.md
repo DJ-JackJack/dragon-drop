@@ -31,8 +31,9 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
 - [ ] Licence: the repository is public with no LICENSE file (all rights reserved by default, but anyone can read and fork it). Decide: private repo,
       or public but proprietary. Write an EULA: users own their maps, disclaimers, refunds, no warranty.
 - [ ] Trademark and name search for "Dragon Drop" (USPTO, EUIPO, itch.io, Steam) before building the brand.
-- [ ] "Dungeondraft", "Foundry VTT", "Universal VTT" and "D&D" only as "compatible with" wording. Read Dungeondraft's terms on its asset packs
-      (we read the user's own packs in place and never ship them).
+- [ ] "Foundry VTT", "Universal VTT" and "D&D" only as "compatible with" wording. Other programs' names and logos don't appear in the app, its store page or its screenshots:
+      the asset library is described in general terms (folders of pictures, zip files and asset packs). We read the user's own assets in place and never ship any;
+      tell users to check each pack's licence before publishing maps made with it, and keep honouring a pack's own "not for other mapping programs" flag.
 - [x] The DM's own world map and brief no longer ship in the installer (a new install starts with a generated neutral "First Map") and are not in the repository (the `projects/` folder is gitignored).
 - [ ] **Repository move.** The old repository (`AI-Mapmaker-Build`) still has that map in its history and in old releases, so the project moved to a fresh repository with a single clean commit (`dragon-drop`, 2026-11-18). The updater's address is baked into each installed copy, so it moves in two steps:
       1. [ ] The new repository exists and has the clean tree.

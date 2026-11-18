@@ -366,14 +366,15 @@ Report anything odd, especially: the Windows warning text, anything that looks c
 
 ---
 
-## 14e. Dungeondraft assets
+## 14e. Asset library
 
-1. **Settings → Dungeondraft assets → Choose folder…** and pick `D:\Dungeondraft Assets`. The app restarts its server and the box shows "Reading packs… n of 99", then something like "99 packs read: N usable (… files)". The first read of your biggest packs takes the longest; the next time it's quick. **Tell me the numbers**, and anything that says "couldn't be read" or "not used because their authors don't allow other programs".
-2. Click **Copy report** and paste it into the chat with me (it has no pictures; it's a few hundred lines). **This is the most useful thing you can send**: it shows me how your packs are laid out so I can support walls, paths, doors and roofs next.
+1. **Settings → Asset library → Choose folder…** and pick your assets folder (best: one with a mix, such as a folder of loose PNG or JPEG files, a `.zip` of pictures and an asset pack file if you have one). The app restarts its server and the box shows "Reading assets… n of N", then something like "N packs read: M usable (… files)". A folder, a zip file and a pack file each count as one pack. The first read of your biggest pack files takes the longest; the next time it's quick. **Tell me the numbers**, and anything that says "couldn't be read" or "not used because their authors don't allow other programs".
+2. Click **Copy report** and paste it into the chat with me (it has no pictures; it's a few hundred lines). **This is the most useful thing you can send**: it shows me how your assets are laid out so I can support walls, paths, doors and roofs next.
 3. Open a battlemap (or make one). In the right-hand panel open the **Assets** tab. Try **Objects**: search "table", "torch", "barrel". Thumbnails should appear within a second or two (large images take longer the first time). Click one, then click the map.
 4. Try **Floors**: click a texture. It appears among the floor swatches and the Brush is ready; paint a floor with it. **Tell me how big the pattern looks** (each texture repeats every pixel width / 256 squares by default; if that looks wrong for your packs I'll change the rule).
 5. Object sizes: place a table and a tree. **Tell me if they look too big or small** against the 5 ft grid.
-6. Ask Claude (in the Claude Code panel): *"Search my assets for a wooden table and four chairs, show me them, then furnish the tavern."* It should search, show a contact sheet, place objects, render and check.
+6. Put one more picture into a folder of your library, press **Rescan** in Settings, and search for it in the Assets tab. It should appear. A picture inside a folder named `Floors` should be listed under Floors, one in `Props` under Objects. WebP pictures should show in the panel but will not appear in exports or previews yet (known limit).
+7. Ask Claude (in the Claude Code panel): *"Search my assets for a wooden table and four chairs, show me them, then furnish the tavern."* It should search, show a contact sheet, place objects, render and check.
 7. **⤓ Export** the map: objects and pack floors are in the picture.
 
 ---
@@ -575,7 +576,7 @@ Tell me about any key you expected to work and didn't, and any that did somethin
 
 ## 15. What's not built yet (so you don't report it as a bug)
 
-- Scatter on battlemaps, wall, path, portal and roof graphics from Dungeondraft packs (only floors and objects work), levels (multi-floor). The Universal VTT and Foundry exports exist but are untested (above).
+- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), levels (multi-floor). The Universal VTT and Foundry exports exist but are untested (above).
 - GPU erosion; automatic label placement for sea/region names (place names do place themselves).
 
 ---

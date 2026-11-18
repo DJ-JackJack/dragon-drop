@@ -29,6 +29,7 @@ export * from "./sketch.ts";
 export * from "./battle.ts";
 export * from "./foundryScene.ts";
 export * from "./pck.ts";
+export * from "./imageSize.ts";
 export * from "./assets.ts";
 export * from "./image.ts";
 export * from "./battleTerrain.ts";
