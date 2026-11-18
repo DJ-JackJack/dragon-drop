@@ -1,0 +1,192 @@
+// What each terminal assistant needs to find the map tools: which assistant a start command is, and the files written for it (see assistants.cjs).
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+const require = createRequire(import.meta.url);
+const { KEY_ENV, profileFor, syncAssistantConfigs } = require("../assistants.cjs");
+
+const KEY = "k".repeat(64);
+const URL4747 = "http://127.0.0.1:4747/mcp";
+const folder = () => mkdtempSync(path.join(os.tmpdir(), "dd-assist-"));
+const sync = (dir, profile, port = 4747) => syncAssistantConfigs(dir, { profile, port, key: KEY });
+const read = (dir, ...p) => readFileSync(path.join(dir, ...p), "utf8");
+const json = (dir, ...p) => JSON.parse(read(dir, ...p));
+const put = (dir, rel, text) => { const f = path.join(dir, rel); mkdirSync(path.dirname(f), { recursive: true }); writeFileSync(f, typeof text === "string" ? text : JSON.stringify(text)); };
+/** Every file under a folder, as relative paths. */
+const files = (dir, base = dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name), base) : [path.relative(base, path.join(dir, e.name)).replace(/\\/g, "/")]));
+
+describe("which assistant a start command runs", () => {
+  it("knows the programs by name, with or without a folder, extension or arguments, and `ollama launch`", () => {
+    expect(profileFor("")).toBe("default");
+    expect(profileFor("   ")).toBe("default");
+    expect(profileFor("claude")).toBe("claude");
+    expect(profileFor("claude --model opus")).toBe("claude");
+    expect(profileFor("codex")).toBe("codex");
+    expect(profileFor('"C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd" --full-auto')).toBe("codex");
+    expect(profileFor("gemini")).toBe("gemini");
+    expect(profileFor("agy")).toBe("antigravity");
+    expect(profileFor("antigravity")).toBe("antigravity");
+    expect(profileFor("opencode")).toBe("opencode");
+    expect(profileFor("OpenCode.exe")).toBe("opencode");
+    expect(profileFor("ollama launch claude")).toBe("claude");
+    expect(profileFor("ollama launch codex")).toBe("codex");
+    expect(profileFor("ollama launch opencode")).toBe("opencode");
+  });
+
+  it("says null for anything else, so nothing is written and the person adds the map tools themselves", () => {
+    for (const c of ["npx something", "ollama run llama3", "ollama launch other", "python -m foo", "echo codex", "constructor", "toString"]) expect(profileFor(c)).toBeNull();
+  });
+});
+
+describe("the files written for each assistant", () => {
+  it("Claude Code (typed, or through ollama): .mcp.json, with the key as a variable", () => {
+    const dir = folder();
+    const r = sync(dir, "claude");
+    expect(r).toMatchObject({ assistant: "claude", name: "Claude Code", auto: true, file: ".mcp.json" });
+    expect(json(dir, ".mcp.json").mcpServers.mapmaker).toEqual({ type: "http", url: URL4747, headers: { Authorization: "Bearer ${" + KEY_ENV + "}" } });
+  });
+
+  it("Codex: a marked block in .codex/config.toml naming the variable that holds the key", () => {
+    const dir = folder();
+    const r = sync(dir, "codex");
+    expect(r).toMatchObject({ assistant: "codex", name: "Codex", auto: true, file: path.join(".codex", "config.toml") });
+    expect(r.hint).toMatch(/trust/);
+    const toml = read(dir, ".codex", "config.toml");
+    expect(toml).toContain("[mcp_servers.mapmaker]");
+    expect(toml).toContain(`url = "${URL4747}"`);
+    expect(toml).toContain(`bearer_token_env_var = "${KEY_ENV}"`);
+  });
+
+  it("Gemini CLI: .gemini/settings.json with an httpUrl entry and the key as a variable", () => {
+    const dir = folder();
+    sync(dir, "gemini");
+    expect(json(dir, ".gemini", "settings.json").mcpServers.mapmaker).toEqual({ httpUrl: URL4747, headers: { Authorization: "Bearer $" + KEY_ENV } });
+  });
+
+  it("OpenCode: opencode.json with a remote entry and the key as a variable", () => {
+    const dir = folder();
+    sync(dir, "opencode");
+    expect(json(dir, "opencode.json").mcp.mapmaker).toEqual({ type: "remote", url: URL4747, oauth: false, headers: { Authorization: "Bearer {env:" + KEY_ENV + "}" } });
+  });
+
+  it("Antigravity: .agents/mcp_config.json with serverUrl, holding the key itself (it can't read the environment)", () => {
+    const dir = folder();
+    const r = sync(dir, "antigravity");
+    expect(r.hint).toMatch(/key/);
+    expect(json(dir, ".agents", "mcp_config.json").mcpServers.mapmaker).toEqual({ serverUrl: URL4747, headers: { Authorization: `Bearer ${KEY}` } });
+  });
+
+  it("the key is in no file for any assistant but Antigravity", () => {
+    for (const p of ["default", "claude", "codex", "gemini", "opencode"]) {
+      const dir = folder();
+      sync(dir, p);
+      for (const f of files(dir)) expect(read(dir, f), `${p}: ${f}`).not.toContain(KEY);
+    }
+  });
+
+  it("the default Claude Code and a command we don't know get no file at all", () => {
+    for (const p of ["default", null]) {
+      const dir = folder();
+      const r = sync(dir, p);
+      expect(files(dir)).toEqual([]);
+      expect(r.auto).toBe(false);
+    }
+  });
+
+  it("follows a changed port", () => {
+    const dir = folder();
+    sync(dir, "gemini", 4747);
+    sync(dir, "gemini", 4800);
+    expect(json(dir, ".gemini", "settings.json").mcpServers.mapmaker.httpUrl).toBe("http://127.0.0.1:4800/mcp");
+  });
+});
+
+describe("switching assistants", () => {
+  it("takes our entry out of every other assistant's file, and the files and folders that then hold nothing", () => {
+    const dir = folder();
+    for (const p of ["claude", "codex", "gemini", "opencode", "antigravity"]) {
+      sync(dir, p);
+      const here = files(dir);
+      // only the chosen assistant's file is there
+      expect(here).toHaveLength(1);
+    }
+    sync(dir, "default");
+    expect(files(dir)).toEqual([]);
+    expect(existsSync(path.join(dir, ".agents"))).toBe(false);
+    expect(existsSync(path.join(dir, ".gemini"))).toBe(false);
+    expect(existsSync(path.join(dir, ".codex"))).toBe(false);
+  });
+});
+
+describe("what the person has put in those files", () => {
+  it("is kept: other servers and other settings, while we add ours and when we take it out", () => {
+    const dir = folder();
+    put(dir, ".gemini/settings.json", { theme: "dark", mcpServers: { github: { httpUrl: "https://example.com/mcp" } } });
+    sync(dir, "gemini");
+    const both = json(dir, ".gemini", "settings.json");
+    expect(Object.keys(both.mcpServers).sort()).toEqual(["github", "mapmaker"]);
+    expect(both.theme).toBe("dark");
+    sync(dir, "default");
+    expect(json(dir, ".gemini", "settings.json")).toEqual({ theme: "dark", mcpServers: { github: { httpUrl: "https://example.com/mcp" } } });
+  });
+
+  it("is kept in opencode.json too, below the nested object", () => {
+    const dir = folder();
+    put(dir, "opencode.json", { model: "x/y", mcp: { other: { type: "local", command: ["a"] } } });
+    sync(dir, "opencode");
+    expect(Object.keys(json(dir, "opencode.json").mcp).sort()).toEqual(["mapmaker", "other"]);
+    sync(dir, "codex");
+    expect(json(dir, "opencode.json")).toEqual({ model: "x/y", mcp: { other: { type: "local", command: ["a"] } } });
+  });
+
+  it("a file that isn't valid JSON, or has an unexpected shape, is left exactly as it is", () => {
+    const dir = folder();
+    put(dir, ".mcp.json", "{ not json");
+    put(dir, ".gemini/settings.json", { mcpServers: ["not", "an", "object"] });
+    put(dir, "opencode.json", [1, 2]);
+    sync(dir, "claude");
+    sync(dir, "gemini");
+    sync(dir, "opencode");
+    expect(read(dir, ".mcp.json")).toBe("{ not json");
+    expect(json(dir, ".gemini", "settings.json")).toEqual({ mcpServers: ["not", "an", "object"] });
+    expect(json(dir, "opencode.json")).toEqual([1, 2]);
+    sync(dir, "default");
+    expect(read(dir, ".mcp.json")).toBe("{ not json");
+  });
+
+  it("a mapmaker entry that points somewhere else is theirs: not removed", () => {
+    const dir = folder();
+    put(dir, ".mcp.json", { mcpServers: { mapmaker: { type: "http", url: "https://my-own-server.example/mcp" } } });
+    sync(dir, "default");
+    expect(json(dir, ".mcp.json").mcpServers.mapmaker.url).toBe("https://my-own-server.example/mcp");
+  });
+
+  it("Codex: text before and after our block is kept; the block is replaced, not repeated; it goes when the assistant changes", () => {
+    const dir = folder();
+    put(dir, ".codex/config.toml", 'model = "o3"\n\n[mcp_servers.other]\ncommand = "x"\n');
+    sync(dir, "codex", 4747);
+    sync(dir, "codex", 4800);
+    sync(dir, "codex", 4800);
+    const toml = read(dir, ".codex", "config.toml");
+    expect(toml.match(/\[mcp_servers\.mapmaker\]/g)).toHaveLength(1);
+    expect(toml).toContain("http://127.0.0.1:4800/mcp");
+    expect(toml).not.toContain("4747");
+    expect(toml.startsWith('model = "o3"')).toBe(true);
+    expect(toml).toContain("[mcp_servers.other]");
+    sync(dir, "default");
+    expect(read(dir, ".codex", "config.toml").trim()).toBe('model = "o3"\n\n[mcp_servers.other]\ncommand = "x"');
+  });
+
+  it("Codex: a mapmaker table the person wrote is left alone (a second one would break the file)", () => {
+    const dir = folder();
+    const own = '[mcp_servers.mapmaker]\nurl = "https://my-own-server.example/mcp"\n';
+    put(dir, ".codex/config.toml", own);
+    sync(dir, "codex");
+    expect(read(dir, ".codex", "config.toml")).toBe(own);
+    sync(dir, "default");
+    expect(read(dir, ".codex", "config.toml")).toBe(own);
+  });
+});

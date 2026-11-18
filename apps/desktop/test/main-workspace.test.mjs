@@ -1,7 +1,7 @@
 // main.cjs only runs inside Electron, which CI exercises on Windows. This runs the parts that write the settings, the access key and the Claude workspace
 // in plain Node, with a stand-in for the `electron` module, so a mistake in them (a typo, a variable used before it is set) fails here in seconds
 // instead of at the end of a Windows build.
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -35,6 +35,14 @@ function loadMain(userData, documents) {
   return { main: sandbox.__main, handlers };
 }
 
+/** Files under a folder whose text contains `needle`. */
+function workspaceFilesHolding(dir, needle) {
+  const out = [];
+  const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (readFileSync(f, "utf8").includes(needle)) out.push(path.relative(dir, f)); } };
+  walk(dir);
+  return out;
+}
+
 describe("the Windows app's settings and Claude workspace (main.cjs, without Electron)", () => {
   it("makes an access key once, keeps it, and writes it into the map tools' config, the hook command and the window's address", () => {
     const userData = mkdtempSync(path.join(os.tmpdir(), "dd-user-")), documents = mkdtempSync(path.join(os.tmpdir(), "dd-docs-"));
@@ -49,22 +57,50 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
 
     main.setPort(4747);
     expect(main.editorUrl()).toBe(`http://localhost:4747/?t=${key}`);
-    expect(main.hookCommand()).toContain(`Authorization: Bearer ${key}`);
     expect(main.hookCommand()).toContain("http://127.0.0.1:4747/api/claude-hook");
 
     main.writeClaudeWorkspace(null); // (this is the function that failed on Windows when a local variable hid `settings`)
     const dir = path.join(documents, "Dragon Drop", "Claude");
-    const mcp = JSON.parse(readFileSync(path.join(dir, "mapmaker.mcp.json"), "utf8"));
+    // the files that hold the key are in the app-data folder; the hooks read their header from a file there (curl's -H @file)
+    const headerFile = path.join(userData, "hook-header.txt");
+    expect(readFileSync(headerFile, "utf8")).toBe(`Authorization: Bearer ${key}\n`);
+    expect(main.hookCommand()).toContain(`-H "@${headerFile.replace(/\\/g, "/")}"`);
+    expect(main.hookCommand()).not.toContain(key);
+    const mcp = JSON.parse(readFileSync(path.join(userData, "mapmaker.mcp.json"), "utf8"));
     expect(mcp.mcpServers.mapmaker.url).toBe("http://127.0.0.1:4747/mcp");
     expect(mcp.mcpServers.mapmaker.headers.Authorization).toBe(`Bearer ${key}`);
+    expect(existsSync(path.join(dir, "mapmaker.mcp.json"))).toBe(false);
     const cfg = JSON.parse(readFileSync(path.join(dir, ".claude", "settings.json"), "utf8"));
-    for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "SessionEnd"]) expect(JSON.stringify(cfg.hooks[ev])).toContain(`Bearer ${key}`);
+    for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "SessionEnd"]) expect(JSON.stringify(cfg.hooks[ev])).toContain("hook-header.txt");
+    expect(workspaceFilesHolding(dir, key)).toEqual([]); // (Documents is often synced to the cloud)
     expect(readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toContain("list_grounds");
 
     // the user's own Claude settings are kept, and the hooks are rewritten (not duplicated) on the next start
     const mine = { ...cfg, model: "keep-me" };
     writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify(mine));
     main.writeClaudeWorkspace(null);
+    const after = JSON.parse(readFileSync(path.join(dir, ".claude", "settings.json"), "utf8"));
+    expect(after.model).toBe("keep-me");
+    expect(after.hooks.Stop).toHaveLength(1);
+  });
+
+  it("takes the key out of the workspace files an earlier version left in Documents", () => {
+    const userData = mkdtempSync(path.join(os.tmpdir(), "dd-user-")), documents = mkdtempSync(path.join(os.tmpdir(), "dd-docs-"));
+    const { main } = loadMain(userData, documents);
+    main.loadSettings();
+    main.setPort(4747);
+    const key = main.getSettings().accessToken;
+    const dir = path.join(documents, "Dragon Drop", "Claude");
+    mkdirSync(path.join(dir, ".claude"), { recursive: true });
+    const old = { type: "http", url: "http://127.0.0.1:4747/mcp", headers: { Authorization: `Bearer ${key}` } };
+    writeFileSync(path.join(dir, "mapmaker.mcp.json"), JSON.stringify({ mcpServers: { mapmaker: old } }));
+    writeFileSync(path.join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { mapmaker: old } }));
+    const oldHook = { hooks: [{ type: "command", command: `curl.exe -s -H "Authorization: Bearer ${key}" "http://127.0.0.1:4747/api/claude-hook"` }] };
+    writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ model: "keep-me", hooks: { Stop: [oldHook] } }));
+    main.writeClaudeWorkspace(null);
+    expect(workspaceFilesHolding(dir, key)).toEqual([]);
+    expect(existsSync(path.join(dir, "mapmaker.mcp.json"))).toBe(false);
+    expect(existsSync(path.join(dir, ".mcp.json"))).toBe(false); // (the default: no second definition)
     const after = JSON.parse(readFileSync(path.join(dir, ".claude", "settings.json"), "utf8"));
     expect(after.model).toBe("keep-me");
     expect(after.hooks.Stop).toHaveLength(1);
@@ -79,7 +115,7 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
     expect(main.getSettings().projectsDir).toBe("C:\\maps"); // (the rest of the old settings stays)
   });
 
-  describe("the map tools for other assistants (.mcp.json): written only while another assistant is chosen", () => {
+  describe("the map tools for a Claude Code started by another program (.mcp.json): written only while that is chosen", () => {
     const setup = () => {
       const userData = mkdtempSync(path.join(os.tmpdir(), "dd-user-")), documents = mkdtempSync(path.join(os.tmpdir(), "dd-docs-"));
       const { main } = loadMain(userData, documents);
@@ -89,30 +125,31 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
       const mcpFile = path.join(dir, ".mcp.json"), settingsFile = path.join(dir, ".claude", "settings.json");
       const write = () => main.writeClaudeWorkspace(null);
       const claudeSettings = () => JSON.parse(readFileSync(settingsFile, "utf8"));
-      return { main, dir, mcpFile, write, claudeSettings, key: main.getSettings().accessToken };
+      return { main, dir, mcpFile, write, claudeSettings, userData, key: main.getSettings().accessToken };
     };
 
     it("leaves Claude Code in the panel exactly as it was: no .mcp.json and no pre-approval, so it cannot be asked to approve a second definition", () => {
-      const { write, mcpFile, claudeSettings, dir } = setup();
+      const { write, mcpFile, claudeSettings, dir, userData } = setup();
       write();
       expect(existsSync(mcpFile)).toBe(false);
       expect(claudeSettings().enabledMcpjsonServers).toBeUndefined();
-      expect(existsSync(path.join(dir, "mapmaker.mcp.json"))).toBe(true); // (what --mcp-config is given)
+      expect(existsSync(path.join(userData, "mapmaker.mcp.json"))).toBe(true); // (what --mcp-config is given)
       expect(existsSync(path.join(dir, "CLAUDE.md"))).toBe(true);
     });
 
-    it("adds the map tools and approves them while another assistant is chosen, once however often it starts", () => {
-      const { main, write, mcpFile, claudeSettings, key } = setup();
+    it("adds the map tools and approves them while that is chosen, once however often it starts; the key is a variable, not in the file", () => {
+      const { main, write, mcpFile, claudeSettings, key, dir } = setup();
       main.getSettings().terminalCommand = "ollama launch claude";
       write(); write();
       const mcp = JSON.parse(readFileSync(mcpFile, "utf8"));
-      expect(mcp.mcpServers.mapmaker).toEqual({ type: "http", url: "http://127.0.0.1:4747/mcp", headers: { Authorization: `Bearer ${key}` } });
+      expect(mcp.mcpServers.mapmaker).toEqual({ type: "http", url: "http://127.0.0.1:4747/mcp", headers: { Authorization: "Bearer ${DRAGON_DROP_KEY}" } });
       expect(claudeSettings().enabledMcpjsonServers).toEqual(["mapmaker"]);
+      expect(workspaceFilesHolding(dir, key)).toEqual([]);
     });
 
     it("follows a changed port, and takes our entry out again when the default is back (the file goes with it)", () => {
       const { main, write, mcpFile } = setup();
-      main.getSettings().terminalCommand = "codex";
+      main.getSettings().terminalCommand = "claude";
       write();
       main.setPort(4800);
       write();
@@ -128,7 +165,7 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
       const { main, write, mcpFile } = setup();
       write(); // makes the folder
       writeFileSync(mcpFile, JSON.stringify({ mcpServers: { github: { type: "http", url: "https://example.com/mcp" } }, other: 1 }));
-      main.getSettings().terminalCommand = "gemini";
+      main.getSettings().terminalCommand = "ollama launch claude";
       write();
       const both = JSON.parse(readFileSync(mcpFile, "utf8"));
       expect(Object.keys(both.mcpServers).sort()).toEqual(["github", "mapmaker"]);
@@ -143,7 +180,7 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
       const { main, write, mcpFile } = setup();
       write();
       writeFileSync(mcpFile, "{ not json");
-      main.getSettings().terminalCommand = "opencode";
+      main.getSettings().terminalCommand = "claude";
       write();
       expect(readFileSync(mcpFile, "utf8")).toBe("{ not json");
       main.getSettings().terminalCommand = "";
@@ -161,10 +198,25 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
       writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ ...claudeSettings(), enabledMcpjsonServers: ["theirs"], model: "keep-me" }));
       write();
       expect(claudeSettings().enabledMcpjsonServers).toEqual(["theirs"]);
-      main.getSettings().terminalCommand = "codex";
+      main.getSettings().terminalCommand = "ollama launch claude";
       write();
       expect(claudeSettings().enabledMcpjsonServers).toEqual(["theirs", "mapmaker"]);
       expect(claudeSettings().model).toBe("keep-me");
+    });
+
+    it("another assistant gets its own file, not .mcp.json and not the Claude pre-approval, and no key in the workspace", () => {
+      const { main, write, mcpFile, claudeSettings, dir, key } = setup();
+      for (const [cmd, rel] of [["codex", ".codex/config.toml"], ["gemini", ".gemini/settings.json"], ["opencode", "opencode.json"]]) {
+        main.getSettings().terminalCommand = cmd;
+        write();
+        expect(existsSync(path.join(dir, ...rel.split("/"))), `${cmd}: ${rel}`).toBe(true);
+        expect(existsSync(mcpFile)).toBe(false);
+        expect(claudeSettings().enabledMcpjsonServers).toBeUndefined();
+        expect(workspaceFilesHolding(dir, key)).toEqual([]);
+      }
+      main.getSettings().terminalCommand = "";
+      write();
+      expect(existsSync(path.join(dir, "opencode.json"))).toBe(false);
     });
   });
 });

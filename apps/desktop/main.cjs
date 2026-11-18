@@ -17,6 +17,7 @@ const http = require("node:http");
 const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
+const assistants = require("./assistants.cjs");
 
 const APP_NAME = "Dragon Drop";
 const DEFAULT_PORT = 4747;
@@ -314,7 +315,9 @@ const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop", "Notification",
 
 function hookCommand() {
   const curl = process.platform === "win32" ? "curl.exe" : "curl";
-  return `${curl} -s -m 3 -X POST -H "Content-Type: application/json" -H "Authorization: Bearer ${settings.accessToken}" --data-binary "@-" "http://127.0.0.1:${port}${HOOK_PATH}"`;
+  // (curl reads the Authorization header from a file, so the settings file in the workspace doesn't hold the key)
+  const header = hookHeaderFile().replace(/\\/g, "/");
+  return `${curl} -s -m 3 -X POST -H "Content-Type: application/json" -H "@${header}" --data-binary "@-" "http://127.0.0.1:${port}${HOOK_PATH}"`;
 }
 
 /** The settings with our hooks (re)written for the current port; the DM's own settings and hooks are kept. */
@@ -330,6 +333,13 @@ function withDragonDropHooks(cfg, approveMcp) {
   if (!enabled.includes("mapmaker")) enabled.push("mapmaker");
   return { ...cfg, hooks, enabledMcpjsonServers: enabled };
 }
+
+/**
+ * Files that hold the access key live in the app-data folder, not in the Documents workspace (Documents is often synced to the cloud): the map tools file Claude Code is
+ * handed with --mcp-config, and the header file the hooks read. Assistants that read their own project file get the key from the environment (see assistants.cjs).
+ */
+function mcpConfigFile() { return path.join(app.getPath("userData"), "mapmaker.mcp.json"); }
+function hookHeaderFile() { return path.join(app.getPath("userData"), "hook-header.txt"); }
 
 function claudeWorkspace() {
   return SMOKE ? path.join(smokeDir, "claude") : path.join(app.getPath("documents"), "Dragon Drop", "Claude");
@@ -352,42 +362,20 @@ function findClaude() {
   return candidates.find((c) => c && fs.existsSync(c)) || null;
 }
 
-/**
- * The workspace's .mcp.json, the file Claude Code reads for project MCP servers. Claude Code in the panel is handed the map tools with --mcp-config, so it needs
- * nothing here, and a second definition of the same server is something it would have to reconcile (and could ask the person to approve). So our entry is written
- * only while another assistant is chosen (`ollama launch claude` is Claude Code started by another program, and does read this file) and taken out again when the
- * default is back. Whatever else the person put in the file stays, and a file that is not valid JSON is left alone.
- */
-function syncProjectMcp(dir, ours, wanted) {
-  const file = path.join(dir, ".mcp.json");
-  let cfg = null;
-  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (!e || e.code !== "ENOENT") return; } // (no file yet is fine; one we can't read is not ours to touch)
-  if (cfg !== null && (typeof cfg !== "object" || Array.isArray(cfg))) return;
-  const servers = cfg && cfg.mcpServers && typeof cfg.mcpServers === "object" && !Array.isArray(cfg.mcpServers) ? { ...cfg.mcpServers } : {};
-  if (wanted) {
-    servers.mapmaker = ours;
-    fs.writeFileSync(file, JSON.stringify({ ...(cfg || {}), mcpServers: servers }, null, 2), { mode: 0o600 });
-    return;
-  }
-  // (only our own entry comes out: a "mapmaker" that points somewhere else is the person's)
-  const mine = servers.mapmaker;
-  if (!mine || typeof mine.url !== "string" || !/^http:\/\/127\.0\.0\.1:\d+\/mcp$/.test(mine.url)) return;
-  delete servers.mapmaker;
-  const rest = { ...(cfg || {}), mcpServers: servers };
-  if (Object.keys(servers).length === 0) delete rest.mcpServers;
-  if (Object.keys(rest).length === 0) { try { fs.unlinkSync(file); } catch { /* already gone */ } }
-  else fs.writeFileSync(file, JSON.stringify(rest, null, 2), { mode: 0o600 });
-}
-
 /** Write the little workspace Claude Code starts in: it knows this app's address, even if the port changes. */
 function writeClaudeWorkspace(claudePath) {
   // (careful: `settings` is the app's settings here; the Claude settings file is claudeSettings. A second `settings` in this function would make the first use fail.)
   const dir = claudeWorkspace();
   fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
+  // the files that hold the key go in the app-data folder; an earlier version left a copy in the workspace, which is taken out now
+  fs.mkdirSync(app.getPath("userData"), { recursive: true });
   const ours = { type: "http", url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: `Bearer ${settings.accessToken}` } };
-  fs.writeFileSync(path.join(dir, "mapmaker.mcp.json"), JSON.stringify({ mcpServers: { mapmaker: ours } }, null, 2), { mode: 0o600 });
-  const another = !!settings.terminalCommand; // another assistant than Claude Code in the panel
-  syncProjectMcp(dir, ours, another);
+  fs.writeFileSync(mcpConfigFile(), JSON.stringify({ mcpServers: { mapmaker: ours } }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(hookHeaderFile(), `Authorization: Bearer ${settings.accessToken}\n`, { mode: 0o600 });
+  try { fs.unlinkSync(path.join(dir, "mapmaker.mcp.json")); } catch { /* not there */ }
+  // the chosen assistant finds the map tools in its own project file (and no other assistant's file keeps our entry)
+  const assistant = assistants.syncAssistantConfigs(dir, { profile: assistants.profileFor(settings.terminalCommand), port, key: settings.accessToken });
+  const another = assistant.assistant === "claude"; // Claude Code started by another program (typed, or `ollama launch claude`): it reads .mcp.json, and we pre-approve the server there
   // the same notes under each assistant's own file name
   for (const name of ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]) {
     const md = path.join(dir, name);
@@ -406,8 +394,12 @@ function writeClaudeWorkspace(claudePath) {
   }
   // the path ends up inside a .cmd file: anything that cmd would treat specially is left out (the launcher then just says "claude")
   const exe = claudePath && !/["%\r\n&|<>^]/.test(claudePath) ? claudePath : "claude";
-  fs.writeFileSync(path.join(dir, "open-claude.cmd"),
-    `@echo off\r\ntitle Claude Code - Dragon Drop\r\ncd /d "%~dp0"\r\necho Starting Claude Code with the Dragon Drop map tools...\r\n"${exe}" --mcp-config "%~dp0mapmaker.mcp.json"\r\n`);
+  // (the map tools file is in the app-data folder now: its path ends up in the .cmd file too, so anything cmd would treat specially stops the launcher)
+  const mcpFile = mcpConfigFile();
+  const body = /["%\r\n&|<>^]/.test(mcpFile)
+    ? `echo This launcher can't use the folder Dragon Drop keeps its settings in. Open Claude Code from the Terminal tab in Dragon Drop instead.\r\npause\r\n`
+    : `echo Starting Claude Code with the Dragon Drop map tools...\r\n"${exe}" --mcp-config "${mcpFile}"\r\n`;
+  fs.writeFileSync(path.join(dir, "open-claude.cmd"), `@echo off\r\ntitle Claude Code - Dragon Drop\r\ncd /d "%~dp0"\r\n${body}`);
   return dir;
 }
 
@@ -539,7 +531,7 @@ function startTerminal({ cols, rows, resume }) {
     if (process.platform === "win32") { file = process.env.ComSpec || "cmd.exe"; fileArgs = '/s /c "' + custom + '"'; }
     else { file = process.env.SHELL || "/bin/sh"; fileArgs = ["-lc", custom]; }
   } else {
-    const args = ["--mcp-config", path.join(workspace, "mapmaker.mcp.json")];
+    const args = ["--mcp-config", mcpConfigFile()];
     if (resume) args.unshift("--continue");
     file = claudePath;
     fileArgs = args;
@@ -549,7 +541,8 @@ function startTerminal({ cols, rows, resume }) {
     }
   }
   try {
-    const env = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" };
+    // (the access key goes to the assistant in the environment: its project file names the variable, so the file in the workspace doesn't hold the key)
+    const env = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", [assistants.KEY_ENV]: settings.accessToken };
     delete env.ELECTRON_RUN_AS_NODE;
     const proc = loadPty().spawn(file, fileArgs, { name: "xterm-256color", cols: Math.max(20, cols | 0 || 80), rows: Math.max(5, rows | 0 || 24), cwd: workspace, env });
     term = proc;
@@ -650,6 +643,8 @@ ipcMain.handle("dd:settings", (e) => {
     logDir: path.dirname(logFile()), encrypted: safeStorage.isEncryptionAvailable(),
     mcpHeader: `Authorization: Bearer ${settings.accessToken}`, // other assistants send this with every request to the map tools
     terminalCommand: settings.terminalCommand || "",
+    // whether the chosen assistant finds the map tools by itself, and what it needs from the person (Settings shows it)
+    assistant: assistants.describe(assistants.profileFor(settings.terminalCommand)),
   };
 });
 ipcMain.handle("dd:set-terminal-command", (e, text) => {
@@ -823,11 +818,27 @@ async function smokeTest() {
           if (!customBuf.includes("DD_CUSTOM_OK")) await new Promise((r) => setTimeout(r, 500));
         }
         if (!customBuf.includes("DD_CUSTOM_OK")) return fatal(`the custom start command's output never showed: ${JSON.stringify(customBuf.slice(0, 200))}`);
-        // another assistant is chosen: the workspace also carries .mcp.json (for a Claude Code started by another program) and approves the server in it
-        const dotMcpText = (() => { try { return fs.readFileSync(path.join(custom.workspace, ".mcp.json"), "utf8"); } catch { return ""; } })();
-        if (!dotMcpText.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`with another assistant chosen, .mcp.json should carry the map tools: ${dotMcpText}`);
-        const enabledNow = (() => { try { return JSON.parse(fs.readFileSync(path.join(custom.workspace, ".claude", "settings.json"), "utf8")).enabledMcpjsonServers; } catch { return null; } })();
-        if (!Array.isArray(enabledNow) || enabledNow.filter((s) => s === "mapmaker").length !== 1) return fatal(`with another assistant chosen, enabledMcpjsonServers should list mapmaker once: ${JSON.stringify(enabledNow)}`);
+        // a command that isn't a known assistant gets no config file; the known ones each get their own, and never the access key (unless it can't read the environment)
+        const wsDir = custom.workspace;
+        const readWs = (rel) => { try { return fs.readFileSync(path.join(wsDir, rel), "utf8"); } catch { return null; } };
+        for (const rel of [".mcp.json", ".codex/config.toml", ".gemini/settings.json", "opencode.json", ".agents/mcp_config.json"]) {
+          if (readWs(rel) !== null) return fatal(`a start command that isn't a known assistant left ${rel} in the workspace`);
+        }
+        const url = `http://127.0.0.1:${port}/mcp`;
+        for (const [cmd, rel] of [["ollama launch claude", ".mcp.json"], ["codex", ".codex/config.toml"], ["gemini", ".gemini/settings.json"], ["opencode", "opencode.json"], ["agy", ".agents/mcp_config.json"]]) {
+          const sc = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand(${JSON.stringify(cmd)})`);
+          if (!sc || sc.ok !== true) return fatal(`setTerminalCommand(${cmd}) returned ${JSON.stringify(sc)}`);
+          await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)"); // (writes the workspace files without starting anything)
+          const text = readWs(rel);
+          if (text === null || !text.includes(url)) return fatal(`with "${cmd}" chosen, ${rel} should carry the map tools: ${text}`);
+          const holdsKey = text.includes(settings.accessToken);
+          if (holdsKey !== (cmd === "agy")) return fatal(`with "${cmd}" chosen, ${rel} ${holdsKey ? "holds" : "should hold"} the access key`);
+          for (const other of [".mcp.json", ".codex/config.toml", ".gemini/settings.json", "opencode.json", ".agents/mcp_config.json"]) {
+            if (other !== rel && readWs(other) !== null) return fatal(`with "${cmd}" chosen, ${other} is still in the workspace`);
+          }
+        }
+        const enabledNow = (() => { try { return JSON.parse(readWs(".claude/settings.json")).enabledMcpjsonServers; } catch { return null; } })();
+        if (enabledNow !== undefined && (!Array.isArray(enabledNow) || enabledNow.filter((s) => s === "mapmaker").length > 1)) return fatal(`enabledMcpjsonServers is wrong: ${JSON.stringify(enabledNow)}`);
         if (process.platform === "win32") {
           // a quoted program path plus a quoted argument must reach cmd.exe untouched (its legacy rule strips quotes without /s)
           const quoted = JSON.stringify(`"${process.env.ComSpec}" /c echo "DD_QUOTED_OK"`);
@@ -846,9 +857,14 @@ async function smokeTest() {
         if (!clearCmd || clearCmd.ok !== true) return fatal(`clearing the start command returned ${JSON.stringify(clearCmd)}`);
         const cl = await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
         if (!cl || !cl.workspace) return fatal(`openClaude returned ${JSON.stringify(cl)}`);
-        const mcp = (() => { try { return fs.readFileSync(path.join(cl.workspace, "mapmaker.mcp.json"), "utf8"); } catch { return ""; } })();
-        if (!mcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`Claude workspace file is wrong: ${mcp}`);
-        if (!mcp.includes(`Bearer ${settings.accessToken}`)) return fatal("Claude workspace file has no access key for the map tools");
+        const mcp = (() => { try { return fs.readFileSync(mcpConfigFile(), "utf8"); } catch { return ""; } })();
+        if (!mcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`the map tools file is wrong: ${mcp}`);
+        if (!mcp.includes(`Bearer ${settings.accessToken}`)) return fatal("the map tools file has no access key for the map tools");
+        // (the Documents workspace is often synced to the cloud: no file in it may hold the access key)
+        const holders = [];
+        const scan = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) scan(f); else if (fs.readFileSync(f, "utf8").includes(settings.accessToken)) holders.push(f); } };
+        scan(cl.workspace);
+        if (holders.length) return fatal(`the access key is in the Claude workspace: ${holders.join(", ")}`);
         for (const f of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "open-claude.cmd", path.join(".claude", "settings.json")]) {
           if (!fs.existsSync(path.join(cl.workspace, f))) return fatal(`Claude workspace is missing ${f}`);
         }

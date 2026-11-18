@@ -112,7 +112,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
 
         <fieldset>
           <legend>AI assistant</legend>
-          <p className="muted">The terminal on the right runs this. Saving ends the running session. Tools other than Claude Code need the map tools added once: their address is below.</p>
+          <p className="muted">The terminal on the right runs this. Saving ends the running session. You sign into the assistant yourself, the first time it starts.</p>
           <label className="field">Assistant
             <select value={preset ? preset[1] : "custom"} onChange={(e) => { if (e.target.value !== "custom") setTermCmd(e.target.value); }} data-testid="terminal-preset">
               {PRESETS.map(([label, c]) => <option key={label} value={c}>{label}</option>)}
@@ -127,6 +127,13 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               onClick={() => void bridge.setTerminalCommand(shownCmd).then((r) => { setTermError(r.ok ? null : "That command can't be used (too long, or it has control characters)."); setTermCmd(null); return refresh(); })}>Save</button>
           </div>
           {termError && <p className="error-text">{termError}</p>}
+          {!!s?.terminalCommand && (
+            <p className="muted" data-testid="assistant-status">
+              {s.assistant?.auto
+                ? `Map tools: connected automatically for ${s.assistant.name} (Dragon Drop writes ${s.assistant.file} in your Claude workspace folder). ${s.assistant.hint}`
+                : "Map tools: Dragon Drop doesn't know this command, so it can't connect the map tools by itself. Add the address and header below in the assistant's own settings."}
+            </p>
+          )}
           {!s?.terminalCommand && (
             <>
               <p className="muted" data-testid="claude-status">
@@ -141,7 +148,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               Port {s.defaultPort} is already used by another program (most likely an older copy of this app still running, such as a <code>pnpm start</code> window), so this one is using {s.port}. Close the other one and reopen Dragon Drop to get back to {s.defaultPort}; the command below uses the right number either way.
             </p>
           )}
-          <p className="muted">Map tools address (for tools other than Claude Code), sent with the header below (it holds your access key):</p>
+          <p className="muted">Map tools address, for an assistant Dragon Drop doesn't connect by itself, sent with the header below (it holds your access key):</p>
           <code className="copyline" data-testid="mcp-url">{s?.mcpUrl ?? ""}</code>
           <code className="copyline" data-testid="mcp-header">Authorization: Bearer (your access key)</code>
           <div className="row end">

@@ -368,6 +368,19 @@ Report anything odd, especially: the Windows warning text, anything that looks c
 
 ---
 
+## 14d2. Other AI assistants (one click)
+
+Only do the ones you have installed. Each is a few minutes. **Settings → AI assistant**, pick the assistant, **Save**.
+
+1. The line under the box says the map tools are connected automatically and names the file. Open `Documents\Dragon Drop\Claude` and check that file exists, that the others (`.mcp.json`, `.codex`, `.gemini`, `opencode.json`, `.agents`) do not, and that **no file in the folder contains your access key** (search the folder for the key from Settings → Copy header), except `.agents\mcp_config.json` while Antigravity is chosen.
+2. Start it in the Terminal tab. Answer its trust question (Codex, Gemini CLI) with yes and sign in if it asks. Ask it: *"What map tools do you have? Then list the places on this map."* It should name the mapmaker tools and use one.
+3. Switch back to Claude Code. The assistant's file is gone from the workspace folder, and Claude Code still shows `mapmaker` connected in `/mcp`.
+4. Pick **Custom** and type a command that isn't one of these. The line says Dragon Drop can't connect the map tools by itself and shows the address and header to use.
+
+Checked by the developer on Linux against a running server, with the access key supplied only through the environment: Gemini CLI 0.68 and OpenCode 1.19 connected and listed the map server (and failed with 401 when the variable was missing); Codex 0.170 read the file once the folder was trusted. **Not checked with the real program:** Codex's connection and tool calls, Antigravity, and everything on Windows.
+
+---
+
 ## 14e. Asset library
 
 1. **Settings → Asset library → Choose folder…** and pick your assets folder (best: one with a mix, such as a folder of loose PNG or JPEG files, a `.zip` of pictures and an asset pack file if you have one). The app restarts its server and the box shows "Reading assets… n of N", then something like "N packs read: M usable (… files)". A folder, a zip file and a pack file each count as one pack. The first read of your biggest pack files takes the longest; the next time it's quick. **Tell me the numbers**, and anything that says "couldn't be read" or "not used because their authors don't allow other programs".
