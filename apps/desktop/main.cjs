@@ -324,7 +324,10 @@ function withDragonDropHooks(cfg) {
     const others = (Array.isArray(hooks[ev]) ? hooks[ev] : []).filter((g) => !(g && Array.isArray(g.hooks) && g.hooks.some((h) => h && typeof h.command === "string" && h.command.includes(HOOK_PATH))));
     hooks[ev] = [...others, { hooks: [{ type: "command", command: hookCommand(), timeout: 5 }] }];
   }
-  return { ...cfg, hooks };
+  // a .mcp.json server needs approving once: list ours as approved so other assistants and Claude Code don't ask
+  const enabled = Array.isArray(cfg.enabledMcpjsonServers) ? [...cfg.enabledMcpjsonServers] : [];
+  if (!enabled.includes("mapmaker")) enabled.push("mapmaker");
+  return { ...cfg, hooks, enabledMcpjsonServers: enabled };
 }
 
 function claudeWorkspace() {
@@ -353,11 +356,16 @@ function writeClaudeWorkspace(claudePath) {
   // (careful: `settings` is the app's settings here; the Claude settings file is claudeSettings. A second `settings` in this function would make the first use fail.)
   const dir = claudeWorkspace();
   fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "mapmaker.mcp.json"), JSON.stringify({ mcpServers: { mapmaker: { type: "http", url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: `Bearer ${settings.accessToken}` } } } }, null, 2), { mode: 0o600 });
-  const md = path.join(dir, "CLAUDE.md");
-  let mine = true;
-  try { mine = fs.readFileSync(md, "utf8").includes(CLAUDE_MARK); } catch { /* new file */ }
-  if (mine) fs.writeFileSync(md, CLAUDE_MD);
+  const mcpJson = JSON.stringify({ mcpServers: { mapmaker: { type: "http", url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: `Bearer ${settings.accessToken}` } } } }, null, 2);
+  fs.writeFileSync(path.join(dir, "mapmaker.mcp.json"), mcpJson, { mode: 0o600 });
+  fs.writeFileSync(path.join(dir, ".mcp.json"), mcpJson, { mode: 0o600 }); // other assistants (and Claude Code) pick the map tools up from here
+  // the same notes under each assistant's own file name
+  for (const name of ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]) {
+    const md = path.join(dir, name);
+    let mine = true;
+    try { mine = fs.readFileSync(md, "utf8").includes(CLAUDE_MARK); } catch { /* new file */ }
+    if (mine) fs.writeFileSync(md, CLAUDE_MD);
+  }
   const claudeSettings = path.join(dir, ".claude", "settings.json");
   // the map tools are safe (every change is undoable), so don't ask about each one; the hooks are rewritten each time (the port can change)
   if (!fs.existsSync(claudeSettings)) {
@@ -481,19 +489,35 @@ async function claudeCheck() {
   return { installed: true, path: claudePath, version };
 }
 
-/** Run Claude Code (with the map tools connected) in a pseudo-terminal that the editor draws. */
+/** The start command trimmed, or null when it isn't acceptable: at most 500 characters, no control characters. Empty means Claude Code. */
+function validTerminalCommand(text) {
+  if (typeof text !== "string") return null;
+  const t = text.trim();
+  return t.length <= 500 && !/[\x00-\x1f\x7f]/.test(t) ? t : null;
+}
+
+/** Run the saved start command (Claude Code when none) in a pseudo-terminal that the editor draws, with the map tools connected. */
 function startTerminal({ cols, rows, resume }) {
   killTerminal();
-  const claudePath = findClaude();
+  const custom = settings.terminalCommand || "";
+  const claudePath = custom ? null : findClaude();
   const workspace = writeClaudeWorkspace(claudePath);
-  if (!claudePath) return { ok: false, reason: "not-installed" };
-  const args = ["--mcp-config", path.join(workspace, "mapmaker.mcp.json")];
-  if (resume) args.unshift("--continue");
-  let file = claudePath;
-  let fileArgs = args;
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath)) {
-    file = process.env.ComSpec || "cmd.exe";
-    fileArgs = ["/c", claudePath, ...args];
+  if (!custom && !claudePath) return { ok: false, reason: "not-installed" };
+  let file;
+  let fileArgs;
+  if (custom) {
+    // the shell reads the text as typed (on Windows node-pty takes one command-line string)
+    if (process.platform === "win32") { file = process.env.ComSpec || "cmd.exe"; fileArgs = "/c " + custom; }
+    else { file = process.env.SHELL || "/bin/sh"; fileArgs = ["-lc", custom]; }
+  } else {
+    const args = ["--mcp-config", path.join(workspace, "mapmaker.mcp.json")];
+    if (resume) args.unshift("--continue");
+    file = claudePath;
+    fileArgs = args;
+    if (process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath)) {
+      file = process.env.ComSpec || "cmd.exe";
+      fileArgs = ["/c", claudePath, ...args];
+    }
   }
   try {
     const env = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" };
@@ -513,7 +537,7 @@ function startTerminal({ cols, rows, resume }) {
       if (term === proc) { termAlive = false; term = null; }
       sendToEditor("dd:term-exit", exitCode);
     });
-    return { ok: true, workspace, claudePath };
+    return { ok: true, workspace, claudePath, command: custom };
   } catch (err) {
     termAlive = false;
     return { ok: false, reason: String(err && err.message ? err.message : err) };
@@ -593,7 +617,19 @@ ipcMain.handle("dd:settings", (e) => {
     mcpCommand: `claude mcp add --transport http --scope user mapmaker http://127.0.0.1:${port}/mcp --header "Authorization: Bearer ${settings.accessToken}"`,
     mcpCommandShown: `claude mcp add --transport http --scope user mapmaker http://127.0.0.1:${port}/mcp --header "Authorization: Bearer (your access key)"`,
     logDir: path.dirname(logFile()), encrypted: safeStorage.isEncryptionAvailable(),
+    terminalCommand: settings.terminalCommand || "",
   };
+});
+ipcMain.handle("dd:set-terminal-command", (e, text) => {
+  if (!fromEditor(e)) return { ok: false, command: "" };
+  const cmd = validTerminalCommand(text);
+  if (cmd === null) return { ok: false, command: settings.terminalCommand || "" };
+  if (cmd !== (settings.terminalCommand || "")) {
+    if (cmd) settings.terminalCommand = cmd; else delete settings.terminalCommand;
+    saveSettings();
+    killTerminal();
+  }
+  return { ok: true, command: cmd };
 });
 ipcMain.handle("dd:set-api-key", async (e, key) => {
   if (!fromEditor(e)) return false;
@@ -642,7 +678,7 @@ ipcMain.handle("dd:term-start", (e, opts) => {
 });
 ipcMain.handle("dd:claude-install", (e, opts) => (fromEditor(e) ? startInstall({ cols: opts && opts.cols, rows: opts && opts.rows }) : { ok: false, reason: "not-allowed" }));
 ipcMain.handle("dd:claude-check", async (e) => (fromEditor(e) ? await claudeCheck() : { installed: false, path: null, version: null }));
-ipcMain.handle("dd:term-attach", (e) => (fromEditor(e) ? { alive: termAlive, buffer: termBuf } : { alive: false, buffer: "" }));
+ipcMain.handle("dd:term-attach", (e) => (fromEditor(e) ? { alive: termAlive, buffer: termBuf, command: settings.terminalCommand || "" } : { alive: false, buffer: "", command: "" }));
 ipcMain.handle("dd:term-status", (e) => (fromEditor(e) ? termStatus() : { alive: false, quietMs: 0, looksBusy: true }));
 ipcMain.on("dd:term-write", (e, data) => { if (fromEditor(e) && term && termAlive && typeof data === "string") term.write(data); });
 ipcMain.on("dd:term-resize", (e, cols, rows) => { if (fromEditor(e) && term && termAlive) { try { term.resize(Math.max(2, cols | 0), Math.max(2, rows | 0)); } catch { /* the program just ended */ } } });
@@ -739,14 +775,33 @@ async function smokeTest() {
           if (!ended) await new Promise((r) => setTimeout(r, 500));
         }
         if (!ended) return fatal("the Claude Code panel didn't notice the program ending (or typing didn't reach it)");
+        // any start command can run in the panel: a multi-line one is refused, a one-line one runs through the shell, and clearing it goes back to Claude Code
+        const badCmd = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand("echo a\\necho b")`);
+        if (!badCmd || badCmd.ok !== false) return fatal(`a multi-line start command was accepted: ${JSON.stringify(badCmd)}`);
+        const setCmd = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand("echo DD_CUSTOM_OK")`);
+        if (!setCmd || setCmd.ok !== true || setCmd.command !== "echo DD_CUSTOM_OK") return fatal(`setTerminalCommand returned ${JSON.stringify(setCmd)}`);
+        const custom = await win.webContents.executeJavaScript(`window.dragonDrop.termStart({ cols: 80, rows: 24 })`);
+        if (!custom || custom.ok !== true || custom.command !== "echo DD_CUSTOM_OK") return fatal(`termStart with a custom command returned ${JSON.stringify(custom)}`);
+        let customBuf = "";
+        for (let i = 0; i < 40 && !customBuf.includes("DD_CUSTOM_OK"); i++) {
+          customBuf = (await win.webContents.executeJavaScript(`window.dragonDrop.termAttach()`)).buffer || "";
+          if (!customBuf.includes("DD_CUSTOM_OK")) await new Promise((r) => setTimeout(r, 500));
+        }
+        if (!customBuf.includes("DD_CUSTOM_OK")) return fatal(`the custom start command's output never showed: ${JSON.stringify(customBuf.slice(0, 200))}`);
+        const clearCmd = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand("")`);
+        if (!clearCmd || clearCmd.ok !== true) return fatal(`clearing the start command returned ${JSON.stringify(clearCmd)}`);
         const cl = await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
         if (!cl || !cl.workspace) return fatal(`openClaude returned ${JSON.stringify(cl)}`);
         const mcp = (() => { try { return fs.readFileSync(path.join(cl.workspace, "mapmaker.mcp.json"), "utf8"); } catch { return ""; } })();
         if (!mcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`Claude workspace file is wrong: ${mcp}`);
         if (!mcp.includes(`Bearer ${settings.accessToken}`)) return fatal("Claude workspace file has no access key for the map tools");
-        for (const f of ["CLAUDE.md", "open-claude.cmd", path.join(".claude", "settings.json")]) {
+        for (const f of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", ".mcp.json", "open-claude.cmd", path.join(".claude", "settings.json")]) {
           if (!fs.existsSync(path.join(cl.workspace, f))) return fatal(`Claude workspace is missing ${f}`);
         }
+        const dotMcp = fs.readFileSync(path.join(cl.workspace, ".mcp.json"), "utf8");
+        if (!dotMcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`.mcp.json is wrong: ${dotMcp}`);
+        const enabled = (() => { try { return JSON.parse(fs.readFileSync(path.join(cl.workspace, ".claude", "settings.json"), "utf8")).enabledMcpjsonServers; } catch { return null; } })();
+        if (!Array.isArray(enabled) || enabled.filter((s) => s === "mapmaker").length !== 1) return fatal(`enabledMcpjsonServers should list mapmaker once: ${JSON.stringify(enabled)}`);
         // first-time setup: the Claude Code check works, and the one-click installer runs (a harmless stand-in under test) and reports back
         const chk = await win.webContents.executeJavaScript("window.dragonDrop.claudeCheck()");
         if (!chk || chk.installed !== true || typeof chk.path !== "string") return fatal(`claudeCheck returned ${JSON.stringify(chk)}`);

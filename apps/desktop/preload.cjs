@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("dragonDrop", {
   version: ipcRenderer.sendSync("dd:version"),
   getSettings: () => ipcRenderer.invoke("dd:settings"),
   setApiKey: (key) => ipcRenderer.invoke("dd:set-api-key", String(key ?? "")),
+  setTerminalCommand: (t) => ipcRenderer.invoke("dd:set-terminal-command", t),
   chooseProjectsFolder: () => ipcRenderer.invoke("dd:choose-projects"),
   chooseAssetsFolder: () => ipcRenderer.invoke("dd:choose-assets"),
   clearAssetsFolder: () => ipcRenderer.invoke("dd:clear-assets"),
