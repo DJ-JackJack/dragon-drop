@@ -5,7 +5,7 @@ Other people may use Dragon Drop with whatever terminal AI they already have (Co
 
 ## Goals
 - A setting, "Start command", in the desktop Settings dialog. A dropdown fills it with a common command; the text box can be edited to anything.
-- Presets: Claude Code (default, today's behaviour), `codex`, `gemini`, `opencode`, `ollama launch claude`, `ollama launch codex`, `ollama launch opencode`.
+- Presets: Claude Code (default, today's behaviour), `codex`, `agy` (Antigravity CLI, Google's replacement for Gemini CLI on personal accounts), `gemini` (labelled "API key": Google ended its personal sign-in on 2026-06-18), `opencode`, `ollama launch claude`, `ollama launch codex`, `ollama launch opencode`.
 - Settings shows the map tools address (`http://127.0.0.1:<port>/mcp`) with a Copy button, so users of other tools can register it themselves.
 
 ## Non-goals

@@ -4,7 +4,7 @@ import { type AssetStatus, fetchAssetStatus } from "./assetsApi.ts";
 import { useClaudeLauncher } from "./ClaudeButton.tsx";
 
 const PRESETS: [label: string, command: string][] = [
-  ["Claude Code", ""], ["Codex", "codex"], ["Gemini CLI", "gemini"], ["OpenCode", "opencode"],
+  ["Claude Code", ""], ["Codex", "codex"], ["Antigravity CLI", "agy"], ["Gemini CLI (API key)", "gemini"], ["OpenCode", "opencode"],
   ["Claude Code via Ollama", "ollama launch claude"], ["Codex via Ollama", "ollama launch codex"], ["OpenCode via Ollama", "ollama launch opencode"],
 ];
 
