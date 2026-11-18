@@ -1,6 +1,7 @@
 export * from "./noise.ts";
 export * from "./geom.ts";
 export * from "./doc.ts";
+export * from "./format.ts";
 export * from "./terrain.ts";
 export * from "./session.ts";
 export * from "./render.ts";

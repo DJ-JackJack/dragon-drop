@@ -64,6 +64,8 @@ export class HeightField {
 export interface MapMeta {
   id: string;
   name: string;
+  /** Version of the saved files (see format.ts). Missing on maps saved before it existed: that means 1. */
+  formatVersion?: number;
   /** "world": a terrain map. "battle": a grid battlemap, where the field holds floor materials (see battle.ts). */
   kind: "world" | "battle";
   width: number;

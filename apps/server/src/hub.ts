@@ -17,12 +17,30 @@ import type { AssetLibrary } from "./assets.ts";
 import type { NoiseStore } from "./noiseStore.ts";
 import { ProjectStore } from "./store.ts";
 
+export interface HubOptions {
+  /**
+   * Rolling backups: while a map is being edited, an automatic checkpoint is saved after a save at most this often (milliseconds;
+   * 0 or missing turns them off) and only the newest `autoBackupKeep` of them are kept. They show in the Checkpoints list as "Auto ..."
+   * with the usual Restore button.
+   */
+  autoBackupMs?: number;
+  autoBackupKeep?: number;
+}
+
+/** "Auto 2026-11-18 14:05": the name of a rolling backup (local time, so it matches the clock the person is looking at). */
+export function autoBackupName(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `Auto ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 interface OpenProject {
   id: string;
   session: MapSessionT;
   agent: ChatAgent;
   saveTimer: NodeJS.Timeout | null;
   dirty: boolean;
+  /** When the last rolling backup was taken (ms since 1970; 0 = none yet). */
+  lastAutoBackup: number;
   /** Climate, coast distances, lakes and rivers, and the content version they match. */
   derived: Derived | null;
   derivedVersion: number;
@@ -96,7 +114,7 @@ export class Hub {
     return this.claude;
   }
 
-  constructor(readonly store: ProjectStore, private modelCall: ModelCall | null, private compute: MapCompute = new WorkerCompute()) {}
+  constructor(readonly store: ProjectStore, private modelCall: ModelCall | null, private compute: MapCompute = new WorkerCompute(), private opts: HubOptions = {}) {}
 
   async close() {
     await this.flush();
@@ -123,7 +141,7 @@ export class Hub {
       const saved = await this.store.readJson<ChatState>(id, "chat.json");
       const agent = new ChatAgent(this.agentHost(id), this.modelCall, saved ?? undefined);
       const op: OpenProject = {
-        id, session, agent, saveTimer: null, dirty: false,
+        id, session, agent, saveTimer: null, dirty: false, lastAutoBackup: await this.store.lastAutoCheckpointTime(id),
         derived: null, derivedVersion: -1, deriving: null, derivingVersion: -1, contentVersion: 0, derivedTimer: null,
         regionsKey: JSON.stringify([doc.features?.regions ?? [], resolveRiverSources(doc.features)]),
         metaKey: JSON.stringify([doc.meta.seaLevel, doc.meta.climate, doc.meta.style]),
@@ -165,6 +183,8 @@ export class Hub {
       await this.store.writeLastOpen(id).catch(() => {});
       await this.refreshProjects();
       for (const c of this.clients) await this.sendProject(c);
+      // something about the files had to be dealt with while loading (an older format brought up to date, a file that couldn't be read)
+      for (const message of this.store.takeNotices(id)) this.broadcast({ t: "error", message });
       if (!isBattle(doc)) {
         setTimeout(() => void this.refreshDerived(op), 0);
         // Texture noise for previews: about 10 s of CPU on a 2048 map, so it waits until the editor has started up instead of competing with it.
@@ -447,9 +467,28 @@ export class Hub {
     try {
       await this.store.save(op.session.doc);
       this.broadcast({ t: "projects", projects: await this.store.list() });
+      void this.maybeAutoBackup(op);
     } catch (e) {
       console.error("save failed:", e);
       op.dirty = true;
+    }
+  }
+
+  /**
+   * A rolling backup: right after a save, if none was taken in the last `autoBackupMs`, keep the map as an automatic checkpoint (so the
+   * first save after an edit makes one, then one every so often while editing goes on). It never touches a checkpoint a person saved.
+   */
+  private async maybeAutoBackup(op: OpenProject) {
+    const every = this.opts.autoBackupMs ?? 0;
+    const now = Date.now();
+    if (!(every > 0) || now - op.lastAutoBackup < every) return;
+    op.lastAutoBackup = now; // claimed before the first await, so a save that follows straight away doesn't start a second one
+    try {
+      await this.store.saveCheckpoint(op.id, autoBackupName(new Date(now)), op.session.doc, op.session.seq, "Saved automatically", { auto: true });
+      await this.store.pruneAutoCheckpoints(op.id, this.opts.autoBackupKeep ?? 6);
+      if (this.open === op) this.broadcast({ t: "checkpoints", list: await this.store.listCheckpoints(op.id) });
+    } catch (e) {
+      console.error("automatic backup failed:", e);
     }
   }
 
@@ -746,6 +785,7 @@ export class Hub {
     // a brand-new install starts with a small generated archipelago with no names or history of its own (never anyone's campaign world)
     await this.createProject({ name: "First Map", width: 1024, height: 1024, kmPerPx: 2 });
     this.session.execute({ op: "generate_terrain", params: { template: "archipelago", seed: 7, landFraction: 0.3, mountains: 0.5 } }, "system");
+    if (this.open) this.open.lastAutoBackup = Date.now(); // (a map nobody has touched yet needs no rolling backup: the first one comes at the first save after the interval)
     await this.flush();
   }
 }

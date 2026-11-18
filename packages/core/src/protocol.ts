@@ -198,6 +198,8 @@ export interface CheckpointInfo {
   time: string;
   seq: number;
   note?: string;
+  /** Saved by the program on its own (a rolling backup), not by a person: only these are ever deleted to make room. */
+  auto?: boolean;
 }
 
 export const MODEL_PRICES: Record<ModelId, { input: number; output: number; cacheRead: number; cacheWrite: number; label: string }> = {

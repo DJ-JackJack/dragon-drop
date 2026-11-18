@@ -55,7 +55,7 @@ const assetsDir = path.join(tmp, "Dungeondraft Assets");
   writeFileSync(path.join(tmp, "e2e-sketch.png"), PNG.sync.write(sk));
 }
 
-const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_CACHE_DIR: path.join(tmp, "cache") };
+const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_CACHE_DIR: path.join(tmp, "cache"), MAPMAKER_AUTO_BACKUP_MINUTES: "0.03" }; // (rolling backups every couple of seconds instead of every 15 minutes)
 const server = spawn(process.execPath, [path.join(root, "node_modules/tsx/dist/cli.mjs"), "src/main.ts"], { cwd: path.join(root, "apps/server"), env, stdio: ["ignore", "pipe", "pipe"] });
 let log = "";
 server.stdout.on("data", (d) => (log += d));
@@ -141,6 +141,9 @@ try {
   // undo through the UI
   await page.getByRole("button", { name: /Undo/ }).click();
   await page.getByTestId("history").getByText("Undo: Raise brush").waitFor({ timeout: 10000 });
+  // rolling backups: the first save after an edit leaves an automatic checkpoint in the list, next to the ones a person saves
+  await page.getByTestId("checkpoints").getByText(/^Auto \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/).first().waitFor({ timeout: 20000 });
+  await page.getByTestId("checkpoints").getByText("Before test").waitFor({ timeout: 5000 });
 
   // add a place with the Place tool, then change its type in the inspector
   await page.getByRole("button", { name: "Place", exact: true }).click();

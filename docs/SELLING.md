@@ -51,7 +51,7 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
 - [x] itch.io copy with the in-app updater off, made by every CI run (see [ITCH.md](ITCH.md)).
 - [ ] **Code signing.** The installer is unsigned, so SmartScreen warns buyers. Get a certificate (or Microsoft's signing service if you qualify),
       then add it to the workflow's build step.
-- [ ] Save-file versioning and migrations, and backups, so paying users' maps never break on an update.
+- [x] Save-file versioning, migrations and backups, so paying users' maps never break on an update (2026-11-18): `formatVersion` in `project.json`, a map from a newer format is refused untouched, an older one is copied aside and migrated, an unreadable places file is kept instead of overwritten, and automatic rolling checkpoints (newest six, at most every 15 minutes) show in the Checkpoints list. Documented in [MAP-FILES.md](MAP-FILES.md). Still to do: the first real migration (when the format first changes) needs a test map saved in the old form kept as a fixture; and a way to see the `backups` folder from the app.
 - [ ] Test on: Windows 10 and 11, OneDrive-redirected Documents, paths with spaces and non-ASCII characters, low-spec PCs, antivirus on the unsigned
       build and its terminal module.
 - [ ] Support: an FAQ and a place to ask (Claude Code install problems, administrator prompts, antivirus).

@@ -42,4 +42,5 @@ The full guide covers prerequisites, the editor, Remote Control and the map page
 - [docs/TESTING.md](docs/TESTING.md): step-by-step test plan for trying everything on your PC, with expected results
 - [docs/PLAN.md](docs/PLAN.md): architecture, Claude's tool set, roadmap
 - [docs/RESEARCH.md](docs/RESEARCH.md): research and sources behind the plan
+- [docs/MAP-FILES.md](docs/MAP-FILES.md): what is in a map folder, how maps are kept safe (versioned files, automatic backups) and how to back one up
 - [spikes/painted-relief](spikes/painted-relief/): prototype of the target "Painted Relief" world-map style

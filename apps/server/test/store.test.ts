@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { NewerFormatError } from "@mapmaker/core";
 import { ProjectStore } from "../src/store.ts";
 
 const root = mkdtempSync(path.join(tmpdir(), "mapmaker-store-"));
@@ -50,5 +51,153 @@ describe("saving and loading maps", () => {
     const cp = await store.readCheckpoint(doc.meta.id, "before");
     expect(cp && new Set(cp.data).size).toBe(1);
     expect(cp!.data[0]).toBe(5);
+  });
+});
+
+describe("the map's file format", () => {
+  const readMeta = (id: string) => JSON.parse(readFileSync(path.join(root, id, "project.json"), "utf8")) as { formatVersion?: number; notes?: string };
+
+  it("writes the version into project.json when it saves", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Versioned", width: 128, height: 128, kmPerPx: 4 });
+    expect(readMeta(doc.meta.id).formatVersion).toBe(1);
+  });
+
+  it("opens a map saved before there was a version as the current one, without rewriting its files", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Old style", width: 128, height: 128, kmPerPx: 4 });
+    const file = path.join(root, doc.meta.id, "project.json");
+    const old = JSON.parse(readFileSync(file, "utf8"));
+    delete old.formatVersion;
+    writeFileSync(file, JSON.stringify(old, null, 2));
+    const before = readFileSync(file, "utf8");
+    const back = await store.load(doc.meta.id);
+    expect(back.meta.formatVersion).toBe(1);
+    expect(readFileSync(file, "utf8")).toBe(before); // (just opening a map never touches its files)
+    expect(existsSync(path.join(root, doc.meta.id, "backups"))).toBe(false);
+  });
+
+  it("will not open a map from a newer format, and leaves it exactly as it was", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "From the future", width: 128, height: 128, kmPerPx: 4 });
+    const file = path.join(root, doc.meta.id, "project.json");
+    const future = { ...JSON.parse(readFileSync(file, "utf8")), formatVersion: 9 };
+    writeFileSync(file, JSON.stringify(future, null, 2));
+    const before = readFileSync(file, "utf8");
+    await expect(store.load(doc.meta.id)).rejects.toBeInstanceOf(NewerFormatError);
+    await expect(store.load(doc.meta.id)).rejects.toThrow(/Update Dragon Drop/);
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+
+  it("copies an older map's files aside before bringing it up to date, then saves it in the new form", async () => {
+    const old = new ProjectStore(root);
+    const doc = await old.create({ name: "Migrating", width: 128, height: 128, kmPerPx: 4 });
+    doc.features!.places = [{ id: "p1", name: "Keep", type: "town", x: 5, y: 6 }];
+    await old.save(doc);
+    const newer = new ProjectStore(root, { format: 2, migrations: { 1: (d) => { d.meta.notes = "migrated"; d.features!.places![0].name = "Kept"; } } });
+    const back = await newer.load(doc.meta.id);
+    expect(back.meta.formatVersion).toBe(2);
+    expect(back.meta.notes).toBe("migrated");
+    expect(back.features!.places![0].name).toBe("Kept");
+    // saved in the new form...
+    expect(readMeta(doc.meta.id)).toMatchObject({ formatVersion: 2, notes: "migrated" });
+    // ...and the files as they were are kept
+    const [kept] = readdirSync(path.join(root, doc.meta.id, "backups"));
+    expect(kept).toMatch(/^before-format-1-/);
+    const dir = path.join(root, doc.meta.id, "backups", kept);
+    expect(JSON.parse(readFileSync(path.join(dir, "project.json"), "utf8")).formatVersion).toBe(1);
+    expect(JSON.parse(readFileSync(path.join(dir, "features.json"), "utf8")).places[0].name).toBe("Keep");
+    expect(existsSync(path.join(dir, "map", "height.f32.gz"))).toBe(true);
+    expect(newer.takeNotices(doc.meta.id)[0]).toMatch(/older file format \(1\).*brought up to date \(2\)/);
+    expect(newer.takeNotices(doc.meta.id)).toEqual([]); // (handed over once)
+  });
+
+  it("leaves a map alone if a step is missing, after keeping a copy", async () => {
+    const old = new ProjectStore(root);
+    const doc = await old.create({ name: "Stuck", width: 128, height: 128, kmPerPx: 4 });
+    const before = readFileSync(path.join(root, doc.meta.id, "project.json"), "utf8");
+    const broken = new ProjectStore(root, { format: 3, migrations: { 1: () => {} } }); // nothing turns 2 into 3
+    await expect(broken.load(doc.meta.id)).rejects.toThrow(/format 2 to 3/);
+    expect(readFileSync(path.join(root, doc.meta.id, "project.json"), "utf8")).toBe(before);
+    expect(readdirSync(path.join(root, doc.meta.id, "backups"))).toHaveLength(1);
+  });
+});
+
+describe("a places and labels file that can't be read", () => {
+  it("is kept under another name instead of being overwritten, and the newest checkpoint's copy is used", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Damaged", width: 128, height: 128, kmPerPx: 4 });
+    doc.features!.places = [{ id: "p1", name: "Safe Harbour", type: "port", x: 10, y: 10 }];
+    await store.save(doc);
+    await store.saveCheckpoint(doc.meta.id, "Before", doc, 1);
+    const file = path.join(root, doc.meta.id, "features.json");
+    writeFileSync(file, '{"places": [{"id": "p1", "na'); // cut off in the middle, as a crash or a sync tool can leave it
+    const back = await store.load(doc.meta.id);
+    expect(back.features!.places![0].name).toBe("Safe Harbour");
+    const aside = readdirSync(path.join(root, doc.meta.id)).filter((n) => n.startsWith("features.unreadable-"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(path.join(root, doc.meta.id, aside[0]), "utf8")).toBe('{"places": [{"id": "p1", "na');
+    expect(existsSync(file)).toBe(false); // (so the next save writes a new one instead of replacing the damaged one's only copy)
+    expect(store.takeNotices(doc.meta.id)[0]).toMatch(/couldn't be read.*features\.unreadable-.*checkpoint "Before"/);
+  });
+
+  it("opens without them when there is no checkpoint to take them from, and says so", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Damaged too", width: 128, height: 128, kmPerPx: 4 });
+    writeFileSync(path.join(root, doc.meta.id, "features.json"), "null");
+    const back = await store.load(doc.meta.id);
+    expect(back.features!.places ?? []).toHaveLength(0);
+    expect(store.takeNotices(doc.meta.id)[0]).toMatch(/opens without them/);
+  });
+});
+
+describe("checkpoints and rolling backups", () => {
+  const names = async (store: ProjectStore, id: string) => (await store.listCheckpoints(id)).map((c) => c.name);
+
+  it("keeps only the newest automatic ones, and never touches one a person saved", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Rolling", width: 128, height: 128, kmPerPx: 4 });
+    const id = doc.meta.id;
+    await store.saveCheckpoint(id, "Mine", doc, 1);
+    for (let i = 1; i <= 4; i++) {
+      await store.saveCheckpoint(id, `Auto ${i}`, doc, i, "Saved automatically", { auto: true });
+      await new Promise((r) => setTimeout(r, 5)); // (newest is judged by time)
+    }
+    await store.saveCheckpoint(id, "Also mine", doc, 9);
+    await store.pruneAutoCheckpoints(id, 2);
+    expect(await names(store, id)).toEqual(["Mine", "Auto 3", "Auto 4", "Also mine"]);
+    const left = readdirSync(path.join(root, id, "map", "checkpoints")).filter((n) => n.endsWith(".f32.gz"));
+    expect(left).toHaveLength(4); // (the pruned ones' files are gone too)
+    expect((await store.listCheckpoints(id)).filter((c) => c.auto).map((c) => c.name)).toEqual(["Auto 3", "Auto 4"]);
+    expect(await store.readCheckpoint(id, "Auto 4")).not.toBeNull();
+    expect(await store.lastAutoCheckpointTime(id)).toBeGreaterThan(0);
+    expect(await store.lastAutoCheckpointTime((await store.create({ name: "No autos", width: 128, height: 128, kmPerPx: 4 })).meta.id)).toBe(0);
+  });
+
+  it("deletes the file of a checkpoint that is saved again under the same name", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Resaved", width: 128, height: 128, kmPerPx: 4 });
+    await store.saveCheckpoint(doc.meta.id, "Same", doc, 1);
+    await new Promise((r) => setTimeout(r, 5));
+    await store.saveCheckpoint(doc.meta.id, "same", doc, 2);
+    expect(await names(store, doc.meta.id)).toEqual(["same"]);
+    expect(readdirSync(path.join(root, doc.meta.id, "map", "checkpoints")).filter((n) => n.endsWith(".f32.gz"))).toHaveLength(1);
+  });
+
+  it("keeps the places as they were when it was called, even if they change while it is being written", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Snapshot", width: 128, height: 128, kmPerPx: 4 });
+    doc.features!.places = [{ id: "p1", name: "Before", type: "town", x: 1, y: 1 }];
+    const saving = store.saveCheckpoint(doc.meta.id, "Now", doc, 1);
+    doc.features!.places![0].name = "After";
+    await saving;
+    expect((await store.readCheckpoint(doc.meta.id, "Now"))!.features!.places![0].name).toBe("Before");
+  });
+
+  it("gets two checkpoints saved at the same moment both into the list", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Together", width: 128, height: 128, kmPerPx: 4 });
+    await Promise.all([store.saveCheckpoint(doc.meta.id, "One", doc, 1), store.saveCheckpoint(doc.meta.id, "Two", doc, 2, undefined, { auto: true })]);
+    expect((await names(store, doc.meta.id)).sort()).toEqual(["One", "Two"]);
   });
 });

@@ -539,6 +539,18 @@ Tell me if the lock ever lets a change through outside the box, or gets in your 
 
 ---
 
+## 14p. Map safety: automatic backups and file versions
+
+(This is in the release after 0.1.8.) Your maps are now protected in three ways; see [MAP-FILES.md](MAP-FILES.md).
+
+1. Open a map, make a change (a brush stroke is enough) and wait a few seconds. **Expect** a new entry called **Auto 2026-…** (today's date and time on your PC) in the **Checkpoints** list in the left panel. Hover over it: "Saved automatically".
+2. Make a different change, click **Restore** on that Auto entry and confirm. **Expect** the map to go back to how it was when the backup was taken, and **Undo** to bring your change back. (Another Auto entry won't appear for 15 minutes: that is on purpose.)
+3. Save a checkpoint of your own called `Mine`. Keep editing for a while (30 minutes or more if you can). **Expect** at most six **Auto** entries, the oldest dropping off, and `Mine` still there.
+4. Close Dragon Drop. In the map's folder (`projects\<map>\project.json`) **expect** `"formatVersion": 1` near the top.
+5. **A newer file format** (optional): close Dragon Drop, open a copy of a map's `project.json` in Notepad, change `"formatVersion": 1` to `"formatVersion": 7`, save, and open the map. **Expect** a message that it was saved by a newer version and that you should update, and the map **not** opening. Put the number back to 1 afterwards.
+
+Tell me if an Auto backup never appears, if the list fills up with them, or if Restore didn't put the map back.
+
 ## 15. What's not built yet (so you don't report it as a bug)
 
 - Scatter on battlemaps, wall, path, portal and roof graphics from Dungeondraft packs (only floors and objects work), levels (multi-floor). The Universal VTT and Foundry exports exist but are untested (above).
