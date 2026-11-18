@@ -535,6 +535,8 @@ function startTerminal({ cols, rows, resume }) {
     });
     proc.onExit(({ exitCode }) => {
       if (term === proc) { termAlive = false; term = null; }
+      // a killed Claude may never send its own SessionEnd, and a stale "idle" would let Assist type into the next program
+      void fetch(`http://127.0.0.1:${port}${HOOK_PATH}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionEnd" }) }).catch(() => {});
       sendToEditor("dd:term-exit", exitCode);
     });
     return { ok: true, workspace, claudePath, command: custom };

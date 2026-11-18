@@ -81,7 +81,8 @@ export function ClaudeTerminal({ wide, onToggleWide, assist, claude }: { wide: b
     });
     host.addEventListener("contextmenu", (e) => { e.preventDefault(); if (term.hasSelection()) { void navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); } else void navigator.clipboard.readText().then((t) => term.paste(t)); });
     const offData = bridge.onTermData((d) => term.write(d));
-    const offExit = bridge.onTermExit(() => setState("ended"));
+    // the command may have just been changed in Settings (which ends the terminal): re-read it for the ended panel
+    const offExit = bridge.onTermExit(() => { void bridge.termAttach().then((a) => setCommand(a.command ?? "")).catch(() => {}); setState("ended"); });
     const offInstalled = bridge.onClaudeInstalled((r) => {
       // let the installer's last lines be read before the terminal is cleared for Claude Code
       if (r.ok) { setFirstRun(true); setState("launching"); launchTimer.current = window.setTimeout(() => void start(false), 1500); }
