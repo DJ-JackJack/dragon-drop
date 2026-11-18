@@ -1,0 +1,749 @@
+// End-to-end smoke test: real server + built editor + headless Chromium.
+// Uses a throwaway copy of the projects folder so your maps are never touched.
+// Run: pnpm build && pnpm e2e        (needs Playwright installed)
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const { chromium } = require("playwright");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const port = 47900 + Math.floor(Math.random() * 90);
+const key = randomBytes(24).toString("hex"); // the server is run with an access key, as the desktop app runs it: pages get in by opening /?t=<key> once
+const tmp = mkdtempSync(path.join(tmpdir(), "mapmaker-e2e-"));
+// (the projects folder starts empty: the server makes its generated "First Map", the same map a new install starts with)
+const shots = process.env.E2E_SHOTS ?? tmp;
+
+// a small Dungeondraft pack for the asset browser (generated here; nothing from a real pack)
+const assetsDir = path.join(tmp, "Dungeondraft Assets");
+{
+  const { PNG } = createRequire(path.join(root, "packages/tools/package.json"))("pngjs");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const png = (w, h, [r, g, b]) => { const p = new PNG({ width: w, height: h }); for (let i = 0; i < w * h; i++) p.data.set([r, g, b, 255], i * 4); return new Uint8Array(PNG.sync.write(p)); };
+  const enc = new TextEncoder();
+  const files = [
+    { path: "packs/E2EPACK1.json", data: enc.encode(JSON.stringify({ name: "E2E Pack", id: "E2EPACK1", version: "1" })) },
+    { path: "textures/objects/Oak_Table.png", data: png(512, 256, [150, 100, 50]) },
+    { path: "textures/objects/Barrel.png", data: png(256, 256, [120, 80, 40]) },
+    { path: "textures/terrain/Grass.png", data: png(1024, 1024, [50, 160, 50]) },
+  ];
+  const pad = (n, a) => (a - (n % a)) % a;
+  const names = files.map((f) => enc.encode(`res://${f.path}`));
+  let index = 4 + 4 + 12 + 64 + 4;
+  for (const n of names) index += 4 + n.length + pad(n.length, 4) + 8 + 8 + 16;
+  let cursor = index + pad(index, 16);
+  const offsets = files.map((f) => { const o = cursor; cursor += f.data.length + pad(f.data.length, 16); return o; });
+  const out = new Uint8Array(cursor), dv = new DataView(out.buffer);
+  let at = 0;
+  const u32 = (v) => { dv.setUint32(at, v, true); at += 4; };
+  const u64 = (v) => { dv.setUint32(at, v, true); dv.setUint32(at + 4, 0, true); at += 8; };
+  u32(0x43504447); u32(1); u32(3); u32(5); u32(0); for (let i = 0; i < 16; i++) u32(0); u32(files.length);
+  files.forEach((f, i) => { u32(names[i].length + pad(names[i].length, 4)); out.set(names[i], at); at += names[i].length + pad(names[i].length, 4); u64(offsets[i]); u64(f.data.length); at += 16; });
+  files.forEach((f, i) => out.set(f.data, offsets[i]));
+  mkdirSync(assetsDir, { recursive: true });
+  writeFileSync(path.join(assetsDir, "E2E.dungeondraft_pack"), out);
+  // a rough sketch (green land on blue sea) to attach as a reference: the generated first map has none of its own
+  const sk = new PNG({ width: 256, height: 256 });
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+    const land = (x - 128) ** 2 + (y - 128) ** 2 < 80 ** 2 || (x - 60) ** 2 + (y - 190) ** 2 < 30 ** 2;
+    sk.data.set(land ? [90, 160, 70, 255] : [40, 90, 170, 255], (y * 256 + x) * 4);
+  }
+  writeFileSync(path.join(tmp, "e2e-sketch.png"), PNG.sync.write(sk));
+}
+
+const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_CACHE_DIR: path.join(tmp, "cache") };
+const server = spawn(process.execPath, [path.join(root, "node_modules/tsx/dist/cli.mjs"), "src/main.ts"], { cwd: path.join(root, "apps/server"), env, stdio: ["ignore", "pipe", "pipe"] });
+let log = "";
+server.stdout.on("data", (d) => (log += d));
+server.stderr.on("data", (d) => (log += d));
+
+const fail = (msg) => { console.error(`E2E FAIL: ${msg}\n--- server log ---\n${log}`); cleanup(1); };
+function cleanup(code) {
+  server.kill();
+  try { rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* the server may still be writing; the OS cleans /tmp */ }
+  process.exit(code);
+}
+
+for (let i = 0; i < 60 && !log.includes("Dragon Drop"); i++) await new Promise((r) => setTimeout(r, 250));
+if (!log.includes("Dragon Drop")) fail("server did not start");
+
+const browser = await chromium.launch();
+let failShot = async () => {};
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  failShot = () => page.screenshot({ path: path.join(shots, "e2e-FAIL.png") }).catch(() => {}); // (what the page looked like when a step failed)
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  // the page is served with a content security policy: anything it blocks is a bug in the page (or the policy)
+  const blocked = (m) => { if (/Content Security Policy|Refused to/i.test(m.text())) errors.push(`blocked by the security policy: ${m.text()}`); };
+  page.on("console", blocked);
+  /** Type into the app's own dialog (it replaced the browser's pop-up boxes) and confirm. */
+  const answer = async (text) => {
+    const input = page.getByTestId("dialog-input");
+    await input.waitFor({ timeout: 10000 });
+    await input.fill(text);
+    await input.press("Enter");
+    await page.getByTestId("dialog").waitFor({ state: "detached", timeout: 10000 });
+  };
+  // without the key the API says no; with it, yes; and opening the page with the key leaves no key in the address
+  const bare = await fetch(`http://localhost:${port}/api/health`);
+  if (bare.status !== 401) throw new Error(`/api/health with no access key answered ${bare.status}, not 401`);
+  const keyed = await fetch(`http://localhost:${port}/api/health`, { headers: { authorization: `Bearer ${key}` } });
+  if (keyed.status !== 200) throw new Error(`/api/health with the access key answered ${keyed.status}`);
+  await page.goto(`http://localhost:${port}/?t=${key}`);
+  if (new URL(page.url()).search.includes("t=")) throw new Error(`the access key was left in the address: ${page.url()}`);
+  await page.getByText("Connected").waitFor({ timeout: 15000 });
+  await page.waitForFunction(() => !document.querySelector(".mapview-empty"), null, { timeout: 15000 });
+  await page.waitForTimeout(400);
+
+  // the canvas actually shows the map (not just background)
+  const varied = await page.evaluate(() => {
+    const c = document.querySelector('[data-testid="map-canvas"]');
+    const ctx = c.getContext("2d");
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4 * 997) seen.add(`${d[i] >> 4},${d[i + 1] >> 4},${d[i + 2] >> 4}`);
+    return seen.size;
+  });
+  if (varied < 20) fail(`map canvas looks blank (${varied} colours)`);
+  // Painted Relief arrives once the noise worker and the server's derived layers are ready
+  await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+  await page.screenshot({ path: path.join(shots, "e2e-1-loaded.png") });
+
+  // save a checkpoint through the UI
+  await page.getByRole("button", { name: "Save checkpoint" }).click();
+  await answer("Before test");
+  await page.getByTestId("checkpoints").getByText("Before test").waitFor({ timeout: 10000 });
+
+  // switch style to Relief and back (undoable, shows in history)
+  await page.getByRole("button", { name: "Relief", exact: true }).click();
+  await page.getByTestId("history").getByText("Style: relief").waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Painted", exact: true }).click();
+  await page.getByTestId("history").getByText("Style: painted").waitFor({ timeout: 10000 });
+
+  // paint a raise stroke across the map centre
+  await page.getByRole("button", { name: "Raise" }).click();
+  const box = await page.locator('[data-testid="map-canvas"]').boundingBox();
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  await page.mouse.move(cx - 80, cy);
+  await page.mouse.down();
+  for (let i = 0; i <= 16; i++) await page.mouse.move(cx - 80 + i * 10, cy + Math.sin(i / 3) * 20);
+  await page.mouse.up();
+  await page.getByTestId("history").getByText("Raise brush").first().waitFor({ timeout: 10000 });
+  await page.screenshot({ path: path.join(shots, "e2e-2-brushed.png") });
+
+  // undo through the UI
+  await page.getByRole("button", { name: /Undo/ }).click();
+  await page.getByTestId("history").getByText("Undo: Raise brush").waitFor({ timeout: 10000 });
+
+  // add a place with the Place tool, then change its type in the inspector
+  await page.getByRole("button", { name: "Place", exact: true }).click();
+  await page.getByTestId("tool-hint").getByText(/Click on the map where the place goes/).waitFor({ timeout: 5000 });
+  await page.mouse.click(cx + 60, cy - 40);
+  // cancelling the name box adds nothing, and the tool stays ready
+  await page.getByTestId("dialog").getByText(/Name of this/).waitFor({ timeout: 5000 });
+  await page.getByTestId("dialog").getByRole("button", { name: "Cancel" }).click();
+  await page.getByTestId("dialog").waitFor({ state: "detached", timeout: 5000 });
+  await page.mouse.click(cx + 60, cy - 40);
+  await answer("Test Harbour");
+  await page.getByTestId("places").getByText("Test Harbour").waitFor({ timeout: 10000 });
+  // a new place starts as the kind picked in the Place tool (a town by default); the inspector's picker changes it
+  await page.getByTestId("places").getByText("Town", { exact: true }).waitFor({ timeout: 10000 });
+  await page.getByTestId("place-kind-current").click();
+  await page.getByTestId("inspector-kind-port").click();
+  await page.getByTestId("places").getByText("Port", { exact: true }).waitFor({ timeout: 10000 });
+  // and one of the new pictures: choose a lighthouse in the Place tool, place one, see it in the list
+  await page.getByRole("button", { name: "Place", exact: true }).click();
+  await page.getByTestId("place-kind-lighthouse").click();
+  await page.mouse.click(cx - 70, cy + 50);
+  await answer("Test Light");
+  await page.getByTestId("places").getByText("Lighthouse", { exact: true }).waitFor({ timeout: 10000 });
+  // the picture is really drawn on the map: some of the pixels round the marker are the ink colour
+  await page.waitForTimeout(600); // (the canvas redraws on the next frame)
+  await page.screenshot({ path: path.join(shots, "e2e-place-kinds.png") });
+  const inked = await page.evaluate(({ x, y }) => {
+    const c = document.querySelector('[data-testid="map-canvas"]');
+    const r = c.getBoundingClientRect(), d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data, k = c.width / r.width;
+    const ink = (px, py) => { // dark (ink coloured) pixels in a 17 x 17 px window round a screen point
+      let n = 0;
+      for (let yy = -8; yy <= 8; yy++) for (let xx = -8; xx <= 8; xx++) { const o = (Math.round((py - r.top + yy) * k) * c.width + Math.round((px - r.left + xx) * k)) * 4; if (d[o] < 40 && d[o + 1] < 40 && d[o + 2] < 50) n++; }
+      return n;
+    };
+    return { marker: ink(x, y), sea: ink(x - 40, y + 5) };
+  }, { x: cx - 70, y: cy + 50 });
+  if (inked.marker < 8 || inked.sea > 2) throw new Error(`the lighthouse picture doesn't seem to be drawn on the map (${inked.marker} ink pixels at the marker, ${inked.sea} beside it)`);
+  // the Label size setting is there and takes a value (names and markers are drawn from it)
+  await page.getByTestId("label-size").fill("0.6");
+  if ((await page.getByTestId("label-size").inputValue()) !== "0.6") throw new Error("the Label size slider did not take a value");
+  await page.getByTestId("label-size").fill("1");
+  // and a label with the Label tool
+  await page.getByRole("button", { name: "Label", exact: true }).click();
+  await page.mouse.click(cx - 140, cy + 90);
+  await answer("Test Sea");
+  await page.getByTestId("history").getByText("Add label Test Sea").waitFor({ timeout: 10000 });
+  // drag with the Label tool: the label follows the line
+  await page.mouse.move(cx - 230, cy + 160);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(cx - 230 + i * 14, cy + 160 + Math.sin(i / 3) * 18);
+  await page.mouse.up();
+  await answer("Test Range");
+  await page.getByTestId("history").getByText("Add label Test Range").waitFor({ timeout: 10000 });
+  await page.getByText(/Follows a line/).waitFor({ timeout: 5000 });
+  // climate region: click corners, double-click to close, then make it frozen with snow
+  await page.getByRole("button", { name: "Climate", exact: true }).click();
+  for (const [dx, dy] of [[60, -150], [170, -140], [180, -60], [80, -50]]) await page.mouse.click(cx + dx, cy + dy);
+  await page.mouse.dblclick(cx + 70, cy - 90);
+  await answer("Test Frost");
+  await page.getByTestId("regions").getByText("Test Frost").waitFor({ timeout: 10000 });
+  await page.getByTestId("inspector").getByText("Temperature").click();
+  await page.getByTestId("inspector").getByText("Ground snow").click();
+  await page.getByTestId("regions").getByText(/frozen|cold/).waitFor({ timeout: 10000 });
+  await page.getByTestId("history").getByText("Edit climate region Test Frost").first().waitFor({ timeout: 10000 });
+  // grid: switch to hex, change the size, then back off
+  await page.getByTestId("grid-panel").getByRole("button", { name: "Hex", exact: true }).click();
+  await page.getByTestId("history").getByText(/Hex grid, \d/).first().waitFor({ timeout: 10000 });
+  await page.getByTestId("grid-size").fill("60");
+  await page.getByTestId("grid-size").press("Enter");
+  await page.getByTestId("history").getByText("Hex grid, 60 mi").first().waitFor({ timeout: 10000 });
+  await page.getByTestId("grid-panel").getByText(/One cell = 60 mi/).waitFor({ timeout: 5000 });
+  await page.getByTestId("grid-panel").getByRole("button", { name: "Square", exact: true }).click();
+  // (the server may still be working out the climate after the edits above: that can take 10 seconds or more)
+  await page.getByTestId("history").getByText("Square grid, 60 mi").first().waitFor({ timeout: 40000 });
+  // wait for the panel itself to show Square (the buttons follow the map, not the click) before switching back
+  await page.locator('[data-testid="grid-panel"] .seg button.on', { hasText: "Square" }).waitFor({ timeout: 15000 });
+  await page.getByTestId("grid-panel").getByRole("button", { name: "Hex", exact: true }).click();
+  await page.locator('[data-testid="grid-panel"] .seg button.on', { hasText: "Hex" }).waitFor({ timeout: 5000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(shots, "e2e-3b-hexgrid.png") });
+  // a size too fine for this zoom says so, and the button zooms in until it can be seen
+  await page.getByTestId("grid-panel").getByRole("button", { name: "6 mi", exact: true }).click();
+  await page.getByTestId("grid-too-fine").waitFor({ timeout: 5000 });
+  await page.getByTestId("grid-too-fine").getByRole("button").click();
+  await page.getByTestId("grid-too-fine").waitFor({ state: "detached", timeout: 5000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(shots, "e2e-3c-hex6.png") });
+  // back to the whole map, grid off, for the steps that follow
+  await page.getByTestId("grid-panel").getByRole("button", { name: "Off", exact: true }).click();
+  await page.getByRole("button", { name: /Fit/ }).click();
+  await page.waitForTimeout(300);
+  // map extras: title, scale bar, compass; then export a real PNG
+  await page.locator('[data-testid="extras-panel"] summary').click();
+  await page.getByTestId("extras-title").fill("The Test Isles");
+  await page.getByTestId("extras-title").press("Enter");
+  await page.getByTestId("history").getByText(/Map extras: title/).first().waitFor({ timeout: 10000 });
+  // one click each, waiting for every change to land before the next (the checkboxes follow the server's reply)
+  await page.getByTestId("extras-panel").getByText("Scale bar", { exact: true }).click();
+  await page.getByTestId("history").getByText("Map extras: title, scale bar").first().waitFor({ timeout: 10000 });
+  await page.getByTestId("extras-panel").getByText("Compass rose").click();
+  await page.getByTestId("history").getByText(/title, scale bar, compass/).first().waitFor({ timeout: 10000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(shots, "e2e-3e-extras.png") });
+  await page.getByTestId("export-button").click();
+  await page.getByTestId("export-dialog").getByText(/4096 × 4096 px/).waitFor({ timeout: 5000 }); // (the first map is 1024 px: its 4× size; tiling is covered by the exportPlan unit tests)
+  await page.getByTestId("export-size-1").check();
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("export-go").click()]);
+  if (!/\(1x\)\.png$/.test(download.suggestedFilename())) fail(`unexpected export name ${download.suggestedFilename()}`);
+  const dpath = await download.path();
+  const { statSync, readFileSync } = await import("node:fs");
+  const png = readFileSync(dpath);
+  if (png.subarray(1, 4).toString() !== "PNG" || png.readUInt32BE(16) !== 1024 || png.readUInt32BE(20) !== 1024) fail("the exported PNG isn't 1024 x 1024");
+  if (statSync(dpath).size < 200000) fail("the exported PNG looks empty");
+  await page.getByTestId("export-dialog").waitFor({ state: "detached", timeout: 10000 });
+  // climate panel opens and shows its sliders
+  await page.locator("details.climate").filter({ hasText: "Top edge latitude" }).locator("summary").click();
+  await page.getByText(/^Snowline \d+ m/).waitFor();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(shots, "e2e-3-places.png") });
+
+  // a full chat turn (scripted model): streamed text, tool chips, preview image, Claude's edit in history
+  await page.locator('.composer input[type="file"]').setInputFiles(path.join(tmp, "e2e-sketch.png")); // (kept in the project's references: the sketch step below uses it)
+  await page.getByTestId("chat-input").fill("Add a small island in the inner sea");
+  await page.keyboard.press("Enter");
+  await page.getByText("Want hills on it, or a name?").waitFor({ timeout: 20000 });
+  await page.getByText("Added land").waitFor();
+  await page.getByText("Looked at the map").waitFor();
+  await page.locator(".tool-image img").first().waitFor();
+  await page.getByTestId("history").getByText(/Add landmass/).waitFor();
+  const claudeBadge = await page.getByTestId("history").locator(".who.claude").count();
+  if (claudeBadge < 1) fail("Claude's edit is not attributed in history");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(shots, "e2e-4-chat.png") });
+
+  // roads and borders: a routed road over real terrain, then a closed border
+  {
+    const cbox = await page.locator('[data-testid="map-canvas"]').boundingBox();
+    const fitScale = Math.min(cbox.width / 1024, cbox.height / 1024) * 0.95; // (the first map is 1024 px square)
+    const sx = (mx) => cbox.x + (cbox.width - 1024 * fitScale) / 2 + mx * fitScale;
+    const sy = (my) => cbox.y + (cbox.height - 1024 * fitScale) / 2 + my * fitScale;
+    await page.getByRole("button", { name: "Roads", exact: true }).click();
+    await page.getByTestId("tool-hint").getByText(/Click where the road starts/).waitFor({ timeout: 5000 });
+    await page.mouse.click(sx(160), sy(476)); // two points on the big island, about 150 px apart
+    await page.mouse.dblclick(sx(172), sy(320));
+    const rows = (re) => page.getByTestId("lines").locator("button").filter({ hasText: re });
+    await rows(/road/).first().waitFor({ timeout: 30000 });
+    await page.getByTestId("history").getByText(/Add road \(\d+ mi\)/).first().waitFor({ timeout: 10000 });
+    await page.getByTestId("inspector").getByText(/days on foot/).waitFor({ timeout: 10000 });
+    await page.screenshot({ path: path.join(shots, "e2e-3d-road.png") });
+    // a border: three points, then click the first point again to close it
+    await page.getByTestId("line-kind").selectOption("border");
+    await page.getByTestId("tool-hint").getByText(/Click the points along the border/).waitFor({ timeout: 5000 });
+    for (const [mx, my] of [[100, 380], [260, 420], [220, 560]]) await page.mouse.click(sx(mx), sy(my));
+    await page.mouse.click(sx(100) + 2, sy(380) + 2);
+    await rows(/border/).first().waitFor({ timeout: 10000 });
+    await page.getByTestId("inspector").getByText(/Closed \(joins back/).waitFor({ timeout: 10000 });
+    if (!(await page.getByTestId("inspector").getByRole("checkbox").first().isChecked())) fail("the border did not close");
+    // delete the border from the inspector; the road stays
+    await page.getByTestId("inspector").getByRole("button", { name: "Delete" }).click();
+    await rows(/border/).first().waitFor({ state: "detached", timeout: 10000 });
+    if ((await rows(/road/).count()) < 1) fail("the road disappeared");
+    // a reef: drawn straight through the clicked points (no route over the terrain), listed as a reef
+    await page.getByTestId("line-kind").selectOption("reef");
+    await page.getByTestId("tool-hint").getByText(/Click the points along the reef/).waitFor({ timeout: 5000 });
+    await page.mouse.click(sx(60), sy(980)); // out at sea
+    await page.mouse.dblclick(sx(150), sy(990));
+    await page.getByTestId("history").getByText("Add reef").first().waitFor({ timeout: 10000 });
+    await rows(/reef/).first().waitFor({ timeout: 10000 });
+    await page.getByTestId("inspector").getByText("Reef").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("inspector").getByRole("button", { name: "Delete" }).click();
+    await rows(/reef/).first().waitFor({ state: "detached", timeout: 10000 });
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+  }
+
+  // a regional map: drag a box with the Detail map tool, name it, jump to it and back
+  await page.getByRole("button", { name: "Detail map", exact: true }).click();
+  await page.mouse.move(cx - 150, cy + 40);
+  await page.mouse.down();
+  await page.mouse.move(cx - 60, cy + 120, { steps: 6 });
+  await page.mouse.up();
+  await answer("Test Detail");
+  await page.getByTestId("regional").getByText("Test Detail").waitFor({ timeout: 60000 }).catch(async () => {
+    // the new map opens by itself: its sidebar then shows the parent link instead
+    await page.getByTestId("regional").getByText("parent").waitFor({ timeout: 60000 });
+  });
+  await page.getByTestId("regional").getByText("parent").waitFor({ timeout: 60000 });
+  await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 90000 });
+  await page.screenshot({ path: path.join(shots, "e2e-4b-regional.png") });
+  await page.getByTestId("regional").getByText("parent").click();
+  await page.getByTestId("regional").getByText("Test Detail").waitFor({ timeout: 30000 });
+
+  // sketch to terrain: open the dialog from a reference, check the preview, create, then undo
+  {
+    await page.getByTestId("sketch-open").first().click();
+    await page.getByTestId("sketch-dialog").waitFor({ timeout: 10000 });
+    await page.getByText(/% land/).waitFor({ timeout: 10000 });
+    const lit = await page.evaluate(() => {
+      const c = document.querySelector('[data-testid="sketch-preview"]');
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let land = 0, sea = 0;
+      for (let i = 0; i < d.length; i += 4) { if (d[i + 1] > d[i + 2]) land++; else sea++; }
+      return { land, sea };
+    });
+    if (lit.land < 500 || lit.sea < 500) fail(`the sketch preview looks wrong (${JSON.stringify(lit)})`);
+    await page.getByTestId("sketch-go").click();
+    await page.getByTestId("history").getByText(/Terrain from sketch/).first().waitFor({ timeout: 60000 });
+    await page.getByTestId("checkpoints").getByText("Before sketch import").waitFor({ timeout: 10000 });
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: path.join(shots, "e2e-4c-sketch.png") });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("history").getByText(/Undo: Terrain from sketch/).first().waitFor({ timeout: 20000 });
+  }
+
+  // battlemaps: create one, build a room, cut a door, add a light and floor, export for a tabletop, then back to the world map
+  {
+    const worldId = await page.locator("select.project").inputValue();
+    // a battlemap made from a spot on the world map, then back
+    {
+      const wbox = await page.getByTestId("map-canvas").boundingBox();
+      await page.getByRole("button", { name: "Battlemap here", exact: true }).click();
+      await page.mouse.click(wbox.x + wbox.width / 2, wbox.y + wbox.height / 2);
+      await answer("E2E Scene");
+      await page.getByTestId("battle-canvas").waitFor({ timeout: 30000 });
+      await page.getByTestId("battle-origin").getByText(/Made from/).waitFor({ timeout: 10000 });
+      await page.waitForFunction(() => !document.querySelector(".mapview-empty") && !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+      await page.getByTestId("battle-summary").getByText(/30 × 20 squares/).waitFor({ timeout: 5000 });
+      await page.screenshot({ path: path.join(shots, "e2e-4f-scene.png") });
+      await page.getByRole("button", { name: /Back to/ }).click();
+      await page.getByTestId("map-canvas").waitFor({ timeout: 15000 });
+      await page.waitForFunction(() => !document.querySelector(".mapview-empty"), null, { timeout: 15000 });
+    }
+    await page.getByRole("button", { name: "+ New map" }).click();
+    await page.getByTestId("new-kind-battle").click();
+    await page.getByTestId("new-name").fill("E2E Cellar");
+    await page.getByTestId("new-sx").fill("24");
+    await page.getByTestId("new-sy").fill("16");
+    await page.getByTestId("new-create").click();
+    await page.getByTestId("battle-canvas").waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector(".mapview-empty") && !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+    await page.getByTestId("battle-summary").getByText(/24 × 16 squares/).waitFor({ timeout: 5000 });
+    const box = await page.getByTestId("battle-canvas").boundingBox();
+    // where a grid square is on screen (the view fits the map at 95%)
+    const k = Math.min(box.width / 24, box.height / 16) * 0.95;
+    const sq = (x, y) => ({ x: box.x + (box.width - 24 * k) / 2 + x * k, y: box.y + (box.height - 16 * k) / 2 + y * k });
+    const drag = async (a, b) => {
+      const p = sq(...a), q = sq(...b);
+      await page.mouse.move(p.x, p.y);
+      await page.mouse.down();
+      await page.mouse.move((p.x + q.x) / 2, (p.y + q.y) / 2, { steps: 4 });
+      await page.mouse.move(q.x, q.y, { steps: 4 });
+      await page.mouse.up();
+    };
+    const click = async (x, y) => { const p = sq(x, y); await page.mouse.click(p.x, p.y); };
+    const painted = async () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="battle-canvas"]');
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      const seen = new Set();
+      for (let i = 0; i < d.length; i += 4 * 997) seen.add(`${d[i] >> 4},${d[i + 1] >> 4},${d[i + 2] >> 4}`);
+      return seen.size;
+    });
+    if ((await painted()) < 12) fail("battlemap canvas looks blank");
+    // a wooden room inside the starting room
+    await page.getByTestId("btool-room").click();
+    await page.getByTestId("material-wood-planks").click();
+    await drag([10, 5], [14, 9]);
+    await page.getByTestId("history").getByText("Room walls (4×4)").waitFor({ timeout: 10000 });
+    // a door in its top wall; then try one on bare floor, which should explain itself
+    await page.getByTestId("btool-door").click();
+    await click(12, 5);
+    await page.getByTestId("history").getByText("Add door").waitFor({ timeout: 10000 });
+    await page.getByTestId("battle-inspector").getByText("Door").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("wall-open").click(); // a controlled checkbox: it ticks when the server echoes the change
+    await page.getByTestId("history").getByText("Change door").first().waitFor({ timeout: 10000 });
+    await click(5, 11);
+    await page.getByTestId("battle-note").waitFor({ timeout: 5000 });
+    // a torch, and water painted with the brush (one undoable stroke)
+    await page.getByTestId("btool-light").click();
+    await click(12, 7);
+    await page.getByTestId("history").getByText("Add light").waitFor({ timeout: 10000 });
+    await page.getByTestId("light-radius").waitFor({ timeout: 5000 });
+    // the light level: Dim darkens the map except where the torch reaches; Bright restores it
+    const lum = async (x, y) => {
+      const p = sq(x, y);
+      return page.evaluate(([cx, cy]) => { const c = document.querySelector('[data-testid="battle-canvas"]'); const d = c.getContext("2d").getImageData(cx, cy, 1, 1).data; return d[0] + d[1] + d[2]; }, [Math.round(p.x - box.x), Math.round(p.y - box.y)]);
+    };
+    const farBefore = await lum(3.5, 12.5), litBefore = await lum(11, 8); // the torch is inside the wooden room at (12, 7)
+    await page.getByTestId("ambient-dim").click();
+    await page.getByTestId("history").getByText("Light level: dim").first().waitFor({ timeout: 10000 });
+    await page.waitForTimeout(500);
+    const farDim = await lum(3.5, 12.5), litDim = await lum(11, 8);
+    if (!(farDim < farBefore * 0.8)) fail(`Dim did not darken the map away from the light (${farBefore} -> ${farDim})`);
+    if (!(litDim > farDim * 1.3)) fail(`the torch's pool is not brighter than the dark around it (${litDim} vs ${farDim})`);
+    if (!(litDim > litBefore * 0.6)) fail(`the lit floor went dark in Dim (${litBefore} -> ${litDim})`);
+    await page.screenshot({ path: path.join(shots, "e2e-4d2-dim.png") });
+    await page.getByTestId("ambient-bright").click();
+    await page.getByTestId("history").getByText("Light level: bright").first().waitFor({ timeout: 10000 });
+    await page.waitForTimeout(500);
+    const farBack = await lum(3.5, 12.5);
+    if (Math.abs(farBack - farBefore) > farBefore * 0.1) fail(`Bright did not restore the map (${farBefore} -> ${farBack})`);
+    // time-of-day presets carry a colour; a light zone gives an area its own level; notes make the key
+    await page.getByTestId("ambient-night").click();
+    await page.getByTestId("history").getByText("Light level: night").first().waitFor({ timeout: 10000 });
+    await page.waitForTimeout(400);
+    const nightLum = await lum(3.5, 12.5);
+    if (!(nightLum < farBefore * 0.6)) fail(`Night did not darken the map (${farBefore} -> ${nightLum})`);
+    await page.getByTestId("btool-zone").click();
+    await drag([3, 11], [8, 14]); // a rectangle in the bottom-left corner of the room
+    await page.getByTestId("history").getByText("Add light zone").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("zone-level").waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    const zoneLum = await lum(5.5, 12.5);
+    const outsideZone = await lum(10.5, 12.5);
+    if (!(zoneLum > outsideZone * 1.4)) fail(`the light zone is not brighter than the night around it (${zoneLum} vs ${outsideZone})`);
+    await page.getByTestId("zone-delete").click();
+    await page.getByTestId("history").getByText("Delete light zone").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("ambient-bright").click();
+    await page.getByTestId("history").getByText("Light level: bright").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("btool-note").click();
+    await click(12, 7);
+    await page.getByTestId("history").getByText("Add note 1").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("note-title").fill("Wooden room");
+    await page.getByTestId("note-text").fill("A torch burns here.");
+    await page.getByTestId("note-text").blur();
+    await page.getByTestId("history").getByText("Change note 1").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("battle-key").getByText("Wooden room").waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-4d3-key.png") });
+    await page.getByTestId("btool-brush").click();
+    await page.getByTestId("material-shallow-water").click();
+    await drag([4, 11], [9, 12]);
+    await page.getByTestId("history").getByText("Paint shallow water").waitFor({ timeout: 10000 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(shots, "e2e-4d-battlemap.png") });
+    // the summary counts what we built
+    await page.getByTestId("battle-summary").getByText(/1 door/).waitFor({ timeout: 5000 });
+    await page.getByTestId("battle-summary").getByText(/1 light/).waitFor({ timeout: 5000 });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("history").getByText(/Undo: Paint shallow water/).first().waitFor({ timeout: 10000 });
+    // pack assets: browse, search, use a floor texture and place an object
+    await page.getByTestId("tab-assets").click();
+    await page.getByTestId("assets-panel").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length >= 2, null, { timeout: 15000 });
+    await page.getByTestId("assets-search").fill("table");
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 1, null, { timeout: 10000 });
+    await page.getByTestId("assets-search").fill("");
+    await page.getByTestId("assets-cat-terrain").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 1, null, { timeout: 10000 });
+    await page.getByTestId("asset-item").first().click(); // adds the texture to the palette and picks the brush
+    await page.getByTestId("history").getByText("Add floor texture Grass").waitFor({ timeout: 10000 });
+    await page.getByTestId("material-tex-Grass").waitFor({ timeout: 10000 });
+    await drag([4, 12], [8, 12]);
+    await page.getByTestId("history").getByText("Paint Grass").first().waitFor({ timeout: 10000 });
+    await page.waitForTimeout(1500); // the texture loads, then the floor repaints
+    const pixelAt = (pt) => page.evaluate(({ x, y }) => {
+      const c = document.querySelector('[data-testid="battle-canvas"]');
+      const dpr = window.devicePixelRatio || 1;
+      const d = c.getContext("2d").getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data;
+      return [d[0], d[1], d[2]];
+    }, { x: pt.x - box.x, y: pt.y - box.y });
+    const green = await pixelAt(sq(6, 12));
+    if (!(green[1] > green[0] + 40 && green[1] > green[2] + 40)) fail(`the pack texture isn't painted (got ${green})`);
+    await page.getByTestId("assets-cat-objects").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 2, null, { timeout: 10000 });
+    await page.getByTestId("asset-item").filter({ hasText: "Oak Table" }).click();
+    await page.getByTestId("btool-prop").waitFor();
+    await page.getByTestId("prop-options").waitFor({ timeout: 5000 });
+    await click(16, 4);
+    await page.getByTestId("history").getByText("Add object").waitFor({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    await page.getByTestId("battle-summary").getByText(/1 object/).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-4e-assets.png") });
+    const brown = await pixelAt(sq(16, 4));
+    if (!(brown[0] > brown[2] + 40)) fail(`the object isn't drawn (got ${brown})`);
+    await page.getByTestId("btool-select").click();
+    await click(16, 4);
+    await page.getByTestId("battle-inspector").getByText("Object").first().waitFor({ timeout: 5000 });
+    await page.keyboard.press("e");
+    await page.getByTestId("history").getByText("Change object").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("prop-delete").click();
+    await page.getByTestId("history").getByText("Delete object").waitFor({ timeout: 10000 });
+    await page.getByTestId("bgrid-hex").click();
+    await page.getByTestId("history").getByText("Grid: hex").waitFor({ timeout: 10000 });
+    await page.getByTestId("bgrid-square").click();
+    // export for tabletops: Universal VTT carries the walls, door and light
+    await page.getByTestId("battle-export-button").click();
+    const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 30000 }), page.getByTestId("battle-export-uvtt").click()]);
+    if (!dl.suggestedFilename().endsWith(".dd2vtt")) fail(`unexpected export name ${dl.suggestedFilename()}`);
+    const uvtt = JSON.parse(await (await import("node:fs/promises")).readFile(await dl.path(), "utf8"));
+    if (uvtt.resolution.map_size.x !== 24 || uvtt.resolution.pixels_per_grid !== 70) fail("bad Universal VTT resolution");
+    if (uvtt.portals.length !== 1 || uvtt.portals[0].closed !== false) fail(`expected one open door, got ${JSON.stringify(uvtt.portals)}`);
+    if (uvtt.lights.length !== 1 || uvtt.line_of_sight.length < 2) fail("Universal VTT is missing the light or walls");
+    await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // the key: the numbered notes as Markdown (and they are not in the Universal VTT picture's walls or lights)
+    await page.getByTestId("battle-export-button").click();
+    const [keyDl] = await Promise.all([page.waitForEvent("download", { timeout: 30000 }), page.getByTestId("battle-export-key").click()]);
+    if (!keyDl.suggestedFilename().endsWith("-key.md")) fail(`unexpected key name ${keyDl.suggestedFilename()}`);
+    const keyText = await (await import("node:fs/promises")).readFile(await keyDl.path(), "utf8");
+    if (!keyText.includes("1. **Wooden room**") || !keyText.includes("A torch burns here.")) fail(`the key is missing the note: ${keyText}`);
+    await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // back to the world map (the viewer test below expects it)
+    await page.locator("select.project").selectOption(worldId);
+    await page.getByTestId("map-canvas").waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector(".mapview-empty"), null, { timeout: 15000 });
+  }
+
+  // the phone viewer: server render + labels, places list, place card
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  phone.on("pageerror", (e) => errors.push(String(e)));
+  phone.on("console", blocked);
+  await phone.goto(`http://localhost:${port}/view?t=${key}`);
+  await phone.getByText(/^Updated/).waitFor({ timeout: 20000 });
+  await phone.waitForTimeout(500);
+  const viewerColours = await phone.evaluate(() => {
+    const c = document.querySelector('[data-testid="viewer-canvas"]');
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4 * 997) seen.add(`${d[i] >> 4},${d[i + 1] >> 4},${d[i + 2] >> 4}`);
+    return seen.size;
+  });
+  if (viewerColours < 20) fail(`viewer looks blank (${viewerColours} colours)`);
+  await phone.screenshot({ path: path.join(shots, "e2e-5-viewer.png") });
+  await phone.getByRole("button", { name: "Places", exact: true }).click();
+  await phone.getByTestId("viewer-places").getByText("Test Harbour").click();
+  await phone.getByTestId("viewer-card").getByText("Test Harbour").waitFor({ timeout: 5000 });
+  await phone.waitForTimeout(400);
+  await phone.screenshot({ path: path.join(shots, "e2e-6-viewer-place.png") });
+
+  // The map is painted in a worker: a brush stroke comes back as painted pixels, and Undo paints the old land back (the climate catches up a few seconds later)
+  {
+    await page.bringToFront();
+    const spot = await page.evaluate(() => {
+      const c = document.querySelector('[data-testid="map-canvas"]'), ctx = c.getContext("2d"), dpr = c.width / c.clientWidth, rc = c.getBoundingClientRect();
+      for (let y = 40; y < c.clientHeight - 40; y += 10) for (let x = 40; x < c.clientWidth - 40; x += 10) {
+        const d = ctx.getImageData(Math.round((x - 14) * dpr), Math.round((y - 14) * dpr), Math.round(28 * dpr), Math.round(28 * dpr)).data;
+        let green = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { n++; if (d[i + 1] > d[i + 2] + 6 && d[i + 1] > d[i] + 4 && d[i + 1] > 55) green++; }
+        if (green >= n * 0.9) return [rc.left + x, rc.top + y]; // (mostly green: the generated map's forest is textured, never one flat colour)
+      }
+      return null;
+    });
+    if (!spot) fail("painted map: no plain land found to test a brush stroke on");
+    const probe = ([x, y]) => page.evaluate(([x, y]) => {
+      const c = document.querySelector('[data-testid="map-canvas"]'), ctx = c.getContext("2d"), dpr = c.width / c.clientWidth, rc = c.getBoundingClientRect();
+      const d = ctx.getImageData(Math.round((x - rc.left - 5) * dpr), Math.round((y - rc.top - 5) * dpr), Math.round(10 * dpr), Math.round(10 * dpr)).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      return [r / n, g / n, b / n];
+    }, [x, y]);
+    const apart = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]);
+    const before = await probe(spot);
+    await page.getByRole("button", { name: "Raise", exact: true }).click();
+    await page.mouse.move(spot[0] - 30, spot[1]);
+    await page.mouse.down();
+    for (let i = 0; i <= 30; i++) await page.mouse.move(spot[0] - 30 + i * 2, spot[1] + Math.sin(i / 3) * 3);
+    await page.mouse.up();
+    await page.waitForTimeout(1500);
+    const raised = await probe(spot);
+    if (apart(before, raised) < 8) fail(`painted map: a brush stroke didn't change the pixels it touched (${before.map(Math.round)} -> ${raised.map(Math.round)})`);
+    await page.getByRole("button", { name: /Undo/ }).first().click();
+    let back = false;
+    for (let i = 0; i < 50 && !back; i++) { await page.waitForTimeout(400); back = apart(await probe(spot), before) < 14; }
+    if (!back) fail(`painted map: Undo didn't paint the old land back (${before.map(Math.round)} vs ${(await probe(spot)).map(Math.round)})`);
+    await page.screenshot({ path: path.join(shots, "e2e-7-paint-worker.png") });
+  }
+
+  // Rivers are painted into the map by the worker (not drawn over it): switching the Rivers layer off and on repaints, and changes the picture
+  {
+    await page.bringToFront();
+    await page.getByRole("button", { name: "Pan", exact: true }).click();
+    const snap = () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="map-canvas"]'), d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data, out = [];
+      for (let i = 1; i < d.length; i += 28) out.push(d[i]);
+      return out;
+    });
+    const apart = (a, b) => { let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t; };
+    const box = page.getByRole("checkbox", { name: "Rivers" }).first();
+    await page.waitForTimeout(1500);
+    const on1 = await snap();
+    await box.uncheck();
+    await page.waitForTimeout(3500);
+    const off = await snap();
+    await box.check();
+    await page.waitForTimeout(3500);
+    const on2 = await snap();
+    const withOff = apart(on1, off), again = apart(on1, on2);
+    if (withOff < 3000) fail(`rivers: switching the Rivers layer off changed the picture by only ${withOff} (rivers should be painted into the map)`);
+    if (again > withOff * 0.25) fail(`rivers: switching them back on didn't restore the picture (off ${withOff}, back-on ${again})`);
+  }
+
+  // The ground legend (painted style): open it and read the kinds of ground
+  {
+    await page.bringToFront();
+    const legend = page.getByTestId("ground-legend");
+    await legend.waitFor({ timeout: 5000 });
+    await legend.locator("summary").click();
+    for (const name of ["Conifer forest", "Temperate rainforest", "Glacier", "Volcanic ground", "Beach"]) await legend.getByText(name, { exact: true }).waitFor({ timeout: 5000 });
+    await legend.locator("summary").click();
+  }
+
+  // Selecting: drag an area (rectangle, circle, freehand), click for a point, see the bar and the gold outline, lock and unlock, Esc clears; the server shares it with Claude
+  {
+    await page.bringToFront();
+    const serverSel = () => page.evaluate(() => new Promise((resolve) => {
+      const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?lite=1`);
+      ws.onmessage = (ev) => { if (typeof ev.data !== "string") return; const m = JSON.parse(ev.data); if (m.t === "selection") { ws.close(); resolve(m); } };
+      setTimeout(() => { ws.close(); resolve(null); }, 5000);
+    }));
+    const waitServerSel = async (test, what) => {
+      let m = null;
+      for (let i = 0; i < 40; i++) { m = await serverSel(); if (m && test(m)) return m; await page.waitForTimeout(150); }
+      fail(`selection: the server never had ${what} (last: ${JSON.stringify(m)})`);
+    };
+    const goldNear = (x, y) => page.evaluate(([x, y]) => {
+      const c = document.querySelector('[data-testid="map-canvas"]'), ctx = c.getContext("2d"), dpr = c.width / c.clientWidth, rc = c.getBoundingClientRect();
+      const d = ctx.getImageData(Math.round((x - rc.left - 3) * dpr), Math.round((y - rc.top - 3) * dpr), Math.round(6 * dpr), Math.round(6 * dpr)).data;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 225 && d[i + 1] > 175 && d[i + 2] < 140) return true;
+      return false;
+    }, [x, y]);
+    await page.getByRole("button", { name: "Select area", exact: true }).click();
+    await page.getByTestId("tool-hint").getByText(/Drag out an area/).waitFor({ timeout: 5000 });
+    const sb = await page.locator('[data-testid="map-canvas"]').boundingBox();
+    const mx = sb.x + sb.width / 2, my = sb.y + sb.height / 2;
+    // a rectangle
+    await page.mouse.move(mx - 100, my - 60);
+    await page.mouse.down();
+    await page.mouse.move(mx + 60, my + 50, { steps: 6 });
+    await page.mouse.up();
+    await page.getByTestId("selection-text").getByText(/rectangle/).waitFor({ timeout: 5000 });
+    if (!(await page.getByTestId("selection-lock").isChecked())) fail("selection: the lock should be on by default when an area is selected");
+    await page.getByTestId("selection-bar").getByText(/locked to this area/).waitFor({ timeout: 5000 });
+    let m = await waitServerSel((q) => q.selection?.kind === "area" && q.selection.shape.type === "rect" && q.lock === true, "the locked rectangle");
+    if (m.selection.shape.w < 10 || m.selection.shape.h < 10) fail(`selection: the rectangle is too small: ${JSON.stringify(m.selection)}`);
+    await page.waitForTimeout(200);
+    if (!(await goldNear(mx - 100 + 40, my - 60))) fail("selection: no gold outline along the top edge of the selected rectangle");
+    if (await goldNear(mx - 100 + 40, my - 60 - 40)) fail("selection: gold drawn well outside the rectangle");
+    await page.screenshot({ path: path.join(shots, "e2e-8-selection.png") });
+    // unlocking tells the server
+    await page.getByTestId("selection-lock").uncheck();
+    await waitServerSel((q) => q.selection?.kind === "area" && q.lock === false, "the unlocked rectangle");
+    await page.getByTestId("selection-bar").getByText(/Lock Claude's edits to this area/).waitFor({ timeout: 5000 });
+    await page.getByTestId("selection-lock").check();
+    await waitServerSel((q) => q.lock === true, "the lock back on");
+    // without the desktop app there is no terminal to type into: the bar says how to point Claude at it instead
+    await page.getByTestId("selection-bar").getByText(/Claude can see this selection/).waitFor({ timeout: 5000 });
+    // a circle, from its centre
+    await page.getByTestId("area-circle").click();
+    await page.mouse.move(mx, my);
+    await page.mouse.down();
+    await page.mouse.move(mx + 70, my + 10, { steps: 5 });
+    await page.mouse.up();
+    await page.getByTestId("selection-text").getByText(/circle of radius/).waitFor({ timeout: 5000 });
+    await waitServerSel((q) => q.selection?.kind === "area" && q.selection.shape.type === "circle", "the circle");
+    // freehand round a triangle
+    await page.getByTestId("area-free").click();
+    await page.mouse.move(mx - 80, my + 70);
+    await page.mouse.down();
+    await page.mouse.move(mx + 40, my + 75, { steps: 8 });
+    await page.mouse.move(mx - 20, my - 10, { steps: 8 });
+    await page.mouse.move(mx - 78, my + 68, { steps: 8 });
+    await page.mouse.up();
+    await page.getByTestId("selection-text").getByText(/a polygon of \d+ points/).waitFor({ timeout: 5000 });
+    await waitServerSel((q) => q.selection?.kind === "area" && q.selection.shape.type === "polygon" && q.selection.shape.points.length >= 3, "the freehand area");
+    // a polygon outlined corner by corner: click the corners, Enter closes it
+    await page.getByTestId("area-poly").click();
+    for (const [dx, dy] of [[-60, -40], [60, -50], [80, 40], [-40, 60]]) await page.mouse.click(mx + dx, my + dy);
+    await page.keyboard.press("Enter");
+    await page.getByTestId("selection-text").getByText(/a polygon of 4 points/).waitFor({ timeout: 5000 });
+    await waitServerSel((q) => q.selection?.kind === "area" && q.selection.shape.type === "polygon" && q.selection.shape.points.length === 4, "the four-corner polygon");
+    // (and a half-drawn outline can be backed out of corner by corner: two corners, one taken back, no selection change)
+    await page.mouse.click(mx - 100, my - 80);
+    await page.mouse.click(mx - 60, my - 80);
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Backspace");
+    await page.getByTestId("selection-text").getByText(/a polygon of 4 points/).waitFor({ timeout: 5000 });
+    // a click without dragging picks a point (no area, so nothing to lock)
+    await page.getByTestId("area-rect").click();
+    await page.mouse.click(mx + 90, my - 70);
+    await page.getByTestId("selection-text").getByText(/the point \(/).waitFor({ timeout: 5000 });
+    if (await page.getByTestId("selection-lock").count()) fail("selection: a point has no area to lock to, but the lock box is showing");
+    await waitServerSel((q) => q.selection?.kind === "point" && q.lock === false, "the point");
+    // the Select tool: a place, then bare ground; Esc clears
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+    // (earlier steps put places, labels and a climate region on the map: try a few spots until one is bare ground)
+    let picked = false;
+    for (const [dx, dy] of [[150, -100], [200, 100], [-200, -100], [100, 120], [-150, 100], [220, -40]]) {
+      await page.mouse.click(mx + dx, my + dy);
+      await page.waitForTimeout(250);
+      if (/the point \(/.test((await page.getByTestId("selection-text").textContent().catch(() => "")) ?? "")) { picked = true; break; }
+    }
+    if (!picked) fail("selection: clicking bare ground with the Select tool never picked a point");
+    await waitServerSel((q) => q.selection?.kind === "point", "the point picked with the Select tool");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("selection-bar").waitFor({ state: "detached", timeout: 5000 });
+    await waitServerSel((q) => q.selection === null, "nothing selected after Esc");
+  }
+
+  if (errors.length) fail(`page errors: ${errors.join("; ")}`);
+  console.log(`E2E OK (screenshots in ${shots})`);
+  await browser.close();
+  if (shots === tmp) cleanup(0);
+  server.kill();
+  process.exit(0);
+} catch (e) {
+  await failShot();
+  await browser.close();
+  fail(e.stack ?? String(e));
+}

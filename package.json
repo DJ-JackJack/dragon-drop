@@ -1,0 +1,30 @@
+{
+  "name": "ai-mapmaker",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,editor -c blue,green \"pnpm --filter @mapmaker/server dev\" \"pnpm --filter @mapmaker/editor dev\"",
+    "build": "pnpm --filter @mapmaker/editor build",
+    "start": "node scripts/start.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e": "node apps/editor/e2e/smoke.mjs",
+    "upscale": "tsx apps/server/src/upscaleCli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "concurrently": "10.0.7",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

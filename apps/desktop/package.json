@@ -1,0 +1,87 @@
+{
+  "name": "dragon-drop",
+  "productName": "Dragon Drop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dragon Drop: a map editor you build maps in by talking with Claude",
+  "main": "main.cjs",
+  "author": "Dragon Drop",
+  "scripts": {
+    "prepare:app": "node scripts/prepare.mjs",
+    "start": "node scripts/prepare.mjs && electron .",
+    "smoke": "electron . --smoke-test",
+    "dist": "node scripts/prepare.mjs && electron-builder --win nsis --x64 --publish never",
+    "dist:dir": "node scripts/prepare.mjs && electron-builder --win --dir --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.3.2",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2"
+  },
+  "build": {
+    "appId": "com.dragondrop.app",
+    "productName": "Dragon Drop",
+    "copyright": "Dragon Drop",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/server",
+        "to": "server"
+      },
+      {
+        "from": "build/editor",
+        "to": "editor"
+      },
+      {
+        "from": "build/THIRD-PARTY-NOTICES.txt",
+        "to": "THIRD-PARTY-NOTICES.txt"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Dragon-Drop-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dragon Drop",
+      "deleteAppDataOnUninstall": false
+    },
+    "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DJ-JackJack",
+        "repo": "dragon-drop",
+        "releaseType": "release"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@lydell/**"
+    ]
+  },
+  "dependencies": {
+    "@lydell/node-pty": "1.2.0-beta.18",
+    "electron-updater": "6.8.11"
+  }
+}

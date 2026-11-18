@@ -1,0 +1,126 @@
+name: Checks and Windows installer
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"] # a version tag such as v0.1.1 also publishes a GitHub Release (what the in-app updater reads)
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Type check and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  windows-installer:
+    name: Dragon Drop installer (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: write # only used to publish a Release for version tags
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false" # no code-signing certificate yet
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Build the editor
+        run: pnpm build
+      - name: Install the desktop packaging tools
+        working-directory: apps/desktop
+        run: npm ci --no-audit --no-fund
+      - name: Use the tag as the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          npm version $v --no-git-tag-version --allow-same-version
+      - name: Build the installer
+        working-directory: apps/desktop
+        run: npm run dist
+      - name: List what was built
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          Get-ChildItem .\release -File | Select-Object Name, Length
+          Get-ChildItem .\release\win-unpacked -File | Select-Object Name, Length
+          # the licences must travel with the program: ours (all the packages we bundle) and Electron's (Chromium, Node)
+          foreach ($f in @(".\release\win-unpacked\resources\THIRD-PARTY-NOTICES.txt", ".\release\win-unpacked\LICENSES.chromium.html")) {
+            if (-not (Test-Path $f)) { throw "missing from the installer: $f" }
+          }
+      - name: Smoke test the unpacked app (starts the server, loads the editor)
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "smoke-unpacked.txt"
+          $p = Start-Process -FilePath ".\release\win-unpacked\Dragon Drop.exe" -ArgumentList "--smoke-test" -PassThru -Wait -Environment @{ DRAGON_DROP_SMOKE_OUT = $out }
+          if (Test-Path $out) { Get-Content $out }
+          if ($p.ExitCode -ne 0) { throw "smoke test exit code $($p.ExitCode)" }
+          if (-not (Select-String -Path $out -Pattern "channel github" -Quiet)) { throw "the normal build should be the github channel" }
+      - name: Make the itch.io copy (the program without its updater), smoke test it and zip it
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          # The same unpacked program, plus a marker file: the itch app does the updating there, so the in-app updater is switched off.
+          $dst = ".\release\itch\Dragon Drop"
+          New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
+          Copy-Item ".\release\win-unpacked" $dst -Recurse
+          '{"channel":"itch"}' | Set-Content "$dst\resources\channel.json" -Encoding ascii
+          # tells the itch app what to launch (it would otherwise guess among the program's files)
+          "[[actions]]`nname = `"play`"`npath = `"Dragon Drop.exe`"" | Set-Content "$dst\.itch.toml" -Encoding ascii
+          $out = Join-Path $env:RUNNER_TEMP "smoke-itch.txt"
+          $p = Start-Process -FilePath "$dst\Dragon Drop.exe" -ArgumentList "--smoke-test" -PassThru -Wait -Environment @{ DRAGON_DROP_SMOKE_OUT = $out }
+          if (Test-Path $out) { Get-Content $out }
+          if ($p.ExitCode -ne 0) { throw "itch copy smoke test exit code $($p.ExitCode)" }
+          if (-not (Select-String -Path $out -Pattern "channel itch, updater off" -Quiet)) { throw "the itch copy should report channel itch with the updater off" }
+          Compress-Archive -Path "$dst\*" -DestinationPath ".\release\Dragon-Drop-itch-windows.zip" -CompressionLevel Optimal
+          Get-Item ".\release\Dragon-Drop-itch-windows.zip" | Select-Object Name, Length
+      - name: Install the installer silently, then smoke test the installed app
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem .\release\Dragon-Drop-Setup-*.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S" -Wait
+          Start-Sleep -Seconds 3
+          Get-Process "Dragon Drop" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $found = Get-ChildItem (Join-Path $env:LOCALAPPDATA "Programs") -Recurse -Depth 2 -Filter "Dragon Drop.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $found) { Get-ChildItem (Join-Path $env:LOCALAPPDATA "Programs") -Recurse -Depth 1 | ForEach-Object { $_.FullName }; throw "installed program not found" }
+          $exe = $found.FullName
+          Write-Host "Installed at $exe"
+          $out = Join-Path $env:RUNNER_TEMP "smoke-installed.txt"
+          $p = Start-Process -FilePath $exe -ArgumentList "--smoke-test" -PassThru -Wait -Environment @{ DRAGON_DROP_SMOKE_OUT = $out }
+          if (Test-Path $out) { Get-Content $out }
+          if ($p.ExitCode -ne 0) { throw "installed smoke test exit code $($p.ExitCode)" }
+          # the uninstaller should run silently too (best effort: it finishes in the background)
+          $un = Join-Path (Split-Path $exe) "Uninstall Dragon Drop.exe"
+          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList "/S" -Wait; Write-Host "Uninstaller ran" }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Dragon-Drop-itch-windows
+          path: apps/desktop/release/Dragon-Drop-itch-windows.zip
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Dragon-Drop-Windows-installer
+          path: apps/desktop/release/Dragon-Drop-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish the release (version tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          files: |
+            apps/desktop/release/Dragon-Drop-Setup-*.exe
+            apps/desktop/release/Dragon-Drop-Setup-*.exe.blockmap
+            apps/desktop/release/latest.yml
+          generate_release_notes: true

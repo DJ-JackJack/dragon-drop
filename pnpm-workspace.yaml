@@ -1,0 +1,5 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+  # the desktop installer project has its own npm install (Electron is large); it isn't needed for development
+  - "!apps/desktop"

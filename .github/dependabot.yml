@@ -1,0 +1,30 @@
+# Keeps dependencies and the pinned workflow actions current. Updates arrive as pull requests that run the full checks (type check, tests,
+# Windows installer build and smoke test), so nothing reaches a release without passing them. Security fixes are opened as soon as they are published.
+version: 2
+updates:
+  # the pnpm workspace (editor, server, core, tools)
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+    labels: [dependencies]
+
+  # the Windows app (Electron, electron-builder, the updater, the terminal module): Electron carries Chromium fixes, so this one matters most
+  - package-ecosystem: npm
+    directory: /apps/desktop
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+    labels: [dependencies]
+
+  # the actions in the workflow are pinned to commit SHAs; Dependabot moves the pins (and the version comments) forward
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      actions: { patterns: ["*"] }
+    labels: [dependencies]

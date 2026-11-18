@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+test-results/
+.cache/
+# every map, brief and chat is the author's own work and stays on their machine: nothing under projects/ is ever committed
+projects/
