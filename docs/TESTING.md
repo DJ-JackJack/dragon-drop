@@ -564,6 +564,9 @@ Tell me if an Auto backup never appears, if the list fills up with them, or if R
 6. Copy and paste: on a world map select a place (click it in the Places list), press **Ctrl+D**. **Expect** a new place called "<name> (copy)" a little along from it, selected. Press **Delete** to remove it. Press **Ctrl+C**, move the pointer over the map and press **Ctrl+V**: **Expect** a copy under the pointer. Paste again without moving the pointer: **Expect** the next copy a little to one side, not exactly on top.
 7. In a battlemap select an object or a light, then **Ctrl+D**, **Ctrl+C** and **Ctrl+V**: **Expect** copies, each one undo step ("Duplicate 1 item", "Paste 1 item"). A wall you copy comes in as an ordinary wall.
 
+8. Select several: in a battlemap with the Select tool, drag a box round a few objects and lights on bare floor. **Expect** a box that follows the pointer, a "N things selected" panel on the left that says what they are, and gold outlines on each. Drag one of them: **Expect** all of them to move, snapping as they would one at a time (hold **Alt** to move anywhere), as one undo step ("Move N items"). Press **Delete**: all are removed in one step. **Shift**-click adds one, or takes one out. Click bare ground: nothing is selected.
+9. Same on a world map: with the Select tool, **Shift**-drag a box round several places and labels. **Expect** a note at the bottom-left ("N places and labels selected"), then drag one to move them all and **Delete** to remove them. A plain drag on bare ground still moves the view.
+
 Tell me about any key you expected to work and didn't, and any that did something you didn't expect.
 
 ## 15. What's not built yet (so you don't report it as a bug)

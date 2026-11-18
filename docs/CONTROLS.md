@@ -15,6 +15,7 @@ Press **?** in the editor (or the **?** button in the top bar) for this list ins
 | Do | How |
 |---|---|
 | Undo, redo | `Ctrl+Z`; `Ctrl+Shift+Z` or `Ctrl+Y` (Claude's edits are in the same history) |
+| Select several | `Shift`-click adds to the selection or takes from it. Battlemap, Select tool: drag a box on bare ground (a wall or light zone is taken only if the box covers all of it; `Shift` adds to what is selected). World map, Select tool: `Shift`-drag a box (places and labels only; a plain drag on bare ground still moves the view). Drag one of the selected to move them all together; `Delete` removes them all. Each is one undo step. On a world map Claude's `get_selection` still sees only the one you added last |
 | Copy, paste, duplicate | `Ctrl+C`, `Ctrl+V` (lands under the pointer), `Ctrl+D` (a copy a little along and down). Battlemap: objects, lights, walls and light zones; room notes (they are numbered) and floors are not copied. World map: places (the copy is named "<name> (copy)") and labels. Each is one undo step |
 | Save now | `Ctrl+S` (the map also saves itself a moment after every change; you get a "Saved" note when it is on disk) |
 | Brush size | `[` and `]` (and the slider) |
@@ -53,7 +54,7 @@ Sources: [Foundry VTT's controls page](https://foundryvtt.com/article/controls) 
 ### Not built yet (suggestions, in the order I'd do them)
 
 1. ~~Duplicate and copy/paste~~ *(done)*. There is no `Alt`-drag to duplicate: `Alt` already means "put it anywhere" when placing or moving an object.
-2. Select several things at once (`Shift`-click, or drag a box) and move or delete them together.
+2. ~~Select several things at once~~ *(done)*.
 3. Arrow keys nudging the selected thing (they pan the view now).
 4. `Page Up` and `Page Down` to change level, once battlemaps have levels (Dungeondraft uses them for that).
 5. `Shift`-drag to skip snapping when moving objects, as Foundry does (we use `Alt` when placing objects).

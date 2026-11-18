@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { placeKind, type Features, type LabelKind, type LineKind, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
+import { placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
 import { Brand } from "./Brand.tsx";
 import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
@@ -114,7 +114,7 @@ export function App() {
   const isBattle = s.meta?.kind === "battle";
   const [bui, setBui] = useState<BattleUi>(defaultBattleUi);
   const onBui = useCallback((p: Partial<BattleUi>) => setBui((b) => ({ ...b, ...p })), []);
-  useEffect(() => setBui((b) => (b.selected ? { ...b, selected: null } : b)), [s.meta?.id]);
+  useEffect(() => setBui((b) => (b.selected || b.multi.length ? { ...b, selected: null, multi: [] } : b)), [s.meta?.id]);
   useEffect(() => { if (isBattle && bui.tool === "prop" && !bui.asset) openAssets("objects"); }, [bui.tool]);
   const [newOpen, setNewOpen] = useState(false);
   const [sketchRef, setSketchRef] = useState<RefInfo | null>(null);
@@ -211,8 +211,8 @@ export function App() {
           {isBattle && s.meta && (
             <>
               <BattleTools ui={bui} onUi={onBui} canUndo={s.canUndo} canRedo={s.canRedo} meta={s.meta} assetsOn={isBattle} onOpenAssets={() => openAssets("terrain")} />
-              <BattleInspector features={s.features} selected={bui.selected} onClear={() => onBui({ selected: null })} />
-              <BattleKey features={s.features} selected={bui.selected} onSelect={(id) => onBui({ selected: id, tool: "select" })} />
+              <BattleInspector features={s.features} selected={bui.selected} multi={bui.multi} bounds={{ w: s.meta.battle?.squaresX ?? 0, h: s.meta.battle?.squaresY ?? 0 }} onClear={() => onBui({ selected: null, multi: [] })} onSelect={(ids) => onBui(selectionFromIds(ids))} />
+              <BattleKey features={s.features} selected={bui.selected} onSelect={(id) => onBui({ selected: id, multi: [], tool: "select" })} />
               <BattleSettings meta={s.meta} features={s.features} ui={bui} onUi={onBui} />
             </>
           )}

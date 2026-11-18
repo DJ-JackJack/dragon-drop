@@ -37,6 +37,9 @@ export function ShortcutHelp({ battle, onClose }: { battle: boolean; onClose: ()
           <legend>Editing</legend>
           <Row keys={["Ctrl+Z"]} what="Undo (Claude's edits too)" />
           <Row keys={["Ctrl+Shift+Z", "Ctrl+Y"]} what="Redo" />
+          <Row keys={["Shift + click"]} what="Select several: add something to the selection, or take it out" />
+          <Row keys={[battle ? "Drag a box" : "Shift + drag a box"]} what={battle ? "With the Select tool, on bare ground: select everything inside the box (Shift adds to what is selected)" : "With the Select tool, on bare ground: select the places and labels inside the box"} />
+          <Row keys={["Drag"]} what="Move everything that is selected together" />
           <Row keys={["Ctrl+C", "Ctrl+V"]} what={battle ? "Copy and paste the selected objects, lights, walls and light zones (it lands under the pointer)" : "Copy and paste the selected place or label (it lands under the pointer; a place is named \"... (copy)\")"} />
           <Row keys={["Ctrl+D"]} what="Duplicate the selection, a little along and down" />
           <Row keys={["Ctrl+S"]} what="Save now (the map also saves itself a moment after every change)" />

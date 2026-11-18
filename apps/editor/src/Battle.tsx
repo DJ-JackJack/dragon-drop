@@ -8,7 +8,7 @@ import {
   type BattleSpec, type Features, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
   CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
-import { type FeatureClip, type ViewKeyAction, applyViewKey, clipBounds, copyFeatures, pasteFeatures, selectionFromIds, selectionIds, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { getClip, setClip, unstack } from "./clipboard.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
@@ -54,7 +54,7 @@ export function materialLabel(meta: MapMeta | null | undefined, id: number): str
 export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label: string; key: string; tip: string }[] }[] = [
   { name: "Move", tools: [
     { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
-    { id: "select", label: "Select", key: "V", tip: "Click a wall, door or light to edit it. Drag a light to move it. Delete removes it" },
+    { id: "select", label: "Select", key: "V", tip: "Click a wall, door, light or object to edit it. Shift-click, or drag a box round bare ground, to select several; drag to move what is selected (Shift or Alt while dragging: anywhere, not snapped). Delete removes it" },
   ] },
   { name: "Floor", tools: [
     { id: "brush", label: "Brush", key: "B", tip: "Paint the chosen floor material. Choose \"void\" to erase" },
@@ -143,13 +143,15 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
   const fittedFor = useRef<string | null>(null);
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string } | null>(null);
+  const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move" | "marquee"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string;
+    /** move: what is being dragged, whether the pointer has really moved yet, and whether it started on a member of a group (a click without a drag then picks that one). marquee: whether it adds to the selection, and what was selected before. */
+    ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[] } | null>(null);
   const draft = useRef<{ kind: WallKind; pts: [number, number][] } | null>(null);
   /** Corners of a free-form floor or room being clicked out. */
   const shapeDraft = useRef<[number, number][] | null>(null);
   const lastClick = useRef<{ t: number; x: number; y: number } | null>(null);
-  const moveLight = useRef<{ id: string; x: number; y: number } | null>(null);
-  const moveNote = useRef<{ id: string; x: number; y: number } | null>(null);
+  /** Things being dragged: which, and how far (squares) from where they started. */
+  const moveGroup = useRef<{ ids: string[]; dx: number; dy: number } | null>(null);
   const paintToken = useRef(0);
   const metaRef = useRef(meta); metaRef.current = meta;
   const featRef = useRef(features); featRef.current = features;
@@ -164,7 +166,6 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
   const [hover, setHover] = useState<{ x: number; y: number; m: number } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const noteTimer = useRef<number | undefined>(undefined);
-  const moveProp = useRef<{ id: string; x: number; y: number } | null>(null);
   /** Object images by asset id: loaded on demand from the server (a bitmap, and the original size in pixels). */
   const sprites = useRef(new Map<string, { bmp: ImageBitmap; w: number; h: number } | "loading" | "failed">());
   /** Pack floor textures by asset id, as 512 px RGBA. */
@@ -376,9 +377,11 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
       drawMapGrid(ctx, { type: spec.gridType, sizeMi: spec.feetPerSquare / 5280, orient: "pointy", opacity: 0.3 },
         { scale: v.scale / spec.sub, ox: v.ox, oy: v.oy, mapWidth: m.width, mapHeight: m.height, kmPerPx: m.kmPerPx }, W, H);
     }
-    const f = featRef.current, sel = o.selected;
-    const lights = (f.lights ?? []).map((l) => (moveLight.current?.id === l.id ? { ...l, x: moveLight.current.x, y: moveLight.current.y } : l));
-    const props = (f.props ?? []).map((pr) => (moveProp.current?.id === pr.id ? { ...pr, x: moveProp.current.x, y: moveProp.current.y } : pr));
+    const f = featRef.current, selSet = new Set(selectedIds()), isSel = (id: string) => selSet.has(id);
+    const mg = moveGroup.current, mgSet = mg ? new Set(mg.ids) : null;
+    const shifted = <T extends { id: string; x: number; y: number }>(a: T): T => (mgSet?.has(a.id) ? { ...a, x: a.x + mg!.dx, y: a.y + mg!.dy } : a);
+    const lights = (f.lights ?? []).map(shifted);
+    const props = (f.props ?? []).map(shifted);
     const drawProp = (pr: MapProp, alpha = 1) => {
       const spr = spriteFor(pr.asset);
       const k = ((pr.scale ?? 1) * v.scale) / PROP_PX_PER_SQUARE;
@@ -389,13 +392,13 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
       ctx.globalAlpha = alpha * (pr.opacity ?? 1);
       if (spr) ctx.drawImage(spr.bmp, (-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k);
       else { ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.setLineDash([4, 4]); ctx.strokeRect(-v.scale / 2, -v.scale / 2, v.scale, v.scale); }
-      if (pr.id === sel && spr) { ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k); }
+      if (isSel(pr.id) && spr) { ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k); }
       ctx.restore();
     };
     for (const pr of props) if ((pr.layer ?? "above") === "below") drawProp(pr);
     const wl = wallRef.current;
     if (wl) { ctx.imageSmoothingEnabled = true; ctx.drawImage(wl.cv, v.ox, v.oy, MW, MH); }
-    drawWallMarks(ctx, f.walls ?? [], v, sel);
+    drawWallMarks(ctx, f.walls ?? [], v, isSel);
     if (wl && wl.px !== wallPx(spec, v.scale)) { window.clearTimeout(wallTimer.current); wallTimer.current = window.setTimeout(() => buildWalls(), 220); }
     for (const pr of props) if ((pr.layer ?? "above") === "above") drawProp(pr);
     if (o.showLights) {
@@ -404,9 +407,28 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
       const dimmed = amb < 0.999 || (f.zones ?? []).some((z) => z.ambient < 0.999);
       if (dimmed) drawAmbient(ctx, lights, f.walls, f.zones ?? [], v, spec, amb, dpr, W, H);
     }
-    if (o.tool === "zone" || o.tool === "select") drawZoneOutlines(ctx, f.zones ?? [], v, sel, o.tool === "zone");
-    drawLightMarkers(ctx, lights, v, sel);
-    if (o.showNotes) drawNoteBadges(ctx, (f.notes ?? []).map((n) => (moveNote.current?.id === n.id ? { ...n, x: moveNote.current.x, y: moveNote.current.y } : n)), v, sel);
+    if (o.tool === "zone" || o.tool === "select") drawZoneOutlines(ctx, f.zones ?? [], v, isSel, o.tool === "zone");
+    drawLightMarkers(ctx, lights, v, isSel);
+    if (o.showNotes) drawNoteBadges(ctx, (f.notes ?? []).map(shifted), v, isSel);
+    // walls and light zones being dragged: where they will land (their picture stays until they are dropped), and the box being drawn
+    if (mg && mgSet && (mg.dx || mg.dy)) {
+      ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)";
+      const ghost = (pts: [number, number][], closed: boolean) => {
+        ctx.beginPath();
+        pts.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + (x + mg.dx) * v.scale, v.oy + (y + mg.dy) * v.scale) : ctx.moveTo(v.ox + (x + mg.dx) * v.scale, v.oy + (y + mg.dy) * v.scale)));
+        if (closed) ctx.closePath();
+        ctx.stroke();
+      };
+      for (const w of f.walls ?? []) if (mgSet.has(w.id)) ghost(w.points, !!w.closed && w.points.length > 2);
+      for (const z of f.zones ?? []) if (mgSet.has(z.id)) ghost(z.points, true);
+      ctx.restore();
+    }
+    const mq = drag.current;
+    if (mq?.mode === "marquee" && pointer.current) {
+      const x = Math.min(mq.sx, pointer.current.x), y = Math.min(mq.sy, pointer.current.y), w = Math.abs(pointer.current.x - mq.sx), h = Math.abs(pointer.current.y - mq.sy);
+      ctx.save(); ctx.fillStyle = "rgba(255, 224, 120, 0.12)"; ctx.fillRect(x, y, w, h);
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
+    }
     // the object about to be placed
     if (o.tool === "prop" && o.asset && pointer.current && !drag.current && !spaceRef.current) {
       const g = toSq(pointer.current.x, pointer.current.y);
@@ -542,7 +564,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         if (k === "v") { if (pasteClip()) e.preventDefault(); return; }
         if (k === "d") { e.preventDefault(); duplicateSelection(); return; } // (Ctrl+D is "bookmark this page" in a browser)
       }
-      if (e.key === "Escape") { onUiRef.current({ selected: null }); return; }
+      if (e.key === "Escape") { if (drag.current?.mode === "marquee") drag.current = null; onUiRef.current({ selected: null, multi: [] }); requestDraw(); return; }
       // rotate / mirror: the selected object if there is one, else what the Object tool will place
       const key = e.key.toLowerCase();
       if ((key === "q" || key === "e" || key === "x") && !e.ctrlKey && !e.metaKey) {
@@ -556,15 +578,13 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         }
         return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && uiRef.current.selected) {
-        const id = uiRef.current.selected, f = featRef.current;
-        if (f.walls?.some((w) => w.id === id)) sendFeatures({ removeWalls: [id] }, "Delete wall piece");
-        else if (f.lights?.some((l) => l.id === id)) sendFeatures({ removeLights: [id] }, "Delete light");
-        else if (f.props?.some((pr) => pr.id === id)) sendFeatures({ removeProps: [id] }, "Delete object");
-        else if (f.notes?.some((n) => n.id === id)) sendFeatures({ removeNotes: [id] }, "Delete note");
-        else if (f.zones?.some((z) => z.id === id)) sendFeatures({ removeZones: [id] }, "Delete light zone");
-        else return;
-        onUiRef.current({ selected: null });
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds().length) {
+        const ids = selectedIds(), f = featRef.current;
+        const patch = deleteFeatures(f, ids);
+        if (!Object.keys(patch).length) return;
+        const kind = featureKindOf(f, ids[0]);
+        sendFeatures(patch, ids.length > 1 ? `Delete ${ids.length} items` : kind === "wall" ? "Delete wall piece" : kind === "light" ? "Delete light" : kind === "prop" ? "Delete object" : kind === "note" ? "Delete note" : "Delete light zone");
+        onUiRef.current({ selected: null, multi: [] });
       }
     };
     window.addEventListener("keydown", keys);
@@ -606,7 +626,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     if (!spec) return;
     const zone: MapAmbientZone = { id: newFeatureId("z"), points, ambient: newZoneLevel(spec) };
     sendFeatures({ upsertZones: [zone] }, "Add light zone");
-    onUiRef.current({ selected: zone.id, tool: "select" });
+    onUiRef.current({ multi: [], selected: zone.id, tool: "select" });
   }
 
   function finishShape() {
@@ -623,7 +643,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     if (!dr || dr.pts.length < 2) return;
     const wall: MapWall = { id: newFeatureId("w"), kind: dr.kind, points: dr.pts, ...(closed && dr.pts.length >= 3 && { closed: true }) };
     sendFeatures({ upsertWalls: [wall] }, `Add ${dr.kind === "wall" ? "wall" : "invisible wall"}`);
-    onUiRef.current({ selected: wall.id });
+    onUiRef.current({ multi: [], selected: wall.id });
   }
 
   function hitTest(sx: number, sy: number): string | null {
@@ -719,20 +739,20 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
       const res = insertDoor(featRef.current.walls ?? [], q.x, q.y, 1, dk, () => newFeatureId("w"));
       if (!res) { flash("There's no wall there. Click right on a wall (draw one first with the Wall or Room tool)."); return; }
       sendFeatures({ removeWalls: res.remove, upsertWalls: res.add }, `Add ${dk === "secret" ? "secret door" : dk}`);
-      onUiRef.current({ selected: res.door.id });
+      onUiRef.current({ multi: [], selected: res.door.id });
       return;
     }
     if (o.tool === "note") {
       const note: MapNote = { id: newFeatureId("n"), x: Math.min(spec.squaresX, Math.max(0, snap(q.x))), y: Math.min(spec.squaresY, Math.max(0, snap(q.y))), n: nextNoteNumber(featRef.current.notes), title: "" };
       note.title = `Room ${note.n}`;
       sendFeatures({ upsertNotes: [note] }, `Add note ${note.n}`);
-      onUiRef.current({ selected: note.id });
+      onUiRef.current({ multi: [], selected: note.id });
       return;
     }
     if (o.tool === "light") {
       const light: MapLight = { id: newFeatureId("g"), x: Math.min(spec.squaresX, Math.max(0, snap(q.x))), y: Math.min(spec.squaresY, Math.max(0, snap(q.y))), radius: 6, bright: 3, colour: "#ffb35c" };
       sendFeatures({ upsertLights: [light] }, "Add light");
-      onUiRef.current({ selected: light.id });
+      onUiRef.current({ multi: [], selected: light.id });
       return;
     }
     if (o.tool === "prop") {
@@ -745,16 +765,28 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
       return;
     }
     if (o.tool === "select") {
-      const id = hitTest(p.x, p.y);
-      onUiRef.current({ selected: id });
-      const f = featRef.current;
-      const light = id ? f.lights?.find((l) => l.id === id) : undefined;
-      const prop = id ? f.props?.find((pr) => pr.id === id) : undefined;
-      const note = id ? f.notes?.find((n) => n.id === id) : undefined;
-      const mover = light ?? prop ?? note;
-      drag.current = mover && id
-        ? { mode: "move", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: mover.x, ay: mover.y, lastX: q.x, lastY: q.y, id }
-        : { mode: "pan", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: 0, ay: 0, lastX: 0, lastY: 0 };
+      const id = hitTest(p.x, p.y), f = featRef.current;
+      const cur = { selected: o.selected, multi: o.multi }, curIds = selectionIds(cur);
+      const marquee = (add: boolean) => { drag.current = { mode: "marquee", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: 0, ay: 0, lastX: q.x, lastY: q.y, add, base: add ? curIds : [] }; };
+      let next = cur;
+      if (e.shiftKey) {
+        // Shift-click adds to the selection or takes from it; Shift-drag on bare ground draws a box that adds
+        if (!id) { marquee(true); return; }
+        next = toggleInSelection(cur, id);
+        onUiRef.current(next);
+      } else if (!id) {
+        onUiRef.current({ selected: null, multi: [] });
+        marquee(false);
+        return;
+      } else if (!curIds.includes(id)) {
+        next = selectionFromIds([id]);
+        onUiRef.current(next);
+      } // (else it is already part of the selection: dragging it moves the whole group)
+      const ids = selectionIds(next);
+      if (!id || !ids.includes(id)) return; // (Shift took it out of the selection: nothing to drag)
+      const w = f.walls?.find((x) => x.id === id), z = f.zones?.find((x) => x.id === id);
+      const anchor = w ? { x: w.points[0][0], y: w.points[0][1] } : z ? { x: z.points[0][0], y: z.points[0][1] } : (f.lights?.find((x) => x.id === id) ?? f.props?.find((x) => x.id === id) ?? f.notes?.find((x) => x.id === id) ?? { x: q.x, y: q.y });
+      drag.current = { mode: "move", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: anchor.x, ay: anchor.y, lastX: q.x, lastY: q.y, id, ids, moved: false, groupClick: curIds.length > 1 && !e.shiftKey };
     }
   };
 
@@ -773,12 +805,17 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         paintStroke([[d.lastX, d.lastY], [q.x, q.y]]);
         d.lastX = q.x; d.lastY = q.y;
       }
-    } else if (d?.mode === "move" && d.id) {
-      const isProp = !!featRef.current.props?.some((pr) => pr.id === d.id), isNote = !!featRef.current.notes?.some((n) => n.id === d.id);
-      const nx = d.ax + (q.x - d.lastX), ny = d.ay + (q.y - d.lastY);
-      if (isProp) moveProp.current = { id: d.id, x: snapProp(nx, e.altKey), y: snapProp(ny, e.altKey) };
-      else if (isNote) moveNote.current = { id: d.id, x: snap(nx), y: snap(ny) };
-      else moveLight.current = { id: d.id, x: snap(nx), y: snap(ny) };
+    } else if (d?.mode === "move" && d.ids) {
+      // a drag only starts after the pointer has really moved: a click (even a shaky one) never shifts anything
+      if (d.moved || Math.hypot(p.x - d.sx, p.y - d.sy) > 4) {
+        d.moved = true;
+        const f = featRef.current;
+        const onlyObjects = d.ids.every((id) => f.props?.some((pr) => pr.id === id));
+        const nx = d.ax + (q.x - d.lastX), ny = d.ay + (q.y - d.lastY); // where the grabbed thing would go
+        const step = onlyObjects ? 0.25 : 0.5; // objects snap to a quarter square, everything else to half a square (Alt: anywhere)
+        const gx = e.altKey ? nx : snap(nx, step), gy = e.altKey ? ny : snap(ny, step);
+        moveGroup.current = { ids: d.ids, dx: gx - d.ax, dy: gy - d.ay };
+      }
     }
     requestDraw();
   };
@@ -787,21 +824,29 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     const d = drag.current, p = pointer.current, spec = metaRef.current?.battle;
     drag.current = null;
     if (d?.mode === "brush") send({ t: "txn_end" } as never);
-    if (d?.mode === "move" && d.id && moveLight.current && spec) {
-      const l = featRef.current.lights?.find((x) => x.id === d.id), mv = moveLight.current;
-      if (l && (mv.x !== l.x || mv.y !== l.y)) sendFeatures({ upsertLights: [{ ...l, x: Math.min(spec.squaresX, Math.max(0, mv.x)), y: Math.min(spec.squaresY, Math.max(0, mv.y)) }] }, "Move light");
+    if (d?.mode === "move" && d.ids && spec) {
+      const mg = moveGroup.current, f = featRef.current;
+      if (mg && (mg.dx || mg.dy)) {
+        const r = moveFeatures(f, d.ids, mg.dx, mg.dy, { w: spec.squaresX, h: spec.squaresY });
+        if (r.dx || r.dy) {
+          const kind = d.ids.length === 1 ? featureKindOf(f, d.ids[0]) : null;
+          const note = kind === "note" ? f.notes?.find((n) => n.id === d.ids![0]) : undefined;
+          sendFeatures(r.patch, d.ids.length > 1 ? `Move ${d.ids.length} items` : kind === "light" ? "Move light" : kind === "prop" ? "Move object" : kind === "wall" ? "Move wall piece" : kind === "zone" ? "Move light zone" : `Move note ${note?.n ?? ""}`.trim());
+        }
+      } else if (!d.moved && d.groupClick && d.id) {
+        onUiRef.current(selectionFromIds([d.id])); // a click on one of a group picks that one alone
+      }
     }
-    moveLight.current = null;
-    if (d?.mode === "move" && d.id && moveNote.current && spec) {
-      const n = featRef.current.notes?.find((x) => x.id === d.id), mv = moveNote.current;
-      if (n && (mv.x !== n.x || mv.y !== n.y)) sendFeatures({ upsertNotes: [{ ...n, x: Math.min(spec.squaresX, Math.max(0, mv.x)), y: Math.min(spec.squaresY, Math.max(0, mv.y)) }] }, `Move note ${n.n}`);
+    moveGroup.current = null;
+    if (d?.mode === "marquee" && p && spec) {
+      const o = uiRef.current;
+      if (Math.hypot(p.x - d.sx, p.y - d.sy) >= 4) {
+        const a = toSq(d.sx, d.sy), b = toSq(p.x, p.y);
+        const kinds: ("prop" | "light" | "note" | "wall" | "zone")[] = ["prop", "light", "wall", "zone", ...(o.showNotes ? (["note"] as const) : [])];
+        const found = boxSelect(featRef.current, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, kinds);
+        onUiRef.current(selectionFromIds(d.add ? [...(d.base ?? []), ...found] : found));
+      }
     }
-    moveNote.current = null;
-    if (d?.mode === "move" && d.id && moveProp.current && spec) {
-      const pr = featRef.current.props?.find((x) => x.id === d.id), mv = moveProp.current;
-      if (pr && (mv.x !== pr.x || mv.y !== pr.y)) sendFeatures({ upsertProps: [{ ...pr, x: mv.x, y: mv.y }] }, "Move object");
-    }
-    moveProp.current = null;
     if (d?.mode === "circle" && p && spec) {
       const b = toSq(p.x, p.y), r = Math.round(Math.hypot(b.x - d.ax, b.y - d.ay) * 2) / 2;
       if (r >= 1) makeShape("circle", [[d.ax, d.ay]], r);
@@ -864,7 +909,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
 
 // ---------------------------------------------------------------- drawing helpers
 /** What is drawn over the wall layer: the selection, padlocks, and the dashed line of invisible walls. */
-function drawWallMarks(ctx: CanvasRenderingContext2D, walls: MapWall[], v: View, selected: string | null) {
+function drawWallMarks(ctx: CanvasRenderingContext2D, walls: MapWall[], v: View, isSelected: (id: string) => boolean) {
   const px = (x: number) => v.ox + x * v.scale, py = (y: number) => v.oy + y * v.scale;
   ctx.save();
   ctx.lineCap = "round";
@@ -875,7 +920,7 @@ function drawWallMarks(ctx: CanvasRenderingContext2D, walls: MapWall[], v: View,
     if (w.closed && w.points.length > 2) ctx.closePath();
   };
   for (const w of walls) {
-    if (w.id === selected) {
+    if (isSelected(w.id)) {
       trace(w); ctx.strokeStyle = "rgba(255, 224, 120, 0.4)"; ctx.lineWidth = Math.max(8, v.scale * 0.2 + 6); ctx.stroke();
       trace(w); ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
     }
@@ -964,13 +1009,13 @@ function drawAmbient(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: M
   ctx.drawImage(darkCanvas, 0, 0, W, H);
 }
 
-function drawLightMarkers(ctx: CanvasRenderingContext2D, lights: MapLight[], v: View, selected: string | null) {
+function drawLightMarkers(ctx: CanvasRenderingContext2D, lights: MapLight[], v: View, isSelected: (id: string) => boolean) {
   ctx.save();
   for (const l of lights) {
     const cx = v.ox + l.x * v.scale, cy = v.oy + l.y * v.scale;
     ctx.beginPath(); ctx.arc(cx, cy, Math.max(4, v.scale * 0.11), 0, Math.PI * 2);
     ctx.fillStyle = "#fff8d8"; ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 1.5; ctx.stroke();
-    if (l.id === selected) {
+    if (isSelected(l.id)) {
       ctx.beginPath(); ctx.arc(cx, cy, l.radius * v.scale, 0, Math.PI * 2);
       ctx.setLineDash([6, 5]); ctx.strokeStyle = "rgba(255, 235, 150, 0.9)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
       ctx.beginPath(); ctx.arc(cx, cy, Math.max(8, v.scale * 0.2), 0, Math.PI * 2); ctx.strokeStyle = "rgba(255, 235, 150, 0.95)"; ctx.stroke();
@@ -989,16 +1034,16 @@ function pointInPolygon(x: number, y: number, pts: [number, number][]): boolean 
 const polygonArea = (pts: [number, number][]) => Math.abs(pts.reduce((a, [x, y], i) => a + (x * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * y), 0)) / 2;
 
 /** Dashed outlines of light zones (all of them while the Shade tool is active; the selected one otherwise). */
-function drawZoneOutlines(ctx: CanvasRenderingContext2D, zones: MapAmbientZone[], v: View, selected: string | null, all: boolean) {
+function drawZoneOutlines(ctx: CanvasRenderingContext2D, zones: MapAmbientZone[], v: View, isSelected: (id: string) => boolean, all: boolean) {
   ctx.save();
   for (const z of zones) {
-    if (!all && z.id !== selected) continue;
+    if (!all && !isSelected(z.id)) continue;
     ctx.beginPath();
     z.points.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + x * v.scale, v.oy + y * v.scale) : ctx.moveTo(v.ox + x * v.scale, v.oy + y * v.scale)));
     ctx.closePath();
-    ctx.setLineDash([7, 5]); ctx.lineWidth = z.id === selected ? 2 : 1.25;
-    ctx.strokeStyle = z.id === selected ? "rgba(255, 224, 120, 0.95)" : "rgba(150, 190, 255, 0.8)"; ctx.stroke(); ctx.setLineDash([]);
-    if (all || z.id === selected) {
+    ctx.setLineDash([7, 5]); ctx.lineWidth = isSelected(z.id) ? 2 : 1.25;
+    ctx.strokeStyle = isSelected(z.id) ? "rgba(255, 224, 120, 0.95)" : "rgba(150, 190, 255, 0.8)"; ctx.stroke(); ctx.setLineDash([]);
+    if (all || isSelected(z.id)) {
       const cx = z.points.reduce((a, p) => a + p[0], 0) / z.points.length, cy = z.points.reduce((a, p) => a + p[1], 0) / z.points.length;
       ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(10, 12, 20, 0.9)"; ctx.fillStyle = "#cfe0ff";
       const label = `${z.name ? `${z.name}: ` : ""}${Math.round(z.ambient * 100)}%`;
@@ -1009,14 +1054,14 @@ function drawZoneOutlines(ctx: CanvasRenderingContext2D, zones: MapAmbientZone[]
 }
 
 /** The numbered markers of the room notes. */
-function drawNoteBadges(ctx: CanvasRenderingContext2D, notes: MapNote[], v: View, selected: string | null) {
+function drawNoteBadges(ctx: CanvasRenderingContext2D, notes: MapNote[], v: View, isSelected: (id: string) => boolean) {
   ctx.save();
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (const n of notes) {
     const cx = v.ox + n.x * v.scale, cy = v.oy + n.y * v.scale, r = Math.max(10, Math.min(18, noteBadge(Math.max(18, v.scale), n.n).r * 0.8));
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(26, 23, 30, 0.92)"; ctx.fill();
-    ctx.lineWidth = n.id === selected ? 3 : 2; ctx.strokeStyle = n.id === selected ? "#fff1b8" : "#d6b250"; ctx.stroke();
+    ctx.lineWidth = isSelected(n.id) ? 3 : 2; ctx.strokeStyle = isSelected(n.id) ? "#fff1b8" : "#d6b250"; ctx.stroke();
     ctx.fillStyle = "#ffecb0"; ctx.font = `700 ${Math.round(r * (String(n.n).length > 2 ? 0.8 : 1.05))}px system-ui, sans-serif`;
     ctx.fillText(String(n.n), cx, cy + 0.5);
   }
@@ -1133,7 +1178,32 @@ function useLatest<T>(value: T) {
 }
 
 /** Edit the selected wall piece, door or light. */
-export function BattleInspector({ features, selected, onClear }: { features: Features; selected: string | null; onClear: () => void }) {
+/** Several things selected at once: what they are, and what can be done with them together. */
+function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Features; ids: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
+  const count = (k: string) => ids.filter((id) => featureKindOf(features, id) === k).length;
+  const parts = [[count("prop"), "object"], [count("light"), "light"], [count("wall"), "wall piece"], [count("note"), "room note"], [count("zone"), "light zone"]]
+    .filter(([n]) => (n as number) > 0).map(([n, w]) => `${n} ${w}${n === 1 ? "" : "s"}`);
+  return (
+    <section data-testid="battle-group">
+      <h3>{ids.length} things selected</h3>
+      <p className="muted">{parts.join(", ")}. Drag one to move them all; the arrow keys nudge them.</p>
+      <div className="row">
+        <button onClick={() => {
+          const clip = copyFeatures(features, ids);
+          if (!clip) return;
+          const r = pasteFeatures(clip, 1, 1, { bounds });
+          sendFeatures(r.patch, `Duplicate ${r.ids.length} items`);
+          onSelect(r.ids);
+        }} data-testid="group-duplicate" title="Ctrl+D">Duplicate</button>
+        <button className="danger" onClick={() => { sendFeatures(deleteFeatures(features, ids), `Delete ${ids.length} items`); onClear(); }} data-testid="group-delete" title="Delete">Delete</button>
+        <button className="ghost" onClick={onClear}>Deselect</button>
+      </div>
+    </section>
+  );
+}
+
+export function BattleInspector({ features, selected, multi, bounds, onClear, onSelect }: { features: Features; selected: string | null; multi: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
+  if (multi.length >= 2) return <GroupPanel features={features} ids={multi} bounds={bounds} onClear={onClear} onSelect={onSelect} />;
   const wall = selected ? features.walls?.find((w) => w.id === selected) : undefined;
   const light = selected ? features.lights?.find((l) => l.id === selected) : undefined;
   const prop = selected ? features.props?.find((p) => p.id === selected) : undefined;

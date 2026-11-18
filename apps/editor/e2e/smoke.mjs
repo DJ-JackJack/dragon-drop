@@ -417,6 +417,22 @@ try {
     await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ timeout: 10000 });
     await page.keyboard.press("Delete");
     await page.getByTestId("places").getByText("Test Harbour (copy)").waitFor({ state: "detached", timeout: 10000 });
+    // several at once: with the Select tool, Shift-drag a box round the whole map: every place and label in it joins the group; Delete removes them in one step, Undo brings them back
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+    await page.keyboard.down("Shift");
+    await page.mouse.move(wb.x + 20, wb.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(wb.x + wb.width / 2, wb.y + wb.height / 2, { steps: 5 });
+    await page.mouse.move(wb.x + wb.width - 20, wb.y + wb.height - 20, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await page.getByTestId("world-group").waitFor({ timeout: 5000 });
+    await page.keyboard.press("Delete");
+    await page.getByTestId("history").getByText(/Delete \d+ items/).first().waitFor({ timeout: 10000 });
+    await page.getByTestId("places").getByText("Test Harbour", { exact: true }).waitFor({ state: "detached", timeout: 10000 });
+    await page.keyboard.press("Control+z");
+    await page.getByTestId("history").getByText(/Undo: Delete \d+ items/).first().waitFor({ timeout: 10000 });
+    await page.getByTestId("places").getByText("Test Harbour", { exact: true }).waitFor({ timeout: 10000 });
   }
 
   // battlemaps: create one, build a room, cut a door, add a light and floor, export for a tabletop, then back to the world map
@@ -500,6 +516,40 @@ try {
       await page.getByTestId("history").getByText("Undo: Paste 1 item").waitFor({ timeout: 10000 });
       await page.keyboard.press("Control+z");
       await page.getByTestId("history").getByText("Undo: Duplicate 1 item").waitFor({ timeout: 10000 });
+    }
+    // several things at once: a second torch, then Shift-click joins the two, a box round them does too, one drag moves both, Delete removes both
+    {
+      await page.getByTestId("btool-light").click();
+      await click(13, 8);
+      await page.getByTestId("history").getByText("Add light").nth(1).waitFor({ timeout: 10000 });
+      await page.getByTestId("btool-select").click();
+      await click(12, 7); // the first torch alone
+      await page.getByTestId("light-radius").waitFor({ timeout: 5000 });
+      const at = sq(13, 8);
+      await page.keyboard.down("Shift");
+      await page.mouse.click(at.x, at.y);
+      await page.keyboard.up("Shift");
+      await page.getByTestId("battle-group").getByText("2 things selected").waitFor({ timeout: 5000 });
+      await page.keyboard.press("Escape");
+      await page.getByTestId("battle-group").waitFor({ state: "detached", timeout: 5000 });
+      // a box on bare floor round both (it must not wholly contain the room's walls, so they aren't taken)
+      await drag([10.6, 6.3], [13.6, 8.7]);
+      await page.getByTestId("battle-group").getByText("2 things selected").waitFor({ timeout: 5000 });
+      if (!(await page.getByTestId("battle-group").innerText()).includes("2 lights")) fail("the group panel doesn't say what is selected");
+      // one drag moves both
+      await drag([12, 7], [12, 8]);
+      await page.getByTestId("history").getByText("Move 2 items").waitFor({ timeout: 10000 });
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Move 2 items").waitFor({ timeout: 10000 });
+      // Delete takes both away in one step, and Undo brings them back
+      await page.keyboard.press("Delete");
+      await page.getByTestId("history").getByText("Delete 2 items").waitFor({ timeout: 10000 });
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Delete 2 items").waitFor({ timeout: 10000 });
+      // and back to the one torch the rest of the test expects: undo the second torch
+      await page.keyboard.press("Control+z");
+      await page.getByTestId("history").getByText("Undo: Add light").first().waitFor({ timeout: 10000 });
+      await page.keyboard.press("Escape");
     }
     // the light level: Dim darkens the map except where the torch reaches; Bright restores it
     const lum = async (x, y) => {

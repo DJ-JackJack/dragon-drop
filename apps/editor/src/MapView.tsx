@@ -3,7 +3,7 @@ import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
-import { type FeatureClip, type ViewKeyAction, applyViewKey, clipBounds, copyFeatures, pasteFeatures, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { getClip, setClip, unstack } from "./clipboard.ts";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
@@ -93,8 +93,10 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{
-    mode: "pan" | "brush" | "move" | "draw" | "rect" | "area"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
+    mode: "pan" | "brush" | "move" | "draw" | "rect" | "area" | "marquee"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
     hit?: Hit;
+    /** move: the places and labels moving together (when there are two or more), whether the pointer has really moved yet, and whether it went down on one of a group (a click without a drag then picks that one). marquee: whether it adds to the group, and what was in it before. */
+    ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[];
     /** pan mode started on bare ground with the Select tool: a click that doesn't move picks that point */
     pick?: boolean;
     /** area mode: the farthest the pointer has been from where it went down (screen px), so a loop that ends where it began is still a drag */
@@ -103,11 +105,19 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     pts?: [number, number][]; len?: number;
   } | null>(null);
   const hitsRef = useRef<Hit[]>([]);
-  const moveOverride = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const moveOverride = useRef<{ id: string; ids?: string[]; dx: number; dy: number } | null>(null);
   const featuresRef = useRef(features);
   featuresRef.current = features;
   const selRef = useRef(selectedId);
   selRef.current = selectedId;
+  /** Places and labels selected together (two or more; `selectedId` is then the one most recently added). */
+  const [group, setGroup] = useState<string[]>([]);
+  const groupRef = useRef<string[]>([]);
+  groupRef.current = group;
+  const setGroupIds = (ids: string[]) => { groupRef.current = ids; setGroup(ids); };
+  // when the selection is cleared or goes elsewhere (Esc, a click on something else, another map), so does the group
+  useEffect(() => { if (groupRef.current.length && (!selectedId || !groupRef.current.includes(selectedId))) setGroupIds([]); }, [selectedId]);
+  useEffect(() => setGroupIds([]), [meta?.id]);
   const [hover, setHover] = useState<{ x: number; y: number; e: number } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -222,9 +232,12 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     riverChunks.current = chunks;
   }
 
-  /** Ctrl+C: keep a copy of the selected place or label. */
+  /** What is selected: the group, or the one place, label, region or line. */
+  const worldIds = () => (groupRef.current.length >= 2 ? groupRef.current : selRef.current ? [selRef.current] : []);
+
+  /** Ctrl+C: keep a copy of the selected places and labels. */
   function copySelection(): boolean {
-    const clip = copyFeatures(featuresRef.current, selRef.current ? [selRef.current] : []);
+    const clip = copyFeatures(featuresRef.current, worldIds());
     if (!clip) return false;
     setClip("world", clip);
     return true;
@@ -236,7 +249,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     if (!m) return;
     const r = pasteFeatures(clip, dx, dy, { bounds: { w: m.width, h: m.height } });
     store.send({ t: "cmd", cmd: { op: "features", patch: r.patch }, label: `${what} ${r.ids.length === 1 ? "1 item" : `${r.ids.length} items`}` });
-    onSelect(r.ids[0] ?? null);
+    setGroupIds(r.ids.length >= 2 ? r.ids : []);
+    onSelect(r.ids[r.ids.length - 1] ?? null);
   }
 
   /** How far a copy is moved along and down when there is no pointer to put it under: about 24 screen px, whatever the zoom. */
@@ -259,7 +273,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
 
   /** Ctrl+D: a copy of the selected place or label a little along and down (the clipboard is left alone). */
   function duplicateSelection(): boolean {
-    const clip = copyFeatures(featuresRef.current, selRef.current ? [selRef.current] : []);
+    const clip = copyFeatures(featuresRef.current, worldIds());
     if (!clip) return false;
     pasteGroup(clip, copyStep(), copyStep(), "Duplicate");
     return true;
@@ -328,11 +342,12 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     let f = featuresRef.current;
     const mo = moveOverride.current;
     if (mo) {
+      const moving = (id: string) => (mo.ids ? mo.ids.includes(id) : id === mo.id);
       f = {
-        places: f.places.map((p) => (p.id === mo.id ? { ...p, x: p.x + mo.dx, y: p.y + mo.dy } : p)),
-        labels: f.labels.map((l) => (l.id === mo.id ? moveLabel(l, mo.dx, mo.dy) : l)),
-        regions: f.regions?.map((r) => (r.id === mo.id ? { ...r, polygon: r.polygon.map(([x, y]) => [x + mo.dx, y + mo.dy] as [number, number]) } : r)),
-        lines: f.lines?.map((l) => (l.id === mo.id ? { ...l, points: l.points.map(([x, y]) => [x + mo.dx, y + mo.dy] as [number, number]) } : l)),
+        places: f.places.map((p) => (moving(p.id) ? { ...p, x: p.x + mo.dx, y: p.y + mo.dy } : p)),
+        labels: f.labels.map((l) => (moving(l.id) ? moveLabel(l, mo.dx, mo.dy) : l)),
+        regions: f.regions?.map((r) => (moving(r.id) ? { ...r, polygon: r.polygon.map(([x, y]) => [x + mo.dx, y + mo.dy] as [number, number]) } : r)),
+        lines: f.lines?.map((l) => (moving(l.id) ? { ...l, points: l.points.map(([x, y]) => [x + mo.dx, y + mo.dy] as [number, number]) } : l)),
       };
     }
     // climate regions: when the layer is on, while drawing one, or when one is selected
@@ -354,6 +369,12 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       ctx.setLineDash([]);
       for (const [x, y] of ld) { ctx.beginPath(); ctx.arc(v.ox + x * v.scale, v.oy + y * v.scale, 4, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
+    }
+    const mq = drag.current;
+    if (mq?.mode === "marquee" && pointer.current) {
+      const x = Math.min(mq.sx, pointer.current.x), y = Math.min(mq.sy, pointer.current.y), w = Math.abs(pointer.current.x - mq.sx), h = Math.abs(pointer.current.y - mq.sy);
+      ctx.save(); ctx.fillStyle = "rgba(255, 224, 120, 0.12)"; ctx.fillRect(x, y, w, h);
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
     }
     const pdr = polyDraft.current;
     if (pdr && pdr.length) {
@@ -386,7 +407,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       for (const [x, y] of rd) { ctx.beginPath(); ctx.arc(v.ox + x * v.scale, v.oy + y * v.scale, 3.5, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     }
-    hitsRef.current = drawFeatures(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale }, selRef.current);
+    hitsRef.current = drawFeatures(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
     drawSelectionOverlay(ctx, v, selectionRef.current.selection, selectionRef.current.lock, f, drag.current, pointer.current, optsRef.current.areaShape, toMapRef.current);
     // title, scale bar, compass and frame (what exports will show)
     drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });
@@ -564,6 +585,14 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         if (k === "v") { if (pasteClip()) e.preventDefault(); return; }
         if (k === "d") { e.preventDefault(); duplicateSelection(); return; } // (Ctrl+D is "bookmark this page" in a browser)
       }
+      if ((e.key === "Delete" || e.key === "Backspace") && groupRef.current.length >= 2) {
+        const ids = groupRef.current;
+        store.send({ t: "cmd", cmd: { op: "features", patch: deleteFeatures(featuresRef.current, ids) }, label: `Delete ${ids.length} items` });
+        setGroupIds([]);
+        onSelect(null);
+        e.preventDefault();
+        return;
+      }
       if ((e.key !== "Delete" && e.key !== "Backspace") || !selRef.current) return;
       const id = selRef.current, f = featuresRef.current;
       const place = f.places.find((p) => p.id === id);
@@ -674,6 +703,26 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         const r = regionAt(f.regions, m.x, m.y);
         if (r) hit = { kind: "region", id: r.id, x0: 0, y0: 0, x1: 0, y1: 0 };
       }
+      // several at once: Shift-click adds a place or label to the group (or takes it out); Shift-drag on bare ground draws a box that adds
+      const groupable = !!hit && (hit.kind === "place" || hit.kind === "label");
+      const isGroupMember = (id: string) => f.places.some((x) => x.id === id) || f.labels.some((x) => x.id === id);
+      const before = worldIds().filter(isGroupMember);
+      if (e.shiftKey && !hit) {
+        drag.current = { mode: "marquee", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y, add: true, base: before };
+        return;
+      }
+      if (e.shiftKey && groupable && hit) {
+        const ids = selectionIds(toggleInSelection(selectionFromIds(before), hit.id));
+        setGroupIds(ids.length >= 2 ? ids : []);
+        onSelect(ids.includes(hit.id) ? hit.id : ids[ids.length - 1] ?? null);
+        if (ids.includes(hit.id) && ids.length >= 2) drag.current = { mode: "move", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y, hit, ids, moved: false };
+        return;
+      }
+      if (hit && groupRef.current.length >= 2 && groupRef.current.includes(hit.id)) {
+        drag.current = { mode: "move", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y, hit, ids: groupRef.current, moved: false, groupClick: true };
+        return;
+      }
+      setGroupIds([]);
       onSelect(hit?.id ?? null);
       if (hit) {
         const item = hit.kind === "place" ? f.places.find((x) => x.id === hit.id) : hit.kind === "region" ? f.regions?.find((x) => x.id === hit.id)
@@ -718,7 +767,9 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "move" && d.hit) {
-      moveOverride.current = { id: d.hit.id, dx: m.x - d.lastX, dy: m.y - d.lastY };
+      // a group only starts to move once the pointer has really moved: a click never shifts anything
+      if (d.ids && !d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) > 4) d.moved = true;
+      if (!d.ids || d.moved) moveOverride.current = { id: d.hit.id, ids: d.ids, dx: m.x - d.lastX, dy: m.y - d.lastY };
     } else if (d?.mode === "area" && d.pts) {
       d.far = Math.max(d.far ?? 0, Math.hypot(p.x - d.sx, p.y - d.sy));
       const [lx, ly] = d.pts[d.pts.length - 1];
@@ -766,7 +817,27 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       return;
     }
     const mo = moveOverride.current;
-    if (d?.mode === "move" && d.hit && mo && Math.hypot(mo.dx, mo.dy) > 0.3) {
+    if (d?.mode === "move" && d.ids && d.ids.length > 1) {
+      const mt = metaRef.current;
+      if (d.moved && mo && mt && Math.hypot(mo.dx, mo.dy) > 0.3) {
+        const r = moveFeatures(featuresRef.current, d.ids, mo.dx, mo.dy, { w: mt.width, h: mt.height });
+        if (r.dx || r.dy) store.send({ t: "cmd", cmd: { op: "features", patch: r.patch }, label: `Move ${d.ids.length} items` });
+      } else if (!d.moved && d.groupClick && d.hit) {
+        setGroupIds([]); // a click on one of a group picks that one alone
+        onSelect(d.hit.id);
+      }
+    }
+    if (d?.mode === "marquee") {
+      const pp = pointer.current;
+      if (pp && Math.hypot(pp.x - d.sx, pp.y - d.sy) >= 4) {
+        const a = toMap(d.sx, d.sy), b = toMap(pp.x, pp.y);
+        const found = boxSelect(featuresRef.current, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, ["place", "label"]);
+        const ids = [...new Set([...(d.base ?? []), ...found])];
+        setGroupIds(ids.length >= 2 ? ids : []);
+        onSelect(ids.length ? ids[ids.length - 1] : null);
+      }
+    }
+    if (d?.mode === "move" && d.hit && mo && Math.hypot(mo.dx, mo.dy) > 0.3 && !(d.ids && d.ids.length > 1)) {
       const f = featuresRef.current;
       if (d.hit.kind === "place") {
         const pl = f.places.find((x) => x.id === mo.id);
@@ -905,6 +976,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         onContextMenu={(e) => e.preventDefault()}
         data-testid="map-canvas"
       />
+      {group.length >= 2 && <div className="mapview-group" data-testid="world-group">{group.length} places and labels selected: drag to move, Delete to remove, Ctrl+D to duplicate</div>}
       <div className="mapview-status">
         {hover && meta ? (
           <>x {hover.x} · y {hover.y} · {hover.e >= 0 ? `${hover.e} m` : `${-hover.e} m deep`}</>

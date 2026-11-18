@@ -425,3 +425,6 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 .shortcuts kbd { font-family: inherit; font-size: 12px; padding: 1px 6px; border: 1px solid rgba(212, 175, 55, 0.45); border-bottom-width: 2px; border-radius: 5px; background: #1b1b20; color: var(--text); white-space: nowrap; }
 .shortcuts .toolkeys { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; }
 .shortcuts .toolkey { white-space: nowrap; }
+
+/* several places and labels selected together on a world map */
+.mapview-group { position: absolute; left: 10px; bottom: 40px; background: var(--glass); border: 1px solid rgba(212, 175, 55, 0.45); padding: 3px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }

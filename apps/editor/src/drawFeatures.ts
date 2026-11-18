@@ -411,16 +411,17 @@ function drawLine(ctx: CanvasRenderingContext2D, l: MapLine, v: FeatureView, sel
  * its marker that's free of labels, markers and names already placed; bigger places first).
  * Returns hit boxes, places last so they win clicks.
  */
-export function drawFeatures(ctx: CanvasRenderingContext2D, f: Features | null, v: FeatureView, selectedId?: string | null): Hit[] {
+export function drawFeatures(ctx: CanvasRenderingContext2D, f: Features | null, v: FeatureView, selected?: string | ReadonlySet<string> | null): Hit[] {
   if (!f) return [];
+  const isSelected = (id: string) => (typeof selected === "string" ? id === selected : !!selected && selected.has(id));
   const hits: Hit[] = [];
   const occupied: Box[] = [];
   for (const l of f.lines ?? []) {
-    const h = drawLine(ctx, l, v, l.id === selectedId);
+    const h = drawLine(ctx, l, v, isSelected(l.id));
     if (h) hits.push(h);
   }
   for (const l of f.labels) {
-    const h = drawLabel(ctx, l, v, l.id === selectedId);
+    const h = drawLabel(ctx, l, v, isSelected(l.id));
     if (h) { hits.push(h); occupied.push(h); }
   }
   const layouts = f.places.map((p) => layoutPlace(p, v));
@@ -437,7 +438,7 @@ export function drawFeatures(ctx: CanvasRenderingContext2D, f: Features | null, 
   for (const L of layouts) {
     const m = L.markerBox, n = nameBox.get(L.p.id);
     const hit: Hit = { kind: "place", id: L.p.id, x0: Math.min(m.x0, n?.x0 ?? m.x0), y0: Math.min(m.y0, n?.y0 ?? m.y0), x1: Math.max(m.x1, n?.x1 ?? m.x1), y1: Math.max(m.y1, n?.y1 ?? m.y1) };
-    if (L.p.id === selectedId) outline(ctx, hit);
+    if (isSelected(L.p.id)) outline(ctx, hit);
     hits.push(hit);
   }
   return hits;
