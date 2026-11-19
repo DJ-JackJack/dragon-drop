@@ -150,6 +150,18 @@ How levels live inside one battlemap, chosen to touch as little of the working e
   those two when the map has several levels (`GET /api/projects/<id>/export/<format>?level=<id>`); the Foundry scene always holds every level and the key covers every level.
 - **Not done:** a roof (foreground picture); a Universal VTT file with every level (the format has no levels: one file per level is what the picker is for).
 
+## Roofs (built 2026-11-19, a first version)
+
+- **The model:** `MapRoof` (`features.ts`): a polygon in squares on the level it covers, a look (`slate`, `tile`, `thatch`, `shingle`) or an asset-pack picture tiled across it (`asset`, `tile` squares per
+  repeat), an optional `colour` and `flat`. Any level can have roofs. They are stored with the level's features, so undo, checkpoints, copy/paste and box-select work as for the others.
+- **The look:** `renderRoofLayer` (`battleRoof.ts`): one see-through layer, a pitched roof having a lit slope, a shadowed slope and a ridge along the longer way, a darker eave and a soft shadow beyond it.
+  Asset pictures are loaded for the render worker with the floor textures (`Hub.battleAssets`).
+- **Never in the ordinary picture:** roofs are left out of the level's picture, the `.png` and `.dd2vtt` exports, and previews unless asked (`render_battlemap` `roofs: true`; the editor's Roofs switch: faint, solid or hidden).
+- **The Foundry scene:** a level with roofs gets a second PNG, `<map>-<n>-<level>-roof.png` (an RGBA picture, transparent outside the roofs), written as that level's `foreground`.
+- **Not known yet:** how Foundry v14 treats a foreground picture (whether it fades when a token goes under it, and whose elevation counts). A search of the v14 release notes suggests a token under a foreground at a higher
+  elevation gets a "surface" occlusion that fades it, but nothing official says so. Test RT6 (a scene with foregrounds on two levels, tokens placed under them at several elevations) was sent to the Foundry session; its
+  findings go here and decide what the export README promises.
+
 ## Plan
 
 1. **(done) Export format.** The v14 level-aware builder, one level from a battlemap, and the test scene.

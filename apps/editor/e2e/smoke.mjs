@@ -766,6 +766,16 @@ try {
     await page.getByTestId("battle-inspector").getByRole("heading", { name: "Hole" }).waitFor({ timeout: 5000 });
     await page.getByTestId("connector-target").getByText(/Leads down to Ground floor/).waitFor({ timeout: 5000 });
     await page.screenshot({ path: path.join(shots, "e2e-4e2-hole.png") });
+    // a roof on the upper floor: drawn, changed to clay tile, shown solid, and exported as the level's foreground picture
+    await page.getByTestId("btool-roof").click();
+    await page.getByTestId("tool-hint").getByText(/foreground/).waitFor({ timeout: 5000 });
+    await drag([12, 3], [20, 9]);
+    await page.getByTestId("battle-inspector").getByRole("heading", { name: "Roof" }).waitFor({ timeout: 5000 });
+    await page.getByTestId("roof-style").selectOption("tile");
+    await page.getByTestId("battle-summary").getByText(/1 roof/).waitFor({ timeout: 5000 });
+    await page.getByTestId("roof-view").selectOption("solid");
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(shots, "e2e-4e3-roof.png") });
     await page.keyboard.press("PageUp"); // (nothing above: stays)
     await page.waitForTimeout(300);
     if (!(await isOn("level-2"))) fail("Page Up above the highest level should stay on it");
@@ -780,6 +790,7 @@ try {
     const [fdl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("battle-export-foundry").click()]);
     const zipText = (await import("node:fs")).readFileSync(await fdl.path()).toString("latin1");
     if (!zipText.includes("-1-ground-floor.png") || !zipText.includes("-2-upper-floor.png")) fail("the Foundry export should hold a picture for each level");
+    if (!zipText.includes("-2-upper-floor-roof.png")) fail("the Foundry export should hold the upper floor's roof as a picture of its own");
     await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
     // remove the upper level again (a checkpoint is saved first), leaving the map as it was
     await page.getByLabel("Remove Upper floor").click();

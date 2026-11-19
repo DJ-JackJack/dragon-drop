@@ -211,7 +211,7 @@ export function App() {
           {isBattle && s.meta && (
             <>
               <BattleTools ui={bui} onUi={onBui} canUndo={s.canUndo} canRedo={s.canRedo} meta={s.meta} assetsOn={isBattle} onOpenAssets={() => openAssets("terrain")} />
-              <BattleInspector features={s.features} levels={s.levels} selected={bui.selected} multi={bui.multi} bounds={{ w: s.meta.battle?.squaresX ?? 0, h: s.meta.battle?.squaresY ?? 0 }} onClear={() => onBui({ selected: null, multi: [] })} onSelect={(ids) => onBui(selectionFromIds(ids))} />
+              <BattleInspector features={s.features} levels={s.levels} chosenAsset={bui.asset} selected={bui.selected} multi={bui.multi} bounds={{ w: s.meta.battle?.squaresX ?? 0, h: s.meta.battle?.squaresY ?? 0 }} onClear={() => onBui({ selected: null, multi: [] })} onSelect={(ids) => onBui(selectionFromIds(ids))} />
               <BattleKey features={s.features} selected={bui.selected} onSelect={(id) => onBui({ selected: id, multi: [], tool: "select" })} />
               <BattleSettings meta={s.meta} features={s.features} ui={bui} onUi={onBui} />
             </>

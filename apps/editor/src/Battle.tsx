@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type BattleSpec, type ConnectorKind, type Features, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
+  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
@@ -17,7 +17,7 @@ import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
 
-export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole";
+export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
 export interface BattleUi {
   tool: BattleTool;
@@ -42,11 +42,15 @@ export interface BattleUi {
   roomShape: "rect" | "circle" | "free";
   /** Which way a new stair or ladder leads from this level. */
   connectorTo: "up" | "down";
+  /** The look a new roof gets. */
+  roofStyle: RoofStyle;
+  /** Roofs over the map: hidden, faint (to see the rooms through them while you work) or solid (as the players will see them). */
+  roofView: "off" | "faint" | "solid";
 }
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
-  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up",
+  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
 };
 
 /** The name of a floor material, including pack textures. */
@@ -82,6 +86,9 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   { name: "Objects", tools: [
     { id: "prop", label: "Object", key: "P", tip: "Place an object from your asset packs (choose it in the Assets tab)" },
   ] },
+  { name: "Roofs", tools: [
+    { id: "roof", label: "Roof", key: "F", tip: "Drag a rectangle (or a circle or free-form outline) for a roof over this level" },
+  ] },
   { name: "Between levels", tools: [
     { id: "stairs", label: "Stairs", key: "T", tip: "Drag a rectangle (or click) for stairs to the level above or below" },
     { id: "ladder", label: "Ladder", key: "J", tip: "Drag a rectangle (or click) for a ladder to the level above or below" },
@@ -103,6 +110,7 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   zone: "Draw an area with its own light level (Rectangle, Circle or Free-form like the Area tool). Then select it to set how bright it is where no light reaches: indoors dimmer than outdoors, or a lit hall in a dark cave. Edges are soft.",
   note: "Click a room to place a numbered note, then give it a title and text in the panel. Notes are for you: they show here and in previews, never in the exported picture. Export the key as a list from Export.",
   prop: "Choose an object in the Assets tab, then click the map to place it (hold Shift or Alt to place without snapping). Q and E rotate, X mirrors.",
+  roof: "Draw the outline of a roof (Rectangle, Circle or Free-form like the Area tool), a little wider than the walls for an overhang. Choose its look below, or change it afterwards in the panel. Roofs show faintly while you work (Settings, Layers, Roofs: off, faint or solid). In a Foundry scene a level's roofs become its foreground picture; they are never in the ordinary picture or the Universal VTT file.",
   stairs: "Drag a rectangle for stairs (or click for one square by two). They belong to the level you are on and lead up or down, as chosen below; in a Foundry scene they are a Change Level region over both levels. You need at least two levels (Levels panel, top left of the map).",
   ladder: "Drag a rectangle for a ladder (or click for one square). It leads up or down, as chosen below, and works like stairs in a Foundry scene.",
   hole: "Drag a rectangle for a hole in this level's floor (or click for one square). It is open to the level below: a pit in the picture, and a gap in this level's floor in a Foundry scene.",
@@ -112,7 +120,7 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
 const snap = (v: number, step = 0.5) => Math.round(v / step) * step;
 const isFloorTool = (t: BattleTool) => t === "brush" || t === "area" || t === "room";
 /** Tools that draw a rectangle, circle or free-form outline. */
-const isShapeTool = (t: BattleTool) => t === "area" || t === "room" || t === "zone";
+const isShapeTool = (t: BattleTool) => t === "area" || t === "room" || t === "zone" || t === "roof";
 /** Tools that drag out a rectangle for a stair, ladder or hole. */
 const isConnectorTool = (t: BattleTool): t is ConnectorKind => t === "stairs" || t === "ladder" || t === "hole";
 /** How bright a new light zone is: dimmer than a bright map, brighter than a dim one. */
@@ -154,6 +162,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   /** The wall layer (stone, doors, windows, shadows) from the shared renderer, and what it was drawn from. */
   const wallRef = useRef<{ cv: HTMLCanvasElement; px: number } | null>(null);
   const wallSig = useRef("");
+  /** The roofs as one see-through layer, and what it was drawn from. */
+  const roofRef = useRef<{ cv: HTMLCanvasElement; px: number } | null>(null);
+  const roofSig = useRef("");
   const wallTimer = useRef<number | undefined>(undefined);
   const viewRef = useRef<View>({ scale: 20, ox: 0, oy: 0 });
   const fittedFor = useRef<string | null>(null);
@@ -266,6 +277,46 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     cv.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(layer.data), layer.w, layer.h), 0, 0);
     wallRef.current = { cv, px };
     requestDraw();
+  }, []);
+
+  /** The roof pictures from asset packs, as 512 px RGBA (loaded like floor textures: the roofs are drawn again when one arrives). */
+  const roofTileFor: RoofTileSource = (asset) => {
+    const hit = tiles.current.get(asset);
+    if (hit && hit !== "loading" && hit !== "failed") return { data: hit, size: 512 };
+    if (!hit) {
+      tiles.current.set(asset, "loading");
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = c.height = 512;
+        const cx = c.getContext("2d")!;
+        cx.drawImage(img, 0, 0, 512, 512);
+        tiles.current.set(asset, cx.getImageData(0, 0, 512, 512).data);
+        buildRoofs(true);
+      };
+      img.onerror = () => tiles.current.set(asset, "failed");
+      img.src = assetUrl(asset, 512);
+    }
+    return null;
+  };
+
+  /** Draw the roof layer again when the roofs or the map size changed (at most 70 px a square: they are seen faintly, and a roof is expensive to draw). */
+  const buildRoofs = useCallback((force = false) => {
+    const m = metaRef.current;
+    if (!m?.battle) return;
+    const roofs = featRef.current.roofs ?? [];
+    if (!roofs.length) { if (roofRef.current) { roofRef.current = null; roofSig.current = ""; requestDraw(); } return; }
+    const spec = m.battle, px = Math.min(70, wallPx(spec, 1));
+    const sig = `${m.id}|${px}|${spec.squaresX}x${spec.squaresY}|${JSON.stringify(roofs)}`;
+    if (!force && sig === roofSig.current && roofRef.current) return;
+    roofSig.current = sig;
+    const layer = renderRoofLayer({ ...spec, pxPerSquare: px }, roofs, { tileFor: roofTileFor });
+    const cv = roofRef.current?.cv ?? document.createElement("canvas");
+    cv.width = layer.w; cv.height = layer.h;
+    cv.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(layer.data), layer.w, layer.h), 0, 0);
+    roofRef.current = { cv, px };
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const repaint = useCallback((r: Rect | null) => {
@@ -443,6 +494,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const f = featRef.current, selSet = new Set(selectedIds()), isSel = (id: string) => selSet.has(id);
     const mg = moveGroup.current, mgSet = mg ? new Set(mg.ids) : null;
     const shifted = <T extends { id: string; x: number; y: number }>(a: T): T => (mgSet?.has(a.id) ? { ...a, x: a.x + mg!.dx, y: a.y + mg!.dy } : a);
+    const shiftedPoly = <T extends { id: string; points: [number, number][] }>(a: T): T => (mgSet?.has(a.id) ? { ...a, points: a.points.map(([x, y]) => [x + mg!.dx, y + mg!.dy] as [number, number]) } : a);
     const lights = (f.lights ?? []).map(shifted);
     const props = (f.props ?? []).map(shifted);
     const drawProp = (pr: MapProp, alpha = 1) => {
@@ -470,6 +522,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const dimmed = amb < 0.999 || (f.zones ?? []).some((z) => z.ambient < 0.999);
       if (dimmed) drawAmbient(ctx, lights, f.walls, f.zones ?? [], v, spec, amb, dpr, W, H);
     }
+    const rl = roofRef.current;
+    if (o.roofView !== "off" && rl) { ctx.save(); ctx.globalAlpha = o.roofView === "solid" ? 1 : 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(rl.cv, v.ox, v.oy, MW, MH); ctx.restore(); }
+    if (o.tool === "roof" || o.tool === "select" || (f.roofs ?? []).some((r) => isSel(r.id))) drawRoofOutlines(ctx, (f.roofs ?? []).map(shiftedPoly), v, isSel, o.tool === "roof");
     if (o.tool === "zone" || o.tool === "select") drawZoneOutlines(ctx, f.zones ?? [], v, isSel, o.tool === "zone");
     drawConnectorMarks(ctx, (f.connectors ?? []).map(shifted), v, isSel, o.tool === "select" || isConnectorTool(o.tool));
     drawLightMarkers(ctx, lights, v, isSel);
@@ -602,7 +657,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     return () => { dead = true; };
   }, [projectId, belowId, activeLevel, requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) repaint(null); }, [meta, repaint]);
-  useEffect(() => { buildWalls(); requestDraw(); }, [features, ui, meta, requestDraw, buildWalls]);
+  useEffect(() => { buildWalls(); buildRoofs(); requestDraw(); }, [features, ui, meta, requestDraw, buildWalls, buildRoofs]);
   useEffect(() => { draft.current = null; shapeDraft.current = null; requestDraw(); }, [ui.tool, ui.roomShape, requestDraw]);
 
   useEffect(() => {
@@ -704,6 +759,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     if (!spec) return;
     const polygon = kind === "circle" ? circlePolygon(pts[0][0], pts[0][1], r) : pts;
     if (o.tool === "zone") { makeZone(polygon.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100] as [number, number])); return; }
+    if (o.tool === "roof") { makeRoof(polygon.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100] as [number, number])); return; }
     const shape = kind === "circle"
       ? { type: "circle" as const, x: toCells(pts[0][0], spec), y: toCells(pts[0][1], spec), r: toCells(r, spec) }
       : { type: "polygon" as const, points: polygon.map(([x, y]) => [toCells(x, spec), toCells(y, spec)] as [number, number]) };
@@ -721,6 +777,13 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const zone: MapAmbientZone = { id: newFeatureId("z"), points, ambient: newZoneLevel(spec) };
     sendFeatures({ upsertZones: [zone] }, "Add light zone");
     onUiRef.current({ multi: [], selected: zone.id, tool: "select" });
+  }
+
+  /** A roof with this outline (squares), in the chosen look, selected so it can be changed. */
+  function makeRoof(points: [number, number][]) {
+    const roof: MapRoof = { id: newFeatureId("f"), style: uiRef.current.roofStyle, points };
+    sendFeatures({ upsertRoofs: [roof] }, "Add roof");
+    onUiRef.current({ multi: [], selected: roof.id });
   }
 
   function placeConnector(kind: ConnectorKind, x: number, y: number, w: number, h: number) {
@@ -771,6 +834,10 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const qc = toSq(sx, sy);
     const over = (f.connectors ?? []).filter((c) => qc.x >= c.x && qc.x <= c.x + c.w && qc.y >= c.y && qc.y <= c.y + c.h).sort((a, b) => a.w * a.h - b.w * b.h);
     if (over.length) return over[0].id;
+    // roofs: inside the outline, the smallest first
+    const qr = toSq(sx, sy);
+    const roofsAt = (f.roofs ?? []).filter((r) => pointInPolygon(qr.x, qr.y, r.points)).sort((a, b) => polygonArea(a.points) - polygonArea(b.points));
+    if (roofsAt.length) return roofsAt[0].id;
     // light zones last: inside the outline, the smallest first
     const q = toSq(sx, sy);
     const inside = (f.zones ?? []).filter((z) => pointInPolygon(q.x, q.y, z.points)).sort((a, b) => polygonArea(a.points) - polygonArea(b.points));
@@ -952,7 +1019,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const o = uiRef.current;
       if (Math.hypot(p.x - d.sx, p.y - d.sy) >= 4) {
         const a = toSq(d.sx, d.sy), b = toSq(p.x, p.y);
-        const kinds: ("prop" | "light" | "note" | "wall" | "zone" | "connector")[] = ["prop", "light", "wall", "zone", "connector", ...(o.showNotes ? (["note"] as const) : [])];
+        const kinds: ("prop" | "light" | "note" | "wall" | "zone" | "connector" | "roof")[] = ["prop", "light", "wall", "zone", "connector", "roof", ...(o.showNotes ? (["note"] as const) : [])];
         const found = boxSelect(featRef.current, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, kinds);
         onUiRef.current(selectionFromIds(d.add ? [...(d.base ?? []), ...found] : found));
       }
@@ -973,7 +1040,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
           const [dw, dh] = o.tool === "stairs" ? [1, 2] : [1, 1];
           placeConnector(o.tool, Math.min(spec.squaresX - dw, Math.max(0, Math.floor(d.ax))), Math.min(spec.squaresY - dh, Math.max(0, Math.floor(d.ay))), dw, dh);
         }
-      } else if (w >= 1 && h >= 1 && o.tool === "zone") makeZone([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
+      } else if (w >= 1 && h >= 1 && o.tool === "roof") makeRoof([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
+      else if (w >= 1 && h >= 1 && o.tool === "zone") makeZone([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
       else if (w >= 1 && h >= 1) {
         const shape = { type: "rect" as const, x: toCells(x0, spec), y: toCells(y0, spec), w: toCells(w, spec), h: toCells(h, spec) };
         send({ t: "cmd", cmd: { op: "paint_floor", params: { shape, material: o.material } }, label: o.tool === "room" ? `Room floor (${w}×${h})` : `Paint ${materialLabel(metaRef.current, o.material)}` });
@@ -1209,6 +1277,26 @@ function drawZoneOutlines(ctx: CanvasRenderingContext2D, zones: MapAmbientZone[]
   ctx.restore();
 }
 
+/** The outline of each roof (all of them while drawing roofs, else only the selected ones), with its look written inside. */
+function drawRoofOutlines(ctx: CanvasRenderingContext2D, roofs: MapRoof[], v: View, isSelected: (id: string) => boolean, all: boolean) {
+  ctx.save();
+  for (const r of roofs) {
+    if (!all && !isSelected(r.id)) continue;
+    ctx.beginPath();
+    r.points.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + x * v.scale, v.oy + y * v.scale) : ctx.moveTo(v.ox + x * v.scale, v.oy + y * v.scale)));
+    ctx.closePath();
+    ctx.setLineDash([7, 5]); ctx.lineWidth = isSelected(r.id) ? 2 : 1.25;
+    ctx.strokeStyle = isSelected(r.id) ? "rgba(255, 224, 120, 0.95)" : "rgba(255, 190, 150, 0.8)"; ctx.stroke(); ctx.setLineDash([]);
+    if (isSelected(r.id)) {
+      const cx = r.points.reduce((a, p) => a + p[0], 0) / r.points.length, cy = r.points.reduce((a, p) => a + p[1], 0) / r.points.length;
+      ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(10, 12, 20, 0.9)"; ctx.fillStyle = "#ffe0b0";
+      const label = r.name ?? (r.asset ? "Roof (picture)" : `Roof (${ROOF_STYLE_NAMES[r.style] ?? r.style})`);
+      ctx.strokeText(label, v.ox + cx * v.scale, v.oy + cy * v.scale); ctx.fillText(label, v.ox + cx * v.scale, v.oy + cy * v.scale);
+    }
+  }
+  ctx.restore();
+}
+
 /** The numbered markers of the room notes. */
 function drawNoteBadges(ctx: CanvasRenderingContext2D, notes: MapNote[], v: View, isSelected: (id: string) => boolean) {
   ctx.save();
@@ -1242,6 +1330,13 @@ export function BattleTools({ ui, onUi, canUndo, canRedo, meta, assetsOn, onOpen
         </div>
       ))}
       {BATTLE_HINTS[ui.tool] && <p className="tool-hint" data-testid="tool-hint">{BATTLE_HINTS[ui.tool]}</p>}
+      {ui.tool === "roof" && (
+        <label className="field">New roofs look like
+          <select value={ui.roofStyle} onChange={(e) => onUi({ roofStyle: e.target.value as RoofStyle })} data-testid="roof-new-style">
+            {ROOF_STYLES.map((s) => <option key={s} value={s}>{ROOF_STYLE_NAMES[s]}</option>)}
+          </select>
+        </label>
+      )}
       {(ui.tool === "stairs" || ui.tool === "ladder") && (
         <div className="seg" role="group" aria-label="Which way it leads" data-testid="connector-to">
           {([["up", "Leads up"], ["down", "Leads down"]] as const).map(([id, label]) => (
@@ -1344,7 +1439,7 @@ function useLatest<T>(value: T) {
 /** Several things selected at once: what they are, and what can be done with them together. */
 function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Features; ids: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
   const count = (k: string) => ids.filter((id) => featureKindOf(features, id) === k).length;
-  const parts = [[count("prop"), "object"], [count("light"), "light"], [count("wall"), "wall piece"], [count("note"), "room note"], [count("zone"), "light zone"], [count("connector"), "stair, ladder or hole"]]
+  const parts = [[count("prop"), "object"], [count("light"), "light"], [count("wall"), "wall piece"], [count("note"), "room note"], [count("zone"), "light zone"], [count("connector"), "stair, ladder or hole"], [count("roof"), "roof"]]
     .filter(([n]) => (n as number) > 0).map(([n, w]) => `${n} ${w}${n === 1 ? "" : "s"}`);
   return (
     <section data-testid="battle-group">
@@ -1365,7 +1460,7 @@ function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Fe
   );
 }
 
-export function BattleInspector({ features, levels, selected, multi, bounds, onClear, onSelect }: { features: Features; levels?: LevelsFile | null; selected: string | null; multi: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
+export function BattleInspector({ features, levels, chosenAsset, selected, multi, bounds, onClear, onSelect }: { features: Features; levels?: LevelsFile | null; chosenAsset?: string | null; selected: string | null; multi: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
   if (multi.length >= 2) return <GroupPanel features={features} ids={multi} bounds={bounds} onClear={onClear} onSelect={onSelect} />;
   const wall = selected ? features.walls?.find((w) => w.id === selected) : undefined;
   const light = selected ? features.lights?.find((l) => l.id === selected) : undefined;
@@ -1373,16 +1468,18 @@ export function BattleInspector({ features, levels, selected, multi, bounds, onC
   const note = selected ? features.notes?.find((n) => n.id === selected) : undefined;
   const zone = selected ? features.zones?.find((z) => z.id === selected) : undefined;
   const conn = selected ? features.connectors?.find((c) => c.id === selected) : undefined;
-  if (!wall && !light && !prop && !note && !zone && !conn) return null;
+  const roof = selected ? features.roofs?.find((r) => r.id === selected) : undefined;
+  if (!wall && !light && !prop && !note && !zone && !conn && !roof) return null;
   return (
     <section data-testid="battle-inspector">
-      <h3>{wall ? (wall.kind === "wall" ? "Wall" : wall.kind === "secret" ? "Secret door" : wall.kind === "invisible" ? "Invisible wall" : wall.kind === "window" ? "Window" : "Door") : prop ? "Object" : note ? "Note" : zone ? "Light zone" : conn ? (conn.kind === "stairs" ? "Stairs" : conn.kind === "ladder" ? "Ladder" : "Hole") : "Light"}</h3>
+      <h3>{wall ? (wall.kind === "wall" ? "Wall" : wall.kind === "secret" ? "Secret door" : wall.kind === "invisible" ? "Invisible wall" : wall.kind === "window" ? "Window" : "Door") : prop ? "Object" : note ? "Note" : zone ? "Light zone" : conn ? (conn.kind === "stairs" ? "Stairs" : conn.kind === "ladder" ? "Ladder" : "Hole") : roof ? "Roof" : "Light"}</h3>
       {wall && <WallEditor w={wall} onClear={onClear} />}
       {light && <LightEditor l={light} onClear={onClear} />}
       {prop && <PropEditor p={prop} onClear={onClear} />}
       {note && <NoteEditor key={note.id} n={note} onClear={onClear} />}
       {zone && <ZoneEditor key={zone.id} z={zone} onClear={onClear} />}
       {conn && <ConnectorEditor key={conn.id} c={conn} levels={levels ?? null} onClear={onClear} />}
+      {roof && <RoofEditor key={roof.id} r={roof} chosenAsset={chosenAsset ?? null} onClear={onClear} />}
     </section>
   );
 }
@@ -1490,6 +1587,46 @@ export function BattleKey({ features, selected, onSelect }: { features: Features
         </>
       )}
     </section>
+  );
+}
+
+/** A roof: its look (one of four, or a picture from the Assets tab), colour, pitch and name. */
+function RoofEditor({ r, chosenAsset, onClear }: { r: MapRoof; chosenAsset: string | null; onClear: () => void }) {
+  const latest = useLatest(r);
+  const [name, setName] = useState(r.name ?? "");
+  const set = (patch: Partial<MapRoof>) => {
+    const next = { ...latest.current, ...patch };
+    for (const k of Object.keys(next) as (keyof MapRoof)[]) if (next[k] === undefined) delete next[k];
+    latest.current = next;
+    sendFeatures({ upsertRoofs: [next] }, `Change roof${next.name ? ` ${next.name}` : ""}`);
+  };
+  const own = roofColour(r.colour);
+  const hex = (c: [number, number, number]) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+  return (
+    <>
+      <label className="field">Look
+        <select value={r.style} onChange={(e) => set({ style: e.target.value as RoofStyle })} data-testid="roof-style">
+          {ROOF_STYLES.map((s) => <option key={s} value={s}>{ROOF_STYLE_NAMES[s]}</option>)}
+        </select>
+      </label>
+      {r.asset ? (
+        <>
+          <p className="muted" data-testid="roof-asset">Made of the picture <b>{assetLabel(r.asset)}</b>, repeated.</p>
+          <label className="field">One repeat is (squares)<input type="number" min={0.5} max={20} step={0.5} value={r.tile ?? 2} onChange={(e) => { const n = Number(e.target.value); if (n >= 0.25) set({ tile: n }); }} /></label>
+          <div className="row"><button onClick={() => set({ asset: undefined, tile: undefined })}>Use the look above instead</button></div>
+        </>
+      ) : chosenAsset ? (
+        <div className="row"><button onClick={() => set({ asset: chosenAsset })} title="Use the picture chosen in the Assets tab, repeated across the roof" data-testid="roof-use-asset">Use the picture chosen in Assets ({assetLabel(chosenAsset)})</button></div>
+      ) : null}
+      <label className="check"><input type="checkbox" checked={!!own} onChange={(e) => set({ colour: e.target.checked ? hex(ROOF_BASE[r.style] ?? [128, 128, 128]) : undefined })} /> Own colour</label>
+      {own && <input type="color" value={hex(own)} onChange={(e) => set({ colour: e.target.value })} aria-label="Roof colour" data-testid="roof-colour" />}
+      <label className="check"><input type="checkbox" checked={!!r.flat} onChange={(e) => set({ flat: e.target.checked || undefined })} data-testid="roof-flat" /> Flat (no ridge)</label>
+      <label className="field">Name
+        <input type="text" value={name} maxLength={60} placeholder="optional" onChange={(e) => setName(e.target.value)} onBlur={() => { const n = name.trim(); if (n !== (r.name ?? "")) set({ name: n || undefined }); }} data-testid="roof-name" />
+      </label>
+      <p className="muted">Over this level. Faint here while you work; a Foundry scene gets it as the level's foreground picture. Draw it a little wider than the walls for an overhang.</p>
+      <div className="row"><button onClick={() => { sendFeatures({ removeRoofs: [r.id] }, "Delete roof"); onClear(); }} data-testid="roof-delete">Delete</button></div>
+    </>
   );
 }
 
@@ -1689,6 +1826,11 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <label className="check"><input type="checkbox" checked={ui.showGrid} onChange={(e) => onUi({ showGrid: e.target.checked })} /> Show the grid</label>
       <label className="check"><input type="checkbox" checked={ui.showLights} onChange={(e) => onUi({ showLights: e.target.checked })} /> Light glows (and the light level)</label>
       <label className="check"><input type="checkbox" checked={ui.showNotes} onChange={(e) => onUi({ showNotes: e.target.checked })} data-testid="show-notes" /> Room numbers</label>
+      <label className="field">Roofs
+        <select value={ui.roofView} onChange={(e) => onUi({ roofView: e.target.value as BattleUi["roofView"] })} data-testid="roof-view">
+          <option value="faint">Faint (see the rooms through them)</option><option value="solid">Solid (as the players see them)</option><option value="off">Hidden</option>
+        </select>
+      </label>
       {meta.origin && (
         <>
           <h3>Where it's from</h3>
@@ -1700,7 +1842,7 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <p className="muted" data-testid="battle-summary">
         {spec.squaresX} × {spec.squaresY} squares at {spec.feetPerSquare} ft = {spec.squaresX * spec.feetPerSquare} × {spec.squaresY * spec.feetPerSquare} ft.
         Image {spec.squaresX * spec.pxPerSquare} × {spec.squaresY * spec.pxPerSquare} px ({spec.pxPerSquare} px per square).
-        {" "}{count("wall")} wall piece{count("wall") === 1 ? "" : "s"}, {count("door") + count("secret")} door{count("door") + count("secret") === 1 ? "" : "s"}, {count("window")} window{count("window") === 1 ? "" : "s"}, {(features.lights ?? []).length} light{(features.lights ?? []).length === 1 ? "" : "s"}, {(features.props ?? []).length} object{(features.props ?? []).length === 1 ? "" : "s"}{(features.connectors ?? []).length ? `, ${(features.connectors ?? []).length} stair${(features.connectors ?? []).length === 1 ? "" : "s"}, ladder${(features.connectors ?? []).length === 1 ? "" : "s"} or hole${(features.connectors ?? []).length === 1 ? "" : "s"}` : ""}.
+        {" "}{count("wall")} wall piece{count("wall") === 1 ? "" : "s"}, {count("door") + count("secret")} door{count("door") + count("secret") === 1 ? "" : "s"}, {count("window")} window{count("window") === 1 ? "" : "s"}, {(features.lights ?? []).length} light{(features.lights ?? []).length === 1 ? "" : "s"}, {(features.props ?? []).length} object{(features.props ?? []).length === 1 ? "" : "s"}{(features.roofs ?? []).length ? `, ${(features.roofs ?? []).length} roof${(features.roofs ?? []).length === 1 ? "" : "s"}` : ""}{(features.connectors ?? []).length ? `, ${(features.connectors ?? []).length} stair${(features.connectors ?? []).length === 1 ? "" : "s"}, ladder${(features.connectors ?? []).length === 1 ? "" : "s"} or hole${(features.connectors ?? []).length === 1 ? "" : "s"}` : ""}.
       </p>
     </section>
   );

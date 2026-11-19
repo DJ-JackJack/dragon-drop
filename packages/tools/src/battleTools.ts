@@ -11,6 +11,7 @@ import {
 import { encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
 import { LEVEL_TOOLS } from "./levelTools.ts";
+import { ROOF_TOOLS } from "./roofTools.ts";
 
 function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
   return t;
@@ -78,7 +79,7 @@ export function battleSummary(ctx: ToolContext) {
     notes: (doc.features?.notes ?? []).length, light_zones: (doc.features?.zones ?? []).length,
     walls: wallsOf(ctx).filter((w) => w.kind === "wall").length, doors: wallsOf(ctx).filter((w) => w.kind === "door" || w.kind === "secret").length,
     windows: wallsOf(ctx).filter((w) => w.kind === "window").length, lights: lightsOf(ctx).length,
-    objects: (doc.features?.props ?? []).length, connectors: (doc.features?.connectors ?? []).length, floor_textures: (sp.palette ?? []).map((e) => e.name), latest_change: ctx.session().seq,
+    objects: (doc.features?.props ?? []).length, connectors: (doc.features?.connectors ?? []).length, roofs: (doc.features?.roofs ?? []).length, floor_textures: (sp.palette ?? []).map((e) => e.name), latest_change: ctx.session().seq,
   };
 }
 
@@ -332,6 +333,7 @@ export const BATTLE_TOOLS = [
         walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), pieces: wallSegments(w).length })),
         lights: lightsOf(ctx).map((l) => ({ id: l.id, x: round(l.x), y: round(l.y), radius: l.radius, bright: l.bright, colour: l.colour })),
         connectors: (ctx.session().doc.features?.connectors ?? []).map((c) => ({ id: c.id, kind: c.kind, ...(c.name && { name: c.name }), x: c.x, y: c.y, w: c.w, h: c.h, leads: connectorTo(c) })),
+        roofs: (ctx.session().doc.features?.roofs ?? []).map((r) => ({ id: r.id, ...(r.name && { name: r.name }), style: r.style, ...(r.asset && { asset: r.asset }), points: r.points.map(([x, y]) => [round(x), round(y)]) })),
         notes: sortedNotes(ctx.session().doc.features?.notes).map((n) => ({ id: n.id, n: n.n, x: round(n.x), y: round(n.y), title: n.title, ...(n.text && { text: n.text }) })),
         light_zones: (ctx.session().doc.features?.zones ?? []).map((z) => ({ id: z.id, ...(z.name && { name: z.name }), level: z.ambient, points: z.points.map(([x, y]) => [round(x), round(y)]) })),
         objects: (ctx.session().doc.features?.props ?? []).map((p) => ({ id: p.id, asset: p.asset, x: round(p.x), y: round(p.y), ...(p.rotation && { rotation: p.rotation }), ...(p.scale && p.scale !== 1 && { scale: p.scale }), ...(p.layer && { layer: p.layer }) })),
@@ -525,6 +527,7 @@ export const BATTLE_TOOLS = [
   }),
 
   ...LEVEL_TOOLS,
+  ...ROOF_TOOLS,
 ] as const;
 
 /** A labelled square grid on a battlemap preview: a line every square, numbered every 5 (or 10 on big crops). */

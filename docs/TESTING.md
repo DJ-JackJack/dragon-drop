@@ -448,6 +448,17 @@ Use a battlemap with two levels (14g2) and a room on each.
 9. **With Claude** (the terminal panel or the chat): *"Add a cellar under this room, and put a ladder in this room down to it."* **Expect** it to use `add_level` (the Levels panel shows a new **Cellar**, you are taken to it), then to switch back and add the ladder (a 1-square ladder in the Ground floor, leading down), and to say what it did. Ask *"What's on each level?"* (`list_levels`). Ask it to remove the cellar: **expect** it to say that is yours to do in the editor.
 10. **⤓ Export** on a map with levels: **Expect** a **Level** picker above the cards; pick the Cellar and download the **Image** and the **Universal VTT** file: the names end with the cellar's name and the picture is the cellar's.
 
+## 14g4. Roofs
+
+Use a battlemap with a room on the Ground floor.
+1. Pick **Roof** (left panel, "Roofs", or `F`). **Expect** a hint, and a "New roofs look like" box. Drag a rectangle a little wider than the room. **Expect** a faint slate roof over the room (you can see the room through it), the inspector says **Roof** with its look.
+2. In the inspector change the **Look** to Clay tile, Thatch and Wood shingles in turn, tick **Own colour** and pick one, tick **Flat**. **Expect** each change at once, one undo step each. A pitched roof has a light slope, a dark slope and a ridge along its longer side.
+3. In the left panel (Layers → **Roofs**) choose **Solid**: **Expect** the roof to hide the room; **Hidden**: gone.
+4. Pick the **Circle** or **Free-form** shape under the Roof tool and make an odd-shaped roof. Select a roof and drag it, `Ctrl+C`/`Ctrl+V` it, `Delete` it.
+5. In the **Assets** tab choose a floor or roof texture from your packs (a picture, not an object), select a roof and press **Use the picture chosen in Assets**: **Expect** the picture repeated across the roof; change **One repeat is** to resize it.
+6. **⤓ Export → Image only** and **Universal VTT**: **Expect** no roof in them. **Foundry scene**: **Expect** an extra `...-roof.png` next to the level's picture, and the roof set as the level's foreground in Foundry (it is drawn above the tokens). **Tell me what Foundry does when a token walks under it**: that hasn't been looked at in a real game yet.
+7. **With Claude**: *"Put a clay tile roof on the tavern, a bit wider than its walls."* **Expect** `add_roof`; ask it to show you the map with the roof (`render_battlemap` with roofs).
+
 ## 14h. Reefs, the northwesterly wind and the new places
 
 1. **Roads** tool, choose **Reef**, click along a strait (or any stretch of sea) and double-click. **Expect** a pale shoal with razor rocks and foam along the line, listed as a reef; Delete removes it.

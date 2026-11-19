@@ -466,6 +466,71 @@ describe("Claude's tools for levels, stairs, ladders and holes", () => {
   });
 });
 
+describe("Claude's tools for roofs", () => {
+  type Out = { text: string; isError: boolean };
+  const tool = async (hub: Hub, name: string, input: Record<string, unknown> = {}): Promise<Out> => {
+    const r = await runTool(hub.toolContext("mcp"), name, input);
+    return { text: (r.content[0] as { text: string }).text, isError: !!r.isError };
+  };
+  const ok = async (hub: Hub, name: string, input: Record<string, unknown> = {}) => {
+    const r = await tool(hub, name, input);
+    if (r.isError) throw new Error(`${name}: ${r.text}`);
+    return JSON.parse(r.text);
+  };
+
+  it("adds a roof as a rectangle or an outline, lists it, changes it, removes it, with the DM's undo", async () => {
+    const { hub } = fresh();
+    await tower(hub); // 10 x 8 squares
+    const a = await ok(hub, "add_roof", { rect: { x: 1, y: 1, w: 6, h: 5 }, style: "tile", name: "Tower roof" });
+    expect(a.roof).toMatchObject({ style: "tile", name: "Tower roof", points: [[1, 1], [7, 1], [7, 6], [1, 6]] });
+    const b = await ok(hub, "add_roof", { points: [[1, 6], [4, 6], [2, 8]], colour: "#4A7A8C", flat: true });
+    expect(b.roof).toMatchObject({ style: "slate", colour: "#4a7a8c", flat: true });
+    expect((await ok(hub, "list_roofs")).roofs).toHaveLength(2);
+    expect((await ok(hub, "list_battle")).roofs).toHaveLength(2);
+    expect((await ok(hub, "list_battle")).summary.roofs).toBe(2);
+    const changed = await ok(hub, "update_roof", { id: a.roof.id, style: "thatch", flat: true, colour: "#aa8844", name: "" });
+    expect(changed.roof).toMatchObject({ style: "thatch", flat: true, colour: "#aa8844" });
+    expect(changed.roof.name).toBeUndefined();
+    const back = await ok(hub, "update_roof", { id: a.roof.id, flat: false, colour: "" });
+    expect(back.roof.flat).toBeUndefined();
+    expect(back.roof.colour).toBeUndefined();
+    const removed = await ok(hub, "remove_roofs", { ids: [b.roof.id, "nope"] });
+    expect(removed).toMatchObject({ removed: [b.roof.id], not_found: ["nope"] });
+    hub.session.undo("user");
+    expect((await ok(hub, "list_roofs")).roofs).toHaveLength(2);
+    await hub.close();
+  });
+
+  it("refuses a roof outside the map, with both or neither of rect and points, or with a picture that isn't in the library", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    expect((await tool(hub, "add_roof", { rect: { x: 8, y: 1, w: 5, h: 2 } })).text).toMatch(/outside the map, which is 10 x 8 squares/);
+    expect((await tool(hub, "add_roof", {})).text).toMatch(/either rect or points/);
+    expect((await tool(hub, "add_roof", { rect: { x: 1, y: 1, w: 2, h: 2 }, points: [[0, 0], [1, 0], [1, 1]] })).text).toMatch(/either rect or points/);
+    expect((await tool(hub, "add_roof", { rect: { x: 1, y: 1, w: 2, h: 2 }, asset: "pack:roof.png" })).isError).toBe(true); // (no library in this test)
+    expect((await tool(hub, "add_roof", { rect: { x: 1, y: 1, w: 2, h: 2 }, colour: "red" })).isError).toBe(true);
+    await hub.close();
+  });
+
+  it("a roof belongs to the level it was added on, and render_battlemap leaves roofs out unless asked", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    await ok(hub, "add_roof", { rect: { x: 1, y: 1, w: 6, h: 5 }, style: "tile" });
+    await ok(hub, "add_level", { where: "above" });
+    expect((await ok(hub, "list_roofs")).roofs).toEqual([]);
+    expect((await ok(hub, "list_levels")).levels[0].counts).toBeDefined();
+    await ok(hub, "set_active_level", { level: "Ground floor" });
+    const imageData = async (roofs: boolean) => {
+      const r = await runTool(hub.toolContext("mcp"), "render_battlemap", { roofs, grid: false, max_size: 560 });
+      const img = r.content.find((c) => c.type === "image") as { data: string };
+      return img.data;
+    };
+    const without = await imageData(false), withRoofs = await imageData(true);
+    expect(without).not.toBe(withRoofs);
+    await hub.close();
+  });
+});
+
 describe("the store's level files", () => {
   it("a levels file that can't be read is set aside, not overwritten; the map opens with its first level", async () => {
     const { hub, dir, store } = fresh();

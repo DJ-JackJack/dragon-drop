@@ -89,7 +89,7 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
     limits: "Tried with the Universal Battlemap Importer in Foundry v14: picture, grid, walls, doors and lights come through, but the importer's lights are very faint; not tried in other programs. A battlemap with several levels gives one file for the level being worked on (the format has no levels). The format has no see-through wall, no invisible wall and no secret door: a window, an invisible wall and a secret door are all written as plain walls (a window written any other way was ignored by the importer, leaving a gap tokens could walk through). Foundry's own scene export keeps windows and invisible walls.",
   },
   {
-    id: "foundry", name: "Foundry VTT scene", files: "-foundry.zip (a picture for each level, a scene file and instructions)", exportFormat: "foundry",
+    id: "foundry", name: "Foundry VTT scene", files: "-foundry.zip (a picture for each level, a see-through roof picture for a level with roofs, a scene file and instructions)", exportFormat: "foundry",
     use: "A battlemap as a Foundry VTT v14 scene: each level of the battlemap becomes a Foundry level with its own picture, walls, doors and lights.",
     limits: "Tried in Foundry v14 (build 367): a one-level battlemap imports with its picture, grid, walls, doors, window, lights and light level, and a two-level scene works per level, including a stair between them. Not tried: a live player view, and a newer Foundry build. Stairs and ladders you place become Change Level regions and holes become gaps in the level's floor region; what a hole does to a token has not been looked at in Foundry.",
   },
