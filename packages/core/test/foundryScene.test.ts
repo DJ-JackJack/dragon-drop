@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type FoundryLevelInput, type MapLight, type MapWall, foundryId, foundryScene } from "../src/index.ts";
+import { FOUNDRY_CORE_VERSION, type FoundryLevelInput, type MapLight, type MapWall, foundryId, foundryScene } from "../src/index.ts";
 
 const wall = (id: string, kind: MapWall["kind"], pts: [number, number][], extra: Partial<MapWall> = {}): MapWall => ({ id, kind, points: pts, ...extra });
 const light = (id: string, x: number, y: number, extra: Partial<MapLight> = {}): MapLight => ({ id, x, y, radius: 6, ...extra });
@@ -23,6 +23,16 @@ describe("Foundry document ids", () => {
 });
 
 describe("a Foundry v14 scene with levels", () => {
+  it("says which Foundry build it is from: without it Foundry drops the levels (tried in a real Foundry, 14.367)", () => {
+    const s = foundryScene(input());
+    expect(s._stats).toEqual({ coreVersion: FOUNDRY_CORE_VERSION });
+    // at least 14.353 (older runs the migration that replaces the levels) and not newer than the build it was tried on (a newer one is refused as "from the future")
+    const [major, build] = FOUNDRY_CORE_VERSION.split(".").map(Number);
+    expect(major).toBe(14);
+    expect(build).toBeGreaterThanOrEqual(353);
+    expect(build).toBeLessThanOrEqual(367);
+  });
+
   it("has the levels in order, each with its elevation range and picture, and starts on the first", () => {
     const s = foundryScene(input());
     expect("background" in s).toBe(false); // (a v14 scene has no picture of its own: its levels do)
@@ -61,8 +71,9 @@ describe("a Foundry v14 scene with levels", () => {
   });
 
   it("darkens the scene when the map is dim (and not when it is bright)", () => {
-    expect(foundryScene(input({ ambient: 0.25 }))).toMatchObject({ darkness: 0.75, environment: { darknessLevel: 0.75 } });
-    expect("darkness" in foundryScene(input())).toBe(false);
+    expect(foundryScene(input({ ambient: 0.25 }))).toMatchObject({ environment: { darknessLevel: 0.75 } });
+    expect("environment" in foundryScene(input())).toBe(false);
+    expect("darkness" in foundryScene(input({ ambient: 0.25 }))).toBe(false); // (Foundry v14 drops the old top-level key)
   });
 
   it("refuses a level whose bottom is not below its top, and a scene with no levels", () => {
@@ -78,7 +89,9 @@ describe("a Foundry v14 scene with levels", () => {
     const r = s.regions[0] as { levels: string[]; shapes: { x: number; y: number; width: number; height: number }[]; elevation: { bottom: number; top: number }; behaviors: { type: string }[] };
     expect(r.levels).toEqual(s.levels.map((l) => l._id));
     expect(r.shapes[0]).toMatchObject({ x: 490, y: 140, width: 70, height: 140 });
-    expect(r.elevation).toEqual({ bottom: -10, top: 10 });
+    expect(r.elevation).toEqual({ bottom: -10, top: 10, topInclusive: false });
     expect(r.behaviors.map((b) => b.type)).toEqual(["changeLevel"]);
+    // the shape Foundry itself stores for a stair: no kinds of movement listed (all allowed), the top of the range not inclusive
+    expect(r.behaviors[0]).toMatchObject({ system: { movementActions: [] }, disabled: false });
   });
 });

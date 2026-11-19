@@ -2,15 +2,29 @@
  * A Foundry VTT scene, built the way Foundry v14 stores one: a scene holds LEVELS (each with its own elevation range and its own background picture),
  * and walls, lights and regions are tagged with the levels they belong to. A one-floor map is simply a scene with one level.
  *
- * What is certain and what is not (checked against Foundry's published v14 API documentation, 2026-11-18; Foundry itself could not be run here):
- *  - A Scene has `levels` (embedded Level documents) and `initialLevel`; the scene itself no longer has a background picture.
- *  - A Level has `_id`, `name`, `sort`, `elevation: { bottom, top }`, `background: { src }`, `foreground: { src }`, `fog`, `textures`, `visibility: { levels }`.
- *  - Walls, ambient lights and tiles have a `levels` set (an empty set is every level); lights and tiles also have an `elevation`.
- *  - Regions have a "Change Level" behaviour (stairs) and a "Define Surface" behaviour (floors and ceilings that stop light, sight, movement, sound).
- *    The documentation does not give their stored shape, so the stair regions here are a best guess and off unless asked for (`stairs`).
- * docs/FOUNDRY.md keeps the list of what still needs checking in a real Foundry.
+ * Checked in a real Foundry (v14 build 367, 2026-11-18; the results are in docs/foundry-test-kit/results/v14.367/ and docs/FOUNDRY.md):
+ *  - A scene file with no `_stats.coreVersion` is treated as old data: Foundry replaces its levels with one empty default level and every wall and light
+ *    is left pointing at levels that no longer exist, so the scene imports "successfully" and shows nothing. Every scene written here therefore carries
+ *    `_stats.coreVersion` (FOUNDRY_CORE_VERSION). With it, levels, pictures, walls, lights and regions come through exactly as written.
+ *  - A Scene has `levels` and `initialLevel`; the scene itself has no background picture. A Level has `_id`, `name`, `sort`, `elevation`, `background.src`,
+ *    `foreground.src` and `visibility.levels` (the other levels it can see: empty means only itself, which works).
+ *  - Walls and lights have a `levels` set and behave per level (sight and light stop at the level boundary); a light also has an `elevation`.
+ *  - A stair is a Region with a "Change Level" behaviour (`type: "changeLevel"`, `system: { movementActions: [] }`, empty meaning every kind of movement):
+ *    walking onto it asks the player whether to move to the other level. A floor is a Region on the upper level with a "Define Surface" behaviour
+ *    (`type: "defineSurface"`, placement "bottom"), a ceiling the same on the lower level with placement "top", and a hole is an extra shape of the floor's
+ *    region with `hole: true`. (Only the stair has been written by us so far; the floor, ceiling and hole shapes are as Foundry stored them when they were
+ *    made by hand.)
+ *  - The scene's light level is `environment.darknessLevel`; the older top-level `darkness` is dropped, and so is anything of the kind put on a level.
+ * docs/FOUNDRY.md keeps the list of what is still unchecked.
  */
 import { type MapLight, type MapWall, wallSegments } from "./features.ts";
+
+/**
+ * The Foundry build every scene file says it was written by. Foundry keeps a file's levels only when this is at least 14.353 (older values make it run the
+ * old-data migration that drops them) and refuses a file that says it is newer than the Foundry it is imported into, so it is the lowest value that works:
+ * 14.353 was tried against build 367 and keeps the levels, 14.352 does not.
+ */
+export const FOUNDRY_CORE_VERSION = "14.353";
 
 export interface FoundryLevelInput {
   name: string;
@@ -132,21 +146,24 @@ export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean 
     return {
       _id: foundryId(`stair:${k}:${s.name}`), name: s.name, color: "#d4af37",
       shapes: [{ type: "rectangle", x: sc(s.x), y: sc(s.y), width: sc(s.w), height: sc(s.h), rotation: 0, hole: false }],
-      elevation: { bottom: lo, top: hi }, levels: s.between.map((i) => ids[i]),
-      behaviors: [{ _id: foundryId(`stairb:${k}:${s.name}`), name: "Change level", type: "changeLevel", system: {}, disabled: false, flags: {} }],
-      visibility: 0, locked: false, flags: {},
+      // (what Foundry itself stores for a stair made by hand: the behaviour's one setting is the kinds of movement allowed, none listed meaning all)
+      elevation: { bottom: lo, top: hi, topInclusive: false }, levels: s.between.map((i) => ids[i]),
+      behaviors: [{ _id: foundryId(`stairb:${k}:${s.name}`), name: "Change Level", type: "changeLevel", system: { movementActions: [] as string[] }, disabled: false, flags: {} }],
+      visibility: 4, locked: false, flags: {},
     };
   }) : [];
 
   const ambient = input.ambient ?? 1;
   return {
     name: input.name,
+    // without this Foundry treats the file as old data and drops the levels (see the top of this file)
+    _stats: { coreVersion: FOUNDRY_CORE_VERSION },
     navigation: false,
     width: input.width, height: input.height, padding: 0, shiftX: 0, shiftY: 0,
     grid: { type: input.gridType === "hex" ? 2 : input.gridType === "none" ? 0 : 1, size: px, distance: input.feetPerSquare, units: "ft", color: "#000000", alpha: 0.2 },
     tokenVision: true,
     // the light level: Foundry's darkness is the opposite of ambient (0 = bright day)
-    ...(ambient < 0.999 && { darkness: r4(1 - ambient), environment: { darknessLevel: r4(1 - ambient) } }),
+    ...(ambient < 0.999 && { environment: { darknessLevel: r4(1 - ambient) } }),
     initialLevel: ids[0],
     levels,
     walls,

@@ -6,8 +6,7 @@ are objects placed in the editor that become Change Level regions on export.
 
 ## How Foundry v14 stores levels
 
-From Foundry's own v14 API documentation (foundryvtt.com/api/v14, read 2026-11-18). Foundry itself could not be run while writing this, so anything not
-in the documentation is marked as a guess.
+From Foundry's own v14 API documentation (foundryvtt.com/api/v14, read 2026-11-18). The results of trying it in a real Foundry are further down.
 
 | Thing | What the documentation says |
 |---|---|
@@ -24,29 +23,56 @@ every level below it; a stair is a Change Level region placed in the lower level
 ## What Dragon Drop writes today
 
 `packages/core/src/foundryScene.ts` builds a v14 scene from a list of levels. Each level has a name, an elevation range in feet, a background picture and its
-walls and lights (in grid squares); walls and lights are tagged with their level's id, lights sit at their level's floor. A one-floor battlemap is a scene
-with one level (`toFoundryScene` in `battle.ts`). Ids are 16 letters and digits made from the name, so exporting again doesn't change them.
+walls and lights (in grid squares); walls and lights are tagged with their level's id, lights sit at their level's floor. A battlemap of one level is a scene
+with one level (`toFoundryScene` in `battle.ts`); several levels give one Foundry level each (`toFoundryLevelsScene`). Ids are 16 letters and digits made
+from the name, so exporting again doesn't change them. **Every scene carries `_stats.coreVersion` (`FOUNDRY_CORE_VERSION`, "14.353"): see the first result below.**
 
-Stair regions are built but **off by default**: the stored shape of a Change Level behaviour isn't in the documentation (`type: "changeLevel"` is what the
-Dungeon Alchemist level importer's page calls it, and the fields of its `system` are unknown), and an unknown shape could make Foundry refuse the whole
-scene. They are written to a separate file in the test zip.
+Stair regions are built but **off by default** until stairs exist as objects in the editor (stage 3). Their stored shape is now known (below).
+
+## Results of the first run in a real Foundry (v14 build 367, 2026-11-18)
+
+Run by Claude Code driving the person's Foundry (a throwaway dnd5e world); the full report, Foundry's own exported JSON and a test that pins the facts are in
+[foundry-test-kit/results/v14.367/](foundry-test-kit/results/v14.367/). Nothing was seen by the person's own eye: it is Claude's reading of screenshots and Foundry's own
+client API. **A live player client and the visual effect of floors and holes were not looked at.**
+
+**The headline: every scene Dragon Drop wrote lost its levels on import, silently.** A scene file with no `_stats.coreVersion` is treated as old data, and
+Foundry's migration replaces the levels with one empty default level ("successfully imported", grey scene, no picture, no walls, no lights). With
+`_stats: { coreVersion }` of 14.353 or newer (up to the running build; a newer one is refused as "from a newer version") the same file imports with levels, pictures,
+walls, lights and regions exactly as written. We now write it, and a test (`apps/server/test/foundryTested.test.ts`) keeps today's one-level export equal to the file
+that was tried, apart from that value.
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Scene with only `levels` imports, each level its own picture | **yes**, once the build is stated (above) |
+| 2 | `visibility: { levels: [] }`: a level sees only itself | **yes** (Foundry's `Level#isVisible` rule: the viewed level, or one listed in its `visibility.levels`) |
+| 3 | Walls and lights tagged to one level work per level | **yes**: sight and light stop at the level boundary |
+| 4 | Change Level behaviour | **yes**: `type: "changeLevel"`, `system: { movementActions: [] }` (empty = every kind of movement). Our stair region, with `levels` = both levels, walked onto from the cellar, offered "move to Ground floor?" and Move Up worked |
+| 5 | Floors, ceilings, holes (Define Surface) | **yes**, as stored when made by hand: `type: "defineSurface"`, `system: { placement, light, move, sight, sound, occlusion, exposure, culling }` (defaults: placement "bottom", the five blockers true, exposure and culling false). A **floor** is a region on the upper level (`levels: [Up]`, `elevation` its band) with placement `"bottom"`; a **ceiling** is a region on the lower level with placement `"top"`; a **hole** is an extra shape of the floor's region with `hole: true` |
+| 6 | Darkness | **per scene**, `environment.darknessLevel`; the old top-level `darkness` is dropped, and nothing of the kind works on a level. We write only `environment.darknessLevel` now |
+| 7 | Light `config` | **yes**: `coloration 1`, `luminosity 0.5`, `attenuation 0.5`, `alpha 0.5` are what Foundry gives a hand-made light; `bright` and `dim` are in feet |
+
+The one-level export (picture, 20 x 14 squares at 70 px): the picture lines up with Foundry's grid; all 18 walls lie on the drawn walls; doors start closed and open
+when clicked; the window blocks movement but not sight; a secret door blocks sight and is hidden from players (checked through Foundry's own code, not a live player);
+both lights are where and what colour they should be.
+
+**Also found:**
+- The first two-level test scene laid its door, window and secret door over unbroken room walls, so opening them opened nothing. The editor's real walls are already cut around
+  openings; the test scene is fixed to do the same.
+- **Universal VTT** into the Universal Battlemap Importer 6.1.1: picture, grid, walls, doors, the secret door (as a wall) and both lights came through; **the window did not**
+  (nothing covers it, so tokens walk and see through the gap), the importer makes many zero-length walls of its own, and its lights are very faint (`alpha 0.05`).
+- Foundry's own Window tool stores a proximity wall (`sight 30, light 30`, thresholds 10 ft); ours (`sight 0, light 0`) lets sight through and stops movement as intended.
+- Foundry gives regions drawn by hand `visibility: 4`; we now write that for stairs too.
 
 ## Still to check in a real Foundry
 
-1. Does a scene with only `levels` (no top-level `background`) import, and does each level show its own picture?
-2. Is `visibility: { levels: [] }` right for "this level sees only itself"?
-3. Are walls and lights tagged to one level behaving per level (sight and light stop at the level boundary)?
-4. The Change Level behaviour: its `type` and `system` fields; whether the region needs `levels` and `elevation` as written.
-5. Define Surface regions for floors and ceilings and for holes: their stored shape.
-6. What Foundry does with `darkness` / `environment.darknessLevel` per scene (and whether v14 moved it onto levels).
-7. Light `config` fields (`coloration`, `luminosity`, `attenuation`): same meaning in v14?
+- Floors, ceilings and holes **written by Dragon Drop** (the stored shape is known; what they look like and whether the level below can be seen through a hole was not looked at).
+- A live player client (secret door icon; what players see on each level).
+- Stairs written by Dragon Drop, once they exist as objects (stage 3): our test-scene stair worked; the real ones follow the same shape.
+- A newer Foundry build (14.370 was out): the `coreVersion` rule might change.
 
-**To run these tests on a PC that has Foundry:** `pnpm foundry-kit` makes a folder (the handoff for Claude Code, the test scenes, what the Export button writes for an ordinary
-battlemap, and the results templates) from [foundry-test-kit/](foundry-test-kit/). Give that folder to Claude Code on that PC; it walks the person through the tests and leaves a
-results folder with a filled-in `RESULTS.md`, Foundry's own exported JSON, and a dependency-free test that pins down what Foundry really did.
-
-The fastest way to settle 4 and 5 and most of the rest: build a tiny two-level scene by hand in Foundry (two levels, a wall and a light on each, a Change Level
-region, a Define Surface region), Export Data, and read the JSON.
+**To run tests on a PC that has Foundry:** `pnpm foundry-kit` makes a folder (the handoff for Claude Code, the test scenes, what the Export button writes for an ordinary
+battlemap, and the results templates) from [foundry-test-kit/](foundry-test-kit/). Give that folder to Claude Code on that PC; it leaves a results folder with a filled-in
+`RESULTS.md`, Foundry's own exported JSON, and a dependency-free test that pins down what Foundry really did.
 
 `pnpm exec tsx scripts/foundry-test-scene.ts <folder>` writes `dragon-drop-foundry-levels-test.zip`: two pictures, the scene without stairs, the same with a
 stair region, and a README with what to look at.

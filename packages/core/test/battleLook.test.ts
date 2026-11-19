@@ -140,13 +140,13 @@ describe("the light level (ambient)", () => {
     expect(img.data[0]).toBeLessThan(100);
   });
 
-  it("is never baked into the export picture, but travels with the scene as darkness", () => {
+  it("is never baked into the export picture, but travels with the scene as its darkness level", () => {
     const d = scene(0.3);
     const picture = renderBattle(d, { overlay: true, lights: false });
     const bright = renderBattle(scene(), { overlay: true, lights: false });
     expect(Array.from(picture.data.subarray(0, 4000))).toEqual(Array.from(bright.data.subarray(0, 4000)));
-    expect(toFoundryScene(d, "x.png")).toMatchObject({ darkness: 0.7, environment: { darknessLevel: 0.7 } });
-    expect("darkness" in toFoundryScene(scene(), "x.png")).toBe(false);
+    expect(toFoundryScene(d, "x.png")).toMatchObject({ environment: { darknessLevel: 0.7 } });
+    expect("environment" in toFoundryScene(scene(), "x.png")).toBe(false);
     expect(toUniversalVtt(d, "AAAA").environment.ambient_light).toBe("ff4d4d4d");
     expect(toUniversalVtt(scene(), "AAAA").environment.ambient_light).toBe("ffffffff");
   });

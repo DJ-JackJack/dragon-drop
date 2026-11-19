@@ -467,8 +467,8 @@ export class Hub {
         ? `This is a Foundry v14 scene with ${docs.length} Levels (${docs.map((d) => d.level.name).join(", ")}), each with its own picture, walls, doors and lights, stacked by elevation.\r\n` +
           `Stairs, ladders and holes between levels aren't made for you yet: add them in Foundry (a Region with the Change Level behaviour).\r\n`
         : `This is a Foundry v14 scene: the map is one Level, with its walls, doors and lights tagged to it.\r\n`) +
-      `It was built from Foundry's published v14 documentation and hasn't been tried in Foundry itself yet. If it doesn't import cleanly, tell us what Foundry said,\r\n` +
-      `or use the .dd2vtt export with the Universal Battlemap Importer module instead.\r\n`;
+      `The same kind of scene (one level, with its walls, doors, window and lights) was tried in Foundry v14 build 367 and worked. If yours doesn't import cleanly,\r\n` +
+      `tell us what Foundry said, or use the .dd2vtt export with the Universal Battlemap Importer module instead.\r\n`;
     return {
       name: `${base}-foundry.zip`, mime: "application/zip",
       bytes: createZip([...files, { name: `${base}-scene.json`, data: enc.encode(JSON.stringify(scene, null, 2)) }, { name: "README.txt", data: enc.encode(readme) }]),

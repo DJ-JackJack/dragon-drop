@@ -31,11 +31,15 @@ function picture(floor: [number, number, number], outside: [number, number, numb
 
 const room = (id: string): MapWall => ({ id, kind: "wall", points: [[2, 2], [13, 2], [13, 8], [2, 8]], closed: true });
 const cellarWalls: MapWall[] = [room("cellar-room"), { id: "cellar-cross", kind: "wall", points: [[7, 2], [7, 5]] }];
+// (the room's wall is cut around each opening, as the editor does it: a door or window laid over an unbroken wall would leave the wall in place, and
+// opening the door would open nothing, as the first real-Foundry test of this scene found)
 const groundWalls: MapWall[] = [
-  room("ground-room"),
-  { id: "ground-door", kind: "door", points: [[6, 2], [7, 2]] }, // (drawn on top of the room's wall: a door in the north wall)
-  { id: "ground-window", kind: "window", points: [[13, 4], [13, 5]] },
+  { id: "ground-wall-1", kind: "wall", points: [[6, 2], [2, 2], [2, 5]] }, // north wall (west part), then down the west side to the secret door
   { id: "ground-secret", kind: "secret", points: [[2, 5], [2, 6]] },
+  { id: "ground-wall-2", kind: "wall", points: [[2, 6], [2, 8], [13, 8], [13, 5]] }, // the rest of the west side, the south wall, up the east side to the window
+  { id: "ground-window", kind: "window", points: [[13, 5], [13, 4]] },
+  { id: "ground-wall-3", kind: "wall", points: [[13, 4], [13, 2], [7, 2]] }, // up to the north-east corner and back along the north wall to the door
+  { id: "ground-door", kind: "door", points: [[7, 2], [6, 2]] }, // the door in the north wall
 ];
 const cellarLights: MapLight[] = [{ id: "cellar-torch", x: 4, y: 6, radius: 6, bright: 3, colour: "#ff8800" }];
 const groundLights: MapLight[] = [{ id: "ground-lamp", x: 9, y: 5, radius: 8, bright: 4 }];
@@ -55,7 +59,8 @@ const readme = `Dragon Drop: Foundry v14 levels test
 =====================================
 
 This is a small made-up scene with TWO LEVELS: a Cellar (elevation -10 to 0) under a Ground floor (0 to 10). Each level has its own picture, walls and a
-light. The ground floor has a door, a window and a secret door. The point is to find out what Foundry v14 does with it.
+light. The ground floor has a door, a window and a secret door. The point is to find out what Foundry v14 does with it. (Result of the first run, on Foundry 14.367:
+it did what was hoped once the scene file said which Foundry build it was written by, which it now does: see docs/FOUNDRY.md.)
 
 1. Put the two pictures in your Foundry data folder, in a folder called maps (File Browser > Upload):
      dd-test-cellar.png   dd-test-ground.png

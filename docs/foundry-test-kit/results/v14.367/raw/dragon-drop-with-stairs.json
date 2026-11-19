@@ -1,0 +1,449 @@
+{
+  "name": "Dragon Drop test: two levels",
+  "navigation": false,
+  "width": 1050,
+  "height": 700,
+  "padding": 0,
+  "shiftX": 0,
+  "shiftY": 0,
+  "grid": {
+    "type": 1,
+    "size": 70,
+    "distance": 5,
+    "units": "ft",
+    "color": "#000000",
+    "alpha": 0.2
+  },
+  "tokenVision": true,
+  "initialLevel": "79QGVzqun9aetNmc",
+  "levels": [
+    {
+      "_id": "79QGVzqun9aetNmc",
+      "name": "Cellar",
+      "sort": 0,
+      "elevation": {
+        "bottom": -10,
+        "top": 0
+      },
+      "background": {
+        "src": "maps/dd-test-cellar.png"
+      },
+      "foreground": {
+        "src": null
+      },
+      "visibility": {
+        "levels": []
+      },
+      "flags": {}
+    },
+    {
+      "_id": "QeBDuEn1eQLJ6Wzl",
+      "name": "Ground floor",
+      "sort": 100000,
+      "elevation": {
+        "bottom": 0,
+        "top": 10
+      },
+      "background": {
+        "src": "maps/dd-test-ground.png"
+      },
+      "foreground": {
+        "src": null
+      },
+      "visibility": {
+        "levels": []
+      },
+      "flags": {}
+    }
+  ],
+  "walls": [
+    {
+      "c": [
+        140,
+        140,
+        910,
+        140
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "79QGVzqun9aetNmc"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        910,
+        140,
+        910,
+        560
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "79QGVzqun9aetNmc"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        910,
+        560,
+        140,
+        560
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "79QGVzqun9aetNmc"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        140,
+        560,
+        140,
+        140
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "79QGVzqun9aetNmc"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        490,
+        140,
+        490,
+        350
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "79QGVzqun9aetNmc"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        140,
+        140,
+        910,
+        140
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        910,
+        140,
+        910,
+        560
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        910,
+        560,
+        140,
+        560
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        140,
+        560,
+        140,
+        140
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        420,
+        140,
+        490,
+        140
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 1,
+      "ds": 0
+    },
+    {
+      "c": [
+        910,
+        280,
+        910,
+        350
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 0,
+      "light": 0,
+      "sound": 20,
+      "door": 0,
+      "ds": 0
+    },
+    {
+      "c": [
+        140,
+        350,
+        140,
+        420
+      ],
+      "dir": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "flags": {},
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "move": 20,
+      "sight": 20,
+      "light": 20,
+      "sound": 20,
+      "door": 2,
+      "ds": 0
+    }
+  ],
+  "lights": [
+    {
+      "x": 280,
+      "y": 420,
+      "elevation": -10,
+      "rotation": 0,
+      "walls": true,
+      "vision": false,
+      "hidden": false,
+      "levels": [
+        "79QGVzqun9aetNmc"
+      ],
+      "config": {
+        "alpha": 0.5,
+        "angle": 360,
+        "bright": 15,
+        "dim": 30,
+        "color": "#ff8800",
+        "coloration": 1,
+        "luminosity": 0.5,
+        "attenuation": 0.5,
+        "shadows": 0
+      }
+    },
+    {
+      "x": 630,
+      "y": 350,
+      "elevation": 0,
+      "rotation": 0,
+      "walls": true,
+      "vision": false,
+      "hidden": false,
+      "levels": [
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "config": {
+        "alpha": 0.5,
+        "angle": 360,
+        "bright": 20,
+        "dim": 40,
+        "color": "#ffd68c",
+        "coloration": 1,
+        "luminosity": 0.5,
+        "attenuation": 0.5,
+        "shadows": 0
+      }
+    }
+  ],
+  "tiles": [],
+  "regions": [
+    {
+      "_id": "29NKAPPAaf7oghHQ",
+      "name": "Cellar stairs",
+      "color": "#d4af37",
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 770,
+          "y": 210,
+          "width": 70,
+          "height": 140,
+          "rotation": 0,
+          "hole": false
+        }
+      ],
+      "elevation": {
+        "bottom": -10,
+        "top": 10
+      },
+      "levels": [
+        "79QGVzqun9aetNmc",
+        "QeBDuEn1eQLJ6Wzl"
+      ],
+      "behaviors": [
+        {
+          "_id": "PG2tN06rVQsd9GsZ",
+          "name": "Change level",
+          "type": "changeLevel",
+          "system": {},
+          "disabled": false,
+          "flags": {}
+        }
+      ],
+      "visibility": 0,
+      "locked": false,
+      "flags": {}
+    }
+  ]
+}

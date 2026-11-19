@@ -86,12 +86,12 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
   {
     id: "uvtt", name: "Universal VTT", files: ".dd2vtt", exportFormat: "uvtt",
     use: "A battlemap for virtual tabletops: the picture, walls, doors, windows and lights in one file.",
-    limits: "Not yet tried in the real programs. A battlemap with several levels gives one file for the level being worked on (the format has no levels). The format has no window or secret door: a window is written as a line that stops movement but not sight, and a secret door as plain wall.",
+    limits: "Tried with the Universal Battlemap Importer in Foundry v14: picture, grid, walls, doors and lights come through, but the window does not (tokens can walk through the gap) and the lights are very faint; not tried in other programs. A battlemap with several levels gives one file for the level being worked on (the format has no levels). The format has no window or secret door: a window is written as a line that stops movement but not sight, and a secret door as plain wall.",
   },
   {
     id: "foundry", name: "Foundry VTT scene", files: "-foundry.zip (a picture for each level, a scene file and instructions)", exportFormat: "foundry",
     use: "A battlemap as a Foundry VTT v14 scene: each level of the battlemap becomes a Foundry level with its own picture, walls, doors and lights.",
-    limits: "Built from Foundry's published documentation and not yet tried in Foundry itself. No stairs, ladders or holes between levels are made yet: add them in Foundry.",
+    limits: "Tried in Foundry v14 (build 367): a one-level battlemap imports with its picture, grid, walls, doors, window and lights, and a two-level scene works per level. Not tried: a live player view, and a newer Foundry build. No stairs, ladders or holes between levels are made yet: add them in Foundry.",
   },
   {
     id: "key", name: "Room key", files: ".md", exportFormat: "key",
