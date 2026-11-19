@@ -41,6 +41,10 @@ scene. They are written to a separate file in the test zip.
 6. What Foundry does with `darkness` / `environment.darknessLevel` per scene (and whether v14 moved it onto levels).
 7. Light `config` fields (`coloration`, `luminosity`, `attenuation`): same meaning in v14?
 
+**To run these tests on a PC that has Foundry:** `pnpm foundry-kit` makes a folder (the handoff for Claude Code, the test scenes, what the Export button writes for an ordinary
+battlemap, and the results templates) from [foundry-test-kit/](foundry-test-kit/). Give that folder to Claude Code on that PC; it walks the person through the tests and leaves a
+results folder with a filled-in `RESULTS.md`, Foundry's own exported JSON, and a dependency-free test that pins down what Foundry really did.
+
 The fastest way to settle 4 and 5 and most of the rest: build a tiny two-level scene by hand in Foundry (two levels, a wall and a light on each, a Change Level
 region, a Define Surface region), Export Data, and read the JSON.
 

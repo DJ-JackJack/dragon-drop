@@ -7,11 +7,10 @@
 // (a best guess at its stored shape, kept in a separate file so a wrong guess can't spoil the first), and a README with what to check.
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type MapLight, type MapWall, createZip, drawText, foundryScene } from "../packages/core/src/index.ts";
 import { encodePng } from "../packages/tools/src/images.ts";
 
-const out = path.resolve(process.argv[2] ?? ".");
-mkdirSync(out, { recursive: true });
 const SQ = 70, W = 15 * SQ, H = 10 * SQ;
 
 /** A picture of a room: a floor colour inside, a darker outside, squares drawn faintly, and the level's name in big letters. */
@@ -82,14 +81,23 @@ using a Region with a Change Level behaviour, and one floor with a Define Surfac
 shows me exactly how Foundry stores these things, which the documentation doesn't spell out.
 `;
 
-const enc = new TextEncoder();
-const zip = createZip([
-  { name: "maps/dd-test-cellar.png", data: picture([88, 88, 96], [34, 34, 38], "CELLAR", "level 0: elevation -10 to 0") },
-  { name: "maps/dd-test-ground.png", data: picture([150, 108, 66], [40, 60, 40], "GROUND FLOOR", "level 1: elevation 0 to 10") },
-  { name: "scene-no-stairs.json", data: enc.encode(JSON.stringify(plain, null, 2)) },
-  { name: "scene-with-stairs.json", data: enc.encode(JSON.stringify(withStairs, null, 2)) },
-  { name: "README.txt", data: enc.encode(readme.replace(/\n/g, "\r\n")) },
-]);
-const file = path.join(out, "dragon-drop-foundry-levels-test.zip");
-writeFileSync(file, zip);
-console.log(`wrote ${file} (${zip.length} bytes)`);
+/** The test scene as a zip (what the command line writes), for scripts/foundry-test-kit.ts too. */
+export function levelsTestZip(): Uint8Array {
+  const enc = new TextEncoder();
+  return createZip([
+    { name: "maps/dd-test-cellar.png", data: picture([88, 88, 96], [34, 34, 38], "CELLAR", "level 0: elevation -10 to 0") },
+    { name: "maps/dd-test-ground.png", data: picture([150, 108, 66], [40, 60, 40], "GROUND FLOOR", "level 1: elevation 0 to 10") },
+    { name: "scene-no-stairs.json", data: enc.encode(JSON.stringify(plain, null, 2)) },
+    { name: "scene-with-stairs.json", data: enc.encode(JSON.stringify(withStairs, null, 2)) },
+    { name: "README.txt", data: enc.encode(readme.replace(/\n/g, "\r\n")) },
+  ]);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const out = path.resolve(process.argv[2] ?? ".");
+  mkdirSync(out, { recursive: true });
+  const zip = levelsTestZip();
+  const file = path.join(out, "dragon-drop-foundry-levels-test.zip");
+  writeFileSync(file, zip);
+  console.log(`wrote ${file} (${zip.length} bytes)`);
+}
