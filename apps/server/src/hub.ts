@@ -500,7 +500,8 @@ export class Hub {
     const roofNote = hasRoofs
       ? `The *-roof-N.png pictures are roofs. Each is a Tile at the top of its level (Surface occlusion) with a Define Surface region over the roof's outline, so in Foundry 14.367 a roof is cut away while\r\n` +
         `a token YOU CONTROL stands under it (inside its outline and below the roof), and drawn again when the token leaves; every other roof stays. A token you don't control stays hidden under the roof.\r\n` +
-        `The GM can hold the "Highlight Objects" key (Alt by default) to see through every roof at once. Tried in the GM's view only: a player's view has not been looked at yet.\r\n\r\n`
+        `The GM can hold the "Highlight Objects" key (Alt by default) to see through every roof at once; a GM's mouse over a roof's outline does the same. The roofs have no shadow of their own in this export (it would stay behind\r\n` +
+        `as a dark ring when the roof fades). Tried in the GM's view only: a player's view has not been looked at yet.\r\n\r\n`
       : "";
     const connectorNote = roofNote + (nConn
       ? `Stairs and ladders are Regions with the Change Level behaviour (walk onto one and Foundry asks whether to move to the other level). A level with a hole in its floor has a floor Region\r\n` +

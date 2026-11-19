@@ -82,32 +82,40 @@ function signedDistance(P: [number, number][], x: number, y: number): number {
 }
 
 /** A roof's outline in pixels, and its box (outline plus the eave's shadow) cut to the picture: the pixels `paintRoof` may touch. */
-function roofGeometry(roof: MapRoof, px: number, W: number, H: number) {
+function roofGeometry(roof: MapRoof, px: number, W: number, H: number, shadow = true) {
   const P = roof.points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])).map(([x, y]) => [x * px, y * px] as [number, number]);
   if (P.length < 3) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const [x, y] of P) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
   const reach = 0.34 * px, sx = 0.07 * px, sy = 0.1 * px; // the soft shadow beyond the eave, thrown down and to the right
-  const m = Math.ceil(reach + Math.max(sx, sy) + 2);
+  const m = shadow ? Math.ceil(reach + Math.max(sx, sy) + 2) : 2; // (without the shadow, only the soft edge of the roof itself is beyond its outline)
   const box = { x0: Math.max(0, Math.floor(minX - m)), x1: Math.min(W - 1, Math.ceil(maxX + m)), y0: Math.max(0, Math.floor(minY - m)), y1: Math.min(H - 1, Math.ceil(maxY + m)) };
   return { P, minX, minY, maxX, maxY, reach, sx, sy, box };
 }
 
-/** Where a roof's own picture is in the level's picture, in pixels (null for a roof with fewer than three corners, or one wholly outside the picture). */
+/**
+ * Where a roof's own picture is in the level's picture, in pixels (null for a roof with fewer than three corners, or one wholly outside the picture). It is for the Foundry
+ * export, which differs from the picture the editor shows in two ways, both learned in a real Foundry (RT9): the roof has **no shadow** (a shadow outside the roof's outline would
+ * stay behind as a dark halo when the roof fades away) and the picture's **width and height are even**, so that its centre, which is where Foundry places a tile, is a whole pixel
+ * (Foundry rounds a tile's position to whole pixels: a half pixel put every roof half a pixel off and left a thin line of roof after it faded).
+ */
 export interface RoofPictureRect { x: number; y: number; w: number; h: number }
 export function roofPictureRect(spec: BattleSpec, roof: MapRoof): RoofPictureRect | null {
   const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
-  const g = roofGeometry(roof, px, W, H);
+  const g = roofGeometry(roof, px, W, H, false);
   if (!g || g.box.x1 < g.box.x0 || g.box.y1 < g.box.y0) return null;
-  return { x: g.box.x0, y: g.box.y0, w: g.box.x1 - g.box.x0 + 1, h: g.box.y1 - g.box.y0 + 1 };
+  let w = g.box.x1 - g.box.x0 + 1, h = g.box.y1 - g.box.y0 + 1;
+  if (w % 2) w++; // (one more transparent column or row: past the edge of the level's picture if the roof reaches it)
+  if (h % 2) h++;
+  return { x: g.box.x0, y: g.box.y0, w, h };
 }
 
 /**
  * Paints one roof into `out`, which holds the part of the level's picture that starts at (ox, oy) (the whole picture when both are 0). Every pixel is worked out
  * at its place in the whole picture, so a roof painted into its own small picture is exactly its part of the whole layer.
  */
-function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number, px: number, roof: MapRoof, tileFor: RoofTileSource | undefined) {
-  const g = roofGeometry(roof, px, W, H);
+function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number, px: number, roof: MapRoof, tileFor: RoofTileSource | undefined, shadow = true) {
+  const g = roofGeometry(roof, px, W, H, shadow);
   if (!g) return;
   const { P, minX, minY, maxX, maxY, reach, sx, sy } = g;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, hw = Math.max(1, (maxX - minX) / 2), hh = Math.max(1, (maxY - minY) / 2);
@@ -123,6 +131,7 @@ function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number,
       const X = x + 0.5, Y = y + 0.5, o = ((y - oy) * out.w + (x - ox)) * 4;
       const ins = signedDistance(P, X, Y);
       if (ins < -0.5) {
+        if (!shadow) continue;
         // beyond the eave: only the shadow
         const sd = signedDistance(P, X - sx, Y - sy);
         const a = sd >= 0 ? 0.36 : sd > -reach ? 0.36 * (1 + sd / reach) ** 2 : 0;
@@ -154,22 +163,22 @@ function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number,
 }
 
 /**
- * One roof as a picture of its own: its outline, eave and shadow, cropped to `roofPictureRect` (RGBA, straight alpha, transparent outside the roof). Its pixels are exactly
- * that roof's part of `renderRoofLayer`. Null for a roof with no picture (see `roofPictureRect`).
+ * One roof as a picture of its own for a Foundry tile: its outline and eave but no shadow, cropped to `roofPictureRect` (RGBA, straight alpha, transparent outside the roof). Its
+ * pixels are exactly that roof's part of `renderRoofLayer(spec, [roof], { shadow: false })`. Null for a roof with no picture (see `roofPictureRect`).
  */
 export function renderRoofPicture(spec: BattleSpec, roof: MapRoof, opts: { tileFor?: RoofTileSource } = {}): (RoofPictureRect & { data: Uint8ClampedArray }) | null {
   const rect = roofPictureRect(spec, roof);
   if (!rect) return null;
   const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
   const out: LookImage = { w: rect.w, h: rect.h, data: new Uint8ClampedArray(rect.w * rect.h * 4) };
-  paintRoof(out, rect.x, rect.y, W, H, px, roof, opts.tileFor);
+  paintRoof(out, rect.x, rect.y, W, H, px, roof, opts.tileFor, false);
   return { ...rect, data: out.data };
 }
 
 /** The roofs of a battlemap as one layer the size of its picture (squares x pxPerSquare); transparent where there is no roof. */
-export function renderRoofLayer(spec: BattleSpec, roofs: MapRoof[] | undefined, opts: { tileFor?: RoofTileSource } = {}): LookImage {
+export function renderRoofLayer(spec: BattleSpec, roofs: MapRoof[] | undefined, opts: { tileFor?: RoofTileSource; shadow?: boolean } = {}): LookImage {
   const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
   const out: LookImage = { w: W, h: H, data: new Uint8ClampedArray(W * H * 4) };
-  for (const r of roofs ?? []) paintRoof(out, 0, 0, W, H, px, r, opts.tileFor);
+  for (const r of roofs ?? []) paintRoof(out, 0, 0, W, H, px, r, opts.tileFor, opts.shadow !== false);
   return out;
 }

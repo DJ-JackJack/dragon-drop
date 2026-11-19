@@ -6,9 +6,11 @@ Read `CLAUDE.md` first (the project's own instructions), then this page. Everyth
 
 - **v0.1.9 is not tagged yet.** The last release is v0.1.8 (the bridge from the old repo). A version tag builds the installer and publishes a public GitHub Release that every installed copy updates to by itself, so **ask the person before tagging**.
   - The default Claude Code path was checked on a real PC with the CI build of `15c8d89` (itch copy, no updater): new build, no approval question, `/mcp` shows mapmaker connected (101 tools), the workspace in Documents holds no `.mcp.json` or `mapmaker.mcp.json` (the key files are in `%APPDATA%\Dragon Drop`), a climate region was added and undone, the status dot went green then gold. It passed.
-  - Recommendation given: wait for RT9, then tag the current `main`; if RT9 finds a problem, tag `a6bb20b` (the tested build) instead.
+  - Recommendation: RT9 passed, so tag the current `main` (CI is green; the Claude Code path check covered the desktop code, which has not changed since). `a6bb20b` is the older tested build if the person prefers the old roof export.
   - CI-built installers are numbered 0.1.0 (only a tag sets the version), so installing one makes the in-app updater fetch v0.1.8. To test a CI build use the itch copy (artifact `Dragon-Drop-itch-windows`), which has the updater off.
-- **RT9 is running** in the separate Foundry test instance (prompt: `docs/foundry-test-kit/prompts/rt9-real-roof-export.md`, with `House-foundry.zip`, a real export; SHA-256 in the prompt). It checks that roofs written the new way (tile + ceiling region) fade in a real Foundry. Results will come back as `RESULTS-RETEST-6.md` plus a redacted export: record them in `docs/FOUNDRY.md` and `docs/foundry-test-kit/results/v14.367/`.
+- **RT9 is done and passed** (`docs/foundry-test-kit/results/v14.367/RESULTS-RETEST-6.md`): a real Dragon Drop roof export behaves in Foundry as RT8 predicted. It found two small defects, both fixed (tile centres on whole pixels; no eave
+  shadow in the exported roof pictures). The fixed export has not been looked at in Foundry again, but both changes only move values RT8 already proved (whole-number centres) or remove pixels (the shadow).
+  **A player's (non-GM) view of a roof has not been seen**: someone needs to log in as a player who owns a token and move it under a roof.
 
 ## What was built this stretch
 
@@ -16,7 +18,7 @@ WebP decoder (libwebp 1.6.0 as WebAssembly, `tools/webp-wasm/`); roofs as Foundr
 
 ## Still open
 
-- **RT9 result**, then the v0.1.9 decision above.
+- **The v0.1.9 decision above** (RT9 is in; recommendation now: tag the current `main`).
 - **Too many lakes on new island and continent maps** (measured: about 19% of the land is lake on a continent): in `docs/PLAN.md`, Water model. The real fix is to drain the generated terrain.
 - **The Help menu (Open-source licences) can't be reached on Windows**: the window has a custom title bar and Alt does nothing. Add a button in Settings.
 - **Flaky end-to-end step:** the Hole step after Page Up (`apps/editor/e2e/smoke.mjs`) timed out once in two runs.

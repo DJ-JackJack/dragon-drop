@@ -296,11 +296,13 @@ describe("exporting a battlemap with levels", () => {
     const roof = decodeImage(files.get("tower-2-upper-floor-roof-1.png")!)!;
     expect([tile.width, tile.height]).toEqual([roof.w, roof.h]);
     expect(roof.w).toBeLessThan(10 * 70);
-    expect([tile.x, tile.y]).toEqual([Math.round((tile.x - roof.w / 2 + roof.w / 2) * 100) / 100, Math.round((tile.y - roof.h / 2 + roof.h / 2) * 100) / 100]);
+    expect(roof.w % 2 === 0 && roof.h % 2 === 0).toBe(true);
+    expect(Number.isInteger(tile.x) && Number.isInteger(tile.y)).toBe(true); // (a whole pixel: Foundry rounds a tile's position, so a half pixel would put the roof half a pixel off)
     const alpha = (x: number, y: number) => roof.data[(y * roof.w + x) * 4 + 3];
     expect(alpha(Math.floor(roof.w / 2), Math.floor(roof.h / 2))).toBe(255); // (opaque on the roof)
     expect(alpha(0, 0)).toBe(0); // (transparent beside it)
-    expect(tile.x - roof.w / 2).toBeLessThan(70); // (its picture starts left of the roof's own edge: the eave and the shadow)
+    expect(tile.x - roof.w / 2).toBeLessThan(70); // (its picture starts a pixel or two left of the roof's own edge: the soft edge of the roof)
+    expect(tile.x - roof.w / 2).toBeGreaterThan(60); // (and no shadow beyond it: it is tight to the roof)
     // a ceiling over the roof's outline (a rectangle here), on the same level, up to the level's top
     expect(scene.regions).toHaveLength(1);
     expect(scene.regions[0]).toMatchObject({

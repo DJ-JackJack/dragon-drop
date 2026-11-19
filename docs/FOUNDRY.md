@@ -157,10 +157,12 @@ How levels live inside one battlemap, chosen to touch as little of the working e
 - **The look:** `renderRoofLayer` (`battleRoof.ts`): one see-through layer, a pitched roof having a lit slope, a shadowed slope and a ridge along the longer way, a darker eave and a soft shadow beyond it.
   Asset pictures are loaded for the render worker with the floor textures (`Hub.battleAssets`).
 - **Never in the ordinary picture:** roofs are left out of the level's picture, the `.png` and `.dd2vtt` exports, and previews unless asked (`render_battlemap` `roofs: true`; the editor's Roofs switch: faint, solid or hidden).
-- **The Foundry scene** (changed 2026-11-19 after RT8): each roof becomes a **Tile** and a **ceiling Region**, not a foreground. The roof is drawn on its own into a small picture cropped to its outline, eave and shadow
-  (`renderRoofPicture`, `<map>-<n>-<level>-roof-<k>.png`, RGBA); the tile is that picture at the level's **top** elevation, **Surface** occlusion (written as both `mode: 2` and `modes: [2]`, alpha 0), placed by its
-  **centre**; the ceiling is a Define Surface region (placement top, the level's elevation range) shaped like the roof (a rectangle for a rectangle roof, otherwise a polygon). `battleRoofRects` says where each picture goes and
-  `renderBattleRoofPictures` draws them in the compute worker (`roofPictures` job). In Foundry's GM view a roof is cut away, to the region's shape, while a token **you control** stands under it, and only that roof; see RT8 below.
+- **The Foundry scene** (changed 2026-11-19 after RT8 and RT9): each roof becomes a **Tile** and a **ceiling Region**, not a foreground. The roof is drawn on its own into a small picture cropped to its outline
+  (`renderRoofPicture`, `<map>-<n>-<level>-roof-<k>.png`, RGBA) with **no shadow** (a shadow outside the outline would stay behind as a dark ring when the roof fades) and an **even width and height**, so its centre is a
+  whole pixel (Foundry rounds a tile's position to whole pixels; a half pixel put every roof half a pixel off). The tile is that picture at the level's **top** elevation, **Surface** occlusion (written as both `mode: 2` and
+  `modes: [2]`, alpha 0), placed by its **centre**; the ceiling is a Define Surface region (placement top, the level's elevation range) shaped like the roof (a rectangle for a rectangle roof, otherwise a polygon).
+  `battleRoofRects` says where each picture goes and `renderBattleRoofPictures` draws them in the compute worker (`roofPictures` job). The editor's own roof layer (`renderRoofLayer`) still has the shadow.
+  In Foundry's GM view a roof is cut away, to the region's shape, while a token **you control** stands under it, and only that roof; see RT8 and RT9 below.
 - **What Foundry does with a foreground (test RT6, 14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-3.md)):**
   - It imports as written; Foundry adds only `tint` and `alphaThreshold` to each foreground, and the level sheet offers only **Texture** and **Tint** for it: no fade or occlusion setting.
   - A viewer sees **only the foreground of the level being viewed** (a level sees others only if listed in its `visibility.levels`, which we leave empty). The level's background is drawn at the level's **bottom**
@@ -198,6 +200,17 @@ How levels live inside one battlemap, chosen to touch as little of the working e
   - **`exposure` ("Reveal Elevated Surface") made no visible difference** in the GM's view (the blue roof had it on, the brown off). Not used.
   - Foundry holds a token a token-height below a ceiling: asked 9 ft under a ceiling at 10, it stored 5; asked 25 under 20, it stored 15 (the surface's movement restriction). So "a token above the ceiling" was not tested.
   - **Not tried:** a player's (non-GM) view. Foundry's text says "a controlled or detected token", so a player's own token should do it, but that is unseen.
+- **Test RT9 (14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-6.md)): the real export, from Dragon Drop's own exporter.** Two levels, three roofs (a clay rectangle, a thatch triangle, a slate tower). Read in the GM view
+  with pixel probes:
+  - **It behaves as RT8 predicted**: each roof is cut to its region's shape only while a selected token is inside it, only that roof, two tokens cut two roofs; an unselected token stays hidden under its roof; a token outside
+    cuts nothing; holding Alt cuts every roof; **the GM's mouse resting over a region cuts that roof too** (Foundry's "hovering over the Region" case). No foreground on either level; the tile bounds, polygon points, elevations and levels
+    came back as written.
+  - **Foundry rounds a tile's `x`/`y` to whole pixels** (210.5 became 211), which put every roof half a pixel right and down and left a thin roof-coloured line along the right and bottom edges after a cut. Fixed: the pictures now have
+    even sizes, so the centres are whole numbers.
+  - **The eave shadow stayed behind as a dark ring with a hard edge** when a roof was cut (it lies outside the region, which is the roof's outline). Fixed by leaving the shadow out of the exported pictures.
+  - The export has **12 walls** (each room is walled, no doors), as it should: Dragon Drop's rooms have walls. Our prompt wrongly said there were none. With them a selected token sees only inside its own room.
+  - A hidden token's "+5 ft" elevation label shows through the roof: Foundry's, not ours.
+  - **Not done:** a player's (non-GM) view. The world has a player account that owns no actor; trying it would mean changing permissions and logging in as that user, which the test did not do. Worth a look by the person.
 
 ## Plan
 

@@ -133,14 +133,14 @@ describe("roofs in a render and in a Foundry scene", () => {
     expect(Math.abs(b.r - floor.r) + Math.abs(b.g - floor.g)).toBeGreaterThan(Math.abs(a.r - floor.r) + Math.abs(a.g - floor.g));
   });
 
-  it("a roof's own picture is exactly that roof's part of the whole layer, and covers the roof with its eave and shadow", () => {
+  it("a roof's own picture is exactly that roof's part of the whole layer without its shadow, tight to its outline", () => {
     const sp = { ...spec };
     const r = roof("f1", { style: "tile", points: [[2, 2], [8, 2], [8, 6], [5, 7.5], [2, 6]] });
-    const whole = renderRoofLayer(sp, [r]);
+    const whole = renderRoofLayer(sp, [r], { shadow: false });
     const own = renderRoofPicture(sp, r)!;
     expect(own).not.toBeNull();
     expect(own.w * own.h * 4).toBe(own.data.length);
-    // the same pixels as the whole layer, where the picture is; and nothing of the roof outside it
+    // the same pixels as the whole layer (drawn without a shadow) where the picture is; and nothing of the roof outside it
     let differing = 0, outside = 0;
     for (let y = 0; y < whole.h; y++) for (let x = 0; x < whole.w; x++) {
       const o = (y * whole.w + x) * 4, inside = x >= own.x && x < own.x + own.w && y >= own.y && y < own.y + own.h;
@@ -148,9 +148,30 @@ describe("roofs in a render and in a Foundry scene", () => {
       else if (whole.data[o + 3] > 0) outside++;
     }
     expect(differing).toBe(0);
-    expect(outside).toBe(0); // (the shadow's reach is inside the picture)
-    expect(own.w).toBeLessThan(whole.w); // (a roof's picture is smaller than the map's)
+    expect(outside).toBe(0);
+    // tight to the outline: the outline spans 6 x 5.5 squares of 40 px (240 x 220); the picture is that plus a couple of pixels each side, not the shadow's reach (about 24 px)
+    expect(own.w).toBeLessThanOrEqual(240 + 6);
+    expect(own.h).toBeLessThanOrEqual(220 + 6);
     expect(roofPictureRect(sp, r)).toEqual({ x: own.x, y: own.y, w: own.w, h: own.h });
+    // the shadow is left out: just beyond the eave (down and right of the roof's lower-right corner) nothing is drawn
+    const shadowed = renderRoofLayer(sp, [roof("f1", { points: rect(2, 2, 8, 6) })]), bare = renderRoofLayer(sp, [roof("f1", { points: rect(2, 2, 8, 6) })], { shadow: false });
+    expect(at(shadowed, 8.2, 5.8).a).toBeGreaterThan(0);
+    expect(at(bare, 8.2, 5.8).a).toBe(0);
+  });
+
+  it("a roof's picture is an even number of pixels wide and high, so its centre (where Foundry places a tile) is a whole pixel", () => {
+    for (const pts of [rect(2, 2, 8, 6), rect(1, 1, 5, 5), [[8, 1], [12, 1], [10, 5]] as [number, number][], [[2.3, 1.7], [7.1, 2], [6.4, 6.9]] as [number, number][], rect(0, 0, 12, 10)]) {
+      for (const px of [37, 40, 70]) {
+        const r = roofPictureRect({ ...spec, pxPerSquare: px, squaresX: 15, squaresY: 12 }, roof("f", { points: pts }))!;
+        expect(r.w % 2).toBe(0);
+        expect(r.h % 2).toBe(0);
+        expect(Number.isInteger(r.x + r.w / 2) && Number.isInteger(r.y + r.h / 2)).toBe(true);
+      }
+    }
+    // a roof that reaches the edge of the level's picture is padded past it, with transparent pixels, rather than shifted
+    const full = roofPictureRect({ ...spec, squaresX: 12, squaresY: 10 }, roof("f", { points: rect(0, 0, 12, 10) }))!;
+    expect(full.x).toBe(0);
+    expect(renderRoofPicture({ ...spec, squaresX: 12, squaresY: 10 }, roof("f", { points: rect(0, 0, 12, 10) }))!.data.length).toBe(full.w * full.h * 4);
   });
 
   it("a roof with fewer than three corners, or wholly off the map, has no picture", () => {
