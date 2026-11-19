@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type BattleSpec, type Features, type LevelsFile, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  type BattleSpec, type ConnectorKind, type Features, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
+  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
@@ -17,7 +17,7 @@ import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
 
-export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop";
+export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole";
 
 export interface BattleUi {
   tool: BattleTool;
@@ -40,11 +40,13 @@ export interface BattleUi {
   propFlip: boolean;
   /** The shape the Area and Room tools make. */
   roomShape: "rect" | "circle" | "free";
+  /** Which way a new stair or ladder leads from this level. */
+  connectorTo: "up" | "down";
 }
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
-  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect",
+  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up",
 };
 
 /** The name of a floor material, including pack textures. */
@@ -80,6 +82,11 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   { name: "Objects", tools: [
     { id: "prop", label: "Object", key: "P", tip: "Place an object from your asset packs (choose it in the Assets tab)" },
   ] },
+  { name: "Between levels", tools: [
+    { id: "stairs", label: "Stairs", key: "T", tip: "Drag a rectangle (or click) for stairs to the level above or below" },
+    { id: "ladder", label: "Ladder", key: "J", tip: "Drag a rectangle (or click) for a ladder to the level above or below" },
+    { id: "hole", label: "Hole", key: "O", tip: "Drag a rectangle (or click) for a hole in this level's floor, open to the level below" },
+  ] },
 ];
 export const BATTLE_TOOLS = BATTLE_TOOL_GROUPS.flatMap((g) => g.tools);
 
@@ -96,6 +103,9 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   zone: "Draw an area with its own light level (Rectangle, Circle or Free-form like the Area tool). Then select it to set how bright it is where no light reaches: indoors dimmer than outdoors, or a lit hall in a dark cave. Edges are soft.",
   note: "Click a room to place a numbered note, then give it a title and text in the panel. Notes are for you: they show here and in previews, never in the exported picture. Export the key as a list from Export.",
   prop: "Choose an object in the Assets tab, then click the map to place it (hold Shift or Alt to place without snapping). Q and E rotate, X mirrors.",
+  stairs: "Drag a rectangle for stairs (or click for one square by two). They belong to the level you are on and lead up or down, as chosen below; in a Foundry scene they are a Change Level region over both levels. You need at least two levels (Levels panel, top left of the map).",
+  ladder: "Drag a rectangle for a ladder (or click for one square). It leads up or down, as chosen below, and works like stairs in a Foundry scene.",
+  hole: "Drag a rectangle for a hole in this level's floor (or click for one square). It is open to the level below: a pit in the picture, and a gap in this level's floor in a Foundry scene.",
   select: "Click a wall piece, door, light, note or shaded area to select it. Drag a light, note or object to move it. Delete removes the selection.",
 };
 
@@ -103,6 +113,8 @@ const snap = (v: number, step = 0.5) => Math.round(v / step) * step;
 const isFloorTool = (t: BattleTool) => t === "brush" || t === "area" || t === "room";
 /** Tools that draw a rectangle, circle or free-form outline. */
 const isShapeTool = (t: BattleTool) => t === "area" || t === "room" || t === "zone";
+/** Tools that drag out a rectangle for a stair, ladder or hole. */
+const isConnectorTool = (t: BattleTool): t is ConnectorKind => t === "stairs" || t === "ladder" || t === "hole";
 /** How bright a new light zone is: dimmer than a bright map, brighter than a dim one. */
 const newZoneLevel = (spec: BattleSpec) => (ambientOf(spec) > 0.7 ? 0.45 : Math.min(1, ambientOf(spec) * 2));
 const doorKind = (t: BattleTool): "door" | "secret" | "window" | null => (t === "door" ? "door" : t === "secret" ? "secret" : t === "window" ? "window" : null);
@@ -244,11 +256,11 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const buildWalls = useCallback((force = false) => {
     const m = metaRef.current, hf = store.heights;
     if (!m?.battle || !hf) return;
-    const spec = m.battle, px = wallPx(spec, viewRef.current.scale), walls = featRef.current.walls ?? [];
-    const sig = `${m.id}|${px}|${spec.squaresX}x${spec.squaresY}|${JSON.stringify(walls)}`;
+    const spec = m.battle, px = wallPx(spec, viewRef.current.scale), walls = featRef.current.walls ?? [], connectors = featRef.current.connectors ?? [];
+    const sig = `${m.id}|${px}|${spec.squaresX}x${spec.squaresY}|${JSON.stringify(walls)}|${JSON.stringify(connectors)}`;
     if (!force && sig === wallSig.current && wallRef.current) return;
     wallSig.current = sig;
-    const layer = renderWallLayer({ ...spec, pxPerSquare: px }, walls, { floorAt: floorAtFn({ meta: m, height: hf } as MapDoc) });
+    const layer = renderWallLayer({ ...spec, pxPerSquare: px }, walls, { floorAt: floorAtFn({ meta: m, height: hf } as MapDoc), connectors });
     const cv = wallRef.current?.cv ?? document.createElement("canvas");
     cv.width = layer.w; cv.height = layer.h;
     cv.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(layer.data), layer.w, layer.h), 0, 0);
@@ -459,6 +471,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       if (dimmed) drawAmbient(ctx, lights, f.walls, f.zones ?? [], v, spec, amb, dpr, W, H);
     }
     if (o.tool === "zone" || o.tool === "select") drawZoneOutlines(ctx, f.zones ?? [], v, isSel, o.tool === "zone");
+    drawConnectorMarks(ctx, (f.connectors ?? []).map(shifted), v, isSel, o.tool === "select" || isConnectorTool(o.tool));
     drawLightMarkers(ctx, lights, v, isSel);
     if (o.showNotes) drawNoteBadges(ctx, (f.notes ?? []).map(shifted), v, isSel);
     // walls and light zones being dragged: where they will land (their picture stays until they are dropped), and the box being drawn
@@ -710,6 +723,12 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     onUiRef.current({ multi: [], selected: zone.id, tool: "select" });
   }
 
+  function placeConnector(kind: ConnectorKind, x: number, y: number, w: number, h: number) {
+    const c: MapConnector = { id: newFeatureId("c"), kind, x, y, w, h, to: kind === "hole" ? "down" : uiRef.current.connectorTo };
+    sendFeatures({ upsertConnectors: [c] }, `Add ${kind}`);
+    onUiRef.current({ multi: [], selected: c.id });
+  }
+
   function finishShape() {
     const pts = shapeDraft.current;
     shapeDraft.current = null;
@@ -748,6 +767,10 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const sc = pr.scale ?? 1;
       if (Math.abs(lx) <= (w * sc) / 2 && Math.abs(ly) <= (h * sc) / 2) return pr.id;
     }
+    // stairs, ladders and holes: inside the rectangle, the smallest first
+    const qc = toSq(sx, sy);
+    const over = (f.connectors ?? []).filter((c) => qc.x >= c.x && qc.x <= c.x + c.w && qc.y >= c.y && qc.y <= c.y + c.h).sort((a, b) => a.w * a.h - b.w * b.h);
+    if (over.length) return over[0].id;
     // light zones last: inside the outline, the smallest first
     const q = toSq(sx, sy);
     const inside = (f.zones ?? []).filter((z) => pointInPolygon(q.x, q.y, z.points)).sort((a, b) => polygonArea(a.points) - polygonArea(b.points));
@@ -794,7 +817,11 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       requestDraw();
       return;
     }
-    if (isShapeTool(o.tool)) {
+    if (isConnectorTool(o.tool) && (levelsRef.current?.levels.length ?? 0) < 2) {
+      flash("Stairs, ladders and holes join two levels. Add another level first: use ＋ Level above or ＋ Level below in the Levels panel, top left of the map.");
+      return;
+    }
+    if (isShapeTool(o.tool) || isConnectorTool(o.tool)) {
       drag.current = { mode: "rect", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
       return;
     }
@@ -925,7 +952,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const o = uiRef.current;
       if (Math.hypot(p.x - d.sx, p.y - d.sy) >= 4) {
         const a = toSq(d.sx, d.sy), b = toSq(p.x, p.y);
-        const kinds: ("prop" | "light" | "note" | "wall" | "zone")[] = ["prop", "light", "wall", "zone", ...(o.showNotes ? (["note"] as const) : [])];
+        const kinds: ("prop" | "light" | "note" | "wall" | "zone" | "connector")[] = ["prop", "light", "wall", "zone", "connector", ...(o.showNotes ? (["note"] as const) : [])];
         const found = boxSelect(featRef.current, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, kinds);
         onUiRef.current(selectionFromIds(d.add ? [...(d.base ?? []), ...found] : found));
       }
@@ -939,7 +966,14 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const x0 = Math.max(0, Math.min(snap(d.ax, 1), snap(b.x, 1))), y0 = Math.max(0, Math.min(snap(d.ay, 1), snap(b.y, 1)));
       const x1 = Math.min(spec.squaresX, Math.max(snap(d.ax, 1), snap(b.x, 1))), y1 = Math.min(spec.squaresY, Math.max(snap(d.ay, 1), snap(b.y, 1)));
       const w = x1 - x0, h = y1 - y0, o = uiRef.current;
-      if (w >= 1 && h >= 1 && o.tool === "zone") makeZone([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
+      if (isConnectorTool(o.tool)) {
+        if (w >= 1 && h >= 1) placeConnector(o.tool, x0, y0, w, h);
+        else if (Math.hypot(p.x - d.sx, p.y - d.sy) < 4) {
+          // a click: the usual size, with its top-left corner in the square that was clicked
+          const [dw, dh] = o.tool === "stairs" ? [1, 2] : [1, 1];
+          placeConnector(o.tool, Math.min(spec.squaresX - dw, Math.max(0, Math.floor(d.ax))), Math.min(spec.squaresY - dh, Math.max(0, Math.floor(d.ay))), dw, dh);
+        }
+      } else if (w >= 1 && h >= 1 && o.tool === "zone") makeZone([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
       else if (w >= 1 && h >= 1) {
         const shape = { type: "rect" as const, x: toCells(x0, spec), y: toCells(y0, spec), w: toCells(w, spec), h: toCells(h, spec) };
         send({ t: "cmd", cmd: { op: "paint_floor", params: { shape, material: o.material } }, label: o.tool === "room" ? `Room floor (${w}×${h})` : `Paint ${materialLabel(metaRef.current, o.material)}` });
@@ -1104,6 +1138,33 @@ function drawAmbient(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: M
   ctx.drawImage(darkCanvas, 0, 0, W, H);
 }
 
+/** A mark on each stair, ladder and hole saying which way it leads (the picture itself is in the wall layer), and an outline round the selected ones. */
+function drawConnectorMarks(ctx: CanvasRenderingContext2D, list: MapConnector[], v: View, isSelected: (id: string) => boolean, outlineAll: boolean) {
+  if (!list.length) return;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const c of list) {
+    const x = v.ox + c.x * v.scale, y = v.oy + c.y * v.scale, w = c.w * v.scale, h = c.h * v.scale;
+    if (outlineAll || isSelected(c.id)) {
+      ctx.setLineDash(isSelected(c.id) ? [6, 4] : [2, 4]);
+      ctx.strokeStyle = isSelected(c.id) ? "rgba(255, 224, 120, 0.95)" : "rgba(255, 255, 255, 0.35)";
+      ctx.lineWidth = isSelected(c.id) ? 2 : 1;
+      ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3);
+      ctx.setLineDash([]);
+    }
+    const size = Math.max(9, Math.min(Math.min(w, h) * 0.5, 26));
+    ctx.font = `700 ${size}px system-ui, sans-serif`;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(15, 18, 28, 0.85)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+    const g = connectorTo(c) === "up" ? "▲" : "▼";
+    ctx.strokeText(g, x + w / 2, y + h / 2);
+    ctx.fillText(g, x + w / 2, y + h / 2);
+  }
+  ctx.restore();
+}
+
 function drawLightMarkers(ctx: CanvasRenderingContext2D, lights: MapLight[], v: View, isSelected: (id: string) => boolean) {
   ctx.save();
   for (const l of lights) {
@@ -1181,6 +1242,13 @@ export function BattleTools({ ui, onUi, canUndo, canRedo, meta, assetsOn, onOpen
         </div>
       ))}
       {BATTLE_HINTS[ui.tool] && <p className="tool-hint" data-testid="tool-hint">{BATTLE_HINTS[ui.tool]}</p>}
+      {(ui.tool === "stairs" || ui.tool === "ladder") && (
+        <div className="seg" role="group" aria-label="Which way it leads" data-testid="connector-to">
+          {([["up", "Leads up"], ["down", "Leads down"]] as const).map(([id, label]) => (
+            <button key={id} className={ui.connectorTo === id ? "on" : ""} onClick={() => onUi({ connectorTo: id })} data-testid={`connector-${id}`}>{label}</button>
+          ))}
+        </div>
+      )}
       {isShapeTool(ui.tool) && (
         <div className="seg" role="group" aria-label="Shape" data-testid="room-shape">
           {([["rect", "Rectangle"], ["circle", "Circle"], ["free", "Free-form"]] as const).map(([id, label]) => (
@@ -1276,7 +1344,7 @@ function useLatest<T>(value: T) {
 /** Several things selected at once: what they are, and what can be done with them together. */
 function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Features; ids: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
   const count = (k: string) => ids.filter((id) => featureKindOf(features, id) === k).length;
-  const parts = [[count("prop"), "object"], [count("light"), "light"], [count("wall"), "wall piece"], [count("note"), "room note"], [count("zone"), "light zone"]]
+  const parts = [[count("prop"), "object"], [count("light"), "light"], [count("wall"), "wall piece"], [count("note"), "room note"], [count("zone"), "light zone"], [count("connector"), "stair, ladder or hole"]]
     .filter(([n]) => (n as number) > 0).map(([n, w]) => `${n} ${w}${n === 1 ? "" : "s"}`);
   return (
     <section data-testid="battle-group">
@@ -1297,22 +1365,24 @@ function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Fe
   );
 }
 
-export function BattleInspector({ features, selected, multi, bounds, onClear, onSelect }: { features: Features; selected: string | null; multi: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
+export function BattleInspector({ features, levels, selected, multi, bounds, onClear, onSelect }: { features: Features; levels?: LevelsFile | null; selected: string | null; multi: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
   if (multi.length >= 2) return <GroupPanel features={features} ids={multi} bounds={bounds} onClear={onClear} onSelect={onSelect} />;
   const wall = selected ? features.walls?.find((w) => w.id === selected) : undefined;
   const light = selected ? features.lights?.find((l) => l.id === selected) : undefined;
   const prop = selected ? features.props?.find((p) => p.id === selected) : undefined;
   const note = selected ? features.notes?.find((n) => n.id === selected) : undefined;
   const zone = selected ? features.zones?.find((z) => z.id === selected) : undefined;
-  if (!wall && !light && !prop && !note && !zone) return null;
+  const conn = selected ? features.connectors?.find((c) => c.id === selected) : undefined;
+  if (!wall && !light && !prop && !note && !zone && !conn) return null;
   return (
     <section data-testid="battle-inspector">
-      <h3>{wall ? (wall.kind === "wall" ? "Wall" : wall.kind === "secret" ? "Secret door" : wall.kind === "invisible" ? "Invisible wall" : wall.kind === "window" ? "Window" : "Door") : prop ? "Object" : note ? "Note" : zone ? "Light zone" : "Light"}</h3>
+      <h3>{wall ? (wall.kind === "wall" ? "Wall" : wall.kind === "secret" ? "Secret door" : wall.kind === "invisible" ? "Invisible wall" : wall.kind === "window" ? "Window" : "Door") : prop ? "Object" : note ? "Note" : zone ? "Light zone" : conn ? (conn.kind === "stairs" ? "Stairs" : conn.kind === "ladder" ? "Ladder" : "Hole") : "Light"}</h3>
       {wall && <WallEditor w={wall} onClear={onClear} />}
       {light && <LightEditor l={light} onClear={onClear} />}
       {prop && <PropEditor p={prop} onClear={onClear} />}
       {note && <NoteEditor key={note.id} n={note} onClear={onClear} />}
       {zone && <ZoneEditor key={zone.id} z={zone} onClear={onClear} />}
+      {conn && <ConnectorEditor key={conn.id} c={conn} levels={levels ?? null} onClear={onClear} />}
     </section>
   );
 }
@@ -1420,6 +1490,46 @@ export function BattleKey({ features, selected, onSelect }: { features: Features
         </>
       )}
     </section>
+  );
+}
+
+/** Stairs, ladders and holes: where they lead, what they are called, how big they are. */
+function ConnectorEditor({ c, levels, onClear }: { c: MapConnector; levels: LevelsFile | null; onClear: () => void }) {
+  const latest = useLatest(c);
+  const [name, setName] = useState(c.name ?? "");
+  const set = (patch: Partial<MapConnector>) => {
+    const next = { ...latest.current, ...patch };
+    latest.current = next;
+    sendFeatures({ upsertConnectors: [next] }, `Change ${next.kind}`);
+  };
+  const to = connectorTo(c);
+  const sorted = levels ? levelsByHeight(levels.levels) : [];
+  const target = levels ? sorted[sorted.findIndex((l) => l.id === levels.active) + (to === "up" ? 1 : -1)] : undefined;
+  const size = (key: "w" | "h", v: string) => { const n = Math.max(1, Math.round(Number(v))); if (Number.isFinite(n)) set({ [key]: n }); };
+  return (
+    <>
+      <label className="field">Kind
+        <select value={c.kind} onChange={(e) => set({ kind: e.target.value as ConnectorKind })} data-testid="connector-kind">
+          <option value="stairs">Stairs</option><option value="ladder">Ladder</option><option value="hole">Hole</option>
+        </select>
+      </label>
+      <label className="field">Leads
+        <select value={to} disabled={c.kind === "hole"} onChange={(e) => set({ to: e.target.value as "up" | "down" })} data-testid="connector-lead">
+          <option value="up">Up</option><option value="down">Down</option>
+        </select>
+      </label>
+      <p className="muted" data-testid="connector-target">{target ? `Leads ${to} to ${target.name}.` : `There is no level ${to === "up" ? "above" : "below"} this one: it won't be in a Foundry scene.`}</p>
+      <label className="field">Name
+        <input value={name} maxLength={60} placeholder="optional" onChange={(e) => setName(e.target.value)} onBlur={() => { const n = name.trim(); if (n !== (c.name ?? "")) set({ name: n || undefined }); }} data-testid="connector-name" />
+      </label>
+      <div className="row">
+        <label className="field">Wide<input type="number" min={1} value={c.w} onChange={(e) => size("w", e.target.value)} /></label>
+        <label className="field">Long<input type="number" min={1} value={c.h} onChange={(e) => size("h", e.target.value)} /></label>
+      </div>
+      <div className="row">
+        <button onClick={() => { sendFeatures({ removeConnectors: [c.id] }, `Delete ${c.kind}`); onClear(); }} data-testid="connector-delete">Delete</button>
+      </div>
+    </>
   );
 }
 
@@ -1590,7 +1700,7 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <p className="muted" data-testid="battle-summary">
         {spec.squaresX} × {spec.squaresY} squares at {spec.feetPerSquare} ft = {spec.squaresX * spec.feetPerSquare} × {spec.squaresY * spec.feetPerSquare} ft.
         Image {spec.squaresX * spec.pxPerSquare} × {spec.squaresY * spec.pxPerSquare} px ({spec.pxPerSquare} px per square).
-        {" "}{count("wall")} wall piece{count("wall") === 1 ? "" : "s"}, {count("door") + count("secret")} door{count("door") + count("secret") === 1 ? "" : "s"}, {count("window")} window{count("window") === 1 ? "" : "s"}, {(features.lights ?? []).length} light{(features.lights ?? []).length === 1 ? "" : "s"}, {(features.props ?? []).length} object{(features.props ?? []).length === 1 ? "" : "s"}.
+        {" "}{count("wall")} wall piece{count("wall") === 1 ? "" : "s"}, {count("door") + count("secret")} door{count("door") + count("secret") === 1 ? "" : "s"}, {count("window")} window{count("window") === 1 ? "" : "s"}, {(features.lights ?? []).length} light{(features.lights ?? []).length === 1 ? "" : "s"}, {(features.props ?? []).length} object{(features.props ?? []).length === 1 ? "" : "s"}{(features.connectors ?? []).length ? `, ${(features.connectors ?? []).length} stair${(features.connectors ?? []).length === 1 ? "" : "s"}, ladder${(features.connectors ?? []).length === 1 ? "" : "s"} or hole${(features.connectors ?? []).length === 1 ? "" : "s"}` : ""}.
       </p>
     </section>
   );

@@ -109,7 +109,21 @@ How levels live inside one battlemap, chosen to touch as little of the working e
 - **The editor** has a level bar over the map (the levels from highest to lowest, add above / below, rename and elevations with the pencil, remove with the bin; `Page Up` / `Page Down` switch). The level below shows faintly through any place the level on screen has no floor (the server draws it: `GET /api/projects/<id>/levels/<level>/picture.png`).
 - **Exports:** the Foundry scene gets one Foundry level per level (one picture each, walls and lights tagged to it, opening on the level being worked on); the picture, the Universal VTT file and the one-level exports are of the level on screen, named with it (`<map>-<level>.dd2vtt`); the key covers every level.
 - **Limits, on purpose:** undo is per level (a level switch undoes nothing). The first level can't be removed (it holds the project's own files; rename it or clear it). At most 12 levels. Restoring a checkpoint puts back every level, including ones removed since (a name clash gets "(restored)"). Removing a level saves a checkpoint first.
-- Stairs, ladders and holes between levels are stage 3.
+- Stairs, ladders and holes between levels are stage 3 (below).
+
+## Stage 3: stairs, ladders and holes (built 2026-11-19)
+
+- **The model:** `MapConnector` (`features.ts`): a rectangle in squares on the level it starts on, `kind` stairs, ladder or hole, `to` up or down (a hole always leads down). It is stored
+  in that level's `features.json` (`connectors`), so undo, checkpoints and copy/paste work as for any feature. "Up" and "down" mean the next level above or below **by elevation**, not an id,
+  so renaming or re-elevating levels needs no fixing up.
+- **The editor:** the Stairs (`T`), Ladder (`J`) and Hole (`O`) tools drag a rectangle (or click for the usual size), the inspector sets kind, direction, name and size and says which level it
+  leads to, and a ▲ or ▼ is drawn on each. The pictures (pale stone steps, a wooden ladder, a dark pit with a stone rim) are painted into the shared wall layer under the walls, so the
+  editor, the previews and the exported pictures show the same thing. The level below shows through the empty parts of the level you are on, so the stairs from below show where they land.
+- **The Foundry scene:** a stair or ladder is a Change Level region over the two levels it joins (the one stair counts once if it is drawn on both levels). A level with holes gets a floor
+  region built from its real floor (rectangles; a square at a time if there would be too many) with the holes cut out of it as extra shapes. A connector that leads to a level that isn't
+  there is left out and the export's README says which. `toFoundryLevelsScene` does it (`foundryConnectors` in `battle.ts`).
+- **Not done:** a hole is a pit in the picture, so you can't see the level below through it (the exported pictures are opaque); what a hole, floor or stair does to a token beyond the Change Level
+  dialog has not been looked at in Foundry; no roof; Claude has no tools for stairs yet (stage 4).
 
 ## Plan
 
@@ -117,7 +131,7 @@ How levels live inside one battlemap, chosen to touch as little of the working e
 2. **(done) Levels in the battlemap, with the export of every level.** A battlemap holds several named levels with elevation ranges; each has its own floors, walls, doors, lights and props. The
    editor gets a level switcher, with the level below shown faintly while you draw. Renderer, saving and undo know about levels. A one-floor map is a map
    with one level, so nothing changes for existing maps.
-3. **Connections.** Stair, ladder and hole objects between levels; the export adds a foreground picture for a roof, stairs as Change Level regions, holes as openings.
-   Needs the reference JSON above. (The export already writes one picture per level, everything tagged to its level.)
+3. **(done, except the roof) Connections.** Stair, ladder and hole objects between levels (see "Stage 3" below). Not done: a foreground picture for a roof (there is no roof object yet).
+   (The export already writes one picture per level, everything tagged to its level.)
 4. **Claude and the rest.** Tools to add levels and connect them, level-aware versions of the room, wall, door and light tools, instructions, docs, and
    Universal VTT written once per level.

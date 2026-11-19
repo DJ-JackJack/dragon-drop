@@ -434,6 +434,18 @@ Open or make a battlemap with a room in it.
 8. Click the **bin** on the Upper floor and confirm. **Expect** it gone and the ground floor on screen. Open **Checkpoints**: there is a **Before removing Upper floor** one; **Restore** brings the upper floor back with its room.
 9. **Expect** the bin on the first level to be greyed out (the first level can't be removed).
 
+## 14g3. Stairs, ladders and holes between levels
+
+Use a battlemap with two levels (14g2) and a room on each.
+1. On the **Ground floor** pick **Stairs** (left panel, "Between levels", or `T`). **Expect** a hint about Change Level, and **Leads up / Leads down** buttons. Drag a rectangle (1 square wide, 3 long). **Expect** pale stone steps with a ▲ on them, and the inspector says **Stairs** and "Leads up to Upper floor".
+2. Switch the stairs to **Leads down** in the inspector. **Expect** "There is no level below this one: it won't be in a Foundry scene". Switch back to Up.
+3. Pick **Ladder** (`J`) and just click: **Expect** a one-square wooden ladder. Pick **Hole** (`O`) and click: **Expect** a dark pit with a stone rim and a ▼ (a hole always leads down; its Leads box is greyed out).
+4. With only one level, try a stair tool. **Expect** a message to add another level first.
+5. Switch to the **Upper floor** (`Page Up`). **Expect** the stairs you made below showing faintly where the upper floor has no floor. Put a **Hole** in the upper floor's room.
+6. Select a stair, drag it, press `Ctrl+Z`, `Ctrl+C` then `Ctrl+V`, `Delete`. **Expect** each to work like any other object, one undo step each, and a box drag round it to select it with other things.
+7. **⤓ Export → Foundry scene**, import it into Foundry (the README in the zip says how). **Expect** walking a token onto the stairs to ask "Do you want to move … to Upper floor?". **Expect** the upper floor to have a floor Region with a hole (open the Regions layer). **Tell me what a token does at the hole**: how it behaves in play hasn't been looked at in Foundry yet.
+8. The exported picture of each level shows its stairs, ladders and pits.
+
 ## 14h. Reefs, the northwesterly wind and the new places
 
 1. **Roads** tool, choose **Reef**, click along a strait (or any stretch of sea) and double-click. **Expect** a pale shoal with razor rocks and foam along the line, listed as a reef; Delete removes it.
@@ -604,7 +616,7 @@ Tell me about any key you expected to work and didn't, and any that did somethin
 
 ## 15. What's not built yet (so you don't report it as a bug)
 
-- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), stairs, ladders and holes between levels (the levels themselves work: 14g2), Claude tools for levels. The Universal VTT and Foundry exports exist but are untested (above).
+- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), what a hole does to a token in Foundry (the stairs, ladders and holes themselves work: 14g3), Claude tools for levels and stairs. The Universal VTT and Foundry exports exist but are untested (above).
 - GPU erosion; automatic label placement for sea/region names (place names do place themselves).
 
 ---

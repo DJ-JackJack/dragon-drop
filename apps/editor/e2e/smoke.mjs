@@ -748,8 +748,24 @@ try {
     await page.keyboard.press("PageDown");
     await waitOn("level-1");
     await page.getByTestId("battle-summary").getByText(/1 door/).waitFor({ timeout: 10000 });
+    // stairs, ladders and holes between levels: stairs on this (the lower) level lead up to the Upper floor; a hole in the Upper floor is open to the level below
+    await page.getByTestId("btool-stairs").click();
+    await page.getByTestId("tool-hint").getByText(/Change Level/).waitFor({ timeout: 5000 });
+    await drag([18, 10], [19, 12]);
+    await page.getByTestId("battle-inspector").getByRole("heading", { name: "Stairs" }).waitFor({ timeout: 5000 });
+    await page.getByTestId("connector-target").getByText(/Leads up to Upper floor/).waitFor({ timeout: 5000 });
+    await page.getByTestId("battle-summary").getByText(/1 stair, ladder or hole/).waitFor({ timeout: 5000 });
+    await page.getByTestId("connector-lead").selectOption("down");
+    await page.getByTestId("connector-target").getByText(/no level below/).waitFor({ timeout: 5000 });
+    await page.getByTestId("connector-lead").selectOption("up");
+    await page.getByTestId("connector-target").getByText(/Leads up to Upper floor/).waitFor({ timeout: 5000 });
+    await page.getByTestId("btool-hole").click();
     await page.keyboard.press("PageUp");
     await waitOn("level-2");
+    await click(18, 11); // (a click makes one square)
+    await page.getByTestId("battle-inspector").getByRole("heading", { name: "Hole" }).waitFor({ timeout: 5000 });
+    await page.getByTestId("connector-target").getByText(/Leads down to Ground floor/).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-4e2-hole.png") });
     await page.keyboard.press("PageUp"); // (nothing above: stays)
     await page.waitForTimeout(300);
     if (!(await isOn("level-2"))) fail("Page Up above the highest level should stay on it");
@@ -764,6 +780,10 @@ try {
     await waitOn("level-1");
     await page.getByTestId("level-row-level-2").waitFor({ state: "detached", timeout: 10000 });
     await page.getByTestId("battle-summary").getByText(/1 door/).waitFor({ timeout: 10000 });
+    await page.getByTestId("btool-select").click();
+    await click(18.5, 11);
+    await page.getByTestId("connector-delete").click();
+    await page.getByTestId("battle-summary").getByText(/1 door, 0 windows/).waitFor({ timeout: 10000 });
     // back to the world map (the viewer test below expects it)
     await page.locator("select.project").selectOption(worldId);
     await page.getByTestId("map-canvas").waitFor({ timeout: 15000 });
