@@ -81,10 +81,10 @@ describe("a Foundry v14 scene with levels", () => {
     expect(() => foundryScene(input({ levels: [] }))).toThrow(/at least one level/);
   });
 
-  it("leaves the stairs out unless asked, and then writes one Change Level region tagged with both levels", () => {
+  it("writes a stair as one Change Level region tagged with both levels, and nothing when there is none", () => {
     const stairs = [{ name: "Cellar stairs", between: [0, 1] as [number, number], x: 7, y: 2, w: 1, h: 2 }];
-    expect(foundryScene(input({ stairs })).regions).toEqual([]);
-    const s = foundryScene(input({ stairs }), { stairs: true });
+    expect(foundryScene(input()).regions).toEqual([]);
+    const s = foundryScene(input({ stairs }));
     expect(s.regions).toHaveLength(1);
     const r = s.regions[0] as { levels: string[]; shapes: { x: number; y: number; width: number; height: number }[]; elevation: { bottom: number; top: number }; behaviors: { type: string }[] };
     expect(r.levels).toEqual(s.levels.map((l) => l._id));
@@ -95,13 +95,12 @@ describe("a Foundry v14 scene with levels", () => {
     expect(r.behaviors[0]).toMatchObject({ system: { movementActions: [] }, disabled: false });
   });
 
-  it("leaves floors and ceilings out unless asked, and then writes Define Surface regions as Foundry stores them, a hole being an extra shape", () => {
+  it("writes floors and ceilings as Define Surface regions as Foundry stores them, a hole being an extra shape", () => {
     const surfaces = [
       { name: "Ground floor floor", level: 1, kind: "floor" as const, rect: { x: 1, y: 1, w: 8, h: 5 }, holes: [{ x: 4, y: 2, w: 1, h: 1 }] },
       { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rect: { x: 1, y: 1, w: 8, h: 5 } },
     ];
-    expect(foundryScene(input({ surfaces })).regions).toEqual([]);
-    const s = foundryScene(input({ surfaces }), { surfaces: true });
+    const s = foundryScene(input({ surfaces }));
     const [cellar, ground] = s.levels.map((l) => l._id);
     type Region = { levels: string[]; elevation: object; shapes: { type: string; x: number; y: number; width: number; height: number; hole: boolean }[]; behaviors: { type: string; system: Record<string, unknown> }[] };
     const [floor, ceiling] = s.regions as Region[];
@@ -116,6 +115,6 @@ describe("a Foundry v14 scene with levels", () => {
     expect(ceiling.levels).toEqual([cellar]);
     expect(ceiling.behaviors[0].system.placement).toBe("top");
     expect(ceiling.shapes).toHaveLength(1);
-    expect(() => foundryScene(input({ surfaces: [{ ...surfaces[0], level: 5 }] }), { surfaces: true })).toThrow(/no level 5/);
+    expect(() => foundryScene(input({ surfaces: [{ ...surfaces[0], level: 5 }] }))).toThrow(/no level 5/);
   });
 });

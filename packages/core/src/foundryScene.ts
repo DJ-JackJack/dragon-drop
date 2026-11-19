@@ -12,8 +12,8 @@
  *  - A stair is a Region with a "Change Level" behaviour (`type: "changeLevel"`, `system: { movementActions: [] }`, empty meaning every kind of movement):
  *    walking onto it asks the player whether to move to the other level. A floor is a Region on the upper level with a "Define Surface" behaviour
  *    (`type: "defineSurface"`, placement "bottom"), a ceiling the same on the lower level with placement "top", and a hole is an extra shape of the floor's
- *    region with `hole: true`. (Only the stair has been written by us so far; the floor, ceiling and hole shapes are as Foundry stored them when they were
- *    made by hand.)
+ *    region with `hole: true`. Both were written by us in a second run (2026-11-18) and imported with their shapes, levels, behaviours and settings unchanged;
+ *    the one difference was a stair's `elevation.topInclusive`, written false and stored true (harmless: the stair worked).
  *  - The scene's light level is `environment.darknessLevel`; the older top-level `darkness` is dropped, and so is anything of the kind put on a level.
  * docs/FOUNDRY.md keeps the list of what is still unchecked.
  */
@@ -112,7 +112,7 @@ function wallSettings(w: MapWall) {
 }
 
 /** The scene as Foundry stores it, ready to be written as JSON and imported (Scene > Import Data). */
-export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean; surfaces?: boolean } = {}) {
+export function foundryScene(input: FoundrySceneInput) {
   if (!input.levels.length) throw new Error("A Foundry scene needs at least one level.");
   const px = input.pxPerSquare;
   const ids = input.levels.map((l, i) => foundryId(`level:${i}:${l.name}`));
@@ -150,8 +150,8 @@ export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean;
     }
   });
 
-  // stairs and ladders: a region where tokens change level (the stored shape of this behaviour is a best guess: see the note at the top)
-  const regions = opts.stairs ? (input.stairs ?? []).map((s, k) => {
+  // stairs and ladders: a region where tokens change level
+  const regions = (input.stairs ?? []).map((s, k) => {
     const lo = Math.min(...s.between.map((i) => input.levels[i].bottom));
     const hi = Math.max(...s.between.map((i) => input.levels[i].top));
     return {
@@ -162,10 +162,10 @@ export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean;
       behaviors: [{ _id: foundryId(`stairb:${k}:${s.name}`), name: "Change Level", type: "changeLevel", system: { movementActions: [] as string[] }, disabled: false, flags: {} }],
       visibility: 4, locked: false, flags: {},
     };
-  }) : [];
+  });
 
-  // floors and ceilings (Define Surface): written as Foundry stores them when they are made by hand, but not yet tried when written by us, so off unless asked
-  const surfaces = opts.surfaces ? (input.surfaces ?? []).map((f, k) => {
+  // floors and ceilings (Define Surface), as Foundry stores them
+  const surfaces = (input.surfaces ?? []).map((f, k) => {
     const lv = input.levels[f.level];
     if (!lv) throw new Error(`Surface "${f.name}": there is no level ${f.level}.`);
     const rect = (r: { x: number; y: number; w: number; h: number }, hole: boolean) => ({ type: "rectangle", x: sc(r.x), y: sc(r.y), width: sc(r.w), height: sc(r.h), rotation: 0, hole });
@@ -180,7 +180,7 @@ export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean;
       }],
       visibility: 4, locked: false, flags: {},
     };
-  }) : [];
+  });
   const ambient = input.ambient ?? 1;
   return {
     name: input.name,

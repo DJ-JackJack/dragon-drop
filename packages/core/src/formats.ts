@@ -91,7 +91,7 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
   {
     id: "foundry", name: "Foundry VTT scene", files: "-foundry.zip (a picture for each level, a scene file and instructions)", exportFormat: "foundry",
     use: "A battlemap as a Foundry VTT v14 scene: each level of the battlemap becomes a Foundry level with its own picture, walls, doors and lights.",
-    limits: "Tried in Foundry v14 (build 367): a one-level battlemap imports with its picture, grid, walls, doors, window and lights, and a two-level scene works per level. Not tried: a live player view, and a newer Foundry build. No stairs, ladders or holes between levels are made yet: add them in Foundry.",
+    limits: "Tried in Foundry v14 (build 367): a one-level battlemap imports with its picture, grid, walls, doors, window, lights and light level, and a two-level scene works per level, including a stair between them. Not tried: a live player view, and a newer Foundry build. No stairs, ladders or holes between levels are made yet: add them in Foundry.",
   },
   {
     id: "key", name: "Room key", files: ".md", exportFormat: "key",

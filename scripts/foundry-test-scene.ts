@@ -57,9 +57,9 @@ const input = {
     { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rect: { x: 2, y: 2, w: 11, h: 6 } },
   ],
 };
-const plain = foundryScene(input);
-const withStairs = foundryScene(input, { stairs: true });
-const withSurfaces = foundryScene(input, { stairs: true, surfaces: true });
+const plain = foundryScene({ ...input, stairs: [], surfaces: [] });
+const withStairs = foundryScene({ ...input, surfaces: [] });
+const withSurfaces = foundryScene(input);
 
 const readme = `Dragon Drop: Foundry v14 levels test
 =====================================

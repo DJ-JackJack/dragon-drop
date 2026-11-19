@@ -27,7 +27,7 @@ walls and lights (in grid squares); walls and lights are tagged with their level
 with one level (`toFoundryScene` in `battle.ts`); several levels give one Foundry level each (`toFoundryLevelsScene`). Ids are 16 letters and digits made
 from the name, so exporting again doesn't change them. **Every scene carries `_stats.coreVersion` (`FOUNDRY_CORE_VERSION`, "14.353"): see the first result below.**
 
-Stair regions are built but **off by default** until stairs exist as objects in the editor (stage 3). Their stored shape is now known (below).
+Stairs, floors, ceilings and holes are written as regions whenever the input has them (`stairs` and `surfaces` of `FoundrySceneInput`); the editor has no objects that produce them yet (stage 3).
 
 ## Results of the first run in a real Foundry (v14 build 367, 2026-11-18)
 
@@ -63,11 +63,26 @@ both lights are where and what colour they should be.
 - Foundry's own Window tool stores a proximity wall (`sight 30, light 30`, thresholds 10 ft); ours (`sight 0, light 0`) lets sight through and stops movement as intended.
 - Foundry gives regions drawn by hand `visibility: 4`; we now write that for stairs too.
 
+### Second run: the fix, and our own floors, holes and stair (same day)
+
+Report: [foundry-test-kit/results/v14.367/RESULTS-RETEST.md](foundry-test-kit/results/v14.367/RESULTS-RETEST.md). Again by Claude driving the person's Foundry; the files were
+imported exactly as written, with `_stats.coreVersion` "14.353".
+
+- **The fix works.** The one-level export keeps its level, picture, walls, doors, window, secret door and lights; the round trip differs from the first run's variant only in ids
+  and `_stats` (Foundry writes back its own build, 14.367).
+- **Dim maps work as written:** `environment.darknessLevel: 0.75` shows as Darkness Level 0.75 in Scene Configuration and the scene looks dark except round the lights.
+- **The repaired two-level scene behaves:** an opened door now lets sight through, the window lets sight through and stops movement, the secret door blocks both.
+- **Our floor, ceiling, hole and stair regions import with everything unchanged** (shapes including the hole flag, levels, behaviour type and settings, `visibility: 4`), the Define
+  Surface panels show the values written, the hole is drawn as a gap in the floor, and the stair offers "Move to Ground floor?". **One difference:** a stair's
+  `elevation.topInclusive` was written false and stored true (cause not found; nothing depended on it).
+- **Not looked at:** whether a floor, hole or ceiling does anything to a token (two drags into the hole did nothing, so it was dropped), and a live player client.
+
 ## Still to check in a real Foundry
 
-- Floors, ceilings and holes **written by Dragon Drop** (the stored shape is known; what they look like and whether the level below can be seen through a hole was not looked at).
+- What floors, ceilings and holes do in play (movement, sight and light across a hole, and seeing the level below through it): their stored data is right, their effect was not looked at.
 - A live player client (secret door icon; what players see on each level).
-- Stairs written by Dragon Drop, once they exist as objects (stage 3): our test-scene stair worked; the real ones follow the same shape.
+- Stairs and holes made from objects in the editor, once they exist (stage 3): the test scene's stair and hole imported and the stair worked; the real ones follow the same shape.
+- Why a stair's `topInclusive` comes back true when written false.
 - A newer Foundry build (14.370 was out): the `coreVersion` rule might change.
 
 **To run tests on a PC that has Foundry:** `pnpm foundry-kit` makes a folder (the handoff for Claude Code, the test scenes, what the Export button writes for an ordinary
