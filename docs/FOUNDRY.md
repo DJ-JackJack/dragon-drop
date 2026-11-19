@@ -180,6 +180,12 @@ How levels live inside one battlemap, chosen to touch as little of the working e
   - **A polygon region** is kept as written (Foundry drops its `rotation: 0`), `testPoint` is right at all six points tried (inside and outside a triangle), and it is drawn as a triangle. So a roof of any outline can have
     its own ceiling.
   - Define Surface also has `exposure` ("Reveal Elevated Surface": partly reveal the visible area of an elevated surface to observers below and outside of it; "useful for roofs") and `culling`; neither was tried.
+- **Test RT8, first run (14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-5.md)): stopped at the import.** Our scene says `_stats.coreVersion: "14.353"` and Foundry runs 14.367, so Foundry **migrates** the data
+  on import, and for a tile it rebuilds `occlusion.modes` from the older `occlusion.mode`. We wrote only `modes: [2]` (the form RT7's read-back showed), which the migration turned into `[]`: no occlusion at all, so
+  the roofs were not Surface tiles and the fade tests were meaningless. Foundry's own in-memory check: `{modes: [2]}` gives `[]` under 14.353 and `[2]` under 14.367; `{mode: 2}` and `{mode: 2, modes: [2]}` give `[2]` under both.
+  **A tile must be written with both `mode: 2` and `modes: [2]`.** Placing a tile by its centre worked: all four tiles' bounds were exactly the rectangles meant. With no occlusion the roofs were drawn in full, and the
+  green roof was not cut to its triangle region (so the region-shaped cut needs a Surface-mode tile, as RT7 found). Lesson for every export: what Foundry's **export** shows is the migrated form, not necessarily the one to write.
+  The test was fixed and re-run as RT8 again (prompt `docs/foundry-test-kit/prompts/rt8-roof-tiles.md`).
 
 ## Plan
 
