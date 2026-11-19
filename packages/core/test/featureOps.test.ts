@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Features, applyFeaturesPatch, boxSelect, clipBounds, copyFeatures, deleteFeatures, emptyFeatures, featureKindOf, featuresBounds,
+  type Features, applyFeaturesPatch, boxSelect, clipBounds, connectorTo, copyFeatures, deleteFeatures, describeFeaturesPatch, emptyFeatures, featureKindOf, featuresBounds,
   moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection,
 } from "../src/index.ts";
 
@@ -254,5 +254,59 @@ describe("copy and paste", () => {
     expect(label).toMatchObject({ text: "Range", x: 210, y: 210, path: [[190, 200], [230, 220]] });
     const custom = pasteFeatures(clip, 0, 0, { placeName: (n) => `${n} 2` });
     expect(custom.patch.upsertPlaces![0].name).toBe("Harbour 2");
+  });
+});
+
+describe("stairs, ladders and holes in a group", () => {
+  const withConnectors = (): Features => ({
+    ...battle(),
+    connectors: [
+      { id: "c1", kind: "stairs", name: "Cellar stairs", x: 3, y: 3, w: 1, h: 2, to: "down" },
+      { id: "c2", kind: "hole", x: 7, y: 4, w: 2, h: 2, to: "down" },
+    ],
+  });
+
+  it("are stored by the feature patch (added, replaced, removed) and named in the history", () => {
+    const f = applyFeaturesPatch(battle(), { upsertConnectors: [{ id: "c1", kind: "ladder", x: 1, y: 1, w: 1, h: 1, to: "up" }] });
+    expect(f.connectors).toHaveLength(1);
+    const g = applyFeaturesPatch(f, { upsertConnectors: [{ id: "c1", kind: "ladder", x: 5, y: 5, w: 1, h: 1, to: "up" }] });
+    expect(g.connectors).toEqual([{ id: "c1", kind: "ladder", x: 5, y: 5, w: 1, h: 1, to: "up" }]);
+    expect(applyFeaturesPatch(g, { removeConnectors: ["c1"] }).connectors).toEqual([]);
+    expect(describeFeaturesPatch({ upsertConnectors: [{ id: "c", kind: "hole", x: 0, y: 0, w: 1, h: 1, to: "down" }] })).toBe("Edit hole");
+    expect(describeFeaturesPatch({ upsertConnectors: [{ id: "c", kind: "stairs", name: "Cellar stairs", x: 0, y: 0, w: 1, h: 2, to: "up" }] })).toBe("Edit Cellar stairs");
+  });
+
+  it("a hole always leads down, whatever it says", () => {
+    expect(connectorTo({ kind: "hole", to: "up" })).toBe("down");
+    expect(connectorTo({ kind: "stairs", to: "up" })).toBe("up");
+    expect(connectorTo({ kind: "ladder", to: "down" })).toBe("down");
+  });
+
+  it("are known by kind, measured by their rectangle, and taken by a box only when wholly inside it", () => {
+    const f = withConnectors();
+    expect(featureKindOf(f, "c1")).toBe("connector");
+    expect(featuresBounds(f, ["c1", "c2"])).toEqual({ x0: 3, y0: 3, x1: 9, y1: 6 });
+    expect(boxSelect(f, { x0: 2, y0: 2, x1: 5, y1: 6 }, ["connector"])).toEqual(["c1"]);
+    expect(boxSelect(f, { x0: 2, y0: 2, x1: 8, y1: 6 }, ["connector"])).toEqual(["c1"]); // (the hole sticks out to x 9)
+    expect(boxSelect(f, { x0: 0, y0: 0, x1: 20, y1: 20 }, ["connector"]).sort()).toEqual(["c1", "c2"]);
+    expect(boxSelect(f, { x0: 0, y0: 0, x1: 20, y1: 20 }, ["light"])).not.toContain("c1");
+  });
+
+  it("move, are deleted and are copied and pasted with the rest, each pasted one a new connector with its own id", () => {
+    const f = withConnectors();
+    const moved = moveFeatures(f, ["c1", "c2"], 2, 1);
+    expect(moved.patch.upsertConnectors).toEqual([
+      { id: "c1", kind: "stairs", name: "Cellar stairs", x: 5, y: 4, w: 1, h: 2, to: "down" },
+      { id: "c2", kind: "hole", x: 9, y: 5, w: 2, h: 2, to: "down" },
+    ]);
+    expect(deleteFeatures(f, ["c2", "g1"])).toEqual({ removeConnectors: ["c2"], removeLights: ["g1"] });
+    const clip = copyFeatures(f, ["c1"])!;
+    expect(clip.connectors).toHaveLength(1);
+    expect(clipBounds(clip)).toEqual({ x0: 3, y0: 3, x1: 4, y1: 5 });
+    const pasted = pasteFeatures(clip, 4, 0);
+    expect(pasted.patch.upsertConnectors).toHaveLength(1);
+    expect(pasted.patch.upsertConnectors![0]).toMatchObject({ kind: "stairs", name: "Cellar stairs", x: 7, y: 3, w: 1, h: 2, to: "down" });
+    expect(pasted.patch.upsertConnectors![0].id).not.toBe("c1");
+    expect(pasted.ids).toEqual([pasted.patch.upsertConnectors![0].id]);
   });
 });

@@ -3,16 +3,16 @@
  * editor's views only decide what was clicked or pressed and these decide what changes. Each one returns a `FeaturesPatch`, which the
  * editor sends as a single command: one undo step for the whole group.
  *
- * What a group can hold: on a battlemap walls, lights, objects, room notes and light zones; on a world map places and labels.
+ * What a group can hold: on a battlemap walls, lights, objects, room notes, light zones and stairs, ladders and holes; on a world map places and labels.
  * Regions and roads/borders (world maps) can be moved and deleted as part of a group too, but not copied or selected by a box.
  * Positions are in whatever unit the map uses (squares on a battlemap, map px on a world map); the caller says which with `bounds`.
  */
 import {
-  type ClimateRegion, type Features, type FeaturesPatch, type MapAmbientZone, type MapLabel, type MapLight, type MapLine, type MapNote, type MapProp, type MapWall, type Place,
+  type ClimateRegion, type Features, type FeaturesPatch, type MapAmbientZone, type MapConnector, type MapLabel, type MapLight, type MapLine, type MapNote, type MapProp, type MapWall, type Place,
   moveLabel, newFeatureId,
 } from "./features.ts";
 
-export type FeatureKind = "wall" | "light" | "prop" | "note" | "zone" | "place" | "label" | "region" | "line";
+export type FeatureKind = "wall" | "light" | "prop" | "note" | "zone" | "connector" | "place" | "label" | "region" | "line";
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 
@@ -43,6 +43,7 @@ export function featureKindOf(f: Features, id: string): FeatureKind | null {
   if (f.props?.some((x) => x.id === id)) return "prop";
   if (f.notes?.some((x) => x.id === id)) return "note";
   if (f.zones?.some((x) => x.id === id)) return "zone";
+  if (f.connectors?.some((x) => x.id === id)) return "connector";
   if (f.places.some((x) => x.id === id)) return "place";
   if (f.labels.some((x) => x.id === id)) return "label";
   if (f.regions?.some((x) => x.id === id)) return "region";
@@ -60,6 +61,7 @@ export function featuresBounds(f: Features, ids: string[]): Box | null {
     const kind = featureKindOf(f, id);
     if (kind === "wall") for (const [x, y] of f.walls!.find((w) => w.id === id)!.points) add(x, y);
     else if (kind === "zone") for (const [x, y] of f.zones!.find((z) => z.id === id)!.points) add(x, y);
+    else if (kind === "connector") { const c = f.connectors!.find((x) => x.id === id)!; add(c.x, c.y); add(c.x + c.w, c.y + c.h); }
     else if (kind === "region") for (const [x, y] of f.regions!.find((r) => r.id === id)!.polygon) add(x, y);
     else if (kind === "line") for (const [x, y] of f.lines!.find((l) => l.id === id)!.points) add(x, y);
     else if (kind === "label") {
@@ -95,6 +97,7 @@ function shifted(f: Features, id: string, dx: number, dy: number): { kind: Featu
     case "wall": { const { auto: _auto, ...w } = f.walls!.find((x) => x.id === id)!; return { kind, item: { ...w, points: sh(w.points) } satisfies MapWall }; }
     case "zone": { const z = f.zones!.find((x) => x.id === id)!; return { kind, item: { ...z, points: sh(z.points) } satisfies MapAmbientZone }; }
     case "light": { const l = f.lights!.find((x) => x.id === id)!; return { kind, item: { ...l, x: l.x + dx, y: l.y + dy } satisfies MapLight }; }
+    case "connector": { const c = f.connectors!.find((x) => x.id === id)!; return { kind, item: { ...c, x: c.x + dx, y: c.y + dy } satisfies MapConnector }; }
     case "prop": { const p = f.props!.find((x) => x.id === id)!; return { kind, item: { ...p, x: p.x + dx, y: p.y + dy } satisfies MapProp }; }
     case "note": { const n = f.notes!.find((x) => x.id === id)!; return { kind, item: { ...n, x: n.x + dx, y: n.y + dy } satisfies MapNote }; }
     case "place": { const p = f.places.find((x) => x.id === id)!; return { kind, item: { ...p, x: p.x + dx, y: p.y + dy } satisfies Place }; }
@@ -110,6 +113,7 @@ function intoPatch(patch: FeaturesPatch, kind: FeatureKind, item: unknown) {
     case "wall": (patch.upsertWalls ??= []).push(item as MapWall); break;
     case "zone": (patch.upsertZones ??= []).push(item as MapAmbientZone); break;
     case "light": (patch.upsertLights ??= []).push(item as MapLight); break;
+    case "connector": (patch.upsertConnectors ??= []).push(item as MapConnector); break;
     case "prop": (patch.upsertProps ??= []).push(item as MapProp); break;
     case "note": (patch.upsertNotes ??= []).push(item as MapNote); break;
     case "place": (patch.upsertPlaces ??= []).push(item as Place); break;
@@ -146,6 +150,7 @@ export function deleteFeatures(f: Features, ids: string[]): FeaturesPatch {
       case "prop": (patch.removeProps ??= []).push(id); break;
       case "note": (patch.removeNotes ??= []).push(id); break;
       case "zone": (patch.removeZones ??= []).push(id); break;
+      case "connector": (patch.removeConnectors ??= []).push(id); break;
       case "place": (patch.removePlaces ??= []).push(id); break;
       case "label": (patch.removeLabels ??= []).push(id); break;
       case "region": (patch.removeRegions ??= []).push(id); break;
@@ -156,8 +161,8 @@ export function deleteFeatures(f: Features, ids: string[]): FeaturesPatch {
 }
 
 /**
- * What a box drawn on the map selects: lights, objects, notes, places and labels whose anchor point is inside it, and walls and light
- * zones that lie entirely inside it (so a box over part of a room doesn't grab the room's outline). `kinds` limits it to what the view has.
+ * What a box drawn on the map selects: lights, objects, notes, places and labels whose anchor point is inside it, and walls, light
+ * zones, stairs, ladders and holes that lie entirely inside it (so a box over part of a room doesn't grab the room's outline). `kinds` limits it to what the view has.
  */
 export function boxSelect(f: Features, box: Box, kinds: FeatureKind[]): string[] {
   const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
@@ -170,6 +175,7 @@ export function boxSelect(f: Features, box: Box, kinds: FeatureKind[]): string[]
   if (want.has("note")) for (const n of f.notes ?? []) if (at(n.x, n.y)) out.push(n.id);
   if (want.has("wall")) for (const w of f.walls ?? []) if (all(w.points)) out.push(w.id);
   if (want.has("zone")) for (const z of f.zones ?? []) if (all(z.points)) out.push(z.id);
+  if (want.has("connector")) for (const c of f.connectors ?? []) if (all([[c.x, c.y], [c.x + c.w, c.y + c.h]])) out.push(c.id);
   if (want.has("place")) for (const p of f.places) if (at(p.x, p.y)) out.push(p.id);
   if (want.has("label")) for (const l of f.labels) if (l.path?.length ? all(l.path) : at(l.x, l.y)) out.push(l.id);
   return out;
@@ -183,6 +189,7 @@ export interface FeatureClip {
   lights: MapLight[];
   props: MapProp[];
   zones: MapAmbientZone[];
+  connectors: MapConnector[];
   places: Place[];
   labels: MapLabel[];
 }
@@ -197,17 +204,18 @@ export function copyFeatures(f: Features, ids: string[]): FeatureClip | null {
     lights: clone((f.lights ?? []).filter((x) => set.has(x.id))),
     props: clone((f.props ?? []).filter((x) => set.has(x.id))),
     zones: clone((f.zones ?? []).filter((x) => set.has(x.id))),
+    connectors: clone((f.connectors ?? []).filter((x) => set.has(x.id))),
     places: clone(f.places.filter((x) => set.has(x.id))),
     labels: clone(f.labels.filter((x) => set.has(x.id))),
   };
-  const n = clip.walls.length + clip.lights.length + clip.props.length + clip.zones.length + clip.places.length + clip.labels.length;
+  const n = clip.walls.length + clip.lights.length + clip.props.length + clip.zones.length + clip.connectors.length + clip.places.length + clip.labels.length;
   return n ? clip : null;
 }
 
 /** The corners of a clip (the same measure as `featuresBounds`). */
 export function clipBounds(c: FeatureClip): Box {
-  const scratch: Features = { places: c.places, labels: c.labels, walls: c.walls, lights: c.lights, props: c.props, zones: c.zones };
-  const ids = [...c.walls, ...c.lights, ...c.props, ...c.zones, ...c.places, ...c.labels].map((x) => x.id);
+  const scratch: Features = { places: c.places, labels: c.labels, walls: c.walls, lights: c.lights, props: c.props, zones: c.zones, connectors: c.connectors };
+  const ids = [...c.walls, ...c.lights, ...c.props, ...c.zones, ...c.connectors, ...c.places, ...c.labels].map((x) => x.id);
   return featuresBounds(scratch, ids)!;
 }
 
@@ -234,6 +242,7 @@ export function pasteFeatures(c: FeatureClip, dx: number, dy: number, opts: Past
   if (c.lights.length) patch.upsertLights = c.lights.map((l) => ({ ...l, id: fresh("g"), x: l.x + dx, y: l.y + dy }));
   if (c.props.length) patch.upsertProps = c.props.map((p) => ({ ...p, id: fresh("o"), x: p.x + dx, y: p.y + dy }));
   if (c.zones.length) patch.upsertZones = c.zones.map((z) => ({ ...z, id: fresh("z"), points: sh(z.points) }));
+  if (c.connectors.length) patch.upsertConnectors = c.connectors.map((k) => ({ ...k, id: fresh("c"), x: k.x + dx, y: k.y + dy }));
   if (c.places.length) patch.upsertPlaces = c.places.map((p) => ({ ...p, id: fresh("p"), name: placeName(p.name), x: p.x + dx, y: p.y + dy }));
   if (c.labels.length) patch.upsertLabels = c.labels.map((l) => ({ ...moveLabel(l, dx, dy), id: fresh("l") }));
   return { patch, ids, dx, dy };

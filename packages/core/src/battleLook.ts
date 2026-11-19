@@ -7,7 +7,7 @@
  * Light comes from the top left, so shadows fall down and to the right.
  */
 import type { BattleSpec } from "./battle.ts";
-import { type MapWall, wallSegments } from "./features.ts";
+import { type MapConnector, type MapWall, wallSegments } from "./features.ts";
 
 export interface LookImage {
   w: number;
@@ -115,12 +115,79 @@ function slab(p: { ax: number; ay: number; ux: number; uy: number; len: number }
 export interface WallLayerOptions {
   /** Is there floor under this point (in squares)? Chooses which way an open door swings. */
   floorAt?: (xSquares: number, ySquares: number) => boolean;
+  /** Stairs, ladders and holes: painted first, so walls and their shadows lie over them. */
+  connectors?: MapConnector[];
+}
+
+const STAIR: [number, number, number] = [176, 168, 154];
+
+/**
+ * Stairs (steps across the long way, the top of each step lit and its edge shadowed), ladders (two rails and rungs, with a soft shadow) and holes (a stone rim round
+ * a pit that is darker towards the middle), painted into a layer of the battlemap. What leads where is the connector's business, not the picture's: a staircase
+ * looks the same going up as down.
+ */
+function paintConnectors(out: LookImage, spec: BattleSpec, list: MapConnector[]) {
+  const px = spec.pxPerSquare, d = out.data;
+  for (const c of list) {
+    const x0 = c.x * px, y0 = c.y * px, x1 = (c.x + c.w) * px, y1 = (c.y + c.h) * px;
+    if (!(x1 > x0 && y1 > y0)) continue;
+    const horiz = x1 - x0 >= y1 - y0, long = horiz ? x1 - x0 : y1 - y0, wide = horiz ? y1 - y0 : x1 - x0;
+    const margin = c.kind === "ladder" ? 0.12 * px + 3 : 2;
+    const ix0 = Math.max(0, Math.floor(x0 - margin)), ix1 = Math.min(out.w - 1, Math.ceil(x1 + margin));
+    const iy0 = Math.max(0, Math.floor(y0 - margin)), iy1 = Math.min(out.h - 1, Math.ceil(y1 + margin));
+    const steps = Math.max(3, Math.round((long / px) * 3));
+    const bevel = Math.max(1.2, 0.07 * px);
+    // a ladder: how much of this point is rail or rung (0..1)
+    const railAt = 0.2 * wide, railHalf = Math.max(1.5, 0.045 * px), rungHalf = Math.max(1, 0.028 * px), pitch = 0.27 * px;
+    const ladderCover = (x: number, y: number): [number, number] => {
+      const s = (horiz ? x - x0 : y - y0), a = (horiz ? y - y0 : x - x0);
+      if (s < -railHalf || s > long + railHalf || a < -railHalf || a > wide + railHalf) return [0, 0];
+      const rail = Math.max(clamp(railHalf - Math.abs(a - railAt) + 0.5, 0, 1), clamp(railHalf - Math.abs(a - (wide - railAt)) + 0.5, 0, 1));
+      const inside = a >= railAt && a <= wide - railAt && s >= 0 && s <= long;
+      const r = inside ? clamp(rungHalf - Math.abs(((s + pitch / 2) % pitch) - pitch / 2) + 0.5, 0, 1) : 0;
+      return [rail * (s >= -0.5 && s <= long + 0.5 ? 1 : 0), r];
+    };
+    for (let y = iy0; y <= iy1; y++) {
+      for (let x = ix0; x <= ix1; x++) {
+        const cx = x + 0.5, cy = y + 0.5, o = (y * out.w + x) * 4;
+        const ins = Math.min(cx - x0, x1 - cx, cy - y0, y1 - cy);
+        if (c.kind === "stairs") {
+          if (ins < -0.5) continue;
+          const t = (horiz ? cx - x0 : cy - y0) / long, u = t * steps, f = u - Math.floor(u);
+          const edge = f < 0.14 ? 1.2 : f > 0.84 ? 0.7 : 1;
+          const side = 0.5 + 0.5 * smooth(0, bevel * 1.6, ins);
+          const tex = 0.93 + 0.12 * vnoise(x / (px * 0.09), y / (px * 0.09)) + 0.04 * (hash2(x, y) - 0.5);
+          const k = edge * side * tex * (0.96 + 0.06 * (1 - t));
+          over(d, o, STAIR[0] * k, STAIR[1] * k, STAIR[2] * k, clamp(ins + 0.5, 0, 1));
+        } else if (c.kind === "hole") {
+          if (ins < -0.5) continue;
+          const rim = Math.max(2, 0.11 * px), cov = clamp(ins + 0.5, 0, 1);
+          if (ins < rim) {
+            const f = (0.82 + 0.2 * vnoise(x / (px * 0.07), y / (px * 0.07))) * (0.7 + 0.3 * smooth(0, rim, ins));
+            over(d, o, STONE[0] * f, STONE[1] * f, STONE[2] * f, cov);
+          } else {
+            const depth = smooth(rim, rim + 0.4 * px, ins), g = 1 - depth;
+            over(d, o, 12 + 40 * g, 11 + 36 * g, 14 + 34 * g, 0.97 * cov);
+          }
+        } else {
+          // a ladder: first a soft shadow (down and to the right), then the rails and rungs
+          const [sr, sg] = ladderCover(cx - 0.05 * px, cy - 0.07 * px);
+          const sh = Math.max(sr, sg);
+          if (sh > 0) over(d, o, 8, 7, 10, 0.32 * sh);
+          const [rail, rung] = ladderCover(cx, cy);
+          if (rung > 0) over(d, o, WOOD_OPEN[0], WOOD_OPEN[1], WOOD_OPEN[2], rung);
+          if (rail > 0) over(d, o, WOOD[0] * 0.82, WOOD[1] * 0.82, WOOD[2] * 0.82, rail);
+        }
+      }
+    }
+  }
 }
 
 /** The wall layer for a battlemap (image size = squares x pxPerSquare). */
 export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, opts: WallLayerOptions = {}): LookImage {
   const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
   const out: LookImage = { w: W, h: H, data: new Uint8ClampedArray(W * H * 4) };
+  if (opts.connectors?.length) paintConnectors(out, spec, opts.connectors);
   if (!walls?.length) return out;
 
   const T = Math.max(3, WALL_THICKNESS * px), half = T / 2;
@@ -198,7 +265,7 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
         const a = (shade[y0 * lw + x0] * (1 - fx) + shade[y0 * lw + x1] * fx) * (1 - fy) + (shade[y1 * lw + x0] * (1 - fx) + shade[y1 * lw + x1] * fx) * fy;
         if (a <= 0.004) continue;
         const o = (y * W + x) * 4;
-        d[o] = 8; d[o + 1] = 7; d[o + 2] = 10; d[o + 3] = Math.round(a * 255);
+        over(d, o, 8, 7, 10, a);
       }
     }
   }

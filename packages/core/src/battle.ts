@@ -683,7 +683,7 @@ export function drawBattleLights(
 
 /** Walls, doors and windows (and, unless `lights` is false, light) onto an image of the whole battlemap (image px). */
 export function drawBattleOverlay(img: { w: number; h: number; data: Uint8ClampedArray }, spec: BattleSpec, f: Features | undefined, opts: { lights?: boolean; floorAt?: (xSquares: number, ySquares: number) => boolean } = {}) {
-  compositeOver(img, renderWallLayer(spec, f?.walls, { floorAt: opts.floorAt }));
+  compositeOver(img, renderWallLayer(spec, f?.walls, { floorAt: opts.floorAt, connectors: f?.connectors }));
   if (opts.lights !== false) drawBattleLights(img, spec, f?.lights, f?.walls, f?.zones);
 }
 
@@ -759,7 +759,7 @@ export function renderBattle(
   renderBattleFloor(doc, img.data, undefined, opts.tiles);
   drawBattleProps(img, spec, doc.features?.props, opts.sprites, "below");
   if (opts.overlay !== false) {
-    compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc) }));
+    compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors }));
     drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
     if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones);
     if (opts.notes) drawBattleNotes(img, spec, doc.features?.notes);

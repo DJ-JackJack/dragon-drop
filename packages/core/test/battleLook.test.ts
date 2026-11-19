@@ -94,6 +94,58 @@ describe("the wall layer", () => {
   });
 });
 
+describe("stairs, ladders and holes in the wall layer", () => {
+  const conn = (id: string, kind: "stairs" | "ladder" | "hole", x: number, y: number, w: number, h: number) => ({ id, kind, x, y, w, h, to: "down" as const });
+  const layer = (c: ReturnType<typeof conn>[], walls: MapWall[] = []) => renderWallLayer(spec(), walls, { connectors: c });
+
+  it("paints each one inside its rectangle and nothing outside it, with no walls needed", () => {
+    const l = layer([conn("s", "stairs", 2, 2, 1, 3), conn("h", "hole", 5, 2, 2, 2), conn("l", "ladder", 8, 2, 1, 3)]);
+    expect(at(l, 2.5, 3).a).toBe(255); // the middle of the stairs
+    expect(at(l, 1.5, 3).a).toBe(0);
+    expect(at(l, 3.5, 3).a).toBe(0);
+    expect(at(l, 6, 3).a).toBeGreaterThan(240); // the pit
+    expect(at(l, 4.5, 3).a).toBe(0);
+    expect(at(l, 7.2, 3).a).toBe(0);
+    expect(at(l, 8.2, 3.5).a).toBeGreaterThan(0); // (a rail)
+  });
+
+  it("looks like what it is: pale stone steps, a dark pit with a stone rim, a wooden ladder", () => {
+    const l = layer([conn("s", "stairs", 2, 2, 1, 3), conn("h", "hole", 5, 2, 2, 2), conn("l", "ladder", 8, 2, 1, 3)]);
+    const stairs = at(l, 2.5, 3.5), pit = at(l, 6, 3), rim = at(l, 5.02, 3), rail = at(l, 8.2, 3.5);
+    expect(stairs.r).toBeGreaterThan(120);
+    expect(Math.abs(stairs.r - stairs.b)).toBeLessThan(40); // pale grey stone
+    expect(pit.r).toBeLessThan(45); // dark
+    expect(rim.r).toBeGreaterThan(pit.r + 30); // lighter stone round it
+    expect(rail.r).toBeGreaterThan(rail.b + 20); // brown wood
+  });
+
+  it("puts steps across the long way: the stripes change along the stairs and hardly across them", () => {
+    const l = layer([conn("s", "stairs", 2, 2, 1, 4)]);
+    const along = new Set<number>(), across = new Set<number>();
+    for (let i = 0; i < 40 * 4; i += 2) along.add(Math.round(at(l, 2.5, 2 + i / 40).r / 12));
+    for (let i = 4; i < 36; i += 2) across.add(Math.round(at(l, 2 + i / 40, 4).r / 12));
+    expect(along.size).toBeGreaterThan(across.size);
+  });
+
+  it("is painted under the walls, and a wall's shadow no longer wipes it out", () => {
+    const walls = [wall("w", "wall", [[1, 2], [1, 8]])];
+    const l = layer([conn("s", "stairs", 1.1, 3, 1, 3)], walls);
+    expect(at(l, 1.2, 4).a).toBe(255); // right beside the wall, in its shadow: still opaque
+    const solo = layer([conn("s", "stairs", 1.1, 3, 1, 3)]);
+    expect(at(l, 1.2, 4).r).toBeLessThan(at(solo, 1.2, 4).r); // darker: the shadow lies over it
+  });
+
+  it("goes into the finished picture of a battlemap (the export draws them too)", () => {
+    const d = createBattleDoc({ name: "t", squaresX: 10, squaresY: 8, pxPerSquare: 40, feetPerSquare: 5, room: 0 } as never);
+    paintFloor(d, { shape: { type: "rect", x: 0, y: 0, w: 80, h: 64 }, material: 4 });
+    const bare = renderBattle(d, { overlay: true, lights: false });
+    d.features = { ...d.features!, connectors: [conn("h", "hole", 4, 3, 2, 2)] };
+    const withHole = renderBattle(d, { overlay: true, lights: false });
+    expect(at(withHole, 5, 4).r).toBeLessThan(at(bare, 5, 4).r - 30);
+    expect(at(withHole, 1, 1)).toEqual(at(bare, 1, 1));
+  });
+});
+
 describe("the light level (ambient)", () => {
   const scene = (ambient?: number) => {
     const d = createBattleDoc({ id: "b", name: "b", squaresX: 12, squaresY: 10, pxPerSquare: 40 });

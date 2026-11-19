@@ -174,6 +174,32 @@ export interface MapProp {
   opacity?: number;
 }
 
+export type ConnectorKind = "stairs" | "ladder" | "hole";
+export const CONNECTOR_KINDS: readonly ConnectorKind[] = ["stairs", "ladder", "hole"];
+
+/**
+ * A way between the levels of a battlemap, as a rectangle on the level it starts on (grid squares). Stairs and ladders lead to the level above or below (by
+ * elevation); a hole is an opening in this level's floor, so it always leads down. In a Foundry scene a stair or ladder is a Change Level region over both levels and
+ * a hole is a gap in the level's floor region (docs/FOUNDRY.md).
+ */
+export interface MapConnector {
+  id: string;
+  kind: ConnectorKind;
+  name?: string;
+  /** The top-left corner and the size, in squares. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Which way it leads from this level. (A hole always leads down: see connectorTo.) */
+  to: "up" | "down";
+}
+
+/** Which way a connector leads: a hole always leads down. */
+export function connectorTo(c: Pick<MapConnector, "kind" | "to">): "up" | "down" {
+  return c.kind === "hole" ? "down" : c.to;
+}
+
 /** How much water a river source adds. The numbers are shares of the whole map's runoff: a river is anything above about 0.002, and the biggest ordinary rivers carry about 0.03. */
 export type RiverSize = "stream" | "river" | "major" | "great";
 export const RIVER_SIZE_SHARE: Record<RiverSize, number> = { stream: 0.002, river: 0.008, major: 0.03, great: 0.08 };
@@ -219,6 +245,8 @@ export interface Features {
   notes?: MapNote[];
   /** Battlemaps: areas with their own light level. */
   zones?: MapAmbientZone[];
+  /** Battlemaps: stairs, ladders and holes between levels. */
+  connectors?: MapConnector[];
   /** Roads, trails and borders (optional: older projects have none). */
   lines?: MapLine[];
   /** Climate regions (optional: older projects have none). */
@@ -248,6 +276,8 @@ export interface FeaturesPatch {
   removeNotes?: string[];
   upsertZones?: MapAmbientZone[];
   removeZones?: string[];
+  upsertConnectors?: MapConnector[];
+  removeConnectors?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -315,6 +345,12 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertZones ?? []) zones.set(x.id, x);
     out.zones = [...zones.values()];
   }
+  if (f.connectors || p.upsertConnectors || p.removeConnectors) {
+    const connectors = new Map((f.connectors ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeConnectors ?? []) connectors.delete(id);
+    for (const x of p.upsertConnectors ?? []) connectors.set(x.id, x);
+    out.connectors = [...connectors.values()];
+  }
   return out;
 }
 
@@ -341,6 +377,8 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.removeNotes?.length) parts.push(`remove ${p.removeNotes.length} note(s)`);
   if (p.upsertZones?.length) parts.push(p.upsertZones.length === 1 ? `light zone${p.upsertZones[0].name ? ` ${p.upsertZones[0].name}` : ""}` : `${p.upsertZones.length} light zones`);
   if (p.removeZones?.length) parts.push(`remove ${p.removeZones.length} light zone(s)`);
+  if (p.upsertConnectors?.length) parts.push(p.upsertConnectors.length === 1 ? (p.upsertConnectors[0].name ?? p.upsertConnectors[0].kind) : `${p.upsertConnectors.length} stairs, ladders and holes`);
+  if (p.removeConnectors?.length) parts.push(`remove ${p.removeConnectors.length} stair(s), ladder(s) or hole(s)`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 
@@ -407,6 +445,6 @@ export function labelText(l: MapLabel): string {
 }
 
 let counter = 0;
-export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s"): string {
+export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c"): string {
   return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
