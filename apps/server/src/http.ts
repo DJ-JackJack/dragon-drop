@@ -168,7 +168,8 @@ export function createAppServer(cfg: Config, hub: Hub) {
         }
         void hub.handleClient(ws, msg);
       });
-      void hub.addClient(ws, { lite: url.searchParams.get("lite") === "1" });
+      // (if the projects folder can't be read just now, say so by closing this socket: a rejection nobody handles would stop the whole server)
+      hub.addClient(ws, { lite: url.searchParams.get("lite") === "1" }).catch(() => { try { ws.close(1011, "The server could not read your projects."); } catch { /* it is gone already */ } });
     });
   });
 
