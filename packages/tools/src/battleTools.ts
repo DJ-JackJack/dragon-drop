@@ -5,11 +5,12 @@
 import { z } from "zod";
 import {
   type MapAmbientZone, type MapLight, type MapNote, type MapWall, type RGBAImage, type Rect, type Shape, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, ambientOf, applyLightPreset, battleSizeError, battleSpec, circlePolygon, cropScale, drawLabel, insertDoor,
-  lightPresetName, nextNoteNumber, readingOrderNumbers, sortedNotes,
+  connectorTo, lightPresetName, nextNoteNumber, readingOrderNumbers, sortedNotes,
   materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
+import { LEVEL_TOOLS } from "./levelTools.ts";
 
 function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
   return t;
@@ -77,7 +78,7 @@ export function battleSummary(ctx: ToolContext) {
     notes: (doc.features?.notes ?? []).length, light_zones: (doc.features?.zones ?? []).length,
     walls: wallsOf(ctx).filter((w) => w.kind === "wall").length, doors: wallsOf(ctx).filter((w) => w.kind === "door" || w.kind === "secret").length,
     windows: wallsOf(ctx).filter((w) => w.kind === "window").length, lights: lightsOf(ctx).length,
-    objects: (doc.features?.props ?? []).length, floor_textures: (sp.palette ?? []).map((e) => e.name), latest_change: ctx.session().seq,
+    objects: (doc.features?.props ?? []).length, connectors: (doc.features?.connectors ?? []).length, floor_textures: (sp.palette ?? []).map((e) => e.name), latest_change: ctx.session().seq,
   };
 }
 
@@ -323,13 +324,14 @@ export const BATTLE_TOOLS = [
 
   define({
     name: "list_battle",
-    description: "Everything on the open battlemap: size, floors, and every wall piece, door, window and light with its id and position (squares).",
+    description: "Everything on the level of the open battlemap that is being worked on: size, floors, and every wall piece, door, window, light, object, note, light zone, stair, ladder and hole with its id and position (squares).",
     schema: z.object({}),
     async run(ctx) {
       return json({
         summary: battleSummary(ctx),
         walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), pieces: wallSegments(w).length })),
         lights: lightsOf(ctx).map((l) => ({ id: l.id, x: round(l.x), y: round(l.y), radius: l.radius, bright: l.bright, colour: l.colour })),
+        connectors: (ctx.session().doc.features?.connectors ?? []).map((c) => ({ id: c.id, kind: c.kind, ...(c.name && { name: c.name }), x: c.x, y: c.y, w: c.w, h: c.h, leads: connectorTo(c) })),
         notes: sortedNotes(ctx.session().doc.features?.notes).map((n) => ({ id: n.id, n: n.n, x: round(n.x), y: round(n.y), title: n.title, ...(n.text && { text: n.text }) })),
         light_zones: (ctx.session().doc.features?.zones ?? []).map((z) => ({ id: z.id, ...(z.name && { name: z.name }), level: z.ambient, points: z.points.map(([x, y]) => [round(x), round(y)]) })),
         objects: (ctx.session().doc.features?.props ?? []).map((p) => ({ id: p.id, asset: p.asset, x: round(p.x), y: round(p.y), ...(p.rotation && { rotation: p.rotation }), ...(p.scale && p.scale !== 1 && { scale: p.scale }), ...(p.layer && { layer: p.layer }) })),
@@ -508,16 +510,20 @@ export const BATTLE_TOOLS = [
     name: "export_battlemap",
     description:
       "Write the battlemap as a file for a virtual tabletop into the project's exports folder: 'uvtt' (Universal VTT .dd2vtt: image, walls, doors and lights in one file, " +
-      "for the Universal Battlemap Importer in Foundry, Roll20, Fantasy Grounds and others; the format has no window or secret door, so a window is written as a line that stops movement but not sight, a secret door as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
-      "'key' (the numbered notes as a Markdown list, for the DM; notes are never in the picture). " +
-      "Neither VTT format has been tested against the real program yet: tell the user so.",
-    schema: z.object({ format: z.enum(BATTLE_EXPORT_FORMATS) }),
+      "for the Universal Battlemap Importer in Foundry, Roll20, Fantasy Grounds and others; the format has no see-through wall or secret door, so windows, invisible walls and secret doors are written as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
+      "'key' (the numbered notes of every level as a Markdown list, for the DM; notes are never in the picture). " +
+      "A battlemap with several levels: the Foundry scene holds every level (one picture each, stairs and holes included); 'png' and 'uvtt' are of one level, named with it (level: its id or name, default the one being worked on). " +
+      "The Foundry scene was tried in Foundry v14 (levels, walls, doors, window, lights, stairs and floors came through); the Universal VTT file was tried with the Universal Battlemap Importer (walls, doors and lights came through). " +
+      "Neither has been tried in a live player view, and what a hole does to a token in Foundry hasn't been looked at: say so if asked, and ask the user to report anything odd.",
+    schema: z.object({ format: z.enum(BATTLE_EXPORT_FORMATS), level: z.string().optional().describe("png and uvtt only: a level's id or name (from list_levels)") }),
     async run(ctx, i) {
       if (!ctx.exportBattle) return fail("Exports aren't available here.");
-      const f = await ctx.exportBattle(i.format);
+      const f = await ctx.exportBattle(i.format, i.level);
       return json({ file: f.name, saved_to: f.path, megabytes: +(f.bytes / 1048576).toFixed(1), note: "The user can also download it from the editor's Export button." });
     },
   }),
+
+  ...LEVEL_TOOLS,
 ] as const;
 
 /** A labelled square grid on a battlemap preview: a line every square, numbered every 5 (or 10 on big crops). */

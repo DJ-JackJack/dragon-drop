@@ -37,8 +37,22 @@ export interface ToolContext {
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
   createBattleHere?(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
-  /** Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. */
-  exportBattle?(format: BattleExportFormat): Promise<{ name: string; bytes: number; path: string }>;
+  /**
+   * Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. For a battlemap with several levels the
+   * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.
+   */
+  exportBattle?(format: BattleExportFormat, level?: string): Promise<{ name: string; bytes: number; path: string }>;
+  /** Optional: the levels of the open battlemap (a cellar under a ground floor under an attic), and the one being worked on. Every other tool works on that level. */
+  levels?: {
+    /** The levels from the lowest to the highest, each with what is on it. Throws on a world map. */
+    list(): { active: string; levels: { id: string; name: string; bottom: number; top: number; counts: Record<string, number> }[] };
+    /** Add an empty level (same size, grid, light level and floor textures as the one being worked on) and switch to it. */
+    add(where: "above" | "below", name?: string): Promise<{ id: string; name: string; bottom: number; top: number }>;
+    /** Switch to a level by id or name: the DM's editor moves to it too. */
+    select(level: string): Promise<{ id: string; name: string; bottom: number; top: number }>;
+    /** Rename a level or change its elevations (feet). */
+    update(level: string, patch: { name?: string; bottom?: number; top?: number }): Promise<{ id: string; name: string; bottom: number; top: number }>;
+  };
   /** Optional: make a more detailed map of an area of the open map, and open it. */
   createRegional?(o: { name: string; rect: Rect }): Promise<ProjectInfo>;
   /** Optional: the open map's climate, lakes and rivers (route finding avoids lakes and river crossings). */

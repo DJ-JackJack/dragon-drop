@@ -124,7 +124,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
       if (ex) {
         if (hub.activeId !== ex[1]) return void res.writeHead(404, { "content-type": "text/plain" }).end("Not the open project");
         try {
-          const f = await hub.battleExport(ex[2] as BattleExportFormat);
+          const f = await hub.battleExport(ex[2] as BattleExportFormat, url.searchParams.get("level") ?? undefined);
           res.writeHead(200, { "content-type": f.mime, "content-disposition": `attachment; filename="${f.name}"`, "content-length": f.bytes.byteLength, "cache-control": "no-cache" }).end(f.bytes);
         } catch (e) {
           res.writeHead(400, { "content-type": "text/plain" }).end((e as Error).message);

@@ -405,6 +405,17 @@ export class Hub {
     return { ...info, description: what };
   }
 
+  /** A level of the open battlemap by id or by name (any case); an error that lists the levels when there is none, or when a name is ambiguous. */
+  private levelByRef(op: OpenProject, ref: string): BattleLevel {
+    const q = ref.trim().toLowerCase();
+    const byId = op.levels.levels.find((l) => l.id.toLowerCase() === q);
+    if (byId) return byId;
+    const byName = op.levels.levels.filter((l) => l.name.toLowerCase() === q);
+    if (byName.length === 1) return byName[0];
+    if (byName.length > 1) throw new Error(`More than one level is called "${ref}": use its id (${byName.map((l) => l.id).join(", ")}).`);
+    throw new Error(`There is no level "${ref}". The levels are: ${levelsByHeight(op.levels.levels).map((l) => `${l.name} (${l.id})`).join(", ")}.`);
+  }
+
   /** The floor documents of the open battlemap's levels, from the lowest to the highest. */
   private levelDocs(op: OpenProject): { level: BattleLevel; doc: MapDoc }[] {
     return levelsByHeight(op.levels.levels).map((level) => ({ level, doc: op.runtime.find((r) => r.id === level.id)!.session.doc }));
@@ -421,16 +432,18 @@ export class Hub {
    * The open battlemap as a file for a virtual tabletop: image, Universal VTT, or a Foundry scene (zip). A battlemap of several levels gives a Foundry
    * scene with every level (one picture each); the image and the Universal VTT file are of the level being worked on, named with it.
    */
-  async battleExport(format: BattleExportFormat): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
+  async battleExport(format: BattleExportFormat, level?: string): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
-    const doc = op.session.doc;
-    if (!isBattle(doc)) throw new Error("Only battlemaps can be exported this way.");
+    if (!isBattle(op.session.doc)) throw new Error("Only battlemaps can be exported this way.");
     if (op.session.inTransaction) op.session.commit();
+    // the picture and the Universal VTT file are of one level: the one asked for, else the one being worked on
+    const chosen = level ? this.levelByRef(op, level) : op.levels.levels.find((l) => l.id === op.levels.active)!;
+    const doc = op.runtime.find((r) => r.id === chosen.id)!.session.doc;
     const docs = this.levelDocs(op);
     const many = docs.length > 1;
     const base = op.id;
-    const active = op.levels.levels.find((l) => l.id === op.levels.active)!;
+    const active = chosen;
     const enc = new TextEncoder();
     // the DM's key (numbered notes) as a Markdown list: no picture needed
     if (format === "key") {
@@ -921,9 +934,45 @@ export class Hub {
         self.projectsCache = await self.store.list();
         return info;
       },
-      exportBattle: async (format) => {
-        const f = await self.battleExport(format);
+      exportBattle: async (format, level) => {
+        const f = await self.battleExport(format, level);
         return { name: f.name, bytes: f.bytes.byteLength, path: await self.store.saveExport(id(), f.name, f.bytes) };
+      },
+      levels: {
+        list: () => {
+          const op = self.battleOp();
+          return {
+            active: op.levels.active,
+            levels: levelsByHeight(op.levels.levels).map((l) => {
+              const d = op.runtime.find((r) => r.id === l.id)!.session.doc, f = d.features, w = f?.walls ?? [], sp = battleSpec(d);
+              let floor = 0;
+              for (let i = 0; i < d.height.data.length; i++) if ((d.height.data[i] | 0) > 0) floor++;
+              return {
+                id: l.id, name: l.name, bottom: l.bottom, top: l.top,
+                counts: {
+                  floored_squares: Math.round(floor / (sp.sub * sp.sub)), walls: w.filter((x) => x.kind === "wall").length, doors: w.filter((x) => x.kind === "door" || x.kind === "secret").length,
+                  windows: w.filter((x) => x.kind === "window").length, lights: (f?.lights ?? []).length, objects: (f?.props ?? []).length, notes: (f?.notes ?? []).length, connectors: (f?.connectors ?? []).length,
+                },
+              };
+            }),
+          };
+        },
+        add: async (where, name) => {
+          const l = await self.addLevel(where, name);
+          if (via === "mcp") self.open?.agent.note(`Claude Code: added the level ${l.name}`);
+          return l;
+        },
+        select: async (ref) => {
+          const l = self.levelByRef(self.battleOp(), ref);
+          await self.setActiveLevel(l.id);
+          if (via === "mcp") self.open?.agent.note(`Claude Code: switched to ${l.name}`);
+          return l;
+        },
+        update: async (ref, patch) => {
+          const l = await self.updateLevel(self.levelByRef(self.battleOp(), ref).id, patch);
+          if (via === "mcp") self.open?.agent.note(`Claude Code: changed the level ${l.name}`);
+          return l;
+        },
       },
       createRegional: async (o) => {
         const info = await self.createRegional(o);

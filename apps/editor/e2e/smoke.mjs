@@ -769,6 +769,13 @@ try {
     await page.keyboard.press("PageUp"); // (nothing above: stays)
     await page.waitForTimeout(300);
     if (!(await isOn("level-2"))) fail("Page Up above the highest level should stay on it");
+    // the picture and the Universal VTT file are of one level, chosen in the dialog and named with it
+    await page.getByTestId("battle-export-button").click();
+    await page.getByTestId("export-level").waitFor({ timeout: 5000 });
+    await page.getByTestId("export-level").locator("select").selectOption({ label: "Ground floor" });
+    const [udl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("battle-export-uvtt").click()]);
+    if (!udl.suggestedFilename().endsWith("-ground-floor.dd2vtt")) fail(`the Universal VTT file of the Ground floor should be named with it, got ${udl.suggestedFilename()}`);
+    await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
     await page.getByTestId("battle-export-button").click();
     const [fdl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("battle-export-foundry").click()]);
     const zipText = (await import("node:fs")).readFileSync(await fdl.path()).toString("latin1");

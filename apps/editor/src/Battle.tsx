@@ -1020,7 +1020,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
       {status && meta && loadedId === meta.id && <div className="mapview-busy">{status}</div>}
       {note && <div className="mapview-note" data-testid="battle-note">{note}</div>}
-      {exportOpen && meta && <BattleExportDialog meta={meta} onClose={() => setExportOpen(false)} />}
+      {exportOpen && meta && <BattleExportDialog meta={meta} levels={levels} onClose={() => setExportOpen(false)} />}
     </div>
   );
 }
@@ -1707,8 +1707,11 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
 }
 
 // ---------------------------------------------------------------- export
-export function BattleExportDialog({ meta, onClose }: { meta: MapMeta; onClose: () => void }) {
+export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; levels?: LevelsFile | null; onClose: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
+  /** Which level the picture and the Universal VTT file are of (a map with several levels). */
+  const [levelId, setLevelId] = useState(levels?.active ?? "");
+  const many = (levels?.levels.length ?? 0) > 1;
   const [error, setError] = useState<string | null>(null);
   const files = [
     { fmt: "uvtt", name: `${meta.id}.dd2vtt`, title: "Universal VTT (.dd2vtt)", text: "One file with the image, walls, doors and lights (of the level you are working on). Use it in Roll20, Fantasy Grounds and other programs that read it, or with the Universal Battlemap Importer module in Foundry. The format has no see-through wall, so windows and invisible walls are written as plain walls. In Foundry, the Foundry scene below is better: it keeps them (and your levels)." },
@@ -1720,9 +1723,12 @@ export function BattleExportDialog({ meta, onClose }: { meta: MapMeta; onClose: 
     setError(null);
     setBusy(f.fmt);
     try {
-      const r = await fetch(`/api/projects/${encodeURIComponent(meta.id)}/export/${f.fmt}`);
+      const q = many && (f.fmt === "png" || f.fmt === "uvtt") ? `?level=${encodeURIComponent(levelId)}` : "";
+      const r = await fetch(`/api/projects/${encodeURIComponent(meta.id)}/export/${f.fmt}${q}`);
       if (!r.ok) throw new Error((await r.text()) || `The export failed (${r.status}).`);
-      downloadBlob(await r.blob(), f.name);
+      // (the server names the file, with the level's name when there are several)
+      const named = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") ?? "")?.[1];
+      downloadBlob(await r.blob(), named ?? f.name);
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -1735,13 +1741,20 @@ export function BattleExportDialog({ meta, onClose }: { meta: MapMeta; onClose: 
       <div className="modal wide" role="dialog" aria-modal="true" data-testid="battle-export-dialog" onMouseDown={(e) => e.stopPropagation()}>
         <h2>Export the battlemap</h2>
         {spec && <p className="muted">{spec.squaresX * spec.pxPerSquare} × {spec.squaresY * spec.pxPerSquare} px, {spec.pxPerSquare} px per {spec.feetPerSquare}-ft square. Preparing a big map takes a few seconds.</p>}
+        {many && levels && (
+          <label className="field" data-testid="export-level">Level for the picture and the Universal VTT file
+            <select value={levelId} onChange={(e) => setLevelId(e.target.value)}>
+              {levelsByHeight(levels.levels).reverse().map((l) => <option key={l.id} value={l.id}>{l.name}{l.id === levels.active ? " (the one you are working on)" : ""}</option>)}
+            </select>
+          </label>
+        )}
         {files.map((f) => (
           <div key={f.fmt} className="export-choice">
             <div><b>{f.title}</b><p className="muted">{f.text}</p></div>
             <button className="primary" disabled={!!busy} onClick={() => void go(f)} data-testid={`battle-export-${f.fmt}`}>{busy === f.fmt ? "Preparing…" : "Download"}</button>
           </div>
         ))}
-        <p className="muted">The Universal VTT and Foundry files are written from the published formats but haven't been tried in Foundry or any other program yet. If one doesn't import cleanly, tell me what it said.</p>
+        <p className="muted">The Foundry scene has been tried in Foundry v14 (levels, walls, doors, windows, lights and stairs came through); the Universal VTT file with the Universal Battlemap Importer (walls, doors and lights came through). Neither has been tried in a live player view. If one doesn't import cleanly, tell me what it said.</p>
         {error && <p className="error-text" data-testid="battle-export-error">{error}</p>}
         <div className="row end"><button className="ghost" onClick={onClose} disabled={!!busy}>Close</button></div>
       </div>

@@ -79,11 +79,25 @@ imported exactly as written, with `_stats.coreVersion` "14.353".
   `elevation.topInclusive` was written false and stored true (cause not found; nothing depended on it).
 - **Not looked at:** whether a floor, hole or ceiling does anything to a token (two drags into the hole did nothing, so it was dropped), and a live player client.
 
+### Third run: stairs, a ladder and a floor with holes made by the editor's own writer (2026-11-19)
+
+Report: [foundry-test-kit/results/v14.367/RESULTS-RETEST-2.md](foundry-test-kit/results/v14.367/RESULTS-RETEST-2.md). A two-level scene built from real floors and connectors by `toFoundryLevelsScene`
+(the same function the Export button uses), imported as written.
+
+- **Imported and kept, exactly three regions** (the stair drawn on both levels as a landing was dropped, as designed): "Cellar stairs" and the ladder (Change Level over both levels) and
+  "Ground floor floor" (Define Surface, two rectangles of the real floor, two holes). Shapes including the hole flags, levels, behaviours and settings are identical to the file.
+- **The holes are holes in Foundry's own geometry** (`RegionDocument#testPoint`): points in the floor are true; points in either hole, and in the open corner with no floor, are false. A hole
+  on the seam between two floor rectangles becomes a notch in the merged outline, still correct. The Region layer draws the holes and the corner as gaps.
+- **Stairs and ladder work in play:** a token walking onto either gets "Do you want to move … to Ground floor?" and Move Up puts it on the Ground floor at elevation 0, standing in the stair's region
+  there too (so it is a region on both levels).
+- **Still `topInclusive`:** written false, stored true on the two Change Level regions (the single-level floor keeps false). Harmless so far.
+- **Not learned:** what a hole does to a token. Tokens placed in a hole and beside it both stayed at elevation 0, nothing fell; and no token on the Ground floor could be dragged in that browser
+  pane (also true of the first run), so a move into or out of a hole was never tried, and it is not shown that the floor region is what blocks movement. Looking at this needs a person at the table.
+
 ## Still to check in a real Foundry
 
-- What floors, ceilings and holes do in play (movement, sight and light across a hole, and seeing the level below through it): their stored data is right, their effect was not looked at.
+- What floors, ceilings and holes do in play (movement, sight and light across a hole, and seeing the level below through it): their stored data and geometry are right (third run), their effect on a token was not seen. A person at the table should try walking a token over a hole.
 - A live player client (secret door icon; what players see on each level).
-- Stairs and holes made from objects in the editor, once they exist (stage 3): the test scene's stair and hole imported and the stair worked; the real ones follow the same shape.
 - Why a stair's `topInclusive` comes back true when written false.
 - A newer Foundry build (14.370 was out): the `coreVersion` rule might change.
 
@@ -124,6 +138,17 @@ How levels live inside one battlemap, chosen to touch as little of the working e
   there is left out and the export's README says which. `toFoundryLevelsScene` does it (`foundryConnectors` in `battle.ts`).
 - **Not done:** a hole is a pit in the picture, so you can't see the level below through it (the exported pictures are opaque); what a hole, floor or stair does to a token beyond the Change Level
   dialog has not been looked at in Foundry; no roof; Claude has no tools for stairs yet (stage 4).
+
+## Stage 4: Claude's tools and the rest (built 2026-11-19)
+
+- **Tools** (`packages/tools/src/levelTools.ts`, battlemaps only): `list_levels`, `add_level` (above or below; switches to it), `set_active_level` (by id or name; the DM's editor follows),
+  `update_level` (name, bottom and top in feet), `add_connector` (stairs, ladder or hole as a rectangle in whole squares), `update_connector`, `remove_connectors` and `list_connectors`;
+  `list_battle` now includes the active level's connectors. There is deliberately **no tool to remove a level**: that is the DM's, in the editor (it saves a checkpoint first). Every other battlemap tool
+  works on the active level, so Claude switches before it builds; the instructions say so, and to add a level only when the DM asks for a building with floors, a cellar or the like.
+  The hub side is `ToolContext.levels` (`Hub.toolContext`).
+- **Per-level picture and Universal VTT file:** `export_battlemap` takes `level` (id or name) for `png` and `uvtt`; the file is named with the level. The Export dialog has a level picker for
+  those two when the map has several levels (`GET /api/projects/<id>/export/<format>?level=<id>`); the Foundry scene always holds every level and the key covers every level.
+- **Not done:** a roof (foreground picture); a Universal VTT file with every level (the format has no levels: one file per level is what the picker is for).
 
 ## Plan
 

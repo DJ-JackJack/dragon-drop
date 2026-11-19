@@ -325,6 +325,114 @@ describe("exporting a battlemap with levels", () => {
   });
 });
 
+describe("Claude's tools for levels, stairs, ladders and holes", () => {
+  type Out = { text: string; isError: boolean };
+  const tool = async (hub: Hub, name: string, input: Record<string, unknown> = {}): Promise<Out> => {
+    const r = await runTool(hub.toolContext("mcp"), name, input);
+    return { text: (r.content[0] as { text: string }).text, isError: !!r.isError };
+  };
+  const ok = async (hub: Hub, name: string, input: Record<string, unknown> = {}) => {
+    const r = await tool(hub, name, input);
+    if (r.isError) throw new Error(`${name}: ${r.text}`);
+    return JSON.parse(r.text);
+  };
+
+  it("lists the levels (one, until another is added), adds one and works on it, switches by name, and renames or re-elevates", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    const one = await ok(hub, "list_levels");
+    expect(one.levels).toHaveLength(1);
+    expect(one.levels[0]).toMatchObject({ id: "level-1", name: "Ground floor", bottom: 0, top: 10, counts: { doors: 0 } });
+    expect(one.levels[0].counts.walls).toBeGreaterThan(0);
+    expect(one.levels[0].counts.floored_squares).toBeGreaterThan(0);
+    const up = await ok(hub, "add_level", { where: "above" });
+    expect(up.level).toEqual({ id: "level-2", name: "Upper floor", bottom: 10, top: 20 });
+    expect(hub.levelsInfo()!.active).toBe("level-2"); // (the DM's editor follows)
+    await ok(hub, "add_room", { x: 1, y: 1, w: 4, h: 3 }); // works on the new level
+    const two = await ok(hub, "list_levels");
+    expect(two.levels.map((l: { name: string }) => l.name)).toEqual(["Ground floor", "Upper floor"]);
+    expect(two.active).toBe("level-2");
+    expect(two.levels[1].counts.walls).toBeGreaterThan(0);
+    await ok(hub, "set_active_level", { level: "ground floor" }); // by name, any case
+    expect(hub.levelsInfo()!.active).toBe("level-1");
+    await ok(hub, "set_active_level", { level: "level-2" }); // by id
+    expect(hub.levelsInfo()!.active).toBe("level-2");
+    const renamed = await ok(hub, "update_level", { level: "Upper floor", name: "Attic", bottom_ft: 10, top_ft: 18 });
+    expect(renamed.level).toEqual({ id: "level-2", name: "Attic", bottom: 10, top: 18 });
+    await hub.close();
+  });
+
+  it("explains itself when a level is missing, a name is ambiguous or a height is wrong", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    await ok(hub, "add_level", { where: "above", name: "Attic" });
+    const missing = await tool(hub, "set_active_level", { level: "Dungeon" });
+    expect(missing.isError).toBe(true);
+    expect(missing.text).toMatch(/There is no level "Dungeon"\. The levels are: Ground floor \(level-1\), Attic \(level-2\)/);
+    expect((await tool(hub, "update_level", { level: "Attic", bottom_ft: 30 })).text).toMatch(/top must be higher than its bottom/);
+    expect((await tool(hub, "update_level", { level: "Attic", name: "ground FLOOR" })).text).toMatch(/already a level called/);
+    await hub.close();
+  });
+
+  it("adds, lists, changes and removes stairs, ladders and holes on the active level, with the DM's undo", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    await ok(hub, "add_level", { where: "above" });
+    await ok(hub, "set_active_level", { level: "Ground floor" });
+    const added = await ok(hub, "add_connector", { kind: "stairs", x: 2, y: 2, w: 1, h: 3, name: "Tower stairs" });
+    expect(added.connector).toMatchObject({ kind: "stairs", x: 2, y: 2, w: 1, h: 3, leads: "up", name: "Tower stairs" });
+    expect(added.note).toBeUndefined(); // there is a level above
+    const hole = await ok(hub, "add_connector", { kind: "hole", x: 6, y: 3, w: 1, h: 1, leads: "up" });
+    expect(hole.connector.leads).toBe("down"); // a hole always leads down
+    expect(hole.note).toMatch(/no level below it yet/);
+    const list = await ok(hub, "list_connectors");
+    expect(list.connectors.map((c: { kind: string }) => c.kind)).toEqual(["stairs", "hole"]);
+    expect((await ok(hub, "list_battle")).connectors).toHaveLength(2);
+    expect((await ok(hub, "list_battle")).summary.connectors).toBe(2);
+    const changed = await ok(hub, "update_connector", { id: added.connector.id, w: 2, name: "" });
+    expect(changed.connector).toMatchObject({ w: 2, kind: "stairs" });
+    expect(changed.connector.name).toBeUndefined();
+    const removed = await ok(hub, "remove_connectors", { ids: [hole.connector.id, "nope"] });
+    expect(removed).toMatchObject({ removed: [hole.connector.id], not_found: ["nope"] });
+    expect((await ok(hub, "list_connectors")).connectors).toHaveLength(1);
+    // they are ordinary changes: one undo takes the last away
+    hub.session.undo("user");
+    expect((await ok(hub, "list_connectors")).connectors).toHaveLength(2);
+    // another level has its own
+    await ok(hub, "set_active_level", { level: "Upper floor" });
+    expect((await ok(hub, "list_connectors")).connectors).toEqual([]);
+    await hub.close();
+  });
+
+  it("refuses a stair that doesn't fit the map, and an id from another level", async () => {
+    const { hub } = fresh();
+    await tower(hub); // 10 x 8 squares
+    expect((await tool(hub, "add_connector", { kind: "stairs", x: 9, y: 2, w: 2, h: 1 })).text).toMatch(/doesn't fit: the map is 10 x 8 squares/);
+    const c = await ok(hub, "add_connector", { kind: "ladder", x: 1, y: 1, w: 1, h: 1 });
+    expect(c.note).toMatch(/no level above it yet/);
+    await ok(hub, "add_level", { where: "above" });
+    expect((await tool(hub, "update_connector", { id: c.connector.id, x: 1 })).isError).toBe(true); // (it is on the ground floor, not this level)
+    await hub.close();
+  });
+
+  it("exports the picture and the Universal VTT file of the level asked for, named with it", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    await ok(hub, "add_level", { where: "above" }); // (working on the upper floor)
+    expect((await ok(hub, "export_battlemap", { format: "png" })).file).toBe("tower-upper-floor.png");
+    expect((await ok(hub, "export_battlemap", { format: "uvtt", level: "Ground floor" })).file).toBe("tower-ground-floor.dd2vtt");
+    expect((await tool(hub, "export_battlemap", { format: "png", level: "Cellar" })).isError).toBe(true);
+    await hub.close();
+  });
+
+  it("are for battlemaps only: a world map refuses them", async () => {
+    const { hub } = fresh();
+    await hub.createProject({ name: "World", width: 256, height: 256, kmPerPx: 1 });
+    for (const name of ["list_levels", "add_level", "add_connector"]) expect((await tool(hub, name, { where: "above", kind: "hole", x: 1, y: 1, w: 1, h: 1 })).isError, name).toBe(true);
+    await hub.close();
+  });
+});
+
 describe("the store's level files", () => {
   it("a levels file that can't be read is set aside, not overwritten; the map opens with its first level", async () => {
     const { hub, dir, store } = fresh();

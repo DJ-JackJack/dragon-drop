@@ -445,6 +445,8 @@ Use a battlemap with two levels (14g2) and a room on each.
 6. Select a stair, drag it, press `Ctrl+Z`, `Ctrl+C` then `Ctrl+V`, `Delete`. **Expect** each to work like any other object, one undo step each, and a box drag round it to select it with other things.
 7. **⤓ Export → Foundry scene**, import it into Foundry (the README in the zip says how). **Expect** walking a token onto the stairs to ask "Do you want to move … to Upper floor?". **Expect** the upper floor to have a floor Region with a hole (open the Regions layer). **Tell me what a token does at the hole**: how it behaves in play hasn't been looked at in Foundry yet.
 8. The exported picture of each level shows its stairs, ladders and pits.
+9. **With Claude** (the terminal panel or the chat): *"Add a cellar under this room, and put a ladder in this room down to it."* **Expect** it to use `add_level` (the Levels panel shows a new **Cellar**, you are taken to it), then to switch back and add the ladder (a 1-square ladder in the Ground floor, leading down), and to say what it did. Ask *"What's on each level?"* (`list_levels`). Ask it to remove the cellar: **expect** it to say that is yours to do in the editor.
+10. **⤓ Export** on a map with levels: **Expect** a **Level** picker above the cards; pick the Cellar and download the **Image** and the **Universal VTT** file: the names end with the cellar's name and the picture is the cellar's.
 
 ## 14h. Reefs, the northwesterly wind and the new places
 
@@ -616,7 +618,7 @@ Tell me about any key you expected to work and didn't, and any that did somethin
 
 ## 15. What's not built yet (so you don't report it as a bug)
 
-- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), what a hole does to a token in Foundry (the stairs, ladders and holes themselves work: 14g3), Claude tools for levels and stairs. The Universal VTT and Foundry exports exist but are untested (above).
+- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), what a hole does to a token in Foundry (the stairs, ladders and holes themselves work: 14g3). The Universal VTT and Foundry exports exist but are untested (above).
 - GPU erosion; automatic label placement for sea/region names (place names do place themselves).
 
 ---
