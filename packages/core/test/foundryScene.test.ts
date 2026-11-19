@@ -94,4 +94,28 @@ describe("a Foundry v14 scene with levels", () => {
     // the shape Foundry itself stores for a stair: no kinds of movement listed (all allowed), the top of the range not inclusive
     expect(r.behaviors[0]).toMatchObject({ system: { movementActions: [] }, disabled: false });
   });
+
+  it("leaves floors and ceilings out unless asked, and then writes Define Surface regions as Foundry stores them, a hole being an extra shape", () => {
+    const surfaces = [
+      { name: "Ground floor floor", level: 1, kind: "floor" as const, rect: { x: 1, y: 1, w: 8, h: 5 }, holes: [{ x: 4, y: 2, w: 1, h: 1 }] },
+      { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rect: { x: 1, y: 1, w: 8, h: 5 } },
+    ];
+    expect(foundryScene(input({ surfaces })).regions).toEqual([]);
+    const s = foundryScene(input({ surfaces }), { surfaces: true });
+    const [cellar, ground] = s.levels.map((l) => l._id);
+    type Region = { levels: string[]; elevation: object; shapes: { type: string; x: number; y: number; width: number; height: number; hole: boolean }[]; behaviors: { type: string; system: Record<string, unknown> }[] };
+    const [floor, ceiling] = s.regions as Region[];
+    expect(floor.levels).toEqual([ground]); // (a floor lies on the level above)
+    expect(floor.elevation).toEqual({ bottom: 0, top: 10, topInclusive: false });
+    expect(floor.shapes).toEqual([
+      { type: "rectangle", x: 70, y: 70, width: 560, height: 350, rotation: 0, hole: false },
+      { type: "rectangle", x: 280, y: 140, width: 70, height: 70, rotation: 0, hole: true },
+    ]);
+    expect(floor.behaviors).toHaveLength(1);
+    expect(floor.behaviors[0]).toMatchObject({ type: "defineSurface", system: { placement: "bottom", light: true, move: true, sight: true, sound: true, occlusion: true, exposure: false, culling: false } });
+    expect(ceiling.levels).toEqual([cellar]);
+    expect(ceiling.behaviors[0].system.placement).toBe("top");
+    expect(ceiling.shapes).toHaveLength(1);
+    expect(() => foundryScene(input({ surfaces: [{ ...surfaces[0], level: 5 }] }), { surfaces: true })).toThrow(/no level 5/);
+  });
 });

@@ -52,6 +52,16 @@ export interface FoundryStairInput {
   h: number;
 }
 
+/** A floor or a ceiling, as a rectangle in grid squares with holes cut out of it (Foundry "Define Surface" regions: a hole is an extra shape of the region). */
+export interface FoundrySurfaceInput {
+  name: string;
+  /** The index of the level it belongs to: a floor lies on the level it is the floor of, a ceiling on the level it covers. */
+  level: number;
+  kind: "floor" | "ceiling";
+  rect: { x: number; y: number; w: number; h: number };
+  holes?: { x: number; y: number; w: number; h: number }[];
+}
+
 export interface FoundrySceneInput {
   name: string;
   /** The picture size in pixels (every level's picture is this size). */
@@ -64,6 +74,7 @@ export interface FoundrySceneInput {
   ambient?: number;
   levels: FoundryLevelInput[];
   stairs?: FoundryStairInput[];
+  surfaces?: FoundrySurfaceInput[];
 }
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -101,7 +112,7 @@ function wallSettings(w: MapWall) {
 }
 
 /** The scene as Foundry stores it, ready to be written as JSON and imported (Scene > Import Data). */
-export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean } = {}) {
+export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean; surfaces?: boolean } = {}) {
   if (!input.levels.length) throw new Error("A Foundry scene needs at least one level.");
   const px = input.pxPerSquare;
   const ids = input.levels.map((l, i) => foundryId(`level:${i}:${l.name}`));
@@ -153,6 +164,23 @@ export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean 
     };
   }) : [];
 
+  // floors and ceilings (Define Surface): written as Foundry stores them when they are made by hand, but not yet tried when written by us, so off unless asked
+  const surfaces = opts.surfaces ? (input.surfaces ?? []).map((f, k) => {
+    const lv = input.levels[f.level];
+    if (!lv) throw new Error(`Surface "${f.name}": there is no level ${f.level}.`);
+    const rect = (r: { x: number; y: number; w: number; h: number }, hole: boolean) => ({ type: "rectangle", x: sc(r.x), y: sc(r.y), width: sc(r.w), height: sc(r.h), rotation: 0, hole });
+    return {
+      _id: foundryId(`surface:${k}:${f.name}`), name: f.name, color: f.kind === "floor" ? "#cca928" : "#cc28b7",
+      shapes: [rect(f.rect, false), ...(f.holes ?? []).map((h) => rect(h, true))],
+      elevation: { bottom: lv.bottom, top: lv.top, topInclusive: false }, levels: [ids[f.level]],
+      behaviors: [{
+        _id: foundryId(`surfaceb:${k}:${f.name}`), name: "Define Surface", type: "defineSurface", disabled: false, flags: {},
+        // (a floor stops what is above from passing down; a ceiling stops what is below from passing up)
+        system: { placement: f.kind === "floor" ? "bottom" : "top", light: true, move: true, sight: true, sound: true, occlusion: true, exposure: false, culling: false },
+      }],
+      visibility: 4, locked: false, flags: {},
+    };
+  }) : [];
   const ambient = input.ambient ?? 1;
   return {
     name: input.name,
@@ -169,6 +197,6 @@ export function foundryScene(input: FoundrySceneInput, opts: { stairs?: boolean 
     walls,
     lights,
     tiles: [] as object[],
-    regions,
+    regions: [...regions, ...surfaces],
   };
 }

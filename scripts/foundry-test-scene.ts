@@ -3,8 +3,8 @@
 //
 //   pnpm exec tsx scripts/foundry-test-scene.ts [output-folder]
 //
-// The zip holds the two pictures, the scene without stairs (the parts the Foundry documentation spells out), the same scene with a stair region
-// (a best guess at its stored shape, kept in a separate file so a wrong guess can't spoil the first), and a README with what to check.
+// The zip holds the two pictures, the scene without stairs, the same scene with a stair region, the same with a stair, a floor with a hole and a ceiling
+// (each kept in a separate file so one that Foundry dislikes can't spoil the others), and a README with what to check.
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,9 +51,15 @@ const input = {
     { name: "Ground floor", bottom: 0, top: 10, image: "maps/dd-test-ground.png", walls: groundWalls, lights: groundLights },
   ],
   stairs: [{ name: "Cellar stairs", between: [0, 1] as [number, number], x: 11, y: 3, w: 1, h: 2 }],
+  // a floor on the ground floor with a hole in it (over the east half of the cellar), and a ceiling over the cellar (Define Surface regions)
+  surfaces: [
+    { name: "Ground floor floor", level: 1, kind: "floor" as const, rect: { x: 2, y: 2, w: 11, h: 6 }, holes: [{ x: 8, y: 3, w: 2, h: 1 }] },
+    { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rect: { x: 2, y: 2, w: 11, h: 6 } },
+  ],
 };
 const plain = foundryScene(input);
 const withStairs = foundryScene(input, { stairs: true });
+const withSurfaces = foundryScene(input, { stairs: true, surfaces: true });
 
 const readme = `Dragon Drop: Foundry v14 levels test
 =====================================
@@ -94,6 +100,7 @@ export function levelsTestZip(): Uint8Array {
     { name: "maps/dd-test-ground.png", data: picture([150, 108, 66], [40, 60, 40], "GROUND FLOOR", "level 1: elevation 0 to 10") },
     { name: "scene-no-stairs.json", data: enc.encode(JSON.stringify(plain, null, 2)) },
     { name: "scene-with-stairs.json", data: enc.encode(JSON.stringify(withStairs, null, 2)) },
+    { name: "scene-with-stairs-and-surfaces.json", data: enc.encode(JSON.stringify(withSurfaces, null, 2)) },
     { name: "README.txt", data: enc.encode(readme.replace(/\n/g, "\r\n")) },
   ]);
 }
