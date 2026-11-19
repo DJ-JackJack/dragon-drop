@@ -310,10 +310,15 @@ try {
   await page.screenshot({ path: path.join(shots, "e2e-3-places.png") });
 
   // a full chat turn (scripted model): streamed text, tool chips, preview image, Claude's edit in history
-  // a kind of picture the map tools can't read (WebP) is left out, with a note; a PNG attaches as usual
-  await page.locator('.composer input[type="file"]').setInputFiles({ name: "left-out.webp", mimeType: "image/webp", buffer: Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]) });
+  // a kind of picture the map tools can't read (GIF) is left out, with a note; a WebP (a real, tiny one) attaches, and so does a PNG
+  await page.locator('.composer input[type="file"]').setInputFiles({ name: "left-out.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00;", "binary") });
   await page.getByTestId("attach-note").waitFor({ timeout: 5000 });
-  if ((await page.locator(".pending .thumb").count()) !== 0) throw new Error("a WebP picture was attached to the chat");
+  if ((await page.locator(".pending .thumb").count()) !== 0) throw new Error("a GIF picture was attached to the chat");
+  const { readFileSync: readWebp } = await import("node:fs");
+  await page.locator('.composer input[type="file"]').setInputFiles({ name: "tiny.webp", mimeType: "image/webp", buffer: readWebp(new URL("../../../packages/tools/test/fixtures/webp/lossless-1x1.webp", import.meta.url)) });
+  await page.locator(".pending .thumb").first().waitFor({ timeout: 5000 });
+  await page.locator(".pending .thumb button").first().click(); // (taken off again: the steps below attach the sketch)
+  if ((await page.locator(".pending .thumb").count()) !== 0) throw new Error("the WebP thumbnail did not go away");
   await page.locator('.composer input[type="file"]').setInputFiles(path.join(tmp, "e2e-sketch.png")); // (kept in the project's references: the sketch step below uses it)
   await page.getByTestId("chat-input").fill("Add a small island in the inner sea");
   await page.keyboard.press("Enter");

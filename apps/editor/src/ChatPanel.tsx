@@ -75,10 +75,10 @@ export function ChatPanel({ s }: { s: AppState }) {
         r.onerror = () => rej(r.error);
         r.readAsDataURL(f);
       });
-      out.push({ name: f.name || "pasted-image.png", mediaType: f.type, data, preview: URL.createObjectURL(f) });
+      out.push({ name: f.name || `pasted-image.${f.type === "image/webp" ? "webp" : f.type === "image/jpeg" ? "jpg" : "png"}`, mediaType: f.type, data, preview: URL.createObjectURL(f) });
     }
     setPending((p) => [...p, ...out].slice(0, 8));
-    setPickNote(skipped ? `${skipped === 1 ? "That picture was" : `${skipped} pictures were`} left out: only PNG and JPEG pictures can be attached.` : "");
+    setPickNote(skipped ? `${skipped === 1 ? "That picture was" : `${skipped} pictures were`} left out: only PNG, JPEG and WebP pictures can be attached.` : "");
   }
 
   function send() {

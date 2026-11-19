@@ -93,9 +93,11 @@ export function collectProd(roots, skip = () => false) {
 /**
  * `roots`: package directories whose dependencies ship. `files`: files (paths) of node_modules packages that were bundled (from esbuild's metafile).
  * `skip(pkg)`: packages that are not third-party (the project's own).
+ * `vendored`: software that ships inside the program but is not an npm package (compiled code kept in the repository, such as the WebP decoder):
+ * { name, version, license, source, texts: [licence text, ...] }. It is checked and listed like a package.
  * Returns { text, packages, problems, notes }.
  */
-export function generateNotices({ roots = [], files = [], skip = () => false, header = "" }) {
+export function generateNotices({ roots = [], files = [], skip = () => false, header = "", vendored = [] }) {
   const byDir = new Map();
   for (const p of collectProd(roots, skip)) byDir.set(p.dir, p);
   for (const f of files) {
@@ -109,11 +111,12 @@ export function generateNotices({ roots = [], files = [], skip = () => false, he
   // one entry per name@version (the same package can sit in two places)
   const unique = new Map();
   for (const p of byDir.values()) unique.set(`${p.name}@${p.version}`, p);
+  for (const v of vendored) unique.set(`${v.name}@${v.version}`, { ...v, deps: [] });
   const packages = [...unique.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 
   const problems = [], notes = [];
   const blocks = packages.map((p) => {
-    const texts = licenseTexts(p.dir);
+    const texts = p.texts ? p.texts.map((text) => ({ file: "(kept with the source)", text: text.trim() })).filter((x) => x.text) : licenseTexts(p.dir);
     if (!p.license) problems.push(`${p.name}@${p.version} declares no licence`);
     else if (!isPermissive(p.license) && !REVIEWED[p.name]) problems.push(`${p.name}@${p.version} is under "${p.license}", which has not been reviewed (add it to REVIEWED in notices.mjs once a person has accepted it)`);
     if (!texts.length) notes.push(`${p.name}@${p.version} ships no licence file (it declares ${p.license || "nothing"})`);

@@ -8,13 +8,13 @@
  */
 
 /** Pictures Claude and the map tools can use as references (shown to Claude, sketch import, comparing with the map): the ones the server can decode. */
-export const REFERENCE_PICTURE_TYPES = ["image/png", "image/jpeg"] as const;
-export const REFERENCE_PICTURE_EXTENSIONS = ["png", "jpg", "jpeg"] as const;
+export const REFERENCE_PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+export const REFERENCE_PICTURE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"] as const;
 /** For an <input type="file" accept="...">. */
 export const REFERENCE_PICTURE_ACCEPT = [...REFERENCE_PICTURE_EXTENSIONS.map((e) => `.${e}`), ...REFERENCE_PICTURE_TYPES].join(",");
 export const REFERENCE_PICTURE_EXT = new RegExp(`\\.(${REFERENCE_PICTURE_EXTENSIONS.join("|")})$`, "i");
 
-/** Pictures the asset library lists. (PNG and JPEG are also drawn into exports and previews; WebP is shown in the editor only for now.) */
+/** Pictures the asset library lists and draws (still WebP too; an animated WebP can't be drawn and counts as missing). */
 export const ASSET_PICTURE_EXTENSIONS = ["png", "webp", "jpg", "jpeg"] as const;
 export const ASSET_PICTURE_EXT = new RegExp(`\\.(${ASSET_PICTURE_EXTENSIONS.join("|")})$`, "i");
 /** A pack file made by another map tool (a Godot archive): a name ending in "_pack", or ".pck". It is then checked by its first bytes. */
@@ -46,14 +46,14 @@ export const FORMATS_READ: FormatInfo[] = [
     limits: "Maps from older versions are upgraded when opened (a copy is kept first). A map from a newer Dragon Drop is refused and left untouched. Maps made in other programs can't be opened. See [MAP-FILES.md](MAP-FILES.md).",
   },
   {
-    id: "reference", name: "Reference pictures", files: ".png, .jpg, .jpeg",
+    id: "reference", name: "Reference pictures", files: ".png, .jpg, .jpeg, .webp",
     use: "Pictures you attach in the chat, shown to Claude, turned into terrain (sketch import) or compared with the map.",
-    limits: "PNG and JPEG only. Other pictures (WebP, GIF and the like) are not accepted here, and the chat says so.",
+    limits: "PNG, JPEG and WebP (a still picture: an animated WebP is not read). Other pictures (GIF and the like) are not accepted here, and the chat says so.",
   },
   {
     id: "asset-pictures", name: "Asset pictures", files: ".png, .jpg, .jpeg, .webp (loose in folders)",
     use: "Objects and floor textures for battlemaps, from folders of pictures. A folder called Floors, Props, Doors and so on says what is inside.",
-    limits: "PNG and JPEG are used everywhere. WebP shows in the editor but is left out of exports and previews for now. GIF, BMP, SVG and others are not listed.",
+    limits: "PNG, JPEG and WebP are used everywhere: in the editor, in previews and in exports. An animated WebP is skipped (only still pictures are drawn), and a picture over 40 million pixels is too big to draw. GIF, BMP, SVG and others are not listed.",
   },
   {
     id: "asset-zip", name: "Zip files of pictures", files: ".zip",

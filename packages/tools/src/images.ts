@@ -2,6 +2,7 @@
 import jpeg from "jpeg-js";
 import { PNG } from "pngjs";
 import { type RGBAImage, cropScale } from "@mapmaker/core";
+import { decodeWebp, isWebp } from "./webp.ts";
 
 /** Encode as JPEG, lowering quality until it fits under maxBytes (MCP clients cap tool results ~1 MB). */
 export function encodeJpeg(img: RGBAImage, quality = 85, maxBytes = 800_000): Uint8Array {
@@ -30,12 +31,12 @@ export function encodePngRgba(img: RGBAImage): Uint8Array {
 export function sniffMediaType(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | null {
   if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
-  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57 && bytes[9] === 0x45) return "image/webp";
+  if (isWebp(bytes)) return "image/webp";
   if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif";
   return null;
 }
 
-/** Decode PNG or JPEG to RGBA. Returns null for formats we can't decode here (webp/gif). */
+/** Decode PNG, JPEG or (still) WebP to RGBA. Returns null for formats we can't decode here (GIF, animated WebP, damaged WebP files). */
 export function decodeImage(bytes: Uint8Array): RGBAImage | null {
   const t = sniffMediaType(bytes);
   if (t === "image/png") {
@@ -46,6 +47,7 @@ export function decodeImage(bytes: Uint8Array): RGBAImage | null {
     const j = jpeg.decode(Buffer.from(bytes), { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 });
     return { w: j.width, h: j.height, data: new Uint8ClampedArray(j.data.buffer, j.data.byteOffset, j.data.byteLength) };
   }
+  if (t === "image/webp") return decodeWebp(bytes);
   return null;
 }
 

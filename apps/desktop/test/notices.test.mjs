@@ -76,3 +76,17 @@ describe("the notices", () => {
     expect(found.map((p) => p.name).sort()).toEqual(["x", "y"]);
   });
 });
+
+describe("software that is not an npm package (vendored)", () => {
+  it("is listed with its licence texts, and is checked like a package", () => {
+    const root = app(tree({}), []);
+    const ok = generateNotices({ roots: [root], vendored: [{ name: "libwebp", version: "1.6.0", license: "BSD-3-Clause", source: "https://example.org/webp", texts: ["Copyright (c) Example. Redistribution and use..."] }] });
+    expect(ok.problems).toEqual([]);
+    expect(ok.packages.map((p) => `${p.name}@${p.version}`)).toEqual(["libwebp@1.6.0"]);
+    expect(ok.text).toContain("libwebp 1.6.0");
+    expect(ok.text).toContain("Licence: BSD-3-Clause");
+    expect(ok.text).toContain("Redistribution and use...");
+    const bad = generateNotices({ roots: [root], vendored: [{ name: "thing", version: "1", license: "GPL-3.0", texts: ["..."] }] });
+    expect(bad.problems.join("\n")).toMatch(/thing@1 is under "GPL-3.0"/);
+  });
+});

@@ -2,7 +2,7 @@
 //   build/server/main.mjs + computeWorker.mjs   the map server, bundled into single files (no node_modules needed)
 //   build/editor/                               the built editor (run `pnpm build` at the repo root first)
 import { build } from "esbuild";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateNotices } from "./notices.mjs";
@@ -31,10 +31,18 @@ for (const [entry, outfile] of [["apps/server/src/main.ts", "server/main.mjs"], 
   for (const f of Object.keys(r.metafile.inputs)) bundled.add(path.resolve(process.cwd(), f));
 }
 
+const libwebpVersion = /LIBWEBP_VERSION = "([^"]+)"/.exec(readFileSync(path.join(repo, "packages/tools/src/webpWasm.ts"), "utf8"))?.[1] ?? "";
+if (!libwebpVersion) { console.error("packages/tools/src/webpWasm.ts has no LIBWEBP_VERSION: run tools/webp-wasm/build.sh"); process.exit(1); }
+
 // the open-source notices (the bundles above drop licence comments, so this file is where the licences travel)
 const notices = generateNotices({
   roots: [path.join(repo, "apps/editor"), desktop],
   files: [...bundled],
+  // the WebP decoder is libwebp built to WebAssembly (tools/webp-wasm/build.sh), kept in the repository as a TypeScript file the server bundle contains
+  vendored: [{
+    name: "libwebp (WebP decoder, as WebAssembly)", version: libwebpVersion, license: "BSD-3-Clause AND MIT AND BSD-2-Clause AND CC0-1.0", source: "https://developers.google.com/speed/webp",
+    texts: [readFileSync(path.join(repo, "tools/webp-wasm/LICENSE-libwebp.txt"), "utf8"), readFileSync(path.join(repo, "tools/webp-wasm/LICENSE-wasm-runtime.txt"), "utf8")],
+  }],
   skip: (p) => p.name.startsWith("@mapmaker/") || p.name === "dragon-drop" || p.name === "ai-mapmaker",
   header: `Dragon Drop is copyright its authors. It includes the open-source software below, each under its own licence, reproduced as those licences ask.
 Electron (with Chromium and Node.js) is licensed in LICENSE.electron.txt and LICENSES.chromium.html in the program's folder.

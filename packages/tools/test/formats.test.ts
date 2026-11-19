@@ -32,31 +32,38 @@ describe("what the list says about pictures is true", () => {
   const tiny = { w: 4, h: 3, data: new Uint8ClampedArray(4 * 3 * 4).fill(200) };
   const stub = (head: number[]) => new Uint8Array([...head, ...new Array(40).fill(0)]);
 
-  it("reference pictures: PNG and JPEG decode, and nothing else the picker could pass in does", () => {
+  // a real (tiny) WebP: lossless, 1 x 1 (made by the WebP test fixtures)
+  const webpPicture = new Uint8Array(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "webp", "lossless-1x1.webp")));
+
+  it("reference pictures: PNG, JPEG and WebP decode, and nothing else the picker could pass in does", () => {
     expect(decodeImage(encodePng(tiny))).toMatchObject({ w: 4, h: 3 });
     expect(decodeImage(encodeJpeg(tiny))).toMatchObject({ w: 4, h: 3 });
-    expect(REFERENCE_PICTURE_TYPES.map((t) => sniffMediaType(t === "image/png" ? encodePng(tiny) : encodeJpeg(tiny)))).toEqual([...REFERENCE_PICTURE_TYPES]);
-    const webp = stub([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]), gif = stub([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
-    expect(decodeImage(webp)).toBeNull(); // (the formats list says WebP and GIF are not accepted as references)
-    expect(decodeImage(gif)).toBeNull();
+    expect(decodeImage(webpPicture)).toMatchObject({ w: 1, h: 1 });
+    const sample: Record<string, Uint8Array> = { "image/png": encodePng(tiny), "image/jpeg": encodeJpeg(tiny), "image/webp": webpPicture };
+    expect(REFERENCE_PICTURE_TYPES.map((t) => sniffMediaType(sample[t]))).toEqual([...REFERENCE_PICTURE_TYPES]);
+    const gif = stub([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+    expect(decodeImage(gif)).toBeNull(); // (the formats list says GIF is not accepted as a reference)
+    expect(decodeImage(stub([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))).toBeNull(); // a "WebP" that is only its first twelve bytes
   });
 
   it("the file picker and the reference listing take exactly those, and the page says so", () => {
     for (const e of REFERENCE_PICTURE_EXTENSIONS) { expect(REFERENCE_PICTURE_EXT.test(`a.${e}`)).toBe(true); expect(REFERENCE_PICTURE_ACCEPT).toContain(`.${e}`); }
-    for (const bad of ["a.webp", "a.gif", "a.bmp", "a.png.txt"]) expect(REFERENCE_PICTURE_EXT.test(bad)).toBe(false);
+    for (const bad of ["a.gif", "a.bmp", "a.avif", "a.png.txt"]) expect(REFERENCE_PICTURE_EXT.test(bad)).toBe(false);
     for (const t of REFERENCE_PICTURE_TYPES) expect(REFERENCE_PICTURE_ACCEPT).toContain(t);
     const ref = FORMATS_READ.find((f) => f.id === "reference")!;
     for (const e of REFERENCE_PICTURE_EXTENSIONS) expect(ref.files).toContain(`.${e}`);
-    expect(ref.limits).toMatch(/PNG and JPEG only/);
+    expect(ref.limits).toMatch(/PNG, JPEG and WebP/);
   });
 
-  it("asset pictures: the library lists what the page lists, and WebP is the one that is not drawn", () => {
+  it("asset pictures: the library lists what the page lists, and all of them are drawn", () => {
     for (const e of ASSET_PICTURE_EXTENSIONS) expect(IMAGE_EXT.test(`dir/a.${e.toUpperCase()}`)).toBe(true);
     for (const bad of ["a.gif", "a.svg", "a.bmp", "a.tga"]) expect(IMAGE_EXT.test(bad)).toBe(false);
     const pics = FORMATS_READ.find((f) => f.id === "asset-pictures")!;
     for (const e of ASSET_PICTURE_EXTENSIONS) expect(pics.files).toContain(`.${e}`);
-    expect(pics.limits).toMatch(/WebP .* left out of exports/);
-    expect(decodeImage(stub([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))).toBeNull(); // if WebP starts to decode, change the limits text (and this)
+    expect(pics.limits).toMatch(/PNG, JPEG and WebP are used everywhere/);
+    expect(pics.limits).toMatch(/animated WebP is skipped/);
+    expect(decodeImage(webpPicture)).not.toBeNull(); // (if WebP stops decoding, the page must say so again)
+    expect(decodeImage(new Uint8Array(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "webp", "animated.webp"))))).toBeNull(); // an animated one is skipped, as the page says
   });
 
   it("zip and pack file names", () => {

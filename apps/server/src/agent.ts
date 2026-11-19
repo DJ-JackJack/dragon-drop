@@ -121,7 +121,7 @@ export class ChatAgent {
         content.push({ type: "text", text: `[Attached image saved as reference "${img.name}" (${prep.width}x${prep.height}); view_reference can crop it at full resolution.]` });
         content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: toBase64(prep.jpeg) } });
       } else {
-        content.push({ type: "text", text: `[Attached image "${img.name}" could not be decoded (use PNG or JPEG).]` });
+        content.push({ type: "text", text: `[Attached image "${img.name}" could not be decoded (use PNG, JPEG or a still WebP).]` });
       }
     }
     content.push({ type: "text", text: text || "(no text)" });

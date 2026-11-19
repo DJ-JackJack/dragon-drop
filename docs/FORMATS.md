@@ -11,8 +11,8 @@ the real program yet, the table says so.
 | Format | Files | Used for | Limits |
 |---|---|---|---|
 | **Dragon Drop maps** | a map folder: `project.json`, `features.json`, `brief.md`, `chat.json`, the gzipped height file | Opening and keeping your maps (world maps, regional maps and battlemaps). | Maps from older versions are upgraded when opened (a copy is kept first). A map from a newer Dragon Drop is refused and left untouched. Maps made in other programs can't be opened. See [MAP-FILES.md](MAP-FILES.md). |
-| **Reference pictures** | .png, .jpg, .jpeg | Pictures you attach in the chat, shown to Claude, turned into terrain (sketch import) or compared with the map. | PNG and JPEG only. Other pictures (WebP, GIF and the like) are not accepted here, and the chat says so. |
-| **Asset pictures** | .png, .jpg, .jpeg, .webp (loose in folders) | Objects and floor textures for battlemaps, from folders of pictures. A folder called Floors, Props, Doors and so on says what is inside. | PNG and JPEG are used everywhere. WebP shows in the editor but is left out of exports and previews for now. GIF, BMP, SVG and others are not listed. |
+| **Reference pictures** | .png, .jpg, .jpeg, .webp | Pictures you attach in the chat, shown to Claude, turned into terrain (sketch import) or compared with the map. | PNG, JPEG and WebP (a still picture: an animated WebP is not read). Other pictures (GIF and the like) are not accepted here, and the chat says so. |
+| **Asset pictures** | .png, .jpg, .jpeg, .webp (loose in folders) | Objects and floor textures for battlemaps, from folders of pictures. A folder called Floors, Props, Doors and so on says what is inside. | PNG, JPEG and WebP are used everywhere: in the editor, in previews and in exports. An animated WebP is skipped (only still pictures are drawn), and a picture over 40 million pixels is too big to draw. GIF, BMP, SVG and others are not listed. |
 | **Zip files of pictures** | .zip | The same as a folder of pictures, read without unpacking. | Stored and deflated entries, including very large (zip64) archives. Password-protected zip files are skipped. The pictures inside follow the rules for asset pictures. |
 | **Asset pack files from other map tools** | a name ending in _pack, or .pck (Godot archives) | The same as a folder of pictures, read in place. | Recognised by their first bytes, whatever they are called. A pack whose author says it may not be used in other programs is listed but never used. Encrypted packs can't be read. The pictures inside follow the rules for asset pictures. |
 
@@ -33,7 +33,7 @@ the real program yet, the table says so.
 ## Not supported (yet)
 
 - Opening maps made in other programs.
-- Pictures other than PNG and JPEG as references, and pictures other than PNG, JPEG and WebP as assets (GIF, BMP, SVG, TIFF and AVIF are not listed).
+- Animated WebP pictures (only still pictures are read), and pictures other than PNG, JPEG and WebP, as references or as assets (GIF, BMP, SVG, TIFF and AVIF are not listed).
 - Exporting a world map as SVG or PDF.
 - 3D models, audio and video.
 

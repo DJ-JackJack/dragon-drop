@@ -21,6 +21,7 @@ anyone else; reporters are credited in the release notes if they want to be. Thi
 - The release process: the GitHub workflow that builds and publishes the installer, and the files it publishes.
 - The access key: it must not end up in a file in the Documents folder (often synced to the cloud). The app keeps the files that hold it in its own app-data folder, and hands it to the terminal assistant in the environment.
 - Map files and imported files (images, zip files, asset packs) that could crash the app or run something they shouldn't.
+  WebP pictures are read by libwebp compiled to WebAssembly (`tools/webp-wasm/`): the module imports nothing, so it can't reach the disk or the network, and each picture is read in a fresh instance. A WebP that makes it do anything but fail or return wrong pixels is in scope; so is a libwebp version with a known fault (the build is pinned to 1.6.0, above the 1.3.2 fix for CVE-2023-4863).
 
 ## What is out of scope
 

@@ -812,7 +812,7 @@ export class Hub {
           const bytes = await this.store.readRef(op.id, msg.ref);
           if (!bytes) throw new Error(`No reference image named ${msg.ref}.`);
           const img = decodeImage(bytes);
-          if (!img) throw new Error("That image can't be read (use PNG or JPEG).");
+          if (!img) throw new Error("That image can't be read (use PNG, JPEG or a still WebP).");
           await this.saveCheckpoint("Before sketch import", `Before turning ${msg.ref} into terrain`);
           const doc = op.session.doc;
           const r = sketchToHeights(img, { W: doc.height.w, H: doc.height.h, seaLevel: doc.meta.seaLevel }, { ...msg.params, seed: msg.params.seed ?? Math.floor(Math.random() * 2 ** 31) });

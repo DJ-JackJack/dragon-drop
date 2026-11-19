@@ -527,7 +527,7 @@ export const TOOLS = [
       const bytes = await ctx.readRef(i.name);
       if (!bytes) return { ...text(`No reference named ${i.name}. Use list_references.`), isError: true };
       const img = decodeImage(bytes);
-      if (!img) return { ...text("This image format can't be decoded here (use PNG or JPEG)."), isError: true };
+      if (!img) return { ...text("This image format can't be decoded here (use PNG, JPEG or a still WebP)."), isError: true };
       if (ctx.saveCheckpoint) await ctx.saveCheckpoint("Before sketch import", `Before turning ${i.name} into terrain`).catch(() => {});
       const r = sketchToHeights(img, { W: doc.height.w, H: doc.height.h, seaLevel: doc.meta.seaLevel }, {
         enclosed: i.enclosed, mountainColour: i.mountain_colour === null ? null : i.mountain_colour as [number, number, number] | undefined,
@@ -791,7 +791,7 @@ export const TOOLS = [
       const bytes = await ctx.readRef(i.name);
       if (!bytes) return { ...text(`No reference named ${i.name}. Use list_references.`), isError: true };
       const ref = decodeImage(bytes);
-      if (!ref) return { ...text("This image format can't be decoded here (use PNG or JPEG)."), isError: true };
+      if (!ref) return { ...text("This image format can't be decoded here (use PNG, JPEG or a still WebP)."), isError: true };
       const half = Math.floor((i.max_size ?? 1400) / 2) - 6;
       const rr = i.ref_region ?? { x: 0, y: 0, w: ref.w, h: ref.h };
       const a = cropScale(ref, rr, half).img;
@@ -1521,7 +1521,7 @@ export const TOOLS = [
       const bytes = await ctx.readRef(i.name);
       if (!bytes) return { ...text(`No reference named ${i.name}. Use list_references.`), isError: true };
       const prep = prepareReference(bytes, i.max_size ?? 1568, i.region);
-      if (!prep) return { ...text("This image format can't be decoded here (use PNG or JPEG)."), isError: true };
+      if (!prep) return { ...text("This image format can't be decoded here (use PNG, JPEG or a still WebP)."), isError: true };
       return { content: [
         { type: "text", text: `${i.name}: ${prep.width}x${prep.height} px${i.region ? `, crop x${i.region.x} y${i.region.y} ${i.region.w}x${i.region.h}` : ""}, shown at ${prep.outW}x${prep.outH}.` },
         { type: "image", mediaType: "image/jpeg", data: toBase64(prep.jpeg) },

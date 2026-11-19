@@ -317,7 +317,7 @@ Draw them yourself with the **Roads** tool (O), or ask Claude (section 10, step 
 
 This **replaces the whole map**, so first click **Save checkpoint** (it also saves one called "Before sketch import" itself, and Undo works).
 
-**Quick check first (file types):** attach a **WebP** or **GIF** picture with the paperclip in the chat. It is left out and a note says only PNG and JPEG can be attached; a PNG or JPEG attaches as before.
+**Quick check first (file types):** attach a **GIF** picture with the paperclip in the chat. It is left out and a note says only PNG, JPEG and WebP can be attached; a PNG, JPEG or WebP picture attaches (and Claude can see it).
 
 1. Find the **References** area in the left panel (attach a rough sketch in the chat first if there is none: green land on blue sea, with red strokes for mountain ranges if you like). Click **Make terrain…** under it.
 2. **Expect** a dialog with a small coloured preview: blue sea, green land, and (if "Red strokes mark mountain ranges" is ticked) brown mountain strokes along any red lines. The preview should look like your sketch: its islands and their shapes. Move the "How different from the sea counts as land" slider and watch the preview change.
@@ -388,7 +388,7 @@ Checked by the developer on Linux against a running server, with the access key 
 3. Open a battlemap (or make one). In the right-hand panel open the **Assets** tab. Try **Objects**: search "table", "torch", "barrel". Thumbnails should appear within a second or two (large images take longer the first time). Click one, then click the map.
 4. Try **Floors**: click a texture. It appears among the floor swatches and the Brush is ready; paint a floor with it. **Tell me how big the pattern looks** (each texture repeats every pixel width / 256 squares by default; if that looks wrong for your packs I'll change the rule).
 5. Object sizes: place a table and a tree. **Tell me if they look too big or small** against the 5 ft grid.
-6. Put one more picture into a folder of your library, press **Rescan** in Settings, and search for it in the Assets tab. It should appear. A picture inside a folder named `Floors` should be listed under Floors, one in `Props` under Objects. WebP pictures should show in the panel but will not appear in exports or previews yet (known limit).
+6. Put one more picture into a folder of your library, press **Rescan** in Settings, and search for it in the Assets tab. It should appear. A picture inside a folder named `Floors` should be listed under Floors, one in `Props` under Objects. WebP pictures should show in the panel and appear in exports and previews like any other (an animated WebP is skipped).
 7. Ask Claude (in the Claude Code panel): *"Search my assets for a wooden table and four chairs, show me them, then furnish the tavern."* It should search, show a contact sheet, place objects, render and check.
 7. **⤓ Export** the map: objects and pack floors are in the picture.
 

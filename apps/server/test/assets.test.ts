@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PNG } from "pngjs";
 import { writePck } from "@mapmaker/core";
@@ -28,6 +29,9 @@ function pack(file: string, info: Record<string, unknown>, extra: { path: string
   writeFileSync(file, writePck([{ path: `packs/${id}.json`, data: json(info) }, ...extra]));
 }
 
+/** Real WebP pictures (made by the tools package's test fixtures, which also hold the PNG each one decodes to). */
+const fixture = (name: string) => new Uint8Array(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../packages/tools/test/fixtures/webp", name)));
+
 const table = png(512, 256, [150, 100, 50, 255]);
 const grass = png(1024, 1024, [60, 140, 60, 255]);
 
@@ -37,6 +41,8 @@ beforeAll(() => {
     { path: "textures/objects/chair_01.png", data: png(256, 256, [90, 60, 30, 255]) },
     { path: "textures/terrain/grass.png", data: grass },
     { path: "textures/walls/stone.png", data: png(64, 64, [100, 100, 100, 255]) },
+    { path: "textures/objects/vase.webp", data: fixture("lossy-alpha.webp") }, // (80 x 64, with transparency)
+    { path: "textures/terrain/moss.webp", data: fixture("lossy-q75-odd.webp") }, // (97 x 61)
     { path: "textures/objects/lamp.webp", data: new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]) },
     { path: "data/default.example_tags", data: json({ tags: { Seating: ["res://textures/objects/chair_01.png"], Tables: ["textures/objects/Oak_Table.png"] }, sets: {} }) },
     { path: "data/walls/stone.example_wall", data: json({ path: "res://textures/walls/stone.png" }) },
@@ -79,18 +85,18 @@ describe("asset library", () => {
     const rocks = lib.packList().find((p) => p.name === "Rocks" && !p.supersededBy)!;
     expect(rocks.version).toBe("3.59-005");
     expect(rocks.files).toBe(3); // info file + 2 rocks
-    expect(lib.packList().find((p) => p.name === "Furniture Pack")!.categories).toMatchObject({ objects: 3, terrain: 1, walls: 1, data: 3 });
+    expect(lib.packList().find((p) => p.name === "Furniture Pack")!.categories).toMatchObject({ objects: 4, terrain: 2, walls: 1, data: 3 });
   });
 
   it("searches by name, tag, category and pack, with pages", async () => {
     expect(lib.list({ q: "oak" }).items.map((i) => i.name)).toEqual(["Oak Table"]);
     expect(lib.list({ q: "seating" }).items.map((i) => i.name)).toEqual(["chair 01"]); // by tag
-    expect(lib.list({ cat: "terrain" }).items.map((i) => i.id)).toEqual(["furniture-pack:textures/terrain/grass.png"]);
+    expect(lib.list({ cat: "terrain" }).items.map((i) => i.id)).toEqual(["furniture-pack:textures/terrain/grass.png", "furniture-pack:textures/terrain/moss.webp"]);
     expect(lib.list({ q: "rock" }).total).toBe(2); // the older copy's rock isn't listed twice
     expect(lib.list({ q: "secret" }).total).toBe(0); // restricted
     expect(lib.list({ cat: "objects", limit: 2 }).items).toHaveLength(2);
     expect(lib.list({ cat: "objects", limit: 2, offset: 2 }).items.length).toBeGreaterThan(0);
-    expect(lib.list({ pack: "furniture-pack", cat: "objects" }).total).toBe(3);
+    expect(lib.list({ pack: "furniture-pack", cat: "objects" }).total).toBe(4); // table, chair, a lamp that is only a stub, and a real WebP vase
     const sized = await lib.withSizes(lib.list({ q: "oak" }).items);
     expect(sized[0]).toMatchObject({ w: 512, h: 256, pack: "furniture-pack", cat: "objects" });
   });
@@ -111,8 +117,17 @@ describe("asset library", () => {
     expect((await lib.tile("furniture-pack:textures/terrain/grass.png", 6))!.squares).toBe(6);
     const spr = await lib.sprite("furniture-pack:textures/objects/Oak_Table.png", 0.25);
     expect(spr).toMatchObject({ w: 128, h: 64, origW: 512, origH: 256 });
-    expect(await lib.decode("furniture-pack:textures/objects/lamp.webp")).toBeNull(); // WebP can't be decoded here yet
-    expect((await lib.thumbnail("furniture-pack:textures/objects/lamp.webp"))?.mime).toBe("image/webp"); // passed through
+    // a real WebP is decoded like a PNG (with its transparency); a "WebP" that is only twelve bytes can't be, and is passed through as it is
+    const vase = await lib.decode("furniture-pack:textures/objects/vase.webp");
+    expect(vase).toMatchObject({ w: 80, h: 64 });
+    expect(vase!.data.some((_, i) => i % 4 === 3 && vase!.data[i] === 0) && vase!.data.some((_, i) => i % 4 === 3 && vase!.data[i] === 255)).toBe(true);
+    expect(await lib.sprite("furniture-pack:textures/objects/vase.webp", 0.5)).toMatchObject({ w: 40, h: 32, origW: 80, origH: 64 });
+    expect(await lib.tile("furniture-pack:textures/terrain/moss.webp")).toMatchObject({ size: 512 });
+    const vaseThumb = await lib.thumbnail("furniture-pack:textures/objects/vase.webp", 40);
+    expect(vaseThumb).toMatchObject({ mime: "image/png", orig: { w: 80, h: 64 } }); // (a picture the browser gets small, as a PNG)
+    expect([PNG.sync.read(Buffer.from(vaseThumb!.bytes)).width, PNG.sync.read(Buffer.from(vaseThumb!.bytes)).height]).toEqual([40, 32]);
+    expect(await lib.decode("furniture-pack:textures/objects/lamp.webp")).toBeNull();
+    expect((await lib.thumbnail("furniture-pack:textures/objects/lamp.webp"))?.mime).toBe("image/webp");
   });
 
   it("uses its cache, and notices a pack that changed", async () => {
@@ -236,6 +251,26 @@ describe("battlemaps with pack assets", () => {
     expect([out.width, out.height]).toEqual([480, 400]);
     const o = (10 * 40 - 12 + (8 * 40 - 12) * out.width) * 4;
     expect([out.data[o], out.data[o + 1], out.data[o + 2]]).toEqual([60, 140, 60]);
+  });
+
+  it("draws WebP pictures too: a WebP floor texture and a WebP object are in the render and nothing is counted as missing", async () => {
+    const vase = data(await call("search_assets", { query: "vase" })).items[0];
+    expect(vase).toMatchObject({ name: "vase", px: [80, 64] });
+    const moss = data(await call("search_assets", { query: "moss" })).items[0];
+    expect(data(await call("add_floor_texture", { asset: moss.id, name: "Moss" })).material).toBe("Moss");
+    await call("paint_floor", { shape: { type: "rect", x: 1, y: 1, w: 10, h: 8 }, material: "Moss" });
+    const before = (await hub.renderMap()).img;
+    await call("add_props", { props: [{ asset: vase.id, x: 6, y: 5, scale: 4 }] });
+    const doc = hub.session.doc;
+    expect((await hub.battleAssets(doc)).missing).toBe(0); // (before the decoder, every WebP was "missing" and left out)
+    const after = (await hub.renderMap()).img;
+    let changed = 0;
+    for (let i = 0; i < before.data.length; i += 4) if (before.data[i] !== after.data[i] || before.data[i + 1] !== after.data[i + 1] || before.data[i + 2] !== after.data[i + 2]) changed++;
+    expect(changed).toBeGreaterThan(300); // the vase is drawn: an 80 x 64 picture at 4 times its size... a lot of pixels differ
+    const floor = (await hub.renderMap()).img;
+    const at = (x: number, y: number) => Array.from(floor.data.subarray((y * floor.w + x) * 4, (y * floor.w + x) * 4 + 3));
+    expect(at(10 * 40 - 12, 8 * 40 - 12)).not.toEqual([60, 140, 60]); // the Moss floor is drawn from the WebP, not the Meadow green or a blank
+    await call("remove_props", { ids: data(await call("list_battle", {})).objects.map((o: { id: string }) => o.id) });
   });
 
   it("battlemap tools refuse on a world map and asset search works without a folder", async () => {
