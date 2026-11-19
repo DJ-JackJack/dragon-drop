@@ -67,7 +67,9 @@ describe("the Foundry scene that was tried in Foundry 14.367", () => {
 
   it("the recorded facts still hold (node --test on the results' own test file)", () => {
     expect(existsSync(path.join(results, "observed.test.mjs"))).toBe(true);
-    const out = execFileSync(process.execPath, ["--test", path.join(results, "observed.test.mjs")], { encoding: "utf8" });
-    expect(out).toMatch(/# fail 0/);
+    // (execFileSync throws if the run fails; the reporter is named so the summary reads the same on every Node version)
+    const out = execFileSync(process.execPath, ["--test", "--test-reporter=tap", path.join(results, "observed.test.mjs")], { encoding: "utf8" });
+    expect(out).toMatch(/^# fail 0$/m);
+    expect(out).toMatch(/^# pass [1-9]\d*$/m);
   });
 });
