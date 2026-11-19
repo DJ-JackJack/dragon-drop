@@ -20,6 +20,13 @@ export function encodePng(img: RGBAImage): Uint8Array {
   return new Uint8Array(PNG.sync.write(png, { colorType: 2, inputColorType: 6, inputHasAlpha: true, deflateLevel: 6 }));
 }
 
+/** PNG with an alpha channel (encodePng writes RGB: it has no transparency). For pictures that are partly see-through, such as a roof laid over a battlemap. */
+export function encodePngRgba(img: RGBAImage): Uint8Array {
+  const png = new PNG({ width: img.w, height: img.h });
+  png.data = Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength);
+  return new Uint8Array(PNG.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, deflateLevel: 6 }));
+}
+
 export function sniffMediaType(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | null {
   if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";

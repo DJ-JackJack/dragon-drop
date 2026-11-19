@@ -38,6 +38,7 @@ export * from "./battleTerrain.ts";
 export * from "./traceWalls.ts";
 export * from "./lighting.ts";
 export * from "./battleLook.ts";
+export * from "./battleRoof.ts";
 export * from "./battleNotes.ts";
 export * from "./straits.ts";
 export * from "./assist.ts";

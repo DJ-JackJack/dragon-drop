@@ -5,7 +5,7 @@
 import { Worker } from "node:worker_threads";
 import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
-  type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderPainted, resolveRiverSources,
+  type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofs, renderPainted, resolveRiverSources,
 } from "@mapmaker/core";
 import { NoiseStore } from "./noiseStore.ts";
 
@@ -31,6 +31,12 @@ export interface BattleRenderOpts {
   notes?: boolean;
   tiles?: Record<number, TileData>;
   sprites?: Record<string, SpriteData>;
+  /** Draw the roofs over everything at this opacity (previews). */
+  roofs?: number;
+  /** Return only the roofs, as a see-through picture (a level's foreground in a Foundry scene). */
+  roofOnly?: boolean;
+  /** The decoded pictures of asset-pack roofs, by asset id. */
+  roofTiles?: Record<string, TileData>;
 }
 
 // ------------------------------------------------------------------ shared job runner
@@ -87,9 +93,11 @@ export class JobRunner {
     }
     if (job.op === "battle") {
       const bdoc: MapDoc = { meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features };
-      const { tiles, sprites } = job;
+      const { tiles, sprites, roofTiles } = job;
+      const tileFor = roofTiles ? (a: string) => roofTiles[a] ?? null : undefined;
+      if (job.roofOnly) return renderBattleRoofs(bdoc, tileFor)?.data ?? new Uint8ClampedArray(0);
       return renderBattle(bdoc, {
-        overlay: job.overlay, lights: job.lights, notes: job.notes,
+        overlay: job.overlay, lights: job.lights, notes: job.notes, roofs: job.roofs, roofTiles: tileFor,
         ...(tiles && { tiles: (id: number) => tiles[id] ?? null }), ...(sprites && { sprites: (id: string) => sprites[id] ?? null }),
       }).data;
     }

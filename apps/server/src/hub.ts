@@ -11,7 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
 } from "@mapmaker/core";
-import { type ToolContext, decodeImage, encodePng } from "@mapmaker/tools";
+import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
@@ -260,13 +260,21 @@ export class Hub {
   }
 
   /** Pack textures and object images the open battlemap needs, decoded for the render worker, and how many couldn't be had. */
-  async battleAssets(doc: MapDoc): Promise<{ opts: { tiles?: Record<number, import("@mapmaker/core").TileData>; sprites?: Record<string, import("@mapmaker/core").SpriteData> }; missing: number }> {
+  async battleAssets(doc: MapDoc): Promise<{ opts: { tiles?: Record<number, import("@mapmaker/core").TileData>; sprites?: Record<string, import("@mapmaker/core").SpriteData>; roofTiles?: Record<string, import("@mapmaker/core").TileData> }; missing: number }> {
     const lib = this.assets;
     const spec = battleSpec(doc);
     const palette = spec.palette ?? [];
     const props = doc.features?.props ?? [];
-    if (!lib || (!palette.length && !props.length)) return { opts: {}, missing: palette.length + props.length };
+    const pictured = (doc.features?.roofs ?? []).filter((r) => r.asset);
+    if (!lib || (!palette.length && !props.length && !pictured.length)) return { opts: {}, missing: palette.length + props.length + pictured.length };
     let missing = 0;
+    // roofs made of a picture from an asset pack: the pictures, by asset id
+    const roofTiles: Record<string, import("@mapmaker/core").TileData> = {};
+    for (const r of pictured) {
+      if (roofTiles[r.asset!]) continue;
+      const t = await lib.tile(r.asset!, r.tile ?? 2);
+      if (t) roofTiles[r.asset!] = t; else missing++;
+    }
     const tiles: Record<number, import("@mapmaker/core").TileData> = {};
     const used = new Set<number>();
     const data = doc.height.data;
@@ -283,7 +291,7 @@ export class Hub {
       const s = await lib.sprite(asset, (spec.pxPerSquare * sc) / PROP_PX_PER_SQUARE);
       if (s) sprites[asset] = s; else missing++;
     }
-    return { opts: { tiles, sprites }, missing };
+    return { opts: { tiles, sprites, ...(pictured.length && { roofTiles }) }, missing };
   }
 
   // ---------------------------------------------------------------- battlemap levels
@@ -464,7 +472,16 @@ export class Hub {
     for (const [i, { level, doc: d }] of docs.entries()) {
       const image = many ? `${base}-${i + 1}-${fileSlug(level.name)}.png` : `${base}.png`;
       files.push({ name: image, data: (await this.renderLevelArt(d)).png });
-      levels.push({ doc: d, name: level.name, bottom: level.bottom, top: level.top, image: `maps/${image}` });
+      // the level's roofs, as a see-through picture that becomes its foreground
+      let roof: string | undefined;
+      if (d.features?.roofs?.length) {
+        const { w, h } = battleImageSize(battleSpec(d));
+        const data = await this.compute.battle(d, { roofOnly: true, ...(await this.battleAssets(d)).opts });
+        roof = many ? `${base}-${i + 1}-${fileSlug(level.name)}-roof.png` : `${base}-roof.png`;
+        files.push({ name: roof, data: encodePngRgba({ w, h, data }) });
+        roof = `maps/${roof}`;
+      }
+      levels.push({ doc: d, name: level.name, bottom: level.bottom, top: level.top, image: `maps/${image}`, ...(roof && { roof }) });
     }
     // (the scene opens on the level being worked on)
     const first = levels.findIndex((l) => l.name === active.name);
@@ -622,14 +639,14 @@ export class Hub {
   }
 
   /** Render the whole open map in its style (fresh derived layers), for previews. */
-  async renderMap(): Promise<{ img: RGBAImage; rivers: RiverPath[] }> {
+  async renderMap(o: { roofs?: boolean } = {}): Promise<{ img: RGBAImage; rivers: RiverPath[] }> {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     if (op.session.inTransaction) op.session.commit();
     if (isBattle(op.session.doc)) {
       const doc = op.session.doc;
       const { w, h } = battleImageSize(battleSpec(doc));
-      return { img: { w, h, data: await this.compute.battle(doc, { notes: true, ...(await this.battleAssets(doc)).opts }) }, rivers: [] };
+      return { img: { w, h, data: await this.compute.battle(doc, { notes: true, ...(o.roofs && { roofs: 0.8 }), ...(await this.battleAssets(doc)).opts }) }, rivers: [] };
     }
     const d = await this.refreshDerived(op, true);
     if (!d) throw new Error("The map's climate and rivers couldn't be computed.");
@@ -983,7 +1000,7 @@ export class Hub {
       listRefs: () => self.store.listRefs(id()),
       readRef: (name) => self.store.readRef(id(), name),
       savePreview: async (jpeg) => ({ url: await self.store.savePreview(id(), jpeg) }),
-      render: () => self.renderMap(),
+      render: (o) => self.renderMap(o),
       listCheckpoints: () => self.store.listCheckpoints(id()),
       saveCheckpoint: (name, note) => self.saveCheckpoint(name, note),
       selection: () => self.selectionState,

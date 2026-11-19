@@ -41,6 +41,9 @@ function vnoise(x: number, y: number): number {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
+/** The small helpers the other looks (roofs) share. */
+export const lookKit = { clamp, smooth, hash2, vnoise, over: (d: Uint8ClampedArray, o: number, r: number, g: number, b: number, a: number) => over(d, o, r, g, b, a) };
+
 /** Composite one straight-alpha pixel over another. */
 function over(d: Uint8ClampedArray, o: number, r: number, g: number, b: number, a: number) {
   if (a <= 0) return;

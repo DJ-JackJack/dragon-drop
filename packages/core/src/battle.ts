@@ -11,6 +11,7 @@ import { type PaletteEntry, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "./a
 import { type Features, type MapAmbientZone, type MapConnector, type MapLight, type MapProp, type MapWall, connectorTo, emptyFeatures, wallSegments } from "./features.ts";
 import { lightVisibility, visibleDistance } from "./lighting.ts";
 import { boxBlur, compositeOver, renderWallLayer } from "./battleLook.ts";
+import { type RoofTileSource, renderRoofLayer } from "./battleRoof.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
 import { type FoundryStairInput, type FoundrySurfaceInput, foundryScene } from "./foundryScene.ts";
 import { type Rect, type Shape, clipRect, expandRect, shapeBounds, signedDistance } from "./geom.ts";
@@ -749,9 +750,9 @@ export function footprint(spr: SpriteData & { origW?: number; origH?: number }):
   return { w: spr.origW ?? spr.w, h: spr.origH ?? spr.h };
 }
 
-/** The whole battlemap as an image: floors, objects below the walls, walls and doors, objects above, then lights. */
+/** The whole battlemap as an image: floors, objects below the walls, walls and doors, objects above, then lights; with `roofs` (an opacity, 0 to 1) the level's roofs over everything. */
 export function renderBattle(
-  doc: MapDoc, opts: { overlay?: boolean; lights?: boolean; notes?: boolean; tiles?: TileSource; sprites?: SpriteSource } = {},
+  doc: MapDoc, opts: { overlay?: boolean; lights?: boolean; notes?: boolean; tiles?: TileSource; sprites?: SpriteSource; roofs?: number; roofTiles?: RoofTileSource } = {},
 ): { w: number; h: number; data: Uint8ClampedArray } {
   const spec = battleSpec(doc);
   const { w, h } = battleImageSize(spec);
@@ -766,7 +767,20 @@ export function renderBattle(
   } else {
     drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
   }
+  // the roofs over everything, at the opacity asked for (previews only: they would hide the rooms in an ordinary picture)
+  if (opts.roofs && opts.roofs > 0 && doc.features?.roofs?.length) {
+    const layer = renderRoofLayer(spec, doc.features.roofs, { tileFor: opts.roofTiles });
+    const k = Math.min(1, opts.roofs);
+    for (let o = 3; o < layer.data.length; o += 4) layer.data[o] = layer.data[o] * k;
+    compositeOver(img, layer);
+  }
   return img;
+}
+
+/** The roofs of a battlemap as a picture the size of the map, transparent where there is none (RGBA, straight alpha): what becomes a Foundry level's foreground. Null when there are no roofs. */
+export function renderBattleRoofs(doc: MapDoc, roofTiles?: RoofTileSource): { w: number; h: number; data: Uint8ClampedArray } | null {
+  if (!doc.features?.roofs?.length) return null;
+  return renderRoofLayer(battleSpec(doc), doc.features.roofs, { tileFor: roofTiles });
 }
 
 // ---------------------------------------------------------------- exports
@@ -832,6 +846,8 @@ export interface FoundryLevelDoc {
   bottom: number;
   top: number;
   image: string;
+  /** Where the picture of this level's roofs will be (becomes the level's foreground), if it has roofs. */
+  roof?: string;
 }
 
 /**
@@ -922,7 +938,7 @@ export function toFoundryLevelsScene(levels: FoundryLevelDoc[], sceneName?: stri
   const { stairs, surfaces } = foundryConnectors(levels);
   return foundryScene({
     name: sceneName ?? first.meta.name, width: w, height: h, pxPerSquare: spec.pxPerSquare, feetPerSquare: spec.feetPerSquare, gridType: spec.gridType, ambient: ambientOf(spec),
-    levels: levels.map((l) => ({ name: l.name, bottom: l.bottom, top: l.top, image: l.image, walls: l.doc.features?.walls ?? [], lights: l.doc.features?.lights ?? [] })),
+    levels: levels.map((l) => ({ name: l.name, bottom: l.bottom, top: l.top, image: l.image, ...(l.roof && { foreground: l.roof }), walls: l.doc.features?.walls ?? [], lights: l.doc.features?.lights ?? [] })),
     stairs, surfaces,
   });
 }

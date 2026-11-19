@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { type MapDoc, memoryAccess } from "@mapmaker/core";
-import { runTool } from "@mapmaker/tools";
+import { decodeImage, runTool } from "@mapmaker/tools";
 import { Hub } from "../src/hub.ts";
 import { ProjectStore } from "../src/store.ts";
 import { readZipFile, readZipIndex } from "../src/zip.ts";
@@ -275,6 +275,39 @@ describe("exporting a battlemap with levels", () => {
     hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "s3", kind: "ladder", name: "Ladder to the roof", x: 5, y: 2, w: 1, h: 1, to: "up" }] } }, "user");
     const again = await unzip((await hub.battleExport("foundry")).bytes);
     expect(new TextDecoder().decode(again.get("README.txt")!)).toMatch(/Not exported: Ladder to the roof on Upper floor leads up, but there is no level above it\./);
+    await hub.close();
+  });
+
+  it("roofs become a level's foreground: a see-through picture next to its own, and the ordinary pictures never show them", async () => {
+    const { hub } = fresh();
+    await tower(hub); // a room at squares 1..7 x 1..6, 70 px a square
+    await hub.addLevel("above");
+    hub.session.execute({ op: "features", patch: { upsertRoofs: [{ id: "f1", style: "slate", points: [[1, 1], [7, 1], [7, 6], [1, 6]] }] } }, "user");
+    const files = await unzip((await hub.battleExport("foundry")).bytes);
+    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-1-ground-floor.png", "tower-2-upper-floor-roof.png", "tower-2-upper-floor.png", "tower-scene.json"]);
+    const scene = JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!));
+    const byName = Object.fromEntries(scene.levels.map((l: { name: string; foreground: { src: string | null } }) => [l.name, l.foreground.src]));
+    expect(byName).toEqual({ "Ground floor": null, "Upper floor": "maps/tower-2-upper-floor-roof.png" });
+    // the roof picture has an alpha channel: opaque on the roof, transparent beside it
+    const roof = decodeImage(files.get("tower-2-upper-floor-roof.png")!)!;
+    const px = (x: number, y: number) => roof.data[(Math.floor(y * 70) * roof.w + Math.floor(x * 70)) * 4 + 3];
+    expect(roof.w).toBe(10 * 70);
+    expect(px(4, 3.5)).toBe(255);
+    expect(px(9.5, 7.5)).toBe(0);
+    // the level's own picture and the single-file exports have no roof in them
+    expect((await hub.battleExport("png")).bytes.length).toBeGreaterThan(1000);
+    const upper = decodeImage(files.get("tower-2-upper-floor.png")!)!;
+    expect(upper.data[(Math.floor(3.5 * 70) * upper.w + Math.floor(4 * 70)) * 4 + 3]).toBe(255); // (an opaque picture, of floor and void: not the roof)
+    await hub.close();
+  });
+
+  it("one level: its roof is tower-roof.png", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    hub.session.execute({ op: "features", patch: { upsertRoofs: [{ id: "f1", style: "tile", points: [[1, 1], [7, 1], [7, 6], [1, 6]] }] } }, "user");
+    const files = await unzip((await hub.battleExport("foundry")).bytes);
+    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-roof.png", "tower-scene.json", "tower.png"]);
+    expect(JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!)).levels[0].foreground.src).toBe("maps/tower-roof.png");
     await hub.close();
   });
 

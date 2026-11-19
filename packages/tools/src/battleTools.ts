@@ -485,15 +485,16 @@ export const BATTLE_TOOLS = [
     name: "render_battlemap",
     description:
       "Render the battlemap (or a region of it, in squares) to an image so you can see it, with a labelled square grid (numbers are grid squares). " +
-      "Use after edits, and a region with a larger max_size to inspect detail.",
+      "Use after edits, and a region with a larger max_size to inspect detail. Roofs are left out unless you ask for them (roofs: true draws them nearly solid over the rooms): you want to see inside.",
     schema: z.object({
+      roofs: z.boolean().optional().describe("Draw the level's roofs (default false)"),
       region: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional().describe("Crop in squares; omit for the whole map"),
       max_size: z.number().int().min(256).max(1568).optional().describe("Longest side of the image in px (default 1200)"),
       grid: z.boolean().optional().describe("Draw the labelled grid (default true)"),
     }),
     async run(ctx, i) {
       const doc = ctx.session().doc, sp = battleSpec(doc);
-      const full: RGBAImage = ctx.render ? (await ctx.render()).img : renderBattle(doc, { notes: true });
+      const full: RGBAImage = ctx.render ? (await ctx.render({ roofs: !!i.roofs })).img : renderBattle(doc, { notes: true, ...(i.roofs && { roofs: 0.8 }) });
       const px = sp.pxPerSquare;
       const region: Rect = i.region ? { x: Math.floor(i.region.x * px), y: Math.floor(i.region.y * px), w: Math.ceil(i.region.w * px), h: Math.ceil(i.region.h * px) } : { x: 0, y: 0, w: full.w, h: full.h };
       const { img, scale } = cropScale(full, region, i.max_size ?? 1200);

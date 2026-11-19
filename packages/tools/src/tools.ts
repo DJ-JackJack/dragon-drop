@@ -64,7 +64,7 @@ export interface ToolContext {
   /** Optional: store a preview so the editor's chat can show it. */
   savePreview?(jpeg: Uint8Array): Promise<ChatImage>;
   /** Optional: render the whole map in the project's style (default: plain relief, no rivers). */
-  render?(): Promise<{ img: RGBAImage; rivers: RiverPath[] }>;
+  render?(o?: { roofs?: boolean }): Promise<{ img: RGBAImage; rivers: RiverPath[] }>;
   listCheckpoints?(): Promise<CheckpointInfo[]>;
   saveCheckpoint?(name: string, note?: string): Promise<CheckpointInfo>;
   restoreCheckpoint?(name: string): Promise<{ seq: number; label: string }>;

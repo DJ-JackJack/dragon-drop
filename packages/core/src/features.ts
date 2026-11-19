@@ -174,6 +174,31 @@ export interface MapProp {
   opacity?: number;
 }
 
+export type RoofStyle = "slate" | "tile" | "thatch" | "shingle";
+export const ROOF_STYLES: readonly RoofStyle[] = ["slate", "tile", "thatch", "shingle"];
+
+/**
+ * A roof on a battlemap: an area (squares) on the level it covers, drawn over everything on that level when roofs are shown. In a Foundry scene the roofs of a level are
+ * drawn into one transparent picture that becomes the level's foreground (it hides the inside from a distance, and Foundry fades it as tokens go under it: docs/FOUNDRY.md).
+ * They are never part of the ordinary picture or the Universal VTT file, or they would hide the rooms.
+ */
+export interface MapRoof {
+  id: string;
+  name?: string;
+  /** The outline, closed, in squares: a rectangle's four corners, or any polygon. */
+  points: [number, number][];
+  /** The look Dragon Drop draws. */
+  style: RoofStyle;
+  /** Or a picture from an asset pack ("<pack>:<path>"), tiled across the roof; then `style` only matters if the picture is missing. */
+  asset?: string;
+  /** How many squares one repeat of the asset picture covers (default 2). */
+  tile?: number;
+  /** A colour that replaces the style's own (or tints the asset), "#rrggbb". */
+  colour?: string;
+  /** No ridge and slopes: a flat roof (the default is a pitched one, its ridge along the longer way). */
+  flat?: boolean;
+}
+
 export type ConnectorKind = "stairs" | "ladder" | "hole";
 export const CONNECTOR_KINDS: readonly ConnectorKind[] = ["stairs", "ladder", "hole"];
 
@@ -247,6 +272,8 @@ export interface Features {
   zones?: MapAmbientZone[];
   /** Battlemaps: stairs, ladders and holes between levels. */
   connectors?: MapConnector[];
+  /** Battlemaps: roofs over this level. */
+  roofs?: MapRoof[];
   /** Roads, trails and borders (optional: older projects have none). */
   lines?: MapLine[];
   /** Climate regions (optional: older projects have none). */
@@ -278,6 +305,8 @@ export interface FeaturesPatch {
   removeZones?: string[];
   upsertConnectors?: MapConnector[];
   removeConnectors?: string[];
+  upsertRoofs?: MapRoof[];
+  removeRoofs?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -351,6 +380,12 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertConnectors ?? []) connectors.set(x.id, x);
     out.connectors = [...connectors.values()];
   }
+  if (f.roofs || p.upsertRoofs || p.removeRoofs) {
+    const roofs = new Map((f.roofs ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeRoofs ?? []) roofs.delete(id);
+    for (const x of p.upsertRoofs ?? []) roofs.set(x.id, x);
+    out.roofs = [...roofs.values()];
+  }
   return out;
 }
 
@@ -378,6 +413,8 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.upsertZones?.length) parts.push(p.upsertZones.length === 1 ? `light zone${p.upsertZones[0].name ? ` ${p.upsertZones[0].name}` : ""}` : `${p.upsertZones.length} light zones`);
   if (p.removeZones?.length) parts.push(`remove ${p.removeZones.length} light zone(s)`);
   if (p.upsertConnectors?.length) parts.push(p.upsertConnectors.length === 1 ? (p.upsertConnectors[0].name ?? p.upsertConnectors[0].kind) : `${p.upsertConnectors.length} stairs, ladders and holes`);
+  if (p.upsertRoofs?.length) parts.push(p.upsertRoofs.length === 1 ? (p.upsertRoofs[0].name ?? "roof") : `${p.upsertRoofs.length} roofs`);
+  if (p.removeRoofs?.length) parts.push(`remove ${p.removeRoofs.length} roof(s)`);
   if (p.removeConnectors?.length) parts.push(`remove ${p.removeConnectors.length} stair(s), ladder(s) or hole(s)`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
@@ -445,6 +482,6 @@ export function labelText(l: MapLabel): string {
 }
 
 let counter = 0;
-export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c"): string {
+export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f"): string {
   return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
