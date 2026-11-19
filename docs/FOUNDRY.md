@@ -158,9 +158,16 @@ How levels live inside one battlemap, chosen to touch as little of the working e
   Asset pictures are loaded for the render worker with the floor textures (`Hub.battleAssets`).
 - **Never in the ordinary picture:** roofs are left out of the level's picture, the `.png` and `.dd2vtt` exports, and previews unless asked (`render_battlemap` `roofs: true`; the editor's Roofs switch: faint, solid or hidden).
 - **The Foundry scene:** a level with roofs gets a second PNG, `<map>-<n>-<level>-roof.png` (an RGBA picture, transparent outside the roofs), written as that level's `foreground`.
-- **Not known yet:** how Foundry v14 treats a foreground picture (whether it fades when a token goes under it, and whose elevation counts). A search of the v14 release notes suggests a token under a foreground at a higher
-  elevation gets a "surface" occlusion that fades it, but nothing official says so. Test RT6 (a scene with foregrounds on two levels, tokens placed under them at several elevations) was sent to the Foundry session; its
-  findings go here and decide what the export README promises.
+- **What Foundry does with a foreground (test RT6, 14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-3.md)):**
+  - It imports as written; Foundry adds only `tint` and `alphaThreshold` to each foreground, and the level sheet offers only **Texture** and **Tint** for it: no fade or occlusion setting.
+  - A viewer sees **only the foreground of the level being viewed** (a level sees others only if listed in its `visibility.levels`, which we leave empty). The level's background is drawn at the level's **bottom**
+    elevation and its foreground at its **top**.
+  - It is drawn **above the tokens**, tokens under it are hidden, and **it does not fade by itself**: in seven placements (same level, a lower level, elevations 0 and 5, inside and outside the picture, selected and not)
+    nothing faded, though both pictures have occlusion mode SURFACE.
+  - Foundry's own hint for the Define Surface behaviour says what does fade it: when a controlled or detected token is **below a surface** (a Define Surface region with Occlusion on), Surface-mode tiles
+    and the background and foreground textures **at or above that surface** fade. So a roof that fades needs a Define Surface region over it (top surface at or below the foreground's elevation, i.e. the level's top).
+  - **Not yet tried:** a scene with such a region over a foreground; and since a level has one foreground picture, whether a token entering one roof fades **every** roof of that level, which would make Foundry
+    Tiles (one per roof, each its own occlusion) the better export. Test RT7 asks both.
 
 ## Plan
 

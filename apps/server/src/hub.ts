@@ -491,11 +491,16 @@ export class Hub {
     // stairs, ladders and holes: what they became, and any that lead to a level that isn't there
     const nConn = docs.reduce((n, d) => n + (d.doc.features?.connectors?.length ?? 0), 0);
     const problems = foundryConnectorProblems(levels);
-    const connectorNote = nConn
+    const hasRoofs = files.some((f) => f.name.endsWith("-roof.png"));
+    const roofNote = hasRoofs
+      ? `The *-roof.png pictures are roofs: each is its level's Foreground. Foundry draws a foreground above the tokens and does NOT fade it by itself (tried in Foundry 14.367), so players under a roof will be hidden by it\r\n` +
+        `until you add a Define Surface region over it or hide it (Scene Configuration > Levels). Dragon Drop doesn't write that region yet.\r\n\r\n`
+      : "";
+    const connectorNote = roofNote + (nConn
       ? `Stairs and ladders are Regions with the Change Level behaviour (walk onto one and Foundry asks whether to move to the other level). A level with a hole in its floor has a floor Region\r\n` +
         `(Define Surface) with the hole cut out of it. How a hole behaves in play hasn't been looked at in Foundry yet.\r\n` +
         (problems.length ? `Not exported: ${problems.join(" ")}\r\n` : "") + `\r\n`
-      : "";
+      : "");
     const readme =
       `Foundry VTT scene for "${doc.meta.name}"\r\n\r\n` +
       `1. Upload ${many ? "the PNG pictures (" + pictures + ")" : files[0].name} into your Foundry data folder, in a folder called "maps", with the File Browser.\r\n` +
