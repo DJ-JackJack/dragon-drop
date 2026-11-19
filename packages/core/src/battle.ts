@@ -8,11 +8,11 @@
 import type { MapDoc } from "./doc.ts";
 import { HeightField } from "./doc.ts";
 import { type PaletteEntry, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "./assets.ts";
-import { type Features, type MapAmbientZone, type MapLight, type MapProp, type MapWall, emptyFeatures, wallSegments } from "./features.ts";
+import { type Features, type MapAmbientZone, type MapConnector, type MapLight, type MapProp, type MapWall, connectorTo, emptyFeatures, wallSegments } from "./features.ts";
 import { lightVisibility, visibleDistance } from "./lighting.ts";
 import { boxBlur, compositeOver, renderWallLayer } from "./battleLook.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
-import { foundryScene } from "./foundryScene.ts";
+import { type FoundryStairInput, type FoundrySurfaceInput, foundryScene } from "./foundryScene.ts";
 import { type Rect, type Shape, clipRect, expandRect, shapeBounds, signedDistance } from "./geom.ts";
 
 export type BattleGridType = "square" | "hex" | "none";
@@ -835,18 +835,95 @@ export interface FoundryLevelDoc {
 }
 
 /**
+ * The floor of a battlemap as rectangles in grid squares (cells that have any floor, merged along rows and then down columns). At most about `maxRects` rectangles:
+ * a floor with more is read a square at a time instead of a cell at a time (a square counts as floor when half or more of it is), so a cave doesn't make thousands.
+ */
+export function floorRects(doc: MapDoc, maxRects = 400): { x: number; y: number; w: number; h: number }[] {
+  const spec = battleSpec(doc);
+  const { w: CW, h: CH, data } = doc.height;
+  const build = (step: number): { x: number; y: number; w: number; h: number }[] => {
+    const gw = Math.ceil(CW / step), gh = Math.ceil(CH / step);
+    const solid = (gx: number, gy: number) => {
+      let n = 0, total = 0;
+      for (let y = gy * step; y < Math.min(CH, (gy + 1) * step); y++) for (let x = gx * step; x < Math.min(CW, (gx + 1) * step); x++) { total++; if ((data[y * CW + x] | 0) > 0) n++; }
+      return step === 1 ? n > 0 : n * 2 >= total;
+    };
+    const out: { x: number; y: number; w: number; h: number }[] = [];
+    let open = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
+    for (let gy = 0; gy <= gh; gy++) {
+      const next = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
+      let gx = 0;
+      while (gy < gh && gx < gw) {
+        if (!solid(gx, gy)) { gx++; continue; }
+        const x0 = gx;
+        while (gx < gw && solid(gx, gy)) gx++;
+        const key = `${x0}-${gx}`, prev = open.get(key);
+        if (prev) { prev.y1 = gy + 1; next.set(key, prev); open.delete(key); } else next.set(key, { x0, x1: gx, y0: gy, y1: gy + 1 });
+      }
+      for (const r of open.values()) out.push({ x: (r.x0 * step) / spec.sub, y: (r.y0 * step) / spec.sub, w: ((r.x1 - r.x0) * step) / spec.sub, h: ((r.y1 - r.y0) * step) / spec.sub });
+      open = next;
+    }
+    return out;
+  };
+  let rects = build(1);
+  if (rects.length > maxRects) rects = build(Math.max(1, spec.sub));
+  return rects;
+}
+
+/** Where a connector leads, by elevation: the index of the level just above or below level `i` (in `levels`), or undefined when there is none. */
+function connectorTarget(levels: FoundryLevelDoc[], i: number, to: "up" | "down"): number | undefined {
+  const order = levels.map((_, k) => k).sort((a, b) => levels[a].bottom - levels[b].bottom || levels[a].top - levels[b].top);
+  return order[order.indexOf(i) + (to === "up" ? 1 : -1)];
+}
+
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** The stairs, ladders and holes of the levels, as what a Foundry scene needs (and which of them lead nowhere, so the export can say so). */
+function foundryConnectors(levels: FoundryLevelDoc[]) {
+  const stairs: FoundryStairInput[] = [];
+  const surfaces: FoundrySurfaceInput[] = [];
+  const problems: string[] = [];
+  levels.forEach((l, i) => {
+    const holes: MapConnector[] = [];
+    for (const c of l.doc.features?.connectors ?? []) {
+      const j = connectorTarget(levels, i, connectorTo(c));
+      const what = `${c.name?.trim() || (c.kind === "hole" ? "A hole" : c.kind === "ladder" ? "A ladder" : "Stairs")} on ${l.name}`;
+      if (j === undefined) { problems.push(`${what} leads ${connectorTo(c)}, but there is no level ${connectorTo(c) === "up" ? "above" : "below"} it.`); continue; }
+      if (c.kind === "hole") { holes.push(c); continue; }
+      // a stair that is drawn on both levels (the way up, and the landing) is one stair
+      const pair = (a: [number, number]) => `${Math.min(...a)},${Math.max(...a)}`;
+      if (stairs.some((s) => pair(s.between) === pair([i, j]) && overlaps(s, c))) continue;
+      stairs.push({ name: c.name?.trim() || `${c.kind === "ladder" ? "Ladder" : "Stairs"} from ${l.name} to ${levels[j].name}`, between: [i, j], x: c.x, y: c.y, w: c.w, h: c.h });
+    }
+    // a hole is a gap in this level's floor: the floor becomes a surface of its own, with the holes cut out
+    const rects = holes.length ? floorRects(l.doc) : [];
+    if (holes.length && rects.length) surfaces.push({ name: `${l.name} floor`, level: i, kind: "floor", rects, holes: holes.map((h) => ({ x: h.x, y: h.y, w: h.w, h: h.h })) });
+  });
+  return { stairs, surfaces, problems };
+}
+
+/** What the export can't do with the levels' stairs, ladders and holes (each one that leads to a level that isn't there), as sentences for the export's README. */
+export function foundryConnectorProblems(levels: FoundryLevelDoc[]): string[] {
+  return foundryConnectors(levels).problems;
+}
+
+/**
  * A Foundry VTT scene for Scene "Import Data", in Foundry v14's format (see foundryScene.ts): one level for each floor document, in the order given
  * (the first is the level the scene opens on), each with its own picture, walls, doors and lights tagged to it. The size, grid and light level of the scene
- * are the first level's (every level of a battlemap is made with the same size and grid). Coordinates are in image pixels.
+ * are the first level's (every level of a battlemap is made with the same size and grid). Coordinates are in image pixels. Stairs and ladders become Change Level
+ * regions over the two levels they join; a level with holes gets a floor region (its floor as rectangles) with the holes cut out of it.
  */
 export function toFoundryLevelsScene(levels: FoundryLevelDoc[], sceneName?: string) {
   if (!levels.length) throw new Error("A Foundry scene needs at least one level.");
   const first = levels[0].doc;
   const spec = battleSpec(first);
   const { w, h } = battleImageSize(spec);
+  const { stairs, surfaces } = foundryConnectors(levels);
   return foundryScene({
     name: sceneName ?? first.meta.name, width: w, height: h, pxPerSquare: spec.pxPerSquare, feetPerSquare: spec.feetPerSquare, gridType: spec.gridType, ambient: ambientOf(spec),
     levels: levels.map((l) => ({ name: l.name, bottom: l.bottom, top: l.top, image: l.image, walls: l.doc.features?.walls ?? [], lights: l.doc.features?.lights ?? [] })),
+    stairs, surfaces,
   });
 }
 

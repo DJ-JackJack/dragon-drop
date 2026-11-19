@@ -53,8 +53,8 @@ const input = {
   stairs: [{ name: "Cellar stairs", between: [0, 1] as [number, number], x: 11, y: 3, w: 1, h: 2 }],
   // a floor on the ground floor with a hole in it (over the east half of the cellar), and a ceiling over the cellar (Define Surface regions)
   surfaces: [
-    { name: "Ground floor floor", level: 1, kind: "floor" as const, rect: { x: 2, y: 2, w: 11, h: 6 }, holes: [{ x: 8, y: 3, w: 2, h: 1 }] },
-    { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rect: { x: 2, y: 2, w: 11, h: 6 } },
+    { name: "Ground floor floor", level: 1, kind: "floor" as const, rects: [{ x: 2, y: 2, w: 11, h: 6 }], holes: [{ x: 8, y: 3, w: 2, h: 1 }] },
+    { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rects: [{ x: 2, y: 2, w: 11, h: 6 }] },
   ],
 };
 const plain = foundryScene({ ...input, stairs: [], surfaces: [] });

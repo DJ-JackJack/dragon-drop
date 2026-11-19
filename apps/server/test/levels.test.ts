@@ -182,6 +182,28 @@ describe("a battlemap with levels", () => {
   });
 });
 
+describe("stairs, ladders and holes in a saved map", () => {
+  it("are kept per level when the map is saved, reopened and restored from a checkpoint", async () => {
+    const { hub, dir } = fresh();
+    await tower(hub);
+    hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "s1", kind: "stairs", x: 2, y: 2, w: 1, h: 2, to: "up" }] } }, "user");
+    await hub.addLevel("above");
+    hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "h1", kind: "hole", x: 3, y: 3, w: 1, h: 1, to: "down" }] } }, "user");
+    await hub.saveCheckpoint("with connectors");
+    hub.session.execute({ op: "features", patch: { removeConnectors: ["h1"] } }, "user");
+    await hub.flush();
+    await hub.close();
+    const again = await reopen(dir, "tower");
+    expect(again.session.doc.features?.connectors).toEqual([]); // (the upper level, where the hole was removed)
+    await again.setActiveLevel("level-1");
+    expect(again.session.doc.features?.connectors).toEqual([{ id: "s1", kind: "stairs", x: 2, y: 2, w: 1, h: 2, to: "up" }]);
+    await again.restoreCheckpoint("with connectors", "user");
+    await again.setActiveLevel("level-2");
+    expect(again.session.doc.features?.connectors).toEqual([{ id: "h1", kind: "hole", x: 3, y: 3, w: 1, h: 1, to: "down" }]);
+    await again.close();
+  });
+});
+
 describe("exporting a battlemap with levels", () => {
   /** The files of an exported zip, by name. */
   const unzip = async (bytes: Uint8Array) => {
@@ -223,6 +245,36 @@ describe("exporting a battlemap with levels", () => {
     expect(count(scene.lights, up)).toBe(1);
     expect(count(scene.lights, ground)).toBe(0);
     expect(new TextDecoder().decode(files.get("README.txt")!)).toMatch(/2 Levels \(Ground floor, Upper floor\)/);
+    await hub.close();
+  });
+
+  it("stairs and holes placed on the levels become regions in the Foundry scene, and the README says so", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    await hub.addLevel("above");
+    await call(hub, "add_room", { x: 1, y: 1, w: 6, h: 5 });
+    // a hole in the upper floor, and (on the ground floor) a stair up to it
+    hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "h1", kind: "hole", x: 3, y: 3, w: 2, h: 1, to: "down" }] } }, "user");
+    await hub.setActiveLevel("level-1");
+    hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "s1", kind: "stairs", name: "Tower stairs", x: 2, y: 2, w: 1, h: 2, to: "up" }] } }, "user");
+    const files = await unzip((await hub.battleExport("foundry")).bytes);
+    const scene = JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!));
+    const names = scene.regions.map((r: { name: string }) => r.name);
+    expect(names).toEqual(["Tower stairs", "Upper floor floor"]);
+    const [stairs, floor] = scene.regions as { levels: string[]; shapes: { hole: boolean }[]; behaviors: { type: string }[] }[];
+    expect(stairs.levels).toHaveLength(2);
+    expect(stairs.behaviors[0].type).toBe("changeLevel");
+    expect(floor.behaviors[0].type).toBe("defineSurface");
+    expect(floor.shapes.filter((x) => x.hole)).toHaveLength(1);
+    const readme = new TextDecoder().decode(files.get("README.txt")!);
+    expect(readme).toMatch(/Change Level/);
+    expect(readme).not.toMatch(/Not exported/);
+    // a stair that leads nowhere is left out, and the README says which
+    hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "s2", kind: "ladder", name: "Ladder to the roof", x: 5, y: 2, w: 1, h: 1, to: "down" }] } }, "user");
+    await hub.setActiveLevel("level-2");
+    hub.session.execute({ op: "features", patch: { upsertConnectors: [{ id: "s3", kind: "ladder", name: "Ladder to the roof", x: 5, y: 2, w: 1, h: 1, to: "up" }] } }, "user");
+    const again = await unzip((await hub.battleExport("foundry")).bytes);
+    expect(new TextDecoder().decode(again.get("README.txt")!)).toMatch(/Not exported: Ladder to the roof on Upper floor leads up, but there is no level above it\./);
     await hub.close();
   });
 

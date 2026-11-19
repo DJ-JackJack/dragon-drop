@@ -7,7 +7,7 @@ import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
   type ClaudeState, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
   PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
-  type BattleExportFormat, battleKey, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
+  type BattleExportFormat, battleKey, foundryConnectorProblems, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
 } from "@mapmaker/core";
@@ -458,6 +458,14 @@ export class Hub {
     if (first > 0) levels.unshift(...levels.splice(first, 1));
     const scene = toFoundryLevelsScene(levels, doc.meta.name);
     const pictures = files.map((f) => f.name).join(", ");
+    // stairs, ladders and holes: what they became, and any that lead to a level that isn't there
+    const nConn = docs.reduce((n, d) => n + (d.doc.features?.connectors?.length ?? 0), 0);
+    const problems = foundryConnectorProblems(levels);
+    const connectorNote = nConn
+      ? `Stairs and ladders are Regions with the Change Level behaviour (walk onto one and Foundry asks whether to move to the other level). A level with a hole in its floor has a floor Region\r\n` +
+        `(Define Surface) with the hole cut out of it. How a hole behaves in play hasn't been looked at in Foundry yet.\r\n` +
+        (problems.length ? `Not exported: ${problems.join(" ")}\r\n` : "") + `\r\n`
+      : "";
     const readme =
       `Foundry VTT scene for "${doc.meta.name}"\r\n\r\n` +
       `1. Upload ${many ? "the PNG pictures (" + pictures + ")" : files[0].name} into your Foundry data folder, in a folder called "maps", with the File Browser.\r\n` +
@@ -465,8 +473,9 @@ export class Hub {
       `3. If a map doesn't show, open the scene's configuration, go to Levels and set each level's Background to where you uploaded its PNG.\r\n\r\n` +
       (many
         ? `This is a Foundry v14 scene with ${docs.length} Levels (${docs.map((d) => d.level.name).join(", ")}), each with its own picture, walls, doors and lights, stacked by elevation.\r\n` +
-          `Stairs, ladders and holes between levels aren't made for you yet: add them in Foundry (a Region with the Change Level behaviour).\r\n`
+          (nConn ? "" : `No stairs, ladders or holes were placed on the map; add any in Foundry (a Region with the Change Level behaviour).\r\n`)
         : `This is a Foundry v14 scene: the map is one Level, with its walls, doors and lights tagged to it.\r\n`) +
+      connectorNote +
       `The same kind of scene (one level, with its walls, doors, window and lights) was tried in Foundry v14 build 367 and worked. If yours doesn't import cleanly,\r\n` +
       `tell us what Foundry said, or use the .dd2vtt export with the Universal Battlemap Importer module instead.\r\n`;
     return {

@@ -97,8 +97,8 @@ describe("a Foundry v14 scene with levels", () => {
 
   it("writes floors and ceilings as Define Surface regions as Foundry stores them, a hole being an extra shape", () => {
     const surfaces = [
-      { name: "Ground floor floor", level: 1, kind: "floor" as const, rect: { x: 1, y: 1, w: 8, h: 5 }, holes: [{ x: 4, y: 2, w: 1, h: 1 }] },
-      { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rect: { x: 1, y: 1, w: 8, h: 5 } },
+      { name: "Ground floor floor", level: 1, kind: "floor" as const, rects: [{ x: 1, y: 1, w: 8, h: 5 }], holes: [{ x: 4, y: 2, w: 1, h: 1 }] },
+      { name: "Cellar ceiling", level: 0, kind: "ceiling" as const, rects: [{ x: 1, y: 1, w: 8, h: 5 }] },
     ];
     const s = foundryScene(input({ surfaces }));
     const [cellar, ground] = s.levels.map((l) => l._id);

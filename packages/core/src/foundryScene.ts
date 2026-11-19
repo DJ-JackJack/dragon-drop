@@ -52,13 +52,13 @@ export interface FoundryStairInput {
   h: number;
 }
 
-/** A floor or a ceiling, as a rectangle in grid squares with holes cut out of it (Foundry "Define Surface" regions: a hole is an extra shape of the region). */
+/** A floor or a ceiling, as rectangles in grid squares with holes cut out of it (Foundry "Define Surface" regions: a hole is an extra shape of the region). */
 export interface FoundrySurfaceInput {
   name: string;
   /** The index of the level it belongs to: a floor lies on the level it is the floor of, a ceiling on the level it covers. */
   level: number;
   kind: "floor" | "ceiling";
-  rect: { x: number; y: number; w: number; h: number };
+  rects: { x: number; y: number; w: number; h: number }[];
   holes?: { x: number; y: number; w: number; h: number }[];
 }
 
@@ -171,7 +171,7 @@ export function foundryScene(input: FoundrySceneInput) {
     const rect = (r: { x: number; y: number; w: number; h: number }, hole: boolean) => ({ type: "rectangle", x: sc(r.x), y: sc(r.y), width: sc(r.w), height: sc(r.h), rotation: 0, hole });
     return {
       _id: foundryId(`surface:${k}:${f.name}`), name: f.name, color: f.kind === "floor" ? "#cca928" : "#cc28b7",
-      shapes: [rect(f.rect, false), ...(f.holes ?? []).map((h) => rect(h, true))],
+      shapes: [...f.rects.map((r) => rect(r, false)), ...(f.holes ?? []).map((h) => rect(h, true))],
       elevation: { bottom: lv.bottom, top: lv.top, topInclusive: false }, levels: [ids[f.level]],
       behaviors: [{
         _id: foundryId(`surfaceb:${k}:${f.name}`), name: "Define Surface", type: "defineSurface", disabled: false, flags: {},
