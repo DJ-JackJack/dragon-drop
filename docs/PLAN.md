@@ -323,6 +323,23 @@ Rivers and lakes used to be a drawn-on mark: every land cell counted the same, s
 - **Stage 2: carving** *(opt-in, never automatic on an existing map)*: valleys cut by the water, floodplains and deltas, with a preview and a checkpoint first.
 - **Stage 3: rivers and lakes as objects** (named, selectable, with a River tool), instead of only being derived.
 - **Stage 4: polish**: meanders, oxbow lakes, estuaries, and painter touches.
+- **Known problem (reported 2026-11-19): new maps start out with far too many lakes.** A freshly generated map of the island or continent kind is dotted with lakes and ponds all over its inside, which no real
+  landmass looks like. Measured on 1024 x 1024 maps (lakes are closed hollows deeper than `lakeMinDepthM`, 45 m by default):
+  | New map | lakes | share of the land that is lake |
+  |---|---|---|
+  | archipelago, 30% land, mountains 0.5 (the First Map) | 23 | 1.9% |
+  | continent, 40% land, mountains 0.7 | 111 | 19% |
+  | island, 40% land, mountains 0.7 | 126 | 23% |
+  | island, 40% land, mountains 0.3 | 105 | 17% |
+
+  What does **not** fix it: raising the minimum lake depth (at 200 m a mountainous continent still has about 80 lakes and 11% lake; at 400 m still about 40) and running the erosion pass (four passes changed nothing: it
+  carves valleys but doesn't open the closed hollows). So the hollows are made by the terrain generator itself (`terrain.ts`), and they are deep. Ideas, not yet tried:
+  1. **Drain the generated terrain** (the real fix): after generating, fill the hollows and cut an outlet at the lowest point of each one's rim, leaving only a few lakes on purpose, so water runs to the sea.
+  2. **A lake setting** like river density: none, few, some, many (a depth threshold, a smallest size and a cap on how much of the land a lake may take), in the new-map choices, in `generate_terrain`, and kept with
+     the map. `HydrologyOptions.riverDensity` is the model to copy.
+  3. Never change an existing map's water by itself (as with carving): only new maps and an explicit choice.
+
+  Open question: which template and settings made the map in the report (it looks like an island or a continent, not the archipelago the First Map uses).
 
 ### Selection: point Claude at a place *(done 2026-11-17)*
 The DM can select a point, an area (rectangle, circle, freehand) or a feature (place, label, road, climate region) in the editor, and Claude sees it:
