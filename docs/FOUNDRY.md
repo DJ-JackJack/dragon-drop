@@ -166,8 +166,20 @@ How levels live inside one battlemap, chosen to touch as little of the working e
     nothing faded, though both pictures have occlusion mode SURFACE.
   - Foundry's own hint for the Define Surface behaviour says what does fade it: when a controlled or detected token is **below a surface** (a Define Surface region with Occlusion on), Surface-mode tiles
     and the background and foreground textures **at or above that surface** fade. So a roof that fades needs a Define Surface region over it (top surface at or below the foreground's elevation, i.e. the level's top).
-  - **Not yet tried:** a scene with such a region over a foreground; and since a level has one foreground picture, whether a token entering one roof fades **every** roof of that level, which would make Foundry
-    Tiles (one per roof, each its own occlusion) the better export. Test RT7 asks both.
+  - **What RT6 left open** (a scene with such a region over a foreground; one foreground against several roofs) was asked in RT7.
+- **Test RT7 (14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-4.md)).** Run with the browser pane hidden at first (0 frames a second; fixed with an emulated viewport), so every
+  placement was read from a live canvas at about 30 fps.
+  - **A foreground with a ceiling region over each roof (regions at the level's top, tokens below them at 0 and 5 ft, inside and outside, selected or not): nothing fades**, neither the whole picture nor the roof
+    over the token. Foundry marks the level foreground `_occludedBySameElevationSurfaces: false` (tiles and backgrounds `true`), which fits: a ceiling at the foreground's own elevation does not touch it. Whether a
+    ceiling *below* the foreground would is untried. A token at exactly 10 ft could not be set on the Ground floor (the update returned `undefined`).
+  - **Tiles:** Foundry stores a tile's `occlusion.mode: 2` as `occlusion.modes: [2]` (a list; write `modes`). **A tile's `x`/`y` is the position of its picture's anchor, and the anchor defaults to the centre (0.5, 0.5)**:
+    RT7's tiles were written as if `x`/`y` were the top-left corner (a mistake in our test file), so they sat half off the scene. For a tile that covers (left, top, w, h), write `x = left + w/2`, `y = top + h/2`.
+  - **A ceiling region at a tile's own elevation hides a Surface-mode tile inside the region's shape, and it did so with no token on the scene at all** (the part of the blue tile over the region was gone, the part outside
+    it stayed, cut exactly along the region's edge; the mesh values stayed `alpha 1, occluded false`, so this shows only on screen). Foundry's hint says a token below the surface triggers the fade, so either a ceiling hides
+    such a tile whatever happens, or the GM's own viewpoint (no token) counts as "below" it. What decides it (a token below, above or outside the region; controlled or not) was not tried, because the tiles were off position. RT8 asks.
+  - **A polygon region** is kept as written (Foundry drops its `rotation: 0`), `testPoint` is right at all six points tried (inside and outside a triangle), and it is drawn as a triangle. So a roof of any outline can have
+    its own ceiling.
+  - Define Surface also has `exposure` ("Reveal Elevated Surface": partly reveal the visible area of an elevated surface to observers below and outside of it; "useful for roofs") and `culling`; neither was tried.
 
 ## Plan
 
