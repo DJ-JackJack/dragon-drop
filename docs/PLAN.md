@@ -339,7 +339,7 @@ Rivers and lakes used to be a drawn-on mark: every land cell counted the same, s
      the map. `HydrologyOptions.riverDensity` is the model to copy.
   3. Never change an existing map's water by itself (as with carving): only new maps and an explicit choice.
 
-  Open question: which template and settings made the map in the report (it looks like an island or a continent, not the archipelago the First Map uses).
+  The map in the report was made with **Generate continent terrain** (seed 974391497; the other settings aren't recorded), so the continent row above is the case to fix first.
 
 ### Selection: point Claude at a place *(done 2026-11-17)*
 The DM can select a point, an area (rectangle, circle, freehand) or a feature (place, label, road, climate region) in the editor, and Claude sees it:
