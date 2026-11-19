@@ -51,6 +51,22 @@ region, a Define Surface region), Export Data, and read the JSON.
 `pnpm exec tsx scripts/foundry-test-scene.ts <folder>` writes `dragon-drop-foundry-levels-test.zip`: two pictures, the scene without stairs, the same with a
 stair region, and a README with what to look at.
 
+## Stage 2 design (decided 2026-11-19)
+
+How levels live inside one battlemap, chosen to touch as little of the working editor as possible:
+
+- **A level is a floor document of its own.** A battlemap project holds one or more levels. Level 1 is the battlemap exactly as it is today (`project.json`, `features.json`,
+  `map/`), so every existing map is already a one-level map and nothing on disk changes for it. Further levels sit in `levels/<id>/` with the same file layout. Every level has
+  the same size and grid (copied when a level is added) and its own floor, walls, doors, lights, props, notes, light zones and light level.
+- **`levels.json`** at the project root lists them: `{ v: 1, active, levels: [{ id, name, bottom, top }] }` (elevations in feet; the first entry is level 1). No file means one level,
+  "Ground floor", 0 to 10 ft.
+- **One level is active.** The editor, Claude's tools, selection and undo all work on the active level, so every existing tool keeps working unchanged. Switching level swaps the
+  session the hub works on and sends the editor that level, like opening another map. **Undo is per level** (a level has its own history); a switch does not undo anything.
+- **Saving, backups and restore cover every level.** Autosave writes each level that changed; a checkpoint (named or automatic) holds all levels, and restoring it restores all.
+- **The editor** gets a level bar (the levels, add above / below, rename, elevations, delete) and shows the level below faintly while you draw.
+- **Exports:** the Foundry scene gets one level per level (one picture each, walls and lights tagged to it); Universal VTT stays one file per level (stage 4).
+- Stairs, ladders and holes between levels are stage 3.
+
 ## Plan
 
 1. **(done) Export format.** The v14 level-aware builder, one level from a battlemap, and the test scene.

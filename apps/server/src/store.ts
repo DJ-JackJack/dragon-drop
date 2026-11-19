@@ -21,17 +21,28 @@ import { gunzip, gzip } from "node:zlib";
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 import {
-  type BaseClimate, type CheckpointInfo, type Features, type MapDoc, type MapMeta, type MapMigration, type ProjectInfo, type RefInfo, CURRENT_FORMAT, HeightField,
-  MIGRATIONS, NewerFormatError, REFERENCE_PICTURE_EXT, createDoc, emptyFeatures, formatOf, migrateMap, packBaseClimate, unpackBaseClimate,
+  type BaseClimate, type BattleLevel, type CheckpointInfo, type Features, type LevelsFile, type MapDoc, type MapMeta, type MapMigration, type ProjectInfo, type RefInfo, CURRENT_FORMAT, HeightField,
+  MIGRATIONS, NewerFormatError, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, migrateMap, packBaseClimate, unpackBaseClimate,
 } from "@mapmaker/core";
 
+type CheckpointMeta = Pick<Partial<MapMeta>, "seaLevel" | "style" | "climate">;
+/** One level of a battlemap, as a checkpoint keeps it (the level the checkpoint was taken on is the entry itself). */
+interface CheckpointLevel { id: string; file: string; meta: CheckpointMeta; features?: Features; /** What the level was called and where it sat, so restoring can bring a removed level back. */ info?: BattleLevel }
 interface CheckpointEntry extends CheckpointInfo {
-  meta: Pick<Partial<MapMeta>, "seaLevel" | "style" | "climate">;
+  meta: CheckpointMeta;
   features?: Features;
+  /** Battlemaps with more than one level: every level's floor (the level in `file` is listed here too). */
+  levels?: CheckpointLevel[];
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}$/;
+
+const LEVEL_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+export function safeLevelId(id: string): string {
+  if (!LEVEL_ID_RE.test(id)) throw new Error(`Invalid level id: ${id}`);
+  return id;
+}
 
 export function safeId(id: string): string {
   if (!ID_RE.test(id)) throw new Error(`Invalid project id: ${id}`);
@@ -47,6 +58,9 @@ export function safeFileName(name: string): string {
 export function slugify(name: string): string {
   return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "map";
 }
+
+/** Every file a checkpoint entry keeps. */
+const entryFiles = (c: CheckpointEntry) => [...new Set([c.file, ...(c.levels ?? []).map((l) => l.file)])];
 
 /** A date as a folder-name-safe stamp, e.g. 2026-11-18T18-27-43-123Z. */
 const stamp = (d = new Date()) => d.toISOString().replace(/[:.]/g, "-");
@@ -118,7 +132,53 @@ export class ProjectStore {
   }
 
   async load(id: string): Promise<MapDoc> {
-    const d = this.dir(id);
+    return this.loadAt(this.dir(id), id, true);
+  }
+
+  /** The folder that holds a level's files: the project's own for the first level, levels/<id>/ for the others. */
+  levelDir(id: string, levels: LevelsFile, levelId: string): string {
+    if (!levels.levels.some((l) => l.id === levelId)) throw new Error(`No level "${levelId}".`);
+    return levelId === levels.levels[0].id ? this.dir(id) : path.join(this.dir(id), "levels", safeLevelId(levelId));
+  }
+
+  /** A battlemap's levels file (levels.json). A map with none has one level, "Ground floor". One that can't be read is set aside, never overwritten. */
+  async readLevels(id: string): Promise<LevelsFile> {
+    const f = path.join(this.dir(id), "levels.json");
+    if (!existsSync(f)) return defaultLevels();
+    try {
+      const ok = cleanLevels(JSON.parse(await readFile(f, "utf8")));
+      if (ok) return ok;
+    } catch {
+      /* unreadable: handled below */
+    }
+    const aside = `levels.unreadable-${stamp()}.json`;
+    await rename(f, path.join(this.dir(id), aside));
+    this.notice(id, `This battlemap's list of levels couldn't be read. It has been kept as ${aside}, and the map opens with its first level only (the other levels' files are still in the levels folder).`);
+    return defaultLevels();
+  }
+
+  async writeLevels(id: string, file: LevelsFile): Promise<void> {
+    await mkdir(this.dir(id), { recursive: true });
+    await atomicWrite(path.join(this.dir(id), "levels.json"), JSON.stringify(file, null, 2));
+  }
+
+  /** A level other than the first (the first is `load`). */
+  async loadLevel(id: string, levels: LevelsFile, levelId: string): Promise<MapDoc> {
+    return this.loadAt(this.levelDir(id, levels, levelId), id, false);
+  }
+
+  async saveLevel(id: string, levels: LevelsFile, levelId: string, doc: MapDoc): Promise<void> {
+    await this.saveAt(this.levelDir(id, levels, levelId), doc);
+  }
+
+  /** Delete a level's files (never the first level's: those are the project's own). */
+  async removeLevelFiles(id: string, levels: LevelsFile, levelId: string): Promise<void> {
+    if (levelId === levels.levels[0].id) throw new Error("The first level can't be removed.");
+    await rm(this.levelDir(id, levels, levelId), { recursive: true, force: true });
+  }
+
+  /** `primary`: the project's own files (an older format is backed up and migrated, an unreadable features file falls back to a checkpoint's copy). */
+  private async loadAt(d: string, id: string, primary: boolean): Promise<MapDoc> {
     const meta = JSON.parse(await readFile(path.join(d, "project.json"), "utf8")) as MapMeta;
     meta.id = id;
     // A map saved by a newer program is not opened at all: an older one would drop what it doesn't understand the next time it saved.
@@ -127,12 +187,12 @@ export class ProjectStore {
     const live = path.join(d, "map", "height.f32.gz");
     const seed = path.join(d, "seed", "height.f32.gz");
     const src = existsSync(live) ? live : existsSync(seed) ? seed : null;
-    const features = await this.readFeatures(id);
+    const features = await this.readFeaturesAt(d, id, primary);
     if (!src) {
       const doc = createDoc({ ...meta, id });
       doc.meta = { ...doc.meta, ...meta };
       doc.features = features;
-      return this.upgrade(doc, found);
+      return primary ? this.upgrade(doc, found) : this.upgradeInMemory(doc, found);
     }
     const raw = await gunzipAsync(await readFile(src));
     const data = new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
@@ -148,7 +208,14 @@ export class ProjectStore {
     const doc: MapDoc = { meta, height: new HeightField(meta.width, meta.height, data), features };
     const bc = path.join(d, "map", "base-climate.bin.gz");
     if (existsSync(bc)) doc.baseClimate = unpackBaseClimate(new Uint8Array(await gunzipAsync(await readFile(bc))));
-    return this.upgrade(doc, found);
+    return primary ? this.upgrade(doc, found) : this.upgradeInMemory(doc, found);
+  }
+
+  /** A level's own files, from an older format: migrated in memory (they are saved in the new form with the next save; levels are newer than any older format). */
+  private upgradeInMemory(doc: MapDoc, found: number): MapDoc {
+    if (found < this.format) migrateMap(doc, found, this.format, this.steps);
+    doc.meta.formatVersion = this.format;
+    return doc;
   }
 
   /**
@@ -183,8 +250,8 @@ export class ProjectStore {
    * replaced it with an empty one): it is set aside under a new name, the newest checkpoint's copy is used if there is one, and the
    * person is told.
    */
-  private async readFeatures(id: string): Promise<Features> {
-    const f = path.join(this.dir(id), "features.json");
+  private async readFeaturesAt(d: string, id: string, primary: boolean): Promise<Features> {
+    const f = path.join(d, "features.json");
     if (!existsSync(f)) return emptyFeatures();
     try {
       const v = JSON.parse(await readFile(f, "utf8")) as unknown;
@@ -193,8 +260,8 @@ export class ProjectStore {
       /* unreadable: handled below */
     }
     const aside = `features.unreadable-${stamp()}.json`;
-    await rename(f, path.join(this.dir(id), aside));
-    const newest = (await this.cpIndex(id)).filter((c) => c.features).sort((a, b) => b.time.localeCompare(a.time))[0];
+    await rename(f, path.join(d, aside));
+    const newest = primary ? (await this.cpIndex(id)).filter((c) => c.features).sort((a, b) => b.time.localeCompare(a.time))[0] : undefined;
     this.notice(
       id,
       `This map's places, labels and lines file couldn't be read. It has been kept as ${aside}, and ` +
@@ -218,11 +285,14 @@ export class ProjectStore {
   }
 
   async save(doc: MapDoc): Promise<void> {
+    await this.saveAt(this.dir(doc.meta.id), doc);
+  }
+
+  private async saveAt(d: string, doc: MapDoc): Promise<void> {
     // Take the snapshot before the first await: the compression below runs in the background, and an edit made meanwhile must not leak into this file.
     const meta = JSON.stringify({ ...doc.meta, formatVersion: this.format }, null, 2);
     const features = JSON.stringify(doc.features ?? emptyFeatures(), null, 1);
     const bytes = Buffer.from(doc.height.data.slice().buffer);
-    const d = this.dir(doc.meta.id);
     await mkdir(path.join(d, "map"), { recursive: true });
     await atomicWrite(path.join(d, "project.json"), meta);
     await atomicWrite(path.join(d, "features.json"), features);
@@ -324,7 +394,7 @@ export class ProjectStore {
   }
 
   async listCheckpoints(id: string): Promise<CheckpointInfo[]> {
-    return (await this.cpIndex(id)).map(({ meta: _m, features: _f, ...info }) => info);
+    return (await this.cpIndex(id)).map(({ meta: _m, features: _f, levels: _l, ...info }) => info);
   }
 
   /** Run `fn` after the earlier checkpoint changes for this map have finished. */
@@ -338,26 +408,37 @@ export class ProjectStore {
    * Save the map as it is now. `auto` marks a rolling backup the program takes on its own: only those are ever deleted to make room
    * (see pruneAutoCheckpoints), never one a person saved.
    */
-  async saveCheckpoint(id: string, name: string, doc: MapDoc, seq: number, note?: string, opts: { auto?: boolean } = {}): Promise<CheckpointInfo> {
+  async saveCheckpoint(id: string, name: string, doc: MapDoc, seq: number, note?: string, opts: { auto?: boolean; levels?: { active: { id: string; info: BattleLevel }; others: { id: string; info: BattleLevel; doc: MapDoc }[] } } = {}): Promise<CheckpointInfo> {
     const clean = name.trim().slice(0, 60);
     if (!clean) throw new Error("Checkpoint needs a name.");
     // the map as it is now, before any await: it goes on being edited while the file is compressed and written
-    const bytes = Buffer.from(doc.height.data.slice().buffer);
-    const features = clone(doc.features);
-    const meta = { seaLevel: doc.meta.seaLevel, style: doc.meta.style, climate: clone(doc.meta.climate) };
-    const packed = await gzipAsync(bytes, { level: 6 });
+    const snap = (d: MapDoc) => ({ bytes: Buffer.from(d.height.data.slice().buffer), features: clone(d.features), meta: { seaLevel: d.meta.seaLevel, style: d.meta.style, climate: clone(d.meta.climate) } });
+    const main = snap(doc);
+    const others = (opts.levels?.others ?? []).map((o) => ({ id: o.id, info: { ...o.info }, ...snap(o.doc) }));
+    const packed = await gzipAsync(main.bytes, { level: 6 });
+    const packedOthers = await Promise.all(others.map(async (o) => ({ ...o, packed: await gzipAsync(o.bytes, { level: 6 }) })));
     return this.serial(id, async () => {
       await mkdir(this.cpDir(id), { recursive: true });
       const all = await this.cpIndex(id);
       const replaced = all.filter((c) => c.name.toLowerCase() === clean.toLowerCase());
       const index = all.filter((c) => c.name.toLowerCase() !== clean.toLowerCase());
-      const file = `${slugify(clean)}-${Date.now()}.f32.gz`;
+      const stampMs = Date.now();
+      const file = `${slugify(clean)}-${stampMs}.f32.gz`;
       await atomicWrite(path.join(this.cpDir(id), file), packed);
-      const entry: CheckpointEntry = { name: clean, file, time: new Date().toISOString(), seq, note, ...(opts.auto && { auto: true }), meta, features };
+      const entry: CheckpointEntry = { name: clean, file, time: new Date().toISOString(), seq, note, ...(opts.auto && { auto: true }), meta: main.meta, features: main.features };
+      if (opts.levels && packedOthers.length) {
+        // a battlemap with more than one level: every level's floor goes in the checkpoint (the active level's is the entry's own file)
+        entry.levels = [{ id: opts.levels.active.id, file, meta: main.meta, features: main.features, info: { ...opts.levels.active.info } }];
+        for (const o of packedOthers) {
+          const f = `${slugify(clean)}-${stampMs}-${safeLevelId(o.id)}.f32.gz`;
+          await atomicWrite(path.join(this.cpDir(id), f), o.packed);
+          entry.levels.push({ id: o.id, file: f, meta: o.meta, features: o.features, info: o.info });
+        }
+      }
       index.push(entry);
       await atomicWrite(path.join(this.cpDir(id), "index.json"), JSON.stringify(index, null, 1));
-      for (const old of replaced) await rm(path.join(this.cpDir(id), safeFileName(old.file)), { force: true }); // (a leftover file is harmless; a dangling entry would not be)
-      const { meta: _m, features: _f, ...info } = entry;
+      for (const old of replaced) for (const f of entryFiles(old)) await rm(path.join(this.cpDir(id), safeFileName(f)), { force: true }); // (a leftover file is harmless; a dangling entry would not be)
+      const { meta: _m, features: _f, levels: _l, ...info } = entry;
       return info;
     });
   }
@@ -370,7 +451,7 @@ export class ProjectStore {
       if (!drop.length) return;
       const gone = new Set(drop.map((c) => c.file));
       await atomicWrite(path.join(this.cpDir(id), "index.json"), JSON.stringify(index.filter((c) => !gone.has(c.file)), null, 1));
-      for (const c of drop) await rm(path.join(this.cpDir(id), safeFileName(c.file)), { force: true });
+      for (const c of drop) for (const f of entryFiles(c)) await rm(path.join(this.cpDir(id), safeFileName(f)), { force: true });
     });
   }
 
@@ -382,10 +463,15 @@ export class ProjectStore {
   async readCheckpoint(id: string, name: string) {
     const entry = (await this.cpIndex(id)).find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
     if (!entry) return null;
-    const raw = await gunzipAsync(await readFile(path.join(this.cpDir(id), safeFileName(entry.file))));
-    const data = new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
-    const { meta, features, ...info } = entry;
-    return { data, meta, features, info };
+    const read = async (file: string) => {
+      const raw = await gunzipAsync(await readFile(path.join(this.cpDir(id), safeFileName(file))));
+      return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+    };
+    const data = await read(entry.file);
+    // every level of a battlemap that had more than one when the checkpoint was taken
+    const levels = entry.levels ? await Promise.all(entry.levels.map(async (l) => ({ id: l.id, data: l.file === entry.file ? data : await read(l.file), meta: l.meta, features: l.features, info: l.info }))) : undefined;
+    const { meta, features, levels: _l, ...info } = entry;
+    return { data, meta, features, info, levels };
   }
 
   async readLastOpen(): Promise<string | null> {

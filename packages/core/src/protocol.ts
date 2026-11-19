@@ -11,6 +11,7 @@ import type { Features } from "./features.ts";
 import type { ParentLink } from "./regional.ts";
 import type { SketchParams } from "./sketch.ts";
 import type { Selection } from "./selection.ts";
+import type { LevelsFile } from "./levels.ts";
 
 export type WireCommand = Exclude<Command, { op: "replace_heights" }>;
 
@@ -101,7 +102,14 @@ export type ClientMsg =
   /** What the DM has selected on the map, and whether Claude's edits are held to it (an area or a climate region). */
   | { t: "selection"; selection: Selection | null; lock: boolean }
   /** What part of the map the editor is showing (map px) and how far it is zoomed in. */
-  | { t: "view"; rect: Rect; zoom: number };
+  | { t: "view"; rect: Rect; zoom: number }
+  /** Battlemap levels: work on another level (the editor is sent that level, as if the map had been opened). */
+  | { t: "level_set"; id: string }
+  /** Add a level above the highest or below the lowest, and work on it. */
+  | { t: "level_add"; where: "above" | "below"; name?: string }
+  | { t: "level_update"; id: string; patch: { name?: string; bottom?: number; top?: number } }
+  /** Remove a level (a checkpoint is saved first). The first level can't be removed. */
+  | { t: "level_remove"; id: string };
 
 export type ServerMsg =
   | {
@@ -119,7 +127,10 @@ export type ServerMsg =
       usage: Usage;
       apiKeyConfigured: boolean;
       features: Features;
+      /** Battlemaps: the levels and which one this is (a map with one level says so too). */
+      levels?: LevelsFile;
     }
+  | { t: "levels"; levels: LevelsFile }
   | { t: "features"; features: Features }
   | { t: "projects"; projects: ProjectInfo[] }
   | { t: "meta"; meta: MapMeta }

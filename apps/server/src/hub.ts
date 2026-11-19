@@ -9,6 +9,7 @@ import {
   PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
   type BattleExportFormat, battleKey, sampleBaseClimate, sketchToHeights, toFoundryScene, toUniversalVtt,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
+  type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, newLevelId, newLevelName, nextLevelElevation,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -33,9 +34,28 @@ export function autoBackupName(d: Date): string {
   return `Auto ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-interface OpenProject {
+/** One level of an open battlemap: its own floor document and history. A map with no levels list has one. */
+/** A level name made safe (no control characters, at most 60 characters), or null when nothing is left. */
+function cleanLevelName(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  return t || null;
+}
+
+interface LevelRuntime {
   id: string;
   session: MapSessionT;
+  dirty: boolean;
+}
+
+interface OpenProject {
+  id: string;
+  /** The session of the level being worked on (the editor, Claude's tools, selection and undo all act on it). */
+  session: MapSessionT;
+  /** The level list (battlemaps; a world map has the default one) and the floor document of each level. */
+  levels: LevelsFile;
+  runtime: LevelRuntime[];
+  levelsDirty: boolean;
   agent: ChatAgent;
   saveTimer: NodeJS.Timeout | null;
   dirty: boolean;
@@ -131,52 +151,72 @@ export class Hub {
   }
 
   // ---------------------------------------------------------------- projects
+  /** Hand a level's session events to the editors (the active level only), the saver and the derived-layer logic. */
+  private wire(op: OpenProject, rt: LevelRuntime) {
+    const session = rt.session;
+    const id = op.id;
+    session.on((e) => {
+      if (this.open !== op) return;
+      const active = op.session === session; // (a level that isn't being worked on changes only through a restore: it is saved, but the editors don't see it)
+      if (e.type === "patch") {
+        if (active) {
+          const frame = encodeFrame({ t: "patch", projectId: id, rect: e.rect, seq: e.seq }, session.doc.height.copyRect(e.rect));
+          for (const c of this.clients) if (!this.lite.has(c) && c.readyState === c.OPEN) c.send(frame);
+        }
+        this.markDirty(op, rt);
+        if (active) this.contentChanged(op);
+      } else if (e.type === "meta") {
+        if (active) this.broadcast({ t: "meta", meta: e.meta });
+        this.markDirty(op, rt);
+        // only settings that change the climate or the server's render need a recompute (not the grid, name or notes)
+        const key = JSON.stringify([e.meta.seaLevel, e.meta.climate, e.meta.style]);
+        if (active && key !== op.metaKey) {
+          op.metaKey = key;
+          this.contentChanged(op);
+        }
+      } else if (e.type === "features") {
+        if (active) this.broadcast({ t: "features", features: e.features });
+        this.markDirty(op, rt);
+        if (active) this.syncSelection(op);
+        const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features)]); // regions and river sources (and where their places are) feed the climate and rivers
+        if (active && key !== op.regionsKey) {
+          op.regionsKey = key;
+          this.contentChanged(op); // climate regions feed the climate model
+        }
+      } else if (e.type === "history" && active) {
+        this.broadcast({ t: "change", change: e.change, canUndo: session.canUndo, canRedo: session.canRedo });
+        // a finished brush stroke: derived layers may have been skipped while it was in progress
+        if (op.derivedVersion !== op.contentVersion) this.scheduleDerived(op);
+      }
+    });
+  }
+
   async openProject(id: string): Promise<void> {
     const run = async () => {
       if (this.open?.id === id) return;
       if (!(await this.store.exists(id))) throw new Error(`No project "${id}".`);
       await this.flush();
       const doc = await this.store.load(id);
-      const session = new MapSession(doc);
+      const levels = isBattle(doc) ? await this.store.readLevels(id) : defaultLevels();
+      const firstSession = new MapSession(doc);
+      const runtime: LevelRuntime[] = [{ id: levels.levels[0].id, session: firstSession, dirty: false }];
+      for (const l of levels.levels.slice(1)) {
+        try {
+          runtime.push({ id: l.id, session: new MapSession(await this.store.loadLevel(id, levels, l.id)), dirty: false });
+        } catch (e) {
+          throw new Error(`The level "${l.name}" of this battlemap couldn't be read, so the map was not opened (nothing was changed). ${(e as Error).message}`);
+        }
+      }
+      const session = (runtime.find((r) => r.id === levels.active) ?? runtime[0]).session;
       const saved = await this.store.readJson<ChatState>(id, "chat.json");
       const agent = new ChatAgent(this.agentHost(id), this.modelCall, saved ?? undefined);
       const op: OpenProject = {
-        id, session, agent, saveTimer: null, dirty: false, lastAutoBackup: await this.store.lastAutoCheckpointTime(id),
+        id, session, levels, runtime, levelsDirty: false, agent, saveTimer: null, dirty: false, lastAutoBackup: await this.store.lastAutoCheckpointTime(id),
         derived: null, derivedVersion: -1, deriving: null, derivingVersion: -1, contentVersion: 0, derivedTimer: null,
         regionsKey: JSON.stringify([doc.features?.regions ?? [], resolveRiverSources(doc.features)]),
         metaKey: JSON.stringify([doc.meta.seaLevel, doc.meta.climate, doc.meta.style]),
       };
-      session.on((e) => {
-        if (this.open !== op) return;
-        if (e.type === "patch") {
-          const frame = encodeFrame({ t: "patch", projectId: id, rect: e.rect, seq: e.seq }, session.doc.height.copyRect(e.rect));
-          for (const c of this.clients) if (!this.lite.has(c) && c.readyState === c.OPEN) c.send(frame);
-          this.markDirty(op);
-          this.contentChanged(op);
-        } else if (e.type === "meta") {
-          this.broadcast({ t: "meta", meta: e.meta });
-          this.markDirty(op);
-          // only settings that change the climate or the server's render need a recompute (not the grid, name or notes)
-          const key = JSON.stringify([e.meta.seaLevel, e.meta.climate, e.meta.style]);
-          if (key !== op.metaKey) {
-            op.metaKey = key;
-            this.contentChanged(op);
-          }
-        } else if (e.type === "features") {
-          this.broadcast({ t: "features", features: e.features });
-          this.markDirty(op);
-          this.syncSelection(op);
-          const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features)]); // regions and river sources (and where their places are) feed the climate and rivers
-          if (key !== op.regionsKey) {
-            op.regionsKey = key;
-            this.contentChanged(op); // climate regions feed the climate model
-          }
-        } else if (e.type === "history") {
-          this.broadcast({ t: "change", change: e.change, canUndo: session.canUndo, canRedo: session.canRedo });
-          // a finished brush stroke: derived layers may have been skipped while it was in progress
-          if (op.derivedVersion !== op.contentVersion) this.scheduleDerived(op);
-        }
-      });
+      for (const rt of runtime) this.wire(op, rt);
       this.open = op;
       this.selection = null; this.selectionLock = false; this.view = null; // a selection belongs to the map it was made on
       this.broadcast({ t: "selection", selection: null, lock: false });
@@ -239,6 +279,98 @@ export class Hub {
       if (s) sprites[asset] = s; else missing++;
     }
     return { opts: { tiles, sprites }, missing };
+  }
+
+  // ---------------------------------------------------------------- battlemap levels
+  private battleOp(): OpenProject {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    if (!isBattle(op.session.doc)) throw new Error("Only battlemaps have levels.");
+    return op;
+  }
+
+  /** The levels of the open battlemap, and which one is being worked on. */
+  levelsInfo(): LevelsFile | null {
+    return this.open && isBattle(this.open.session.doc) ? structuredClone(this.open.levels) : null;
+  }
+
+  private levelsChanged(op: OpenProject) {
+    op.levelsDirty = true;
+    op.dirty = true;
+    if (!op.saveTimer) op.saveTimer = setTimeout(() => { op.saveTimer = null; void this.saveNow(op); }, 1500);
+    this.broadcast({ t: "levels", levels: structuredClone(op.levels) });
+  }
+
+  /** Work on another level: the editors are sent that level as if the map had been opened. Nothing is undone or lost by switching. */
+  async setActiveLevel(levelId: string): Promise<void> {
+    const op = this.battleOp();
+    const rt = op.runtime.find((r) => r.id === levelId);
+    if (!rt) throw new Error(`No level "${levelId}".`);
+    if (rt.session === op.session) return;
+    if (op.session.inTransaction) op.session.commit();
+    op.session = rt.session;
+    op.levels = { ...op.levels, active: levelId };
+    this.selection = null; this.selectionLock = false; // a selection belongs to the level it was made on
+    this.levelsChanged(op);
+    this.broadcast({ t: "selection", selection: null, lock: false });
+    for (const c of this.clients) await this.sendProject(c);
+  }
+
+  /** Add an empty level above the highest or below the lowest (same size, grid, light level and floor textures as the level being worked on), and work on it. */
+  async addLevel(where: "above" | "below", name?: string): Promise<BattleLevel> {
+    const op = this.battleOp();
+    if (op.runtime.length >= MAX_LEVELS) throw new Error(`A battlemap can have at most ${MAX_LEVELS} levels.`);
+    const list = op.levels.levels;
+    const level: BattleLevel = { id: newLevelId(list.map((l) => l.id)), name: cleanLevelName(name) ?? newLevelName(list, where), ...nextLevelElevation(list, where) };
+    this.makeLevel(op, level);
+    await this.setActiveLevel(level.id);
+    return level;
+  }
+
+  /** An empty level, same size, grid, light level and floor textures as the level being worked on, added to the list (not yet worked on). */
+  private makeLevel(op: OpenProject, level: BattleLevel): LevelRuntime {
+    const spec = battleSpec(op.session.doc);
+    const doc = createBattleDoc({ id: op.id, name: op.session.doc.meta.name, squaresX: spec.squaresX, squaresY: spec.squaresY, pxPerSquare: spec.pxPerSquare, feetPerSquare: spec.feetPerSquare, gridType: spec.gridType, sub: spec.sub, seed: Math.floor(Math.random() * 2 ** 31) });
+    doc.meta.battle = { ...doc.meta.battle!, ...(spec.palette && { palette: structuredClone(spec.palette) }), ...(spec.ambient !== undefined && { ambient: spec.ambient }), ...(spec.ambientTint && { ambientTint: spec.ambientTint }) };
+    const rt: LevelRuntime = { id: level.id, session: new MapSession(doc), dirty: true };
+    op.runtime.push(rt);
+    op.levels = { ...op.levels, levels: [...op.levels.levels, level] };
+    this.wire(op, rt);
+    this.levelsChanged(op);
+    return rt;
+  }
+
+  /** Rename a level or change its elevations (feet). */
+  async updateLevel(levelId: string, patch: { name?: string; bottom?: number; top?: number }): Promise<BattleLevel> {
+    const op = this.battleOp();
+    const cur = op.levels.levels.find((l) => l.id === levelId);
+    if (!cur) throw new Error(`No level "${levelId}".`);
+    const next = { ...cur };
+    if (patch.name !== undefined) { const n = cleanLevelName(patch.name); if (!n) throw new Error("A level needs a name."); next.name = n; }
+    if (patch.bottom !== undefined) { if (!Number.isFinite(patch.bottom)) throw new Error("The bottom elevation must be a number of feet."); next.bottom = patch.bottom; }
+    if (patch.top !== undefined) { if (!Number.isFinite(patch.top)) throw new Error("The top elevation must be a number of feet."); next.top = patch.top; }
+    if (!(next.top > next.bottom)) throw new Error("A level's top must be higher than its bottom.");
+    if (op.levels.levels.some((l) => l.id !== levelId && l.name.toLowerCase() === next.name.toLowerCase())) throw new Error(`There is already a level called "${next.name}".`);
+    op.levels = { ...op.levels, levels: op.levels.levels.map((l) => (l.id === levelId ? next : l)) };
+    this.levelsChanged(op);
+    return next;
+  }
+
+  /** Remove a level and its files. A checkpoint of the whole map is saved first, so it can be got back. The first level can't be removed. */
+  async removeLevel(levelId: string): Promise<void> {
+    const op = this.battleOp();
+    const level = op.levels.levels.find((l) => l.id === levelId);
+    if (!level) throw new Error(`No level "${levelId}".`);
+    if (levelId === op.levels.levels[0].id) throw new Error("The first level can't be removed (rename it instead).");
+    await this.saveCheckpoint(`Before removing ${level.name}`.slice(0, 60), `Saved automatically before the level "${level.name}" was removed`);
+    if (op.levels.active === levelId) await this.setActiveLevel(op.levels.levels[0].id);
+    op.runtime = op.runtime.filter((r) => r.id !== levelId);
+    op.levels = { ...op.levels, levels: op.levels.levels.filter((l) => l.id !== levelId) };
+    const before = { ...op.levels, levels: [...op.levels.levels, level] }; // (the list as it was, for finding the level's folder)
+    await this.store.writeLevels(op.id, structuredClone(op.levels));
+    op.levelsDirty = false;
+    await this.store.removeLevelFiles(op.id, before, levelId);
+    this.broadcast({ t: "levels", levels: structuredClone(op.levels) });
   }
 
   /** Make a battlemap of the ground at a point of the open world map: its climate, slope, water, coast and rivers choose the floors. */
@@ -452,7 +584,8 @@ export class Hub {
     return bytes;
   }
 
-  private markDirty(op: OpenProject) {
+  private markDirty(op: OpenProject, level?: LevelRuntime) {
+    (level ?? op.runtime.find((r) => r.session === op.session))!.dirty = true;
     op.dirty = true;
     if (op.saveTimer) return;
     op.saveTimer = setTimeout(() => {
@@ -464,12 +597,22 @@ export class Hub {
   private async saveNow(op: OpenProject) {
     if (!op.dirty) return;
     op.dirty = false;
+    // claimed before the first await: an edit made while this is being written marks its level again
+    const pending = op.runtime.filter((r) => r.dirty);
+    for (const r of pending) r.dirty = false;
+    const levelsFile = op.levelsDirty ? (op.levelsDirty = false, structuredClone(op.levels)) : null;
     try {
-      await this.store.save(op.session.doc);
+      for (const r of pending) {
+        if (r.id === op.levels.levels[0].id) await this.store.save(r.session.doc);
+        else await this.store.saveLevel(op.id, op.levels, r.id, r.session.doc);
+      }
+      if (levelsFile) await this.store.writeLevels(op.id, levelsFile);
       this.broadcast({ t: "projects", projects: await this.store.list() });
       void this.maybeAutoBackup(op);
     } catch (e) {
       console.error("save failed:", e);
+      for (const r of pending) r.dirty = true;
+      if (levelsFile) op.levelsDirty = true;
       op.dirty = true;
     }
   }
@@ -484,7 +627,7 @@ export class Hub {
     if (!(every > 0) || now - op.lastAutoBackup < every) return;
     op.lastAutoBackup = now; // claimed before the first await, so a save that follows straight away doesn't start a second one
     try {
-      await this.store.saveCheckpoint(op.id, autoBackupName(new Date(now)), op.session.doc, op.session.seq, "Saved automatically", { auto: true });
+      await this.store.saveCheckpoint(op.id, autoBackupName(new Date(now)), op.session.doc, op.session.seq, "Saved automatically", { auto: true, levels: this.checkpointLevels(op) });
       await this.store.pruneAutoCheckpoints(op.id, this.opts.autoBackupKeep ?? 6);
       if (this.open === op) this.broadcast({ t: "checkpoints", list: await this.store.listCheckpoints(op.id) });
     } catch (e) {
@@ -533,6 +676,7 @@ export class Hub {
       chat: agent.state.items.slice(-300), chatSettings: agent.state.settings, chatBusy: agent.busy,
       usage: agent.state.usage, apiKeyConfigured: this.modelCall !== null,
       features: session.doc.features ?? { places: [], labels: [] },
+      ...(isBattle(session.doc) && { levels: this.open.levels }),
     });
     if (!this.lite.has(ws)) {
       const hf = session.doc.height;
@@ -638,6 +782,15 @@ export class Hub {
         case "checkpoint_restore":
           await this.restoreCheckpoint(msg.name, "user");
           return;
+        case "level_set":
+          return this.setActiveLevel(msg.id);
+        case "level_add":
+          await this.addLevel(msg.where, msg.name);
+          return;
+        case "level_update":
+          return this.updateLevel(msg.id, msg.patch);
+        case "level_remove":
+          return this.removeLevel(msg.id);
         case "selection": {
           const op = this.open;
           if (!op) return;
@@ -738,11 +891,19 @@ export class Hub {
     };
   }
 
+  /** Every level of a battlemap that has more than one, for a checkpoint (undefined for the usual one-level map). */
+  private checkpointLevels(op: OpenProject): { active: { id: string; info: BattleLevel }; others: { id: string; info: BattleLevel; doc: MapDoc }[] } | undefined {
+    if (op.runtime.length < 2) return undefined;
+    const info = (id: string) => op.levels.levels.find((l) => l.id === id)!;
+    const active = op.runtime.find((r) => r.session === op.session)!;
+    return { active: { id: active.id, info: info(active.id) }, others: op.runtime.filter((r) => r !== active).map((r) => ({ id: r.id, info: info(r.id), doc: r.session.doc })) };
+  }
+
   async saveCheckpoint(name: string, note?: string) {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     if (op.session.inTransaction) op.session.commit();
-    const info = await this.store.saveCheckpoint(op.id, name, op.session.doc, op.session.seq, note);
+    const info = await this.store.saveCheckpoint(op.id, name, op.session.doc, op.session.seq, note, { levels: this.checkpointLevels(op) });
     this.broadcast({ t: "checkpoints", list: await this.store.listCheckpoints(op.id) });
     return info;
   }
@@ -752,11 +913,29 @@ export class Hub {
     if (!op) throw new Error("No project is open.");
     const cp = await this.store.readCheckpoint(op.id, name);
     if (!cp) throw new Error(`No checkpoint named "${name}".`);
-    if (cp.data.length !== op.session.doc.height.data.length) {
-      throw new Error(`Checkpoint "${cp.info.name}" was saved before the map changed size, so it can't be restored onto this map.`);
+    // a battlemap checkpoint taken with several levels puts each level back; an older one (or a one-level map's) is the first level's, or the only one
+    // (a level that was removed since comes back, with its name and elevations, as long as the map has room for it)
+    if (cp.levels) {
+      for (const l of cp.levels) {
+        if (op.runtime.some((r) => r.id === l.id) || !l.info || op.runtime.length >= MAX_LEVELS) continue;
+        const clash = op.levels.levels.some((x) => x.name.toLowerCase() === l.info!.name.toLowerCase());
+        this.makeLevel(op, { ...l.info, ...(clash && { name: `${l.info.name} (restored)`.slice(0, 60) }) });
+      }
     }
-    const r = op.session.execute({ op: "restore", data: cp.data, meta: cp.meta, features: cp.features, label: `Restore checkpoint "${cp.info.name}"` }, author);
-    return { seq: r.seq, label: r.label };
+    const targets = cp.levels
+      ? cp.levels.flatMap((l) => { const rt = op.runtime.find((r) => r.id === l.id); return rt ? [{ rt, data: l.data, meta: l.meta, features: l.features }] : []; })
+      : [{ rt: op.runtime[0], data: cp.data, meta: cp.meta, features: cp.features }];
+    if (!targets.length) throw new Error(`Checkpoint "${cp.info.name}" holds levels that this map no longer has, so it can't be restored.`);
+    for (const t of targets) {
+      if (t.data.length !== t.rt.session.doc.height.data.length) throw new Error(`Checkpoint "${cp.info.name}" was saved before the map changed size, so it can't be restored onto this map.`);
+    }
+    let last = { seq: 0, label: "" };
+    for (const t of targets) {
+      if (t.rt.session.inTransaction) t.rt.session.commit();
+      const r = t.rt.session.execute({ op: "restore", data: t.data, meta: t.meta, features: t.features, label: `Restore checkpoint "${cp.info.name}"` }, author);
+      if (t.rt.session === op.session || !last.label) last = { seq: r.seq, label: r.label };
+    }
+    return last;
   }
 
   /** Synchronous list for list_projects (refreshed on open/create/save). */
