@@ -114,7 +114,7 @@ export function App() {
   const isBattle = s.meta?.kind === "battle";
   const [bui, setBui] = useState<BattleUi>(defaultBattleUi);
   const onBui = useCallback((p: Partial<BattleUi>) => setBui((b) => ({ ...b, ...p })), []);
-  useEffect(() => setBui((b) => (b.selected || b.multi.length ? { ...b, selected: null, multi: [] } : b)), [s.meta?.id]);
+  useEffect(() => setBui((b) => (b.selected || b.multi.length ? { ...b, selected: null, multi: [] } : b)), [s.meta?.id, s.levels?.active]);
   useEffect(() => { if (isBattle && bui.tool === "prop" && !bui.asset) openAssets("objects"); }, [bui.tool]);
   const [newOpen, setNewOpen] = useState(false);
   const [sketchRef, setSketchRef] = useState<RefInfo | null>(null);
@@ -416,7 +416,7 @@ export function App() {
         </aside>
 
         {isBattle ? (
-          <BattleView meta={s.meta} features={s.features} ui={bui} onUi={onBui} />
+          <BattleView meta={s.meta} features={s.features} levels={s.levels} ui={bui} onUi={onBui} />
         ) : (
         <MapView
           meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}

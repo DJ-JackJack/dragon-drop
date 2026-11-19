@@ -17,9 +17,11 @@ projects\<map-name>\
     checkpoints\            restore points: the ones you save and the automatic ones (below)
     previews\               small pictures made for the chat
   backups\                  copies of the files from before a map was brought up to a newer file format (below)
+  levels.json               battlemaps with more than one level: the levels, their names and elevations (a map with one level has no such file)
+  levels\<id>\              each further level of a battlemap: the same files as above (features.json, map\ and so on). The first level is the map's own files
 ```
 
-`project.json` and `features.json` are plain JSON. To read the terrain elsewhere, unzip `height.f32.gz` and read it as a flat array of little-endian `float32` values, `width × height` of them (both are in `project.json`).
+`project.json` and `features.json` are plain JSON. A battlemap can have several levels (a cellar, a ground floor, an attic). The first level is the map exactly as a one-level battlemap is kept, so a map that never gets a second level is stored just as before. Checkpoints hold every level. To read the terrain elsewhere, unzip `height.f32.gz` and read it as a flat array of little-endian `float32` values, `width × height` of them (both are in `project.json`).
 
 ## How your maps are kept safe
 

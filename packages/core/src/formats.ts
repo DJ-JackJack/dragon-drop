@@ -76,7 +76,7 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
   {
     id: "png", name: "PNG picture", files: ".png", exportFormat: "png",
     use: "A world map or a battlemap as a picture (the Export button; for a battlemap also `export_battlemap`).",
-    limits: "A battlemap picture keeps its walls and doors; lights and room notes are left out.",
+    limits: "A battlemap picture keeps its walls and doors; lights and room notes are left out. For a battlemap with several levels it is the picture of the level being worked on.",
   },
   {
     id: "tiles", name: "Zip of PNG tiles", files: ".zip",
@@ -86,16 +86,16 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
   {
     id: "uvtt", name: "Universal VTT", files: ".dd2vtt", exportFormat: "uvtt",
     use: "A battlemap for virtual tabletops: the picture, walls, doors, windows and lights in one file.",
-    limits: "Not yet tried in the real programs. The format has no window or secret door: a window is written as a line that stops movement but not sight, and a secret door as plain wall.",
+    limits: "Not yet tried in the real programs. A battlemap with several levels gives one file for the level being worked on (the format has no levels). The format has no window or secret door: a window is written as a line that stops movement but not sight, and a secret door as plain wall.",
   },
   {
-    id: "foundry", name: "Foundry VTT scene", files: "-foundry.zip (the picture, a scene file and instructions)", exportFormat: "foundry",
-    use: "A battlemap as a Foundry VTT v14 scene, with its walls, doors and lights tagged to one level.",
-    limits: "Built from Foundry's published documentation and not yet tried in Foundry itself.",
+    id: "foundry", name: "Foundry VTT scene", files: "-foundry.zip (a picture for each level, a scene file and instructions)", exportFormat: "foundry",
+    use: "A battlemap as a Foundry VTT v14 scene: each level of the battlemap becomes a Foundry level with its own picture, walls, doors and lights.",
+    limits: "Built from Foundry's published documentation and not yet tried in Foundry itself. No stairs, ladders or holes between levels are made yet: add them in Foundry.",
   },
   {
     id: "key", name: "Room key", files: ".md", exportFormat: "key",
-    use: "The battlemap's numbered room notes as a Markdown list, for the DM.",
+    use: "The battlemap's numbered room notes (of every level) as a Markdown list, for the DM.",
     limits: "Notes are never drawn into the pictures or the tabletop files.",
   },
   {

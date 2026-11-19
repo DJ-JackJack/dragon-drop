@@ -735,6 +735,35 @@ try {
     const keyText = await (await import("node:fs/promises")).readFile(await keyDl.path(), "utf8");
     if (!keyText.includes("1. **Wooden room**") || !keyText.includes("A torch burns here.")) fail(`the key is missing the note: ${keyText}`);
     await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // levels: add one above (it starts empty, with the room below showing faintly through it), switch with Page Down / Page Up, and the Foundry export has a picture for each
+    await page.getByTestId("level-bar").waitFor({ timeout: 5000 });
+    const isOn = (id) => page.evaluate((i) => !!document.querySelector(`[data-testid="level-row-${i}"].on`), id);
+    const waitOn = (id) => page.waitForFunction((i) => !!document.querySelector(`[data-testid="level-row-${i}"].on`), id, { timeout: 15000 });
+    await page.getByTestId("level-add-above").click();
+    await waitOn("level-2");
+    await page.getByTestId("battle-summary").getByText(/0 doors/).waitFor({ timeout: 10000 });
+    await page.waitForTimeout(1200); // (the faint picture of the level below is fetched from the server)
+    if ((await painted()) < 12) fail("the upper level's canvas looks blank (the level below should show through it)");
+    await page.screenshot({ path: path.join(shots, "e2e-4e-levels.png") });
+    await page.keyboard.press("PageDown");
+    await waitOn("level-1");
+    await page.getByTestId("battle-summary").getByText(/1 door/).waitFor({ timeout: 10000 });
+    await page.keyboard.press("PageUp");
+    await waitOn("level-2");
+    await page.keyboard.press("PageUp"); // (nothing above: stays)
+    await page.waitForTimeout(300);
+    if (!(await isOn("level-2"))) fail("Page Up above the highest level should stay on it");
+    await page.getByTestId("battle-export-button").click();
+    const [fdl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("battle-export-foundry").click()]);
+    const zipText = (await import("node:fs")).readFileSync(await fdl.path()).toString("latin1");
+    if (!zipText.includes("-1-ground-floor.png") || !zipText.includes("-2-upper-floor.png")) fail("the Foundry export should hold a picture for each level");
+    await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // remove the upper level again (a checkpoint is saved first), leaving the map as it was
+    await page.getByLabel("Remove Upper floor").click();
+    await page.getByRole("button", { name: "Remove level", exact: true }).click();
+    await waitOn("level-1");
+    await page.getByTestId("level-row-level-2").waitFor({ state: "detached", timeout: 10000 });
+    await page.getByTestId("battle-summary").getByText(/1 door/).waitFor({ timeout: 10000 });
     // back to the world map (the viewer test below expects it)
     await page.locator("select.project").selectOption(worldId);
     await page.getByTestId("map-canvas").waitFor({ timeout: 15000 });

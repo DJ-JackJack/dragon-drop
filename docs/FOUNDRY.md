@@ -51,7 +51,7 @@ region, a Define Surface region), Export Data, and read the JSON.
 `pnpm exec tsx scripts/foundry-test-scene.ts <folder>` writes `dragon-drop-foundry-levels-test.zip`: two pictures, the scene without stairs, the same with a
 stair region, and a README with what to look at.
 
-## Stage 2 design (decided 2026-11-19)
+## Stage 2: levels inside a battlemap (built 2026-11-19; design as decided)
 
 How levels live inside one battlemap, chosen to touch as little of the working editor as possible:
 
@@ -63,17 +63,18 @@ How levels live inside one battlemap, chosen to touch as little of the working e
 - **One level is active.** The editor, Claude's tools, selection and undo all work on the active level, so every existing tool keeps working unchanged. Switching level swaps the
   session the hub works on and sends the editor that level, like opening another map. **Undo is per level** (a level has its own history); a switch does not undo anything.
 - **Saving, backups and restore cover every level.** Autosave writes each level that changed; a checkpoint (named or automatic) holds all levels, and restoring it restores all.
-- **The editor** gets a level bar (the levels, add above / below, rename, elevations, delete) and shows the level below faintly while you draw.
-- **Exports:** the Foundry scene gets one level per level (one picture each, walls and lights tagged to it); Universal VTT stays one file per level (stage 4).
+- **The editor** has a level bar over the map (the levels from highest to lowest, add above / below, rename and elevations with the pencil, remove with the bin; `Page Up` / `Page Down` switch). The level below shows faintly through any place the level on screen has no floor (the server draws it: `GET /api/projects/<id>/levels/<level>/picture.png`).
+- **Exports:** the Foundry scene gets one Foundry level per level (one picture each, walls and lights tagged to it, opening on the level being worked on); the picture, the Universal VTT file and the one-level exports are of the level on screen, named with it (`<map>-<level>.dd2vtt`); the key covers every level.
+- **Limits, on purpose:** undo is per level (a level switch undoes nothing). The first level can't be removed (it holds the project's own files; rename it or clear it). At most 12 levels. Restoring a checkpoint puts back every level, including ones removed since (a name clash gets "(restored)"). Removing a level saves a checkpoint first.
 - Stairs, ladders and holes between levels are stage 3.
 
 ## Plan
 
 1. **(done) Export format.** The v14 level-aware builder, one level from a battlemap, and the test scene.
-2. **Levels in the battlemap.** A battlemap holds several named levels with elevation ranges; each has its own floors, walls, doors, lights and props. The
+2. **(done) Levels in the battlemap, with the export of every level.** A battlemap holds several named levels with elevation ranges; each has its own floors, walls, doors, lights and props. The
    editor gets a level switcher, with the level below shown faintly while you draw. Renderer, saving and undo know about levels. A one-floor map is a map
    with one level, so nothing changes for existing maps.
-3. **Connections and the real export.** Stair, ladder and hole objects between levels; the export writes one picture per level (and a foreground picture for
-   a roof), everything tagged to its level, stairs as Change Level regions, holes as openings. Needs the reference JSON above.
+3. **Connections.** Stair, ladder and hole objects between levels; the export adds a foreground picture for a roof, stairs as Change Level regions, holes as openings.
+   Needs the reference JSON above. (The export already writes one picture per level, everything tagged to its level.)
 4. **Claude and the rest.** Tools to add levels and connect them, level-aware versions of the room, wall, door and light tools, instructions, docs, and
    Universal VTT written once per level.

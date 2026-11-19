@@ -4,10 +4,11 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { type MapDoc } from "@mapmaker/core";
+import { type MapDoc, memoryAccess } from "@mapmaker/core";
 import { runTool } from "@mapmaker/tools";
 import { Hub } from "../src/hub.ts";
 import { ProjectStore } from "../src/store.ts";
+import { readZipFile, readZipIndex } from "../src/zip.ts";
 
 const root = mkdtempSync(path.join(tmpdir(), "dd-levels-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -178,6 +179,97 @@ describe("a battlemap with levels", () => {
     for (let i = 1; i < 12; i++) await b.hub.addLevel("above");
     await expect(b.hub.addLevel("above")).rejects.toThrow(/at most 12/);
     await b.hub.close();
+  });
+});
+
+describe("exporting a battlemap with levels", () => {
+  /** The files of an exported zip, by name. */
+  const unzip = async (bytes: Uint8Array) => {
+    const ra = memoryAccess(bytes);
+    const out = new Map<string, Uint8Array>();
+    for (const e of await readZipIndex(ra)) out.set(e.path, await readZipFile(ra, e));
+    return out;
+  };
+  const isPng = (b: Uint8Array) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+  const twoLevels = async (hub: Hub) => {
+    await tower(hub);
+    await hub.addLevel("above");
+    await call(hub, "add_room", { x: 2, y: 2, w: 3, h: 3, doors: [{ side: "top", offset: 1, kind: "door" }] });
+    await call(hub, "add_light", { x: 3, y: 3, radius: 4 });
+  };
+
+  it("a Foundry scene has a level for each floor, with its own picture, walls and lights, and opens on the level being worked on", async () => {
+    const { hub } = fresh();
+    await twoLevels(hub);
+    const f = await hub.battleExport("foundry");
+    expect(f.name).toBe("tower-foundry.zip");
+    const files = await unzip(f.bytes);
+    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-1-ground-floor.png", "tower-2-upper-floor.png", "tower-scene.json"]);
+    expect(isPng(files.get("tower-1-ground-floor.png")!)).toBe(true);
+    expect(isPng(files.get("tower-2-upper-floor.png")!)).toBe(true);
+    const scene = JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!));
+    expect(scene.levels.map((l: { name: string }) => l.name)).toEqual(["Upper floor", "Ground floor"]); // (the active level first: the scene opens on it)
+    expect(scene.initialLevel).toBe(scene.levels[0]._id);
+    const byName = Object.fromEntries(scene.levels.map((l: { name: string; _id: string; background: { src: string }; elevation: object }) => [l.name, l]));
+    expect(byName["Upper floor"].elevation).toEqual({ bottom: 10, top: 20 });
+    expect(byName["Upper floor"].background.src).toBe("maps/tower-2-upper-floor.png");
+    expect(byName["Ground floor"].background.src).toBe("maps/tower-1-ground-floor.png");
+    // every wall and light belongs to exactly its own level
+    const up = byName["Upper floor"]._id, ground = byName["Ground floor"]._id;
+    const count = (list: { levels: string[] }[], id: string) => list.filter((w) => w.levels.length === 1 && w.levels[0] === id).length;
+    expect(count(scene.walls, up)).toBeGreaterThan(0);
+    expect(count(scene.walls, ground)).toBeGreaterThan(0);
+    expect(count(scene.walls, up) + count(scene.walls, ground)).toBe(scene.walls.length);
+    expect(count(scene.lights, up)).toBe(1);
+    expect(count(scene.lights, ground)).toBe(0);
+    expect(new TextDecoder().decode(files.get("README.txt")!)).toMatch(/2 Levels \(Ground floor, Upper floor\)/);
+    await hub.close();
+  });
+
+  it("a one-level map still exports exactly as before: one picture named after the map, the level 'Ground floor' from 0 to 10 feet", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    const files = await unzip((await hub.battleExport("foundry")).bytes);
+    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-scene.json", "tower.png"]);
+    const scene = JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!));
+    expect(scene.levels).toHaveLength(1);
+    expect(scene.levels[0]).toMatchObject({ name: "Ground floor", elevation: { bottom: 0, top: 10 }, background: { src: "maps/tower.png" } });
+    await hub.close();
+  });
+
+  it("a renamed level with its own elevations is what a one-level scene uses", async () => {
+    const { hub } = fresh();
+    await tower(hub);
+    await hub.updateLevel("level-1", { name: "Cellar", bottom: -10, top: 0 });
+    const scene = JSON.parse(new TextDecoder().decode((await unzip((await hub.battleExport("foundry")).bytes)).get("tower-scene.json")!));
+    expect(scene.levels[0]).toMatchObject({ name: "Cellar", elevation: { bottom: -10, top: 0 } });
+    await hub.close();
+  });
+
+  it("the picture and the Universal VTT file are of the level being worked on, named with it; the key covers every level", async () => {
+    const { hub } = fresh();
+    await twoLevels(hub);
+    expect((await hub.battleExport("png")).name).toBe("tower-upper-floor.png");
+    const uvtt = await hub.battleExport("uvtt");
+    expect(uvtt.name).toBe("tower-upper-floor.dd2vtt");
+    expect(JSON.parse(new TextDecoder().decode(uvtt.bytes)).lights).toHaveLength(1); // the upper floor's light, not the ground floor's none
+    await hub.setActiveLevel("level-1");
+    expect((await hub.battleExport("png")).name).toBe("tower-ground-floor.png");
+    expect(JSON.parse(new TextDecoder().decode((await hub.battleExport("uvtt")).bytes)).lights).toHaveLength(0);
+    const key = new TextDecoder().decode((await hub.battleExport("key")).bytes);
+    expect(key).toContain("Tower, Ground floor");
+    expect(key).toContain("Tower, Upper floor");
+    await hub.close();
+  });
+
+  it("any level can be pictured (for the editor's faint level below); an unknown level or project can't", async () => {
+    const { hub } = fresh();
+    await twoLevels(hub);
+    expect(isPng((await hub.levelPicture("tower", "level-1"))!)).toBe(true);
+    expect(isPng((await hub.levelPicture("tower", "level-2"))!)).toBe(true);
+    expect(await hub.levelPicture("tower", "level-9")).toBeNull();
+    expect(await hub.levelPicture("other", "level-1")).toBeNull();
+    await hub.close();
   });
 });
 

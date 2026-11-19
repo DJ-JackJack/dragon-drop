@@ -54,8 +54,4 @@ Sources: [Foundry VTT's controls page](https://foundryvtt.com/article/controls) 
 
 ### Added after the first comparison
 
-The first version of this page listed five things the other programs have and we didn't. Four are done: copy, paste and duplicate; selecting several things at once; arrow keys that nudge the selection; and `Shift` to skip snapping while dragging. (There is no `Alt`-drag to duplicate: `Alt` already means "put it anywhere".)
-
-### Not built yet
-
-- `Page Up` and `Page Down` to change level, as some battlemap editors do. Battlemaps have no levels yet (one floor per battlemap), so there is nothing to switch between. It comes with the levels work in [FOUNDRY.md](FOUNDRY.md), stage 2: stacked floors in one battlemap with a level switcher.
+The first version of this page listed five things the other programs have and we didn't. All five are done: copy, paste and duplicate; selecting several things at once; arrow keys that nudge the selection; `Shift` to skip snapping while dragging; and `Page Up` / `Page Down` to change level (a battlemap can hold several levels: see [FOUNDRY.md](FOUNDRY.md), stage 2). (There is no `Alt`-drag to duplicate: `Alt` already means "put it anywhere".)

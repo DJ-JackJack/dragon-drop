@@ -7,9 +7,9 @@ import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
   type ClaudeState, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
   PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
-  type BattleExportFormat, battleKey, sampleBaseClimate, sketchToHeights, toFoundryScene, toUniversalVtt,
+  type BattleExportFormat, battleKey, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
-  type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, newLevelId, newLevelName, nextLevelElevation,
+  type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -34,7 +34,11 @@ export function autoBackupName(d: Date): string {
   return `Auto ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** One level of an open battlemap: its own floor document and history. A map with no levels list has one. */
+/** A level name as a piece of a file name: lower case letters, digits and hyphens ("Upper floor" is "upper-floor"). */
+function fileSlug(name: string): string {
+  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "level";
+}
+
 /** A level name made safe (no control characters, at most 60 characters), or null when nothing is left. */
 function cleanLevelName(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -42,6 +46,7 @@ function cleanLevelName(v: unknown): string | null {
   return t || null;
 }
 
+/** One level of an open battlemap: its own floor document and history. A map with no levels list has one. */
 interface LevelRuntime {
   id: string;
   session: MapSessionT;
@@ -400,39 +405,84 @@ export class Hub {
     return { ...info, description: what };
   }
 
-  /** The open battlemap as a file for a virtual tabletop: image, Universal VTT, or a Foundry scene (zip). */
+  /** The floor documents of the open battlemap's levels, from the lowest to the highest. */
+  private levelDocs(op: OpenProject): { level: BattleLevel; doc: MapDoc }[] {
+    return levelsByHeight(op.levels.levels).map((level) => ({ level, doc: op.runtime.find((r) => r.id === level.id)!.session.doc }));
+  }
+
+  /** One level of the open battlemap drawn as it is exported: walls and doors kept, lights and the DM's notes left out (the tabletop does its own lighting). */
+  private async renderLevelArt(doc: MapDoc): Promise<{ png: Uint8Array; w: number; h: number }> {
+    const { w, h } = battleImageSize(battleSpec(doc));
+    const data = await this.compute.battle(doc, { overlay: true, lights: false, ...(await this.battleAssets(doc)).opts });
+    return { png: encodePng({ w, h, data }), w, h };
+  }
+
+  /**
+   * The open battlemap as a file for a virtual tabletop: image, Universal VTT, or a Foundry scene (zip). A battlemap of several levels gives a Foundry
+   * scene with every level (one picture each); the image and the Universal VTT file are of the level being worked on, named with it.
+   */
   async battleExport(format: BattleExportFormat): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const doc = op.session.doc;
     if (!isBattle(doc)) throw new Error("Only battlemaps can be exported this way.");
     if (op.session.inTransaction) op.session.commit();
-    // the DM's key (numbered notes) as a Markdown list: no picture needed
-    if (format === "key") return { name: `${op.id}-key.md`, mime: "text/markdown; charset=utf-8", bytes: new TextEncoder().encode(battleKey(doc)) };
-    const spec = battleSpec(doc);
-    const { w, h } = battleImageSize(spec);
-    // the drawn art keeps walls and doors; lights and the DM's notes are left out (the tabletop does its own lighting)
-    const data = await this.compute.battle(doc, { overlay: true, lights: false, ...(await this.battleAssets(doc)).opts });
-    const png = encodePng({ w, h, data });
+    const docs = this.levelDocs(op);
+    const many = docs.length > 1;
     const base = op.id;
+    const active = op.levels.levels.find((l) => l.id === op.levels.active)!;
     const enc = new TextEncoder();
-    if (format === "png") return { name: `${base}.png`, mime: "image/png", bytes: png };
-    if (format === "uvtt") {
-      return { name: `${base}.dd2vtt`, mime: "application/json", bytes: enc.encode(JSON.stringify(toUniversalVtt(doc, Buffer.from(png).toString("base64")))) };
+    // the DM's key (numbered notes) as a Markdown list: no picture needed
+    if (format === "key") {
+      const text = many
+        ? docs.map(({ level, doc: d }) => battleKey({ ...d, meta: { ...d.meta, name: `${d.meta.name}, ${level.name}` } })).join("\n")
+        : battleKey(doc);
+      return { name: `${base}-key.md`, mime: "text/markdown; charset=utf-8", bytes: enc.encode(text) };
     }
-    const scene = toFoundryScene(doc, `maps/${base}.png`);
+    if (format === "png" || format === "uvtt") {
+      const stem = many ? `${base}-${fileSlug(active.name)}` : base;
+      const { png } = await this.renderLevelArt(doc);
+      if (format === "png") return { name: `${stem}.png`, mime: "image/png", bytes: png };
+      return { name: `${stem}.dd2vtt`, mime: "application/json", bytes: enc.encode(JSON.stringify(toUniversalVtt(doc, Buffer.from(png).toString("base64")))) };
+    }
+    // a Foundry scene: every level, one picture each
+    const files: { name: string; data: Uint8Array }[] = [];
+    const levels: FoundryLevelDoc[] = [];
+    for (const [i, { level, doc: d }] of docs.entries()) {
+      const image = many ? `${base}-${i + 1}-${fileSlug(level.name)}.png` : `${base}.png`;
+      files.push({ name: image, data: (await this.renderLevelArt(d)).png });
+      levels.push({ doc: d, name: level.name, bottom: level.bottom, top: level.top, image: `maps/${image}` });
+    }
+    // (the scene opens on the level being worked on)
+    const first = levels.findIndex((l) => l.name === active.name);
+    if (first > 0) levels.unshift(...levels.splice(first, 1));
+    const scene = toFoundryLevelsScene(levels, doc.meta.name);
+    const pictures = files.map((f) => f.name).join(", ");
     const readme =
       `Foundry VTT scene for "${doc.meta.name}"\r\n\r\n` +
-      `1. Upload ${base}.png into your Foundry data folder (for example a "maps" folder) with the File Browser.\r\n` +
+      `1. Upload ${many ? "the PNG pictures (" + pictures + ")" : files[0].name} into your Foundry data folder, in a folder called "maps", with the File Browser.\r\n` +
       `2. In Foundry, create a Scene (or open an existing one), right-click it in the Scenes list > Import Data, and choose ${base}-scene.json.\r\n` +
-      `3. If the map doesn't show, open the scene's configuration, go to Levels and set the level's Background to where you uploaded the PNG.\r\n\r\n` +
-      `This is a Foundry v14 scene: the map is one Level, with its walls, doors and lights tagged to it. It was built from Foundry's published v14\r\n` +
-      `documentation and hasn't been tried in Foundry itself yet. If it doesn't import cleanly, tell us what Foundry said, or use the .dd2vtt export\r\n` +
-      `with the Universal Battlemap Importer module instead.\r\n`;
+      `3. If a map doesn't show, open the scene's configuration, go to Levels and set each level's Background to where you uploaded its PNG.\r\n\r\n` +
+      (many
+        ? `This is a Foundry v14 scene with ${docs.length} Levels (${docs.map((d) => d.level.name).join(", ")}), each with its own picture, walls, doors and lights, stacked by elevation.\r\n` +
+          `Stairs, ladders and holes between levels aren't made for you yet: add them in Foundry (a Region with the Change Level behaviour).\r\n`
+        : `This is a Foundry v14 scene: the map is one Level, with its walls, doors and lights tagged to it.\r\n`) +
+      `It was built from Foundry's published v14 documentation and hasn't been tried in Foundry itself yet. If it doesn't import cleanly, tell us what Foundry said,\r\n` +
+      `or use the .dd2vtt export with the Universal Battlemap Importer module instead.\r\n`;
     return {
       name: `${base}-foundry.zip`, mime: "application/zip",
-      bytes: createZip([{ name: `${base}.png`, data: png }, { name: `${base}-scene.json`, data: enc.encode(JSON.stringify(scene, null, 2)) }, { name: "README.txt", data: enc.encode(readme) }]),
+      bytes: createZip([...files, { name: `${base}-scene.json`, data: enc.encode(JSON.stringify(scene, null, 2)) }, { name: "README.txt", data: enc.encode(readme) }]),
     };
+  }
+
+  /** A picture of one level of the open battlemap (floor, walls, doors and props; no lights or notes), for the editor to show faintly under the level above. */
+  async levelPicture(projectId: string, levelId: string): Promise<Uint8Array | null> {
+    const op = this.open;
+    if (!op || op.id !== projectId || !isBattle(op.session.doc)) return null;
+    const rt = op.runtime.find((r) => r.id === levelId);
+    if (!rt) return null;
+    if (op.session.inTransaction) op.session.commit();
+    return (await this.renderLevelArt(rt.session.doc)).png;
   }
 
   /**

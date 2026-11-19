@@ -4,7 +4,7 @@
  * subscribe to `onPatch` to redraw, and to `subscribe` for everything else.
  */
 import {
-  type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type MapMeta,
+  type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
@@ -28,6 +28,8 @@ export interface AppState {
   savedAt: number;
   checkpoints: CheckpointInfo[];
   features: Features;
+  /** The levels of the open battlemap (null for a world map). The active one is the level the floor, walls and lights on screen belong to. */
+  levels: LevelsFile | null;
   /** Bumped whenever new derived layers (climate, rivers, lakes) arrive. */
   derivedVersion: number;
   /** What Claude Code last reported through its hooks (Assist mode waits for "idle"). */
@@ -45,7 +47,7 @@ function loadLockPref(): boolean {
 const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
-  apiKeyConfigured: false, error: null, savedAt: 0, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, claude: "unknown",
+  apiKeyConfigured: false, error: null, savedAt: 0, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(),
 };
 
@@ -167,6 +169,20 @@ class Store {
     this.send({ t: "view", rect, zoom });
   }
 
+  /** Switch the battlemap to another level (the server sends the level's floor, walls and lights, as it does when a map is opened). */
+  setLevel(id: string) {
+    if (this.state.levels && this.state.levels.active !== id) this.send({ t: "level_set", id });
+  }
+  addLevel(where: "above" | "below", name?: string) {
+    this.send({ t: "level_add", where, name });
+  }
+  updateLevel(id: string, patch: { name?: string; bottom?: number; top?: number }) {
+    this.send({ t: "level_update", id, patch });
+  }
+  removeLevel(id: string) {
+    this.send({ t: "level_remove", id });
+  }
+
   dismissError() {
     this.set({ error: null });
   }
@@ -204,7 +220,7 @@ class Store {
         this.set({
           meta: m.meta, projects: m.projects, changes: m.changes, seq: m.seq, canUndo: m.canUndo, canRedo: m.canRedo,
           refs: m.refs, chat: m.chat, chatSettings: m.chatSettings, chatBusy: m.chatBusy, usage: m.usage,
-          apiKeyConfigured: m.apiKeyConfigured, features: m.features, selection: null, selectionLock: false,
+          apiKeyConfigured: m.apiKeyConfigured, features: m.features, levels: m.levels ?? null, selection: null, selectionLock: false,
         });
         break;
       case "projects":
@@ -235,6 +251,9 @@ class Store {
         break;
       case "features":
         this.set({ features: m.features });
+        break;
+      case "levels":
+        this.set({ levels: m.levels });
         break;
       case "claude_state":
         this.set({ claude: m.state });

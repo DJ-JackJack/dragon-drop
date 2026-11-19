@@ -111,6 +111,14 @@ export function createAppServer(cfg: Config, hub: Hub) {
         res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" }).end(bytes);
         return;
       }
+      // one level of the open battlemap as a picture (the editor shows the level below faintly under the one being worked on)
+      const lv = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/levels\/([a-z0-9-]+)\/picture\.png$/);
+      if (lv) {
+        const png = await hub.levelPicture(lv[1], lv[2]);
+        if (!png) return void res.writeHead(404, { "content-type": "text/plain" }).end("No such level in the open project");
+        res.writeHead(200, { "content-type": "image/png", "content-length": png.byteLength, "cache-control": "no-cache" }).end(png);
+        return;
+      }
       if (url.pathname.startsWith("/api/assets/")) return await handleAssets(hub, url, req, res);
       const ex = url.pathname.match(new RegExp(`^/api/projects/([a-z0-9-]+)/export/(${BATTLE_EXPORT_FORMATS.join("|")})$`));
       if (ex) {

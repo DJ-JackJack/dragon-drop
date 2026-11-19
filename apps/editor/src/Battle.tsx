@@ -5,9 +5,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type BattleSpec, type Features, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  type BattleSpec, type Features, type LevelsFile, type MapAmbientZone, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
+  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
+import { LevelBar } from "./LevelBar.tsx";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { getClip, setClip, unstack } from "./clipboard.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
@@ -125,13 +126,15 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
 interface ViewProps {
   meta: MapMeta | null;
   features: Features;
+  /** The levels of this battlemap and which one is on screen. */
+  levels: LevelsFile | null;
   ui: BattleUi;
   onUi: (patch: Partial<BattleUi>) => void;
 }
 
 const BAND = 96;
 
-export function BattleView({ meta, features, ui, onUi }: ViewProps) {
+export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -156,6 +159,11 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
   const nudgeTimer = useRef<number | undefined>(undefined);
   const paintToken = useRef(0);
   const metaRef = useRef(meta); metaRef.current = meta;
+  const levelsRef = useRef(levels); levelsRef.current = levels;
+  /** The level just below the one on screen, shown faintly where this level has no floor: which it is and its picture. */
+  const belowId = levels ? levelBelow(levels.levels, levels.active)?.id ?? null : null;
+  const belowRef = useRef<string | null>(null); belowRef.current = belowId;
+  const ghostRef = useRef<{ id: string; bmp: ImageBitmap } | null>(null);
   const featRef = useRef(features); featRef.current = features;
   const uiRef = useRef(ui); uiRef.current = ui;
   const onUiRef = useRef(onUi); onUiRef.current = onUi;
@@ -263,7 +271,11 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     }
     const img = imgRef.current!, ctx = off.getContext("2d")!;
     const doc: MapDoc = { meta: { ...m, battle: { ...spec, pxPerSquare: px } }, height: hf };
-    const draw1 = (rect: Rect) => { renderBattleFloor(doc, img.data, rect, tileSource); ctx.putImageData(img, 0, 0, rect.x, rect.y, rect.w, rect.h); };
+    const draw1 = (rect: Rect) => {
+      renderBattleFloor(doc, img.data, rect, tileSource);
+      clearVoid(img.data, hf, rect, W, px / spec.sub);
+      ctx.putImageData(img, 0, 0, rect.x, rect.y, rect.w, rect.h);
+    };
     if (r) {
       const cell = px / spec.sub, pad = 3;
       const x0 = Math.max(0, Math.floor((r.x - pad) * cell)), y0 = Math.max(0, Math.floor((r.y - pad) * cell));
@@ -403,6 +415,11 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
     const MW = spec.squaresX * v.scale, MH = spec.squaresY * v.scale;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
+    // where there is no floor: the void, with the level below showing through faintly; then this level's floor
+    ctx.fillStyle = "rgb(22, 22, 26)";
+    ctx.fillRect(v.ox, v.oy, MW, MH);
+    const gh = ghostRef.current;
+    if (gh && gh.id === belowRef.current) { ctx.globalAlpha = 0.38; ctx.drawImage(gh.bmp, v.ox, v.oy, MW, MH); ctx.globalAlpha = 1; }
     ctx.drawImage(off, v.ox, v.oy, MW, MH);
     ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1);
@@ -555,6 +572,22 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
 
   // ------------------------------------------------------------ effects
   useEffect(() => store.onPatch((r) => repaint(r)), [repaint]);
+  // the level below, as a picture from the server (fetched again each time a level is switched to, since the one below may have been changed meanwhile)
+  const projectId = meta?.id ?? null, activeLevel = levels?.active ?? null;
+  useEffect(() => {
+    if (!projectId || !belowId) { ghostRef.current?.bmp.close(); ghostRef.current = null; requestDraw(); return; }
+    let dead = false;
+    void fetch(`/api/projects/${encodeURIComponent(projectId)}/levels/${encodeURIComponent(belowId)}/picture.png`)
+      .then(async (r) => { if (!r.ok) throw new Error(String(r.status)); return createImageBitmap(await r.blob()); })
+      .then((bmp) => {
+        if (dead) { bmp.close(); return; }
+        ghostRef.current?.bmp.close();
+        ghostRef.current = { id: belowId, bmp };
+        requestDraw();
+      })
+      .catch(() => { /* no picture of the level below: it just isn't shown */ });
+    return () => { dead = true; };
+  }, [projectId, belowId, activeLevel, requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) repaint(null); }, [meta, repaint]);
   useEffect(() => { buildWalls(); requestDraw(); }, [features, ui, meta, requestDraw, buildWalls]);
   useEffect(() => { draft.current = null; shapeDraft.current = null; requestDraw(); }, [ui.tool, ui.roomShape, requestDraw]);
@@ -592,6 +625,17 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
         e.preventDefault();
         requestDraw();
         return;
+      }
+      // Page Up / Page Down: the level above / below
+      if ((e.key === "PageUp" || e.key === "PageDown") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const lv = levelsRef.current;
+        if (lv && lv.levels.length > 1) {
+          const sorted = levelsByHeight(lv.levels), i = sorted.findIndex((l) => l.id === lv.active);
+          const next = sorted[i + (e.key === "PageUp" ? 1 : -1)];
+          if (next) store.setLevel(next.id);
+          e.preventDefault();
+          return;
+        }
       }
       const arrow = ARROW_DIRECTION[e.key];
       if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey && nudge(arrow[0], arrow[1], e.shiftKey)) { e.preventDefault(); return; }
@@ -934,6 +978,7 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
           <>{spec.squaresX}×{spec.squaresY} squares · {spec.squaresX * spec.feetPerSquare}×{spec.squaresY * spec.feetPerSquare} ft</>
         ) : null}
       </div>
+      {levels && <LevelBar levels={levels} />}
       <div className="map-buttons">
         <button onClick={() => setExportOpen(true)} title="Export for Foundry, Universal VTT or as an image" data-testid="battle-export-button">⤓ Export</button>
         <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit map to window">⤢ Fit</button>
@@ -947,6 +992,17 @@ export function BattleView({ meta, features, ui, onUi }: ViewProps) {
 }
 
 // ---------------------------------------------------------------- drawing helpers
+/** Make the void (cells with no floor) transparent in a painted floor, so what lies under it (the level below, shown faintly) can be seen through it. */
+function clearVoid(out: Uint8ClampedArray, hf: { w: number; h: number; data: ArrayLike<number> }, r: Rect, imgW: number, cellPx: number) {
+  const { w: CW, h: CH, data } = hf;
+  for (let y = r.y; y < r.y + r.h; y++) {
+    const row = Math.min(CH - 1, Math.floor(y / cellPx)) * CW;
+    for (let x = r.x; x < r.x + r.w; x++) {
+      if (((data[row + Math.min(CW - 1, Math.floor(x / cellPx))] as number) | 0) === 0) out[(y * imgW + x) * 4 + 3] = 0;
+    }
+  }
+}
+
 /** What is drawn over the wall layer: the selection, padlocks, and the dashed line of invisible walls. */
 function drawWallMarks(ctx: CanvasRenderingContext2D, walls: MapWall[], v: View, isSelected: (id: string) => boolean) {
   const px = (x: number) => v.ox + x * v.scale, py = (y: number) => v.oy + y * v.scale;
@@ -1545,10 +1601,10 @@ export function BattleExportDialog({ meta, onClose }: { meta: MapMeta; onClose: 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const files = [
-    { fmt: "uvtt", name: `${meta.id}.dd2vtt`, title: "Universal VTT (.dd2vtt)", text: "One file with the image, walls, doors and lights. Use it with the Universal Battlemap Importer module in Foundry, or in Roll20, Fantasy Grounds and other programs that read it." },
-    { fmt: "foundry", name: `${meta.id}-foundry.zip`, title: "Foundry scene (.zip)", text: "The image plus a scene file for Foundry's Import Data, with the grid, walls, doors and lights. A README inside says where things go." },
+    { fmt: "uvtt", name: `${meta.id}.dd2vtt`, title: "Universal VTT (.dd2vtt)", text: "One file with the image, walls, doors and lights (of the level you are working on). Use it with the Universal Battlemap Importer module in Foundry, or in Roll20, Fantasy Grounds and other programs that read it." },
+    { fmt: "foundry", name: `${meta.id}-foundry.zip`, title: "Foundry scene (.zip)", text: "A picture for each level plus a scene file for Foundry's Import Data, with the grid, levels, walls, doors and lights. A README inside says where things go." },
     { fmt: "key", name: `${meta.id}-key.md`, title: "Key (.md)", text: "Your numbered room notes as a list (Markdown), for the DM. Notes are never part of the picture." },
-    { fmt: "png", name: `${meta.id}.png`, title: "Image only (.png)", text: "The map picture with walls and doors drawn in. No lights (the tabletop does its own lighting)." },
+    { fmt: "png", name: `${meta.id}.png`, title: "Image only (.png)", text: "The picture of the level you are working on, with walls and doors drawn in. No lights (the tabletop does its own lighting)." },
   ] as const;
   const go = async (f: (typeof files)[number]) => {
     setError(null);

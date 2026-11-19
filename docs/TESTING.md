@@ -421,6 +421,19 @@ Tell me whether the walls read as walls at normal zoom, and whether Dim and Dark
 
 ---
 
+## 14g2. Levels (a cellar, a ground floor, an attic)
+
+Open or make a battlemap with a room in it.
+1. A small **Levels** panel sits in the top-left corner of the map with one level, **Ground floor** (0 to 10 ft). **Expect** a **+ Level above** and a **+ Level below** button.
+2. Click **+ Level above**. **Expect** a new **Upper floor** (10 to 20 ft), lit gold, with an empty map: and the room below showing **faintly** through it, where the new floor has nothing.
+3. Paint a room on the Upper floor (partly over the room below), add a door and a light. Click **Ground floor** in the panel. **Expect** the ground floor as you left it (its own room, door and light), and the upper floor's room showing nothing (you only see the level *below*). Press **Page Up**: back on the Upper floor. **Page Down**: the ground floor.
+4. **Undo** on the Upper floor undoes only what you did there; switching level doesn't undo anything.
+5. Click the **pencil** on a level: change the name (then the floor and ceiling heights in feet). **Expect** the panel to show the new name and heights. Try a ceiling below the floor: **expect** it to be refused with a message.
+6. **⤓ Export**, **Foundry scene**. **Expect** a zip with a picture for each level (`-1-ground-floor.png`, `-2-upper-floor.png`), the scene file and a README that names both levels. **Universal VTT** and **Image only** are of the level on screen and say so in their file names.
+7. Close Dragon Drop and open the map again. **Expect** both levels back, with the same names and heights, and the same level on screen.
+8. Click the **bin** on the Upper floor and confirm. **Expect** it gone and the ground floor on screen. Open **Checkpoints**: there is a **Before removing Upper floor** one; **Restore** brings the upper floor back with its room.
+9. **Expect** the bin on the first level to be greyed out (the first level can't be removed).
+
 ## 14h. Reefs, the northwesterly wind and the new places
 
 1. **Roads** tool, choose **Reef**, click along a strait (or any stretch of sea) and double-click. **Expect** a pale shoal with razor rocks and foam along the line, listed as a reef; Delete removes it.
@@ -591,7 +604,7 @@ Tell me about any key you expected to work and didn't, and any that did somethin
 
 ## 15. What's not built yet (so you don't report it as a bug)
 
-- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), levels (multi-floor). The Universal VTT and Foundry exports exist but are untested (above).
+- Scatter on battlemaps, wall, path, portal and roof graphics from asset packs (only floors and objects work), stairs, ladders and holes between levels (the levels themselves work: 14g2), Claude tools for levels. The Universal VTT and Foundry exports exist but are untested (above).
 - GPU erosion; automatic label placement for sea/region names (place names do place themselves).
 
 ---

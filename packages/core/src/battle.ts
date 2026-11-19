@@ -825,16 +825,32 @@ export function toUniversalVtt(doc: MapDoc, imagePngBase64: string) {
   };
 }
 
+/** One level of a battlemap for a Foundry scene: its floor document, its name, its elevation (feet) and where its picture will be. */
+export interface FoundryLevelDoc {
+  doc: MapDoc;
+  name: string;
+  bottom: number;
+  top: number;
+  image: string;
+}
+
 /**
- * A Foundry VTT scene for Scene "Import Data", in Foundry v14's format (see foundryScene.ts): one level holding the whole map, with its walls, doors
- * and lights tagged to it. Coordinates are in image pixels, with the background image by name (put the image where `image` points).
+ * A Foundry VTT scene for Scene "Import Data", in Foundry v14's format (see foundryScene.ts): one level for each floor document, in the order given
+ * (the first is the level the scene opens on), each with its own picture, walls, doors and lights tagged to it. The size, grid and light level of the scene
+ * are the first level's (every level of a battlemap is made with the same size and grid). Coordinates are in image pixels.
  */
-export function toFoundryScene(doc: MapDoc, imageSrc: string, sceneName?: string) {
-  const spec = battleSpec(doc);
+export function toFoundryLevelsScene(levels: FoundryLevelDoc[], sceneName?: string) {
+  if (!levels.length) throw new Error("A Foundry scene needs at least one level.");
+  const first = levels[0].doc;
+  const spec = battleSpec(first);
   const { w, h } = battleImageSize(spec);
-  const f = doc.features;
   return foundryScene({
-    name: sceneName ?? doc.meta.name, width: w, height: h, pxPerSquare: spec.pxPerSquare, feetPerSquare: spec.feetPerSquare, gridType: spec.gridType, ambient: ambientOf(spec),
-    levels: [{ name: "Ground floor", bottom: 0, top: 10, image: imageSrc, walls: f?.walls ?? [], lights: f?.lights ?? [] }],
+    name: sceneName ?? first.meta.name, width: w, height: h, pxPerSquare: spec.pxPerSquare, feetPerSquare: spec.feetPerSquare, gridType: spec.gridType, ambient: ambientOf(spec),
+    levels: levels.map((l) => ({ name: l.name, bottom: l.bottom, top: l.top, image: l.image, walls: l.doc.features?.walls ?? [], lights: l.doc.features?.lights ?? [] })),
   });
+}
+
+/** The same for a battlemap of one level: "Ground floor", from 0 to 10 feet, holding the whole map. */
+export function toFoundryScene(doc: MapDoc, imageSrc: string, sceneName?: string) {
+  return toFoundryLevelsScene([{ doc, name: "Ground floor", bottom: 0, top: 10, image: imageSrc }], sceneName);
 }

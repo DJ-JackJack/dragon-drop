@@ -102,6 +102,16 @@ code { background: #08080a; padding: 1px 4px; border-radius: 4px; font-size: 12.
 }
 .map-buttons { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
 .map-buttons button { background: var(--glass); }
+/* the levels of a battlemap */
+.level-bar { position: absolute; left: 10px; top: 10px; z-index: 2; display: flex; flex-direction: column; gap: 4px; padding: 6px; width: 212px; background: var(--glass); border: 1px solid rgba(212, 175, 55, 0.18); border-radius: 8px; font-size: 12px; }
+.level-head { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 2px; }
+.level-add { font-size: 12px; padding: 3px 6px; }
+.level-row { display: flex; gap: 3px; align-items: stretch; }
+.level-pick { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left; padding: 3px 7px; }
+.level-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.level-ft { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.level-row.on .level-pick { border-color: var(--gold-hi); background: #2c2512; box-shadow: 0 0 8px rgba(212, 175, 55, 0.35); }
+.level-small { padding: 2px 6px; }
 .mapview-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
 
 .chat { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
