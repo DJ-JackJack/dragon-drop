@@ -773,11 +773,13 @@ export function renderBattle(
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
 /**
- * Lines that block sight and movement in a Universal VTT file: walls, and secret doors (which look and act like wall until the
- * DM reveals them; the format has no secret door, and writing one as an ordinary door would show the players where it is).
+ * Lines that block sight and movement in a Universal VTT file: walls, and the kinds the format has no way to say. A secret door looks and acts like wall until the
+ * DM reveals it (an ordinary door would show the players where it is). A window and an invisible wall are meant to let sight through while stopping movement, but
+ * the format has no such wall: the one list that looked like it (`objects_line_of_sight`) was ignored by the Universal Battlemap Importer, which left a gap that
+ * tokens could walk through (tried in Foundry 14.367). So they become plain walls here; Foundry's own scene export keeps them as they are.
  */
 function sightLines(f: Features | undefined) {
-  return (f?.walls ?? []).filter((w) => w.kind === "wall" || w.kind === "secret").map((w) => {
+  return (f?.walls ?? []).filter((w) => w.kind === "wall" || w.kind === "secret" || w.kind === "window" || w.kind === "invisible").map((w) => {
     const pts = w.closed && w.points.length > 2 ? [...w.points, w.points[0]] : w.points;
     return pts.map(([x, y]) => ({ x: r4(x), y: r4(y) }));
   });
@@ -791,11 +793,9 @@ function argb(hex: string): string {
 
 /**
  * Universal VTT (.dd2vtt / .uvtt) data. Positions are in grid squares. Only doors become portals, because
- * a VTT turns every portal into a door that opens. The format has no window and no secret door, so:
- *   - a window becomes an "objects_line_of_sight" line, like an invisible wall: it blocks movement but not sight or light;
- *   - a secret door becomes a plain wall line (see sightLines), so it can't be told from the wall around it.
- * Written from the format as I know it: the field names and the colour byte order haven't been checked
- * against a program that reads it, so test it in yours.
+ * a VTT turns every portal into a door that opens. The format has no window, no invisible wall and no secret door, so a window, an invisible wall
+ * and a secret door all become plain wall lines (see sightLines). `objects_line_of_sight` is written empty.
+ * Tried with the Universal Battlemap Importer in Foundry 14.367 (docs/FOUNDRY.md): picture, grid, walls, doors and lights came through; not tried in other programs.
  */
 export function toUniversalVtt(doc: MapDoc, imagePngBase64: string) {
   const spec = battleSpec(doc);
@@ -805,7 +805,7 @@ export function toUniversalVtt(doc: MapDoc, imagePngBase64: string) {
     format: 0.3,
     resolution: { map_origin: { x: 0, y: 0 }, map_size: { x: spec.squaresX, y: spec.squaresY }, pixels_per_grid: spec.pxPerSquare },
     line_of_sight: sightLines(f),
-    objects_line_of_sight: walls.filter((w) => w.kind === "invisible" || w.kind === "window").map((w) => w.points.map(([x, y]) => ({ x: r4(x), y: r4(y) }))),
+    objects_line_of_sight: [] as { x: number; y: number }[][],
     portals: walls.filter((w) => w.kind === "door").map((w) => {
       const [a, b] = [w.points[0], w.points[w.points.length - 1]];
       return {

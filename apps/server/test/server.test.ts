@@ -958,9 +958,10 @@ describe("battlemaps", () => {
     expect(uvttRes.headers.get("content-disposition")).toContain("test-cellar.dd2vtt");
     const uvtt = await uvttRes.json() as { resolution: { map_size: { x: number }; pixels_per_grid: number }; line_of_sight: unknown[]; objects_line_of_sight: unknown[]; portals: unknown[]; lights: unknown[]; image: string };
     expect(uvtt.resolution).toMatchObject({ map_size: { x: 24, y: 16 }, pixels_per_grid: 40 });
-    // only real doors are portals (this map has no secret doors): a tabletop turns every portal into a door, so a window is written as a line that stops movement instead
+    // only real doors are portals (this map has no secret doors): a tabletop turns every portal into a door, so a window is written as a plain wall line instead
     expect(uvtt.portals.length).toBe(listed.summary.doors);
-    expect(uvtt.objects_line_of_sight.length).toBe(listed.summary.windows);
+    expect(uvtt.objects_line_of_sight.length).toBe(0);
+    expect(uvtt.line_of_sight.length).toBeGreaterThanOrEqual(listed.summary.windows);
     expect(uvtt.lights).toHaveLength(1);
     expect(Buffer.from(uvtt.image, "base64").subarray(1, 4).toString()).toBe("PNG");
     const zip = new Uint8Array(await (await fetch(`${base}/foundry`)).arrayBuffer());

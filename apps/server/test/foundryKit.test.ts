@@ -20,10 +20,11 @@ describe("the Foundry test kit", () => {
     // the handoff names every file it tells the reader to use
     const handoff = readFileSync(path.join(out, "HANDOFF.md"), "utf8");
     for (const name of ["dragon-drop-foundry-levels-test.zip", "vtt-test-foundry.zip", "vtt-test.dd2vtt", "WHAT-IS-IN-THE-MAP.md", "RESULTS-TEMPLATE.md", "observed.test.example.mjs"]) expect(handoff).toContain(name);
-    // the Universal VTT file is the real thing: three doors (portals), one window (a see-through wall) and two lights
+    // the Universal VTT file is the real thing: three doors (portals), the window as a plain wall line (the format has no see-through wall) and two lights
     const uvtt = JSON.parse(readFileSync(path.join(out, "battlemap-test/vtt-test.dd2vtt"), "utf8"));
     expect(uvtt.portals).toHaveLength(3);
-    expect(uvtt.objects_line_of_sight).toHaveLength(1);
+    expect(uvtt.objects_line_of_sight).toEqual([]);
+    expect(uvtt.line_of_sight).toContainEqual([{ x: 11, y: 5 }, { x: 11, y: 6 }]);
     expect(uvtt.lights).toHaveLength(2);
   });
 });

@@ -59,7 +59,9 @@ both lights are where and what colour they should be.
 - The first two-level test scene laid its door, window and secret door over unbroken room walls, so opening them opened nothing. The editor's real walls are already cut around
   openings; the test scene is fixed to do the same.
 - **Universal VTT** into the Universal Battlemap Importer 6.1.1: picture, grid, walls, doors, the secret door (as a wall) and both lights came through; **the window did not**
-  (nothing covers it, so tokens walk and see through the gap), the importer makes many zero-length walls of its own, and its lights are very faint (`alpha 0.05`).
+  (nothing covers it, so tokens walk and see through the gap), the importer makes many zero-length walls of its own, and its lights are very faint (`alpha 0.05`). It made only two
+  kinds of wall (full walls and doors), so the format can't carry a see-through wall into it. **Decided:** a window and an invisible wall are now written as plain walls in the
+  `.dd2vtt` (a safe, predictable result everywhere), and the export dialog tells Foundry users to use the Foundry scene export, which keeps them.
 - Foundry's own Window tool stores a proximity wall (`sight 30, light 30`, thresholds 10 ft); ours (`sight 0, light 0`) lets sight through and stops movement as intended.
 - Foundry gives regions drawn by hand `visibility: 4`; we now write that for stairs too.
 
