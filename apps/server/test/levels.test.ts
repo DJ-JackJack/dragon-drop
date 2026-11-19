@@ -278,36 +278,55 @@ describe("exporting a battlemap with levels", () => {
     await hub.close();
   });
 
-  it("roofs become a level's foreground: a see-through picture next to its own, and the ordinary pictures never show them", async () => {
+  it("roofs become tiles: a see-through picture for each roof next to the level's own, a ceiling region over it, and the ordinary pictures never show them", async () => {
     const { hub } = fresh();
     await tower(hub); // a room at squares 1..7 x 1..6, 70 px a square
     await hub.addLevel("above");
     hub.session.execute({ op: "features", patch: { upsertRoofs: [{ id: "f1", style: "slate", points: [[1, 1], [7, 1], [7, 6], [1, 6]] }] } }, "user");
     const files = await unzip((await hub.battleExport("foundry")).bytes);
-    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-1-ground-floor.png", "tower-2-upper-floor-roof.png", "tower-2-upper-floor.png", "tower-scene.json"]);
+    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-1-ground-floor.png", "tower-2-upper-floor-roof-1.png", "tower-2-upper-floor.png", "tower-scene.json"]);
     const scene = JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!));
-    const byName = Object.fromEntries(scene.levels.map((l: { name: string; foreground: { src: string | null } }) => [l.name, l.foreground.src]));
-    expect(byName).toEqual({ "Ground floor": null, "Upper floor": "maps/tower-2-upper-floor-roof.png" });
-    // the roof picture has an alpha channel: opaque on the roof, transparent beside it
-    const roof = decodeImage(files.get("tower-2-upper-floor-roof.png")!)!;
-    const px = (x: number, y: number) => roof.data[(Math.floor(y * 70) * roof.w + Math.floor(x * 70)) * 4 + 3];
-    expect(roof.w).toBe(10 * 70);
-    expect(px(4, 3.5)).toBe(255);
-    expect(px(9.5, 7.5)).toBe(0);
+    // a foreground never fades, so no level has one
+    expect(scene.levels.map((l: { foreground: { src: string | null } }) => l.foreground.src)).toEqual([null, null]);
+    const upper = scene.levels.find((l: { name: string }) => l.name === "Upper floor");
+    expect(scene.tiles).toHaveLength(1);
+    const [tile] = scene.tiles;
+    expect(tile).toMatchObject({ texture: { src: "maps/tower-2-upper-floor-roof-1.png" }, elevation: upper.elevation.top, levels: [upper._id], occlusion: { mode: 2, modes: [2], alpha: 0 } });
+    // the roof's picture is cropped to the roof (its outline, eave and shadow), not the size of the map, and the tile is placed by its centre
+    const roof = decodeImage(files.get("tower-2-upper-floor-roof-1.png")!)!;
+    expect([tile.width, tile.height]).toEqual([roof.w, roof.h]);
+    expect(roof.w).toBeLessThan(10 * 70);
+    expect([tile.x, tile.y]).toEqual([Math.round((tile.x - roof.w / 2 + roof.w / 2) * 100) / 100, Math.round((tile.y - roof.h / 2 + roof.h / 2) * 100) / 100]);
+    const alpha = (x: number, y: number) => roof.data[(y * roof.w + x) * 4 + 3];
+    expect(alpha(Math.floor(roof.w / 2), Math.floor(roof.h / 2))).toBe(255); // (opaque on the roof)
+    expect(alpha(0, 0)).toBe(0); // (transparent beside it)
+    expect(tile.x - roof.w / 2).toBeLessThan(70); // (its picture starts left of the roof's own edge: the eave and the shadow)
+    // a ceiling over the roof's outline (a rectangle here), on the same level, up to the level's top
+    expect(scene.regions).toHaveLength(1);
+    expect(scene.regions[0]).toMatchObject({
+      name: "Roof 1 on Upper floor", levels: [upper._id], elevation: { bottom: upper.elevation.bottom, top: upper.elevation.top },
+      shapes: [{ type: "rectangle", x: 70, y: 70, width: 420, height: 350 }],
+      behaviors: [{ type: "defineSurface", system: { placement: "top", occlusion: true } }],
+    });
+    expect(new TextDecoder().decode(files.get("README.txt")!)).toMatch(/Tile at the top of its level.*a token YOU CONTROL/s);
     // the level's own picture and the single-file exports have no roof in them
     expect((await hub.battleExport("png")).bytes.length).toBeGreaterThan(1000);
-    const upper = decodeImage(files.get("tower-2-upper-floor.png")!)!;
-    expect(upper.data[(Math.floor(3.5 * 70) * upper.w + Math.floor(4 * 70)) * 4 + 3]).toBe(255); // (an opaque picture, of floor and void: not the roof)
+    const pic = decodeImage(files.get("tower-2-upper-floor.png")!)!;
+    expect(pic.data[(Math.floor(3.5 * 70) * pic.w + Math.floor(4 * 70)) * 4 + 3]).toBe(255); // (an opaque picture, of floor and void: not the roof)
     await hub.close();
   });
 
-  it("one level: its roof is tower-roof.png", async () => {
+  it("one level: its roof is tower-roof-1.png, and an outline that is not a rectangle gets a polygon ceiling", async () => {
     const { hub } = fresh();
     await tower(hub);
-    hub.session.execute({ op: "features", patch: { upsertRoofs: [{ id: "f1", style: "tile", points: [[1, 1], [7, 1], [7, 6], [1, 6]] }] } }, "user");
+    hub.session.execute({ op: "features", patch: { upsertRoofs: [{ id: "f1", style: "tile", points: [[1, 1], [7, 1], [7, 6], [1, 6]] }, { id: "f2", name: "Lean-to", style: "thatch", points: [[8, 1], [10, 1], [9, 4]] }] } }, "user");
     const files = await unzip((await hub.battleExport("foundry")).bytes);
-    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-roof.png", "tower-scene.json", "tower.png"]);
-    expect(JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!)).levels[0].foreground.src).toBe("maps/tower-roof.png");
+    expect([...files.keys()].sort()).toEqual(["README.txt", "tower-roof-1.png", "tower-roof-2.png", "tower-scene.json", "tower.png"]);
+    const scene = JSON.parse(new TextDecoder().decode(files.get("tower-scene.json")!));
+    expect(scene.levels[0].foreground.src).toBeNull();
+    expect(scene.tiles.map((x: { texture: { src: string } }) => x.texture.src)).toEqual(["maps/tower-roof-1.png", "maps/tower-roof-2.png"]);
+    expect(scene.regions.map((r: { name: string; shapes: { type: string }[] }) => [r.name, r.shapes.map((s) => s.type)])).toEqual([["Roof 1 on Ground floor", ["rectangle"]], ["Lean-to on Ground floor", ["polygon"]]]);
+    expect(scene.regions[1].shapes[0].points).toEqual([560, 70, 700, 70, 630, 280]);
     await hub.close();
   });
 

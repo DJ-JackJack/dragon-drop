@@ -7,7 +7,7 @@ const light = (id: string, x: number, y: number, extra: Partial<MapLight> = {}):
 function twoLevels(): FoundryLevelInput[] {
   return [
     { name: "Cellar", bottom: -10, top: 0, image: "maps/cellar.png", walls: [wall("w1", "wall", [[1, 1], [9, 1], [9, 6], [1, 6]], { closed: true })], lights: [light("l1", 5, 3, { colour: "#ff8800" })] },
-    { name: "Ground floor", bottom: 0, top: 10, image: "maps/ground.png", foreground: "maps/roof.png", walls: [wall("w2", "door", [[4, 1], [5, 1]], { locked: true }), wall("w3", "window", [[9, 2], [9, 3]])], lights: [light("l2", 3, 3)] },
+    { name: "Ground floor", bottom: 0, top: 10, image: "maps/ground.png", walls: [wall("w2", "door", [[4, 1], [5, 1]], { locked: true }), wall("w3", "window", [[9, 2], [9, 3]])], lights: [light("l2", 3, 3)] },
   ];
 }
 const input = (extra = {}) => ({ name: "Test house", width: 700, height: 490, pxPerSquare: 70, feetPerSquare: 5, gridType: "square" as const, levels: twoLevels(), ...extra });
@@ -39,7 +39,6 @@ describe("a Foundry v14 scene with levels", () => {
     expect(s.levels.map((l) => l.name)).toEqual(["Cellar", "Ground floor"]);
     expect(s.levels.map((l) => l.elevation)).toEqual([{ bottom: -10, top: 0 }, { bottom: 0, top: 10 }]);
     expect(s.levels.map((l) => l.background.src)).toEqual(["maps/cellar.png", "maps/ground.png"]);
-    expect(s.levels.map((l) => l.foreground.src)).toEqual([null, "maps/roof.png"]);
     expect(s.levels[0].sort).toBeLessThan(s.levels[1].sort);
     expect(new Set(s.levels.map((l) => l._id)).size).toBe(2);
     for (const l of s.levels) expect(l._id).toMatch(/^[A-Za-z0-9]{16}$/);

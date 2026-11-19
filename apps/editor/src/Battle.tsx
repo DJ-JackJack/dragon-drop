@@ -110,7 +110,7 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   zone: "Draw an area with its own light level (Rectangle, Circle or Free-form like the Area tool). Then select it to set how bright it is where no light reaches: indoors dimmer than outdoors, or a lit hall in a dark cave. Edges are soft.",
   note: "Click a room to place a numbered note, then give it a title and text in the panel. Notes are for you: they show here and in previews, never in the exported picture. Export the key as a list from Export.",
   prop: "Choose an object in the Assets tab, then click the map to place it (hold Shift or Alt to place without snapping). Q and E rotate, X mirrors.",
-  roof: "Draw the outline of a roof (Rectangle, Circle or Free-form like the Area tool), a little wider than the walls for an overhang. Choose its look below, or change it afterwards in the panel. Roofs show faintly while you work (Settings, Layers, Roofs: off, faint or solid). In a Foundry scene a level's roofs become its foreground picture; they are never in the ordinary picture or the Universal VTT file.",
+  roof: "Draw the outline of a roof (Rectangle, Circle or Free-form like the Area tool), a little wider than the walls for an overhang. Choose its look below, or change it afterwards in the panel. Roofs show faintly while you work (Settings, Layers, Roofs: off, faint or solid). In a Foundry scene each roof becomes a tile that fades out of the way when a token stands under it; roofs are never in the ordinary picture or the Universal VTT file.",
   stairs: "Drag a rectangle for stairs (or click for one square by two). They belong to the level you are on and lead up or down, as chosen below; in a Foundry scene they are a Change Level region over both levels. You need at least two levels (Levels panel, top left of the map).",
   ladder: "Drag a rectangle for a ladder (or click for one square). It leads up or down, as chosen below, and works like stairs in a Foundry scene.",
   hole: "Drag a rectangle for a hole in this level's floor (or click for one square). It is open to the level below: a pit in the picture, and a gap in this level's floor in a Foundry scene.",
@@ -1624,7 +1624,7 @@ function RoofEditor({ r, chosenAsset, onClear }: { r: MapRoof; chosenAsset: stri
       <label className="field">Name
         <input type="text" value={name} maxLength={60} placeholder="optional" onChange={(e) => setName(e.target.value)} onBlur={() => { const n = name.trim(); if (n !== (r.name ?? "")) set({ name: n || undefined }); }} data-testid="roof-name" />
       </label>
-      <p className="muted">Over this level. Faint here while you work; a Foundry scene gets it as the level's foreground picture. Draw it a little wider than the walls for an overhang.</p>
+      <p className="muted">Over this level. Faint here while you work; a Foundry scene gets it as a tile that fades when a token stands under it. Draw it a little wider than the walls for an overhang.</p>
       <div className="row"><button onClick={() => { sendFeatures({ removeRoofs: [r.id] }, "Delete roof"); onClear(); }} data-testid="roof-delete">Delete</button></div>
     </>
   );

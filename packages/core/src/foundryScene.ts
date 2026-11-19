@@ -60,6 +60,23 @@ export interface FoundrySurfaceInput {
   kind: "floor" | "ceiling";
   rects: { x: number; y: number; w: number; h: number }[];
   holes?: { x: number; y: number; w: number; h: number }[];
+  /** Outlines that are not rectangles, as flat corner lists [x, y, x, y, ...] in grid squares (a roof's ceiling). */
+  polygons?: number[][];
+}
+
+/**
+ * A picture placed on a level (a roof), as the rectangle it covers in image PIXELS (not squares). It becomes a Foundry Tile at the level's top elevation that fades out
+ * of the way when a controlled token stands under it, inside the ceiling Region over it (see `surfaces`): Surface occlusion, tried in Foundry 14.367.
+ */
+export interface FoundryTileInput {
+  /** The index of the level it is on. */
+  level: number;
+  /** Where its picture is (a path in the Foundry data folder). */
+  src: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export interface FoundrySceneInput {
@@ -75,6 +92,7 @@ export interface FoundrySceneInput {
   levels: FoundryLevelInput[];
   stairs?: FoundryStairInput[];
   surfaces?: FoundrySurfaceInput[];
+  tiles?: FoundryTileInput[];
 }
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -171,7 +189,11 @@ export function foundryScene(input: FoundrySceneInput) {
     const rect = (r: { x: number; y: number; w: number; h: number }, hole: boolean) => ({ type: "rectangle", x: sc(r.x), y: sc(r.y), width: sc(r.w), height: sc(r.h), rotation: 0, hole });
     return {
       _id: foundryId(`surface:${k}:${f.name}`), name: f.name, color: f.kind === "floor" ? "#cca928" : "#cc28b7",
-      shapes: [...f.rects.map((r) => rect(r, false)), ...(f.holes ?? []).map((h) => rect(h, true))],
+      shapes: [
+        ...f.rects.map((r) => rect(r, false)),
+        ...(f.polygons ?? []).map((pts) => ({ type: "polygon", points: pts.map(sc), hole: false })),
+        ...(f.holes ?? []).map((h) => rect(h, true)),
+      ],
       elevation: { bottom: lv.bottom, top: lv.top, topInclusive: false }, levels: [ids[f.level]],
       behaviors: [{
         _id: foundryId(`surfaceb:${k}:${f.name}`), name: "Define Surface", type: "defineSurface", disabled: false, flags: {},
@@ -179,6 +201,18 @@ export function foundryScene(input: FoundrySceneInput) {
         system: { placement: f.kind === "floor" ? "bottom" : "top", light: true, move: true, sight: true, sound: true, occlusion: true, exposure: false, culling: false },
       }],
       visibility: 4, locked: false, flags: {},
+    };
+  });
+  // tiles (roofs): the tile's x and y are the position of its picture's ANCHOR, which defaults to the picture's centre (tried in Foundry 14.367: a tile written by its
+  // top-left corner sits half off the scene). Surface occlusion is written as BOTH the older `mode` and the newer `modes`: this file says it is from Foundry 14.353, so a
+  // newer Foundry migrates it, and the migration rebuilds `modes` from `mode` (a file with only `modes` came back with none, and the tile never faded).
+  const tiles = (input.tiles ?? []).map((tl, k) => {
+    const lv = input.levels[tl.level];
+    if (!lv) throw new Error(`Tile ${tl.src}: there is no level ${tl.level}.`);
+    return {
+      _id: foundryId(`tile:${k}:${tl.src}`), texture: { src: tl.src },
+      x: r2(tl.x + tl.w / 2), y: r2(tl.y + tl.h / 2), width: tl.w, height: tl.h, elevation: lv.top, levels: [ids[tl.level]],
+      occlusion: { mode: 2, modes: [2], alpha: 0 }, restrictions: { light: false, weather: false }, hidden: false, locked: false, flags: {},
     };
   });
   const ambient = input.ambient ?? 1;
@@ -196,7 +230,7 @@ export function foundryScene(input: FoundrySceneInput) {
     levels,
     walls,
     lights,
-    tiles: [] as object[],
+    tiles,
     regions: [...regions, ...surfaces],
   };
 }

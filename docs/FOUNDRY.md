@@ -157,7 +157,10 @@ How levels live inside one battlemap, chosen to touch as little of the working e
 - **The look:** `renderRoofLayer` (`battleRoof.ts`): one see-through layer, a pitched roof having a lit slope, a shadowed slope and a ridge along the longer way, a darker eave and a soft shadow beyond it.
   Asset pictures are loaded for the render worker with the floor textures (`Hub.battleAssets`).
 - **Never in the ordinary picture:** roofs are left out of the level's picture, the `.png` and `.dd2vtt` exports, and previews unless asked (`render_battlemap` `roofs: true`; the editor's Roofs switch: faint, solid or hidden).
-- **The Foundry scene:** a level with roofs gets a second PNG, `<map>-<n>-<level>-roof.png` (an RGBA picture, transparent outside the roofs), written as that level's `foreground`.
+- **The Foundry scene** (changed 2026-11-19 after RT8): each roof becomes a **Tile** and a **ceiling Region**, not a foreground. The roof is drawn on its own into a small picture cropped to its outline, eave and shadow
+  (`renderRoofPicture`, `<map>-<n>-<level>-roof-<k>.png`, RGBA); the tile is that picture at the level's **top** elevation, **Surface** occlusion (written as both `mode: 2` and `modes: [2]`, alpha 0), placed by its
+  **centre**; the ceiling is a Define Surface region (placement top, the level's elevation range) shaped like the roof (a rectangle for a rectangle roof, otherwise a polygon). `battleRoofRects` says where each picture goes and
+  `renderBattleRoofPictures` draws them in the compute worker (`roofPictures` job). In Foundry's GM view a roof is cut away, to the region's shape, while a token **you control** stands under it, and only that roof; see RT8 below.
 - **What Foundry does with a foreground (test RT6, 14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-3.md)):**
   - It imports as written; Foundry adds only `tint` and `alphaThreshold` to each foreground, and the level sheet offers only **Texture** and **Tint** for it: no fade or occlusion setting.
   - A viewer sees **only the foreground of the level being viewed** (a level sees others only if listed in its `visibility.levels`, which we leave empty). The level's background is drawn at the level's **bottom**
@@ -174,18 +177,27 @@ How levels live inside one battlemap, chosen to touch as little of the working e
     ceiling *below* the foreground would is untried. A token at exactly 10 ft could not be set on the Ground floor (the update returned `undefined`).
   - **Tiles:** Foundry stores a tile's `occlusion.mode: 2` as `occlusion.modes: [2]` (a list; write `modes`). **A tile's `x`/`y` is the position of its picture's anchor, and the anchor defaults to the centre (0.5, 0.5)**:
     RT7's tiles were written as if `x`/`y` were the top-left corner (a mistake in our test file), so they sat half off the scene. For a tile that covers (left, top, w, h), write `x = left + w/2`, `y = top + h/2`.
-  - **A ceiling region at a tile's own elevation hides a Surface-mode tile inside the region's shape, and it did so with no token on the scene at all** (the part of the blue tile over the region was gone, the part outside
-    it stayed, cut exactly along the region's edge; the mesh values stayed `alpha 1, occluded false`, so this shows only on screen). Foundry's hint says a token below the surface triggers the fade, so either a ceiling hides
-    such a tile whatever happens, or the GM's own viewpoint (no token) counts as "below" it. What decides it (a token below, above or outside the region; controlled or not) was not tried, because the tiles were off position. RT8 asks.
+  - ~~A ceiling region at a tile's own elevation hides a Surface-mode tile inside the region's shape, with no token on the scene.~~ **Withdrawn after RT8:** with a correct file nothing is hidden with no token. The "cut" RT7 saw was at
+    scene (140,140), exactly where the ground picture's orange floor begins, so it was the picture, not the roof.
   - **A polygon region** is kept as written (Foundry drops its `rotation: 0`), `testPoint` is right at all six points tried (inside and outside a triangle), and it is drawn as a triangle. So a roof of any outline can have
     its own ceiling.
   - Define Surface also has `exposure` ("Reveal Elevated Surface": partly reveal the visible area of an elevated surface to observers below and outside of it; "useful for roofs") and `culling`; neither was tried.
-- **Test RT8, first run (14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-5.md)): stopped at the import.** Our scene says `_stats.coreVersion: "14.353"` and Foundry runs 14.367, so Foundry **migrates** the data
+- **Test RT8, first run (14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-5-run1.md)): stopped at the import.** Our scene says `_stats.coreVersion: "14.353"` and Foundry runs 14.367, so Foundry **migrates** the data
   on import, and for a tile it rebuilds `occlusion.modes` from the older `occlusion.mode`. We wrote only `modes: [2]` (the form RT7's read-back showed), which the migration turned into `[]`: no occlusion at all, so
   the roofs were not Surface tiles and the fade tests were meaningless. Foundry's own in-memory check: `{modes: [2]}` gives `[]` under 14.353 and `[2]` under 14.367; `{mode: 2}` and `{mode: 2, modes: [2]}` give `[2]` under both.
   **A tile must be written with both `mode: 2` and `modes: [2]`.** Placing a tile by its centre worked: all four tiles' bounds were exactly the rectangles meant. With no occlusion the roofs were drawn in full, and the
   green roof was not cut to its triangle region (so the region-shaped cut needs a Surface-mode tile, as RT7 found). Lesson for every export: what Foundry's **export** shows is the migrated form, not necessarily the one to write.
   The test was fixed and re-run as RT8 again (prompt `docs/foundry-test-kit/prompts/rt8-roof-tiles.md`).
+- **Test RT8, rerun with the fixed file (14.367; [report](foundry-test-kit/results/v14.367/RESULTS-RETEST-5.md), the first run is [here](foundry-test-kit/results/v14.367/RESULTS-RETEST-5-run1.md)).** All four tiles kept
+  `occlusion.modes: [2]` (Foundry then drops the older `mode`), their bounds were exactly the rectangles meant, and the polygon region kept its points. Read in the GM's view with pixel probes:
+  - **A roof is cut only while a controlled token is inside its region**, at an elevation within the region's bottom..top (Ground floor 0 and 5; Tall hall 15). **The cut takes the region's shape, not the tile's**: the green
+    rectangle picture was cut to its triangle only, and the two corners outside it stayed. A token at 5 or 15 ft is "inside" a region 0..10 or 10..20.
+  - **Each roof fades on its own**: one token cut only its own roof; two tokens (one in each of two roofs) cut both and no third.
+  - **Nothing cuts it** with no token, with a token you have not selected (the roof is drawn **over** it, opaque, and the token is hidden), or with a controlled token outside the region.
+  - **Holding "Highlight Objects"** (`core.highlight`, Alt) with no token cuts every Surface roof at once, each to its region's shape: a GM's way to look inside every building.
+  - **`exposure` ("Reveal Elevated Surface") made no visible difference** in the GM's view (the blue roof had it on, the brown off). Not used.
+  - Foundry holds a token a token-height below a ceiling: asked 9 ft under a ceiling at 10, it stored 5; asked 25 under 20, it stored 15 (the surface's movement restriction). So "a token above the ceiling" was not tested.
+  - **Not tried:** a player's (non-GM) view. Foundry's text says "a controlled or detected token", so a player's own token should do it, but that is unseen.
 
 ## Plan
 

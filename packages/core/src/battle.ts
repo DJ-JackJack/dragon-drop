@@ -11,9 +11,9 @@ import { type PaletteEntry, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "./a
 import { type Features, type MapAmbientZone, type MapConnector, type MapLight, type MapProp, type MapWall, connectorTo, emptyFeatures, wallSegments } from "./features.ts";
 import { lightVisibility, visibleDistance } from "./lighting.ts";
 import { boxBlur, compositeOver, renderWallLayer } from "./battleLook.ts";
-import { type RoofTileSource, renderRoofLayer } from "./battleRoof.ts";
+import { type RoofPictureRect, type RoofTileSource, renderRoofLayer, renderRoofPicture, roofPictureRect } from "./battleRoof.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
-import { type FoundryStairInput, type FoundrySurfaceInput, foundryScene } from "./foundryScene.ts";
+import { type FoundryStairInput, type FoundrySurfaceInput, type FoundryTileInput, foundryScene } from "./foundryScene.ts";
 import { type Rect, type Shape, clipRect, expandRect, shapeBounds, signedDistance } from "./geom.ts";
 
 export type BattleGridType = "square" | "hex" | "none";
@@ -777,10 +777,23 @@ export function renderBattle(
   return img;
 }
 
-/** The roofs of a battlemap as a picture the size of the map, transparent where there is none (RGBA, straight alpha): what becomes a Foundry level's foreground. Null when there are no roofs. */
-export function renderBattleRoofs(doc: MapDoc, roofTiles?: RoofTileSource): { w: number; h: number; data: Uint8ClampedArray } | null {
-  if (!doc.features?.roofs?.length) return null;
-  return renderRoofLayer(battleSpec(doc), doc.features.roofs, { tileFor: roofTiles });
+/** Where each of a level's roofs has its own picture in a Foundry export (pixels in the level's picture), in the order of its roofs; null for a roof that has none. */
+export function battleRoofRects(doc: MapDoc): (RoofPictureRect | null)[] {
+  const spec = battleSpec(doc);
+  return (doc.features?.roofs ?? []).map((r) => roofPictureRect(spec, r));
+}
+
+/**
+ * The pictures of a level's roofs, one after the other (each RGBA, straight alpha, transparent outside its roof, `w * h * 4` bytes of its `battleRoofRects` entry; roofs
+ * with no rectangle add nothing). Each roof is a Foundry tile of its own, so a token under one roof fades that roof and no other.
+ */
+export function renderBattleRoofPictures(doc: MapDoc, roofTiles?: RoofTileSource): Uint8ClampedArray {
+  const spec = battleSpec(doc);
+  const pics = (doc.features?.roofs ?? []).map((r) => renderRoofPicture(spec, r, { tileFor: roofTiles })).filter((p): p is NonNullable<typeof p> => !!p);
+  const out = new Uint8ClampedArray(pics.reduce((n, p) => n + p.data.length, 0));
+  let at = 0;
+  for (const p of pics) { out.set(p.data, at); at += p.data.length; }
+  return out;
 }
 
 // ---------------------------------------------------------------- exports
@@ -846,8 +859,8 @@ export interface FoundryLevelDoc {
   bottom: number;
   top: number;
   image: string;
-  /** Where the picture of this level's roofs will be (becomes the level's foreground), if it has roofs. */
-  roof?: string;
+  /** Where each roof's own picture will be, in the order of the level's roofs (null: that roof has none). Each becomes a tile with a ceiling region over it. */
+  roofImages?: (string | null)[];
 }
 
 /**
@@ -890,6 +903,17 @@ export function floorRects(doc: MapDoc, maxRects = 400): { x: number; y: number;
 function connectorTarget(levels: FoundryLevelDoc[], i: number, to: "up" | "down"): number | undefined {
   const order = levels.map((_, k) => k).sort((a, b) => levels[a].bottom - levels[b].bottom || levels[a].top - levels[b].top);
   return order[order.indexOf(i) + (to === "up" ? 1 : -1)];
+}
+
+/** The corners of a roof, if they are the four corners of a rectangle with sides along the grid (a roof drawn with the Rectangle tool), as that rectangle. */
+function axisAlignedRect(pts: [number, number][]): { x: number; y: number; w: number; h: number } | null {
+  if (pts.length !== 4) return null;
+  const xs = [...new Set(pts.map((p) => Math.round(p[0] * 1e6)))], ys = [...new Set(pts.map((p) => Math.round(p[1] * 1e6)))];
+  if (xs.length !== 2 || ys.length !== 2) return null;
+  const corners = new Set(pts.map((p) => `${Math.round(p[0] * 1e6)},${Math.round(p[1] * 1e6)}`));
+  if (corners.size !== 4) return null;
+  const x0 = Math.min(...xs) / 1e6, x1 = Math.max(...xs) / 1e6, y0 = Math.min(...ys) / 1e6, y1 = Math.max(...ys) / 1e6;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
@@ -936,10 +960,23 @@ export function toFoundryLevelsScene(levels: FoundryLevelDoc[], sceneName?: stri
   const spec = battleSpec(first);
   const { w, h } = battleImageSize(spec);
   const { stairs, surfaces } = foundryConnectors(levels);
+  // roofs: a tile for each (its own picture, at the top of the level) and a ceiling over its outline, so it fades when a token is under it
+  const tiles: FoundryTileInput[] = [];
+  levels.forEach((l, i) => {
+    const rects = battleRoofRects(l.doc);
+    (l.doc.features?.roofs ?? []).forEach((roof, k) => {
+      const src = l.roofImages?.[k], rect = rects[k];
+      if (!src || !rect) return;
+      tiles.push({ level: i, src, x: rect.x, y: rect.y, w: rect.w, h: rect.h });
+      const pts = roof.points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      const box = axisAlignedRect(pts);
+      surfaces.push({ name: `${roof.name?.trim() || `Roof ${k + 1}`} on ${l.name}`, level: i, kind: "ceiling", rects: box ? [box] : [], ...(!box && { polygons: [pts.flatMap((p) => [p[0], p[1]])] }) });
+    });
+  });
   return foundryScene({
     name: sceneName ?? first.meta.name, width: w, height: h, pxPerSquare: spec.pxPerSquare, feetPerSquare: spec.feetPerSquare, gridType: spec.gridType, ambient: ambientOf(spec),
-    levels: levels.map((l) => ({ name: l.name, bottom: l.bottom, top: l.top, image: l.image, ...(l.roof && { foreground: l.roof }), walls: l.doc.features?.walls ?? [], lights: l.doc.features?.lights ?? [] })),
-    stairs, surfaces,
+    levels: levels.map((l) => ({ name: l.name, bottom: l.bottom, top: l.top, image: l.image, walls: l.doc.features?.walls ?? [], lights: l.doc.features?.lights ?? [] })),
+    stairs, surfaces, tiles,
   });
 }
 

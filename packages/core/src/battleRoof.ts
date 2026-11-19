@@ -1,7 +1,7 @@
 /**
  * How a battlemap's roofs look: slate, clay tile, thatch or wooden shingles (or a picture from an asset pack, tiled), on a pitched roof (two slopes, the one facing the
  * light brighter, with a ridge along the longer way) or a flat one, with a darker eave round the edge and a soft shadow beyond it. One RGBA layer (straight alpha,
- * transparent outside the roofs): the editor lays it over the map (faintly, while you work), and the Foundry export makes it a level's foreground picture.
+ * transparent outside the roofs): the editor lays it over the map (faintly, while you work), and the Foundry export draws each roof on its own, cropped to its outline (`renderRoofPicture`), as a Foundry tile.
  *
  * Light comes from the top left, as everywhere on a battlemap, so the slope that faces up or left is the bright one and shadows fall down and to the right.
  */
@@ -81,24 +81,46 @@ function signedDistance(P: [number, number][], x: number, y: number): number {
   return inside ? best : -best;
 }
 
-function paintRoof(out: LookImage, px: number, roof: MapRoof, tileFor: RoofTileSource | undefined) {
+/** A roof's outline in pixels, and its box (outline plus the eave's shadow) cut to the picture: the pixels `paintRoof` may touch. */
+function roofGeometry(roof: MapRoof, px: number, W: number, H: number) {
   const P = roof.points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])).map(([x, y]) => [x * px, y * px] as [number, number]);
-  if (P.length < 3) return;
+  if (P.length < 3) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const [x, y] of P) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+  const reach = 0.34 * px, sx = 0.07 * px, sy = 0.1 * px; // the soft shadow beyond the eave, thrown down and to the right
+  const m = Math.ceil(reach + Math.max(sx, sy) + 2);
+  const box = { x0: Math.max(0, Math.floor(minX - m)), x1: Math.min(W - 1, Math.ceil(maxX + m)), y0: Math.max(0, Math.floor(minY - m)), y1: Math.min(H - 1, Math.ceil(maxY + m)) };
+  return { P, minX, minY, maxX, maxY, reach, sx, sy, box };
+}
+
+/** Where a roof's own picture is in the level's picture, in pixels (null for a roof with fewer than three corners, or one wholly outside the picture). */
+export interface RoofPictureRect { x: number; y: number; w: number; h: number }
+export function roofPictureRect(spec: BattleSpec, roof: MapRoof): RoofPictureRect | null {
+  const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
+  const g = roofGeometry(roof, px, W, H);
+  if (!g || g.box.x1 < g.box.x0 || g.box.y1 < g.box.y0) return null;
+  return { x: g.box.x0, y: g.box.y0, w: g.box.x1 - g.box.x0 + 1, h: g.box.y1 - g.box.y0 + 1 };
+}
+
+/**
+ * Paints one roof into `out`, which holds the part of the level's picture that starts at (ox, oy) (the whole picture when both are 0). Every pixel is worked out
+ * at its place in the whole picture, so a roof painted into its own small picture is exactly its part of the whole layer.
+ */
+function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number, px: number, roof: MapRoof, tileFor: RoofTileSource | undefined) {
+  const g = roofGeometry(roof, px, W, H);
+  if (!g) return;
+  const { P, minX, minY, maxX, maxY, reach, sx, sy } = g;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, hw = Math.max(1, (maxX - minX) / 2), hh = Math.max(1, (maxY - minY) / 2);
   const horizontal = hw >= hh; // the ridge runs the longer way
   const own = roofColour(roof.colour), base = own ?? ROOF_BASE[roof.style] ?? ROOF_BASE.slate;
   const tex = roof.asset ? tileFor?.(roof.asset) ?? null : null;
   const period = Math.max(0.25, roof.tile ?? 2) * px;
-  const reach = 0.34 * px, sx = 0.07 * px, sy = 0.1 * px; // the soft shadow beyond the eave, thrown down and to the right
-  const m = Math.ceil(reach + Math.max(sx, sy) + 2);
-  const x0 = Math.max(0, Math.floor(minX - m)), x1 = Math.min(out.w - 1, Math.ceil(maxX + m));
-  const y0 = Math.max(0, Math.floor(minY - m)), y1 = Math.min(out.h - 1, Math.ceil(maxY + m));
+  const x0 = Math.max(g.box.x0, ox), x1 = Math.min(g.box.x1, ox + out.w - 1);
+  const y0 = Math.max(g.box.y0, oy), y1 = Math.min(g.box.y1, oy + out.h - 1);
   const d = out.data;
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      const X = x + 0.5, Y = y + 0.5, o = (y * out.w + x) * 4;
+      const X = x + 0.5, Y = y + 0.5, o = ((y - oy) * out.w + (x - ox)) * 4;
       const ins = signedDistance(P, X, Y);
       if (ins < -0.5) {
         // beyond the eave: only the shadow
@@ -107,15 +129,15 @@ function paintRoof(out: LookImage, px: number, roof: MapRoof, tileFor: RoofTileS
         if (a > 0.005) over(d, o, 8, 7, 10, a);
         continue;
       }
-      let r: number, g: number, b: number;
+      let r: number, g2: number, b: number;
       if (tex) {
         const u = (((X / period) % 1) + 1) % 1, v = (((Y / period) % 1) + 1) % 1;
         const i = (Math.min(tex.size - 1, Math.floor(v * tex.size)) * tex.size + Math.min(tex.size - 1, Math.floor(u * tex.size))) * 4;
-        r = tex.data[i]; g = tex.data[i + 1]; b = tex.data[i + 2];
-        if (own) { r = (r * own[0]) / 200; g = (g * own[1]) / 200; b = (b * own[2]) / 200; } // (a colour tints a picture: 200 keeps a mid-grey as the colour)
+        r = tex.data[i]; g2 = tex.data[i + 1]; b = tex.data[i + 2];
+        if (own) { r = (r * own[0]) / 200; g2 = (g2 * own[1]) / 200; b = (b * own[2]) / 200; } // (a colour tints a picture: 200 keeps a mid-grey as the colour)
       } else {
         const k = pattern(roof.style, X, Y, px);
-        r = base[0] * k; g = base[1] * k; b = base[2] * k;
+        r = base[0] * k; g2 = base[1] * k; b = base[2] * k;
       }
       let shade = 1;
       if (!roof.flat) {
@@ -126,15 +148,28 @@ function paintRoof(out: LookImage, px: number, roof: MapRoof, tileFor: RoofTileS
         shade *= 1 - 0.16 * cap; // and has a shadowed line along it
       }
       shade *= (0.7 + 0.3 * smooth(0, 0.14 * px, ins)) * (0.97 + 0.06 * vnoise(X / (px * 0.08), Y / (px * 0.08)));
-      over(d, o, clamp(r * shade, 0, 255), clamp(g * shade, 0, 255), clamp(b * shade, 0, 255), clamp(ins + 0.5, 0, 1));
+      over(d, o, clamp(r * shade, 0, 255), clamp(g2 * shade, 0, 255), clamp(b * shade, 0, 255), clamp(ins + 0.5, 0, 1));
     }
   }
+}
+
+/**
+ * One roof as a picture of its own: its outline, eave and shadow, cropped to `roofPictureRect` (RGBA, straight alpha, transparent outside the roof). Its pixels are exactly
+ * that roof's part of `renderRoofLayer`. Null for a roof with no picture (see `roofPictureRect`).
+ */
+export function renderRoofPicture(spec: BattleSpec, roof: MapRoof, opts: { tileFor?: RoofTileSource } = {}): (RoofPictureRect & { data: Uint8ClampedArray }) | null {
+  const rect = roofPictureRect(spec, roof);
+  if (!rect) return null;
+  const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
+  const out: LookImage = { w: rect.w, h: rect.h, data: new Uint8ClampedArray(rect.w * rect.h * 4) };
+  paintRoof(out, rect.x, rect.y, W, H, px, roof, opts.tileFor);
+  return { ...rect, data: out.data };
 }
 
 /** The roofs of a battlemap as one layer the size of its picture (squares x pxPerSquare); transparent where there is no roof. */
 export function renderRoofLayer(spec: BattleSpec, roofs: MapRoof[] | undefined, opts: { tileFor?: RoofTileSource } = {}): LookImage {
   const px = spec.pxPerSquare, W = Math.round(spec.squaresX * px), H = Math.round(spec.squaresY * px);
   const out: LookImage = { w: W, h: H, data: new Uint8ClampedArray(W * H * 4) };
-  for (const r of roofs ?? []) paintRoof(out, px, r, opts.tileFor);
+  for (const r of roofs ?? []) paintRoof(out, 0, 0, W, H, px, r, opts.tileFor);
   return out;
 }

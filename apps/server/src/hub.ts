@@ -6,7 +6,7 @@ import type { WebSocket } from "ws";
 import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
   type ClaudeState, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
-  PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
+  PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleRoofRects, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
   type BattleExportFormat, battleKey, foundryConnectorProblems, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
@@ -472,16 +472,21 @@ export class Hub {
     for (const [i, { level, doc: d }] of docs.entries()) {
       const image = many ? `${base}-${i + 1}-${fileSlug(level.name)}.png` : `${base}.png`;
       files.push({ name: image, data: (await this.renderLevelArt(d)).png });
-      // the level's roofs, as a see-through picture that becomes its foreground
-      let roof: string | undefined;
-      if (d.features?.roofs?.length) {
-        const { w, h } = battleImageSize(battleSpec(d));
-        const data = await this.compute.battle(d, { roofOnly: true, ...(await this.battleAssets(d)).opts });
-        roof = many ? `${base}-${i + 1}-${fileSlug(level.name)}-roof.png` : `${base}-roof.png`;
-        files.push({ name: roof, data: encodePngRgba({ w, h, data }) });
-        roof = `maps/${roof}`;
+      // the level's roofs, each as a picture of its own (cropped to the roof) that becomes a Foundry tile with a ceiling region over it
+      let roofImages: (string | null)[] | undefined;
+      const rects = battleRoofRects(d);
+      if (rects.some(Boolean)) {
+        const data = await this.compute.battle(d, { roofPictures: true, ...(await this.battleAssets(d)).opts });
+        let at = 0;
+        roofImages = rects.map((r, k) => {
+          if (!r) return null;
+          const n = r.w * r.h * 4, name = many ? `${base}-${i + 1}-${fileSlug(level.name)}-roof-${k + 1}.png` : `${base}-roof-${k + 1}.png`;
+          files.push({ name, data: encodePngRgba({ w: r.w, h: r.h, data: data.subarray(at, at + n) }) });
+          at += n;
+          return `maps/${name}`;
+        });
       }
-      levels.push({ doc: d, name: level.name, bottom: level.bottom, top: level.top, image: `maps/${image}`, ...(roof && { roof }) });
+      levels.push({ doc: d, name: level.name, bottom: level.bottom, top: level.top, image: `maps/${image}`, ...(roofImages && { roofImages }) });
     }
     // (the scene opens on the level being worked on)
     const first = levels.findIndex((l) => l.name === active.name);
@@ -491,10 +496,11 @@ export class Hub {
     // stairs, ladders and holes: what they became, and any that lead to a level that isn't there
     const nConn = docs.reduce((n, d) => n + (d.doc.features?.connectors?.length ?? 0), 0);
     const problems = foundryConnectorProblems(levels);
-    const hasRoofs = files.some((f) => f.name.endsWith("-roof.png"));
+    const hasRoofs = files.some((f) => /-roof(-\d+)?\.png$/.test(f.name));
     const roofNote = hasRoofs
-      ? `The *-roof.png pictures are roofs: each is its level's Foreground. Foundry draws a foreground above the tokens and does NOT fade it by itself (tried in Foundry 14.367), so players under a roof will be hidden by it\r\n` +
-        `until you add a Define Surface region over it or hide it (Scene Configuration > Levels). Dragon Drop doesn't write that region yet.\r\n\r\n`
+      ? `The *-roof-N.png pictures are roofs. Each is a Tile at the top of its level (Surface occlusion) with a Define Surface region over the roof's outline, so in Foundry 14.367 a roof is cut away while\r\n` +
+        `a token YOU CONTROL stands under it (inside its outline and below the roof), and drawn again when the token leaves; every other roof stays. A token you don't control stays hidden under the roof.\r\n` +
+        `The GM can hold the "Highlight Objects" key (Alt by default) to see through every roof at once. Tried in the GM's view only: a player's view has not been looked at yet.\r\n\r\n`
       : "";
     const connectorNote = roofNote + (nConn
       ? `Stairs and ladders are Regions with the Change Level behaviour (walk onto one and Foundry asks whether to move to the other level). A level with a hole in its floor has a floor Region\r\n` +

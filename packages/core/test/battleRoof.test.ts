@@ -1,8 +1,8 @@
-/** Roofs on a battlemap: the model, the drawing, and what becomes a Foundry level's foreground. */
+/** Roofs on a battlemap: the model, the drawing, and what becomes Foundry tiles with a ceiling each. */
 import { describe, expect, it } from "vitest";
 import {
   type MapRoof, applyFeaturesPatch, createBattleDoc, deleteFeatures, describeFeaturesPatch, emptyFeatures, featureKindOf, moveFeatures, boxSelect, copyFeatures, pasteFeatures,
-  paintFloor, renderBattle, renderBattleRoofs, renderRoofLayer, roofColour, toFoundryLevelsScene,
+  paintFloor, renderBattle, renderBattleRoofPictures, battleRoofRects, renderRoofLayer, renderRoofPicture, roofColour, roofPictureRect, toFoundryLevelsScene,
 } from "../src/index.ts";
 
 const spec = { squaresX: 12, squaresY: 10, pxPerSquare: 40, feetPerSquare: 5, sub: 8, gridType: "square" as const };
@@ -133,22 +133,82 @@ describe("roofs in a render and in a Foundry scene", () => {
     expect(Math.abs(b.r - floor.r) + Math.abs(b.g - floor.g)).toBeGreaterThan(Math.abs(a.r - floor.r) + Math.abs(a.g - floor.g));
   });
 
-  it("renderBattleRoofs is the see-through picture, or null when there are no roofs", () => {
-    const d = doc();
-    const img = renderBattleRoofs(d)!;
-    expect(at(img, 5, 4).a).toBe(255);
-    expect(at(img, 0.5, 0.5).a).toBe(0);
-    d.features = { ...d.features!, roofs: [] };
-    expect(renderBattleRoofs(d)).toBeNull();
+  it("a roof's own picture is exactly that roof's part of the whole layer, and covers the roof with its eave and shadow", () => {
+    const sp = { ...spec };
+    const r = roof("f1", { style: "tile", points: [[2, 2], [8, 2], [8, 6], [5, 7.5], [2, 6]] });
+    const whole = renderRoofLayer(sp, [r]);
+    const own = renderRoofPicture(sp, r)!;
+    expect(own).not.toBeNull();
+    expect(own.w * own.h * 4).toBe(own.data.length);
+    // the same pixels as the whole layer, where the picture is; and nothing of the roof outside it
+    let differing = 0, outside = 0;
+    for (let y = 0; y < whole.h; y++) for (let x = 0; x < whole.w; x++) {
+      const o = (y * whole.w + x) * 4, inside = x >= own.x && x < own.x + own.w && y >= own.y && y < own.y + own.h;
+      if (inside) { const q = ((y - own.y) * own.w + (x - own.x)) * 4; for (let c = 0; c < 4; c++) if (whole.data[o + c] !== own.data[q + c]) differing++; }
+      else if (whole.data[o + 3] > 0) outside++;
+    }
+    expect(differing).toBe(0);
+    expect(outside).toBe(0); // (the shadow's reach is inside the picture)
+    expect(own.w).toBeLessThan(whole.w); // (a roof's picture is smaller than the map's)
+    expect(roofPictureRect(sp, r)).toEqual({ x: own.x, y: own.y, w: own.w, h: own.h });
   });
 
-  it("a level with roofs gets a foreground in the Foundry scene, and one without gets none", () => {
+  it("a roof with fewer than three corners, or wholly off the map, has no picture", () => {
+    expect(roofPictureRect(spec, roof("a", { points: [[1, 1], [2, 2]] }))).toBeNull();
+    expect(renderRoofPicture(spec, roof("a", { points: [[1, 1], [2, 2]] }))).toBeNull();
+    expect(roofPictureRect(spec, roof("b", { points: rect(40, 40, 44, 44) }))).toBeNull();
+  });
+
+  it("battleRoofRects and renderBattleRoofPictures agree: the pictures one after the other, none for a roof with no rectangle", () => {
+    const d = doc();
+    d.features = { ...d.features!, roofs: [roof("f1"), roof("bad", { points: [[1, 1], [2, 2]] }), roof("f2", { points: rect(9, 1, 11, 4), style: "tile" })] };
+    const rects = battleRoofRects(d);
+    expect(rects.map((r) => r !== null)).toEqual([true, false, true]);
+    const bytes = renderBattleRoofPictures(d);
+    expect(bytes.length).toBe(rects.reduce((n, r) => n + (r ? r.w * r.h * 4 : 0), 0));
+    d.features = { ...d.features!, roofs: [] };
+    expect(battleRoofRects(d)).toEqual([]);
+    expect(renderBattleRoofPictures(d).length).toBe(0);
+  });
+
+  it("a level's roofs become a tile each, with a ceiling region over its outline, and a level without roofs gets none", () => {
     const withRoof = doc(), without = doc();
     without.features = { ...without.features!, roofs: [] };
+    withRoof.features = { ...withRoof.features!, roofs: [roof("f1", { name: "Tavern roof" }), roof("f2", { points: [[9, 1], [11, 1], [10, 4]], style: "thatch" })] };
+    const rects = battleRoofRects(withRoof);
     const s = toFoundryLevelsScene([
       { doc: without, name: "Cellar", bottom: -10, top: 0, image: "maps/cellar.png" },
-      { doc: withRoof, name: "Ground floor", bottom: 0, top: 10, image: "maps/ground.png", roof: "maps/ground-roof.png" },
+      { doc: withRoof, name: "Ground floor", bottom: 0, top: 10, image: "maps/ground.png", roofImages: ["maps/ground-roof-1.png", "maps/ground-roof-2.png"] },
     ]);
-    expect(s.levels.map((l) => l.foreground.src)).toEqual([null, "maps/ground-roof.png"]);
+    const ground = s.levels[1]._id;
+    expect(s.levels.map((l) => l.foreground.src)).toEqual([null, null]); // (a foreground never fades: roofs are tiles)
+    expect(s.tiles).toHaveLength(2);
+    const [a, b] = s.tiles as { texture: { src: string }; x: number; y: number; width: number; height: number; elevation: number; levels: string[]; occlusion: { mode: number; modes: number[]; alpha: number } }[];
+    expect(a.texture.src).toBe("maps/ground-roof-1.png");
+    // placed by the picture's CENTRE (a tile's x and y are its anchor, which is the centre), at the level's top, in front of nothing else
+    expect([a.x, a.y, a.width, a.height]).toEqual([rects[0]!.x + rects[0]!.w / 2, rects[0]!.y + rects[0]!.h / 2, rects[0]!.w, rects[0]!.h]);
+    expect(b.texture.src).toBe("maps/ground-roof-2.png");
+    expect(a.elevation).toBe(10);
+    expect(a.levels).toEqual([ground]);
+    // Surface occlusion, written both ways (Foundry's migration of a 14.353 file rebuilds `modes` from `mode`), and fully gone when it fades
+    expect(a.occlusion).toEqual({ mode: 2, modes: [2], alpha: 0 });
+    // a ceiling over each outline: a rectangle for the rectangle roof, a polygon for the triangle
+    const regions = s.regions as { name: string; levels: string[]; elevation: { bottom: number; top: number }; shapes: { type: string; x?: number; points?: number[] }[]; behaviors: { type: string; system: { placement: string; occlusion: boolean } }[] }[];
+    expect(regions.map((r) => r.name)).toEqual(["Tavern roof on Ground floor", "Roof 2 on Ground floor"]);
+    expect(regions[0].shapes).toMatchObject([{ type: "rectangle", x: 80, y: 80, width: 240, height: 160 }]);
+    expect(regions[1].shapes).toMatchObject([{ type: "polygon", points: [360, 40, 440, 40, 400, 160] }]);
+    for (const r of regions) {
+      expect(r.levels).toEqual([ground]);
+      expect(r.elevation).toMatchObject({ bottom: 0, top: 10 });
+      expect(r.behaviors).toHaveLength(1);
+      expect(r.behaviors[0]).toMatchObject({ type: "defineSurface", system: { placement: "top", occlusion: true } });
+    }
+  });
+
+  it("a roof without a picture name gets no tile and no ceiling", () => {
+    const d = doc();
+    const s = toFoundryLevelsScene([{ doc: d, name: "Ground floor", bottom: 0, top: 10, image: "maps/ground.png" }]);
+    expect(s.tiles).toEqual([]);
+    expect(s.regions).toEqual([]);
   });
 });

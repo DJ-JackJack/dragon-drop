@@ -1,6 +1,6 @@
 /**
  * Claude's tools for the roofs of a battlemap: an area over the level being worked on, drawn in one of four looks or from an asset-pack picture. A roof hides the rooms under it
- * when it is shown, so previews leave roofs out unless asked; in a Foundry scene a level's roofs become its foreground picture.
+ * when it is shown, so previews leave roofs out unless asked; in a Foundry scene each roof becomes a tile with a ceiling region, fading when a token stands under it.
  */
 import { z } from "zod";
 import { type MapRoof, ROOF_STYLES, battleSpec, newFeatureId, roofColour } from "@mapmaker/core";
@@ -40,7 +40,7 @@ export const ROOF_TOOLS = [
       "Add a roof over the level being worked on, as a rectangle (rect: x, y the top-left corner, w, h in squares) or any outline (points: three or more [x, y] corners in squares). Draw it a little wider than the walls so it overhangs. " +
       "style is slate (blue-grey), tile (red clay), thatch (straw) or shingle (wood); colour (#rrggbb) replaces the style's own; flat: true gives no ridge (a pitched roof, with its ridge the longer way, is the default). " +
       "Or give asset (an id from search_assets) to tile that picture across the roof, tile squares per repeat (default 2). Roofs hide what is under them: render_battlemap leaves them out unless you pass roofs: true. " +
-      "Only add roofs when the DM asks for them. In a Foundry scene a level's roofs become its foreground picture; they are never in the ordinary picture or the Universal VTT file.",
+      "Only add roofs when the DM asks for them. In a Foundry scene each roof becomes a tile that fades while a token stands under it; roofs are never in the ordinary picture or the Universal VTT file.",
     schema: z.object({
       rect: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional(),
       points: z.array(z.array(z.number()).length(2)).min(3).max(64).optional(),
