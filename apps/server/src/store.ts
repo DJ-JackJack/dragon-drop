@@ -22,7 +22,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 import {
   type BaseClimate, type BattleLevel, type CheckpointInfo, type Features, type LevelsFile, type MapDoc, type MapMeta, type MapMigration, type ProjectInfo, type RefInfo, CURRENT_FORMAT, HeightField,
-  IMAGE_HEAD_BYTES, MIGRATIONS, NewerFormatError, PICTURE_HEAD_BYTES, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, imageSize, isReferenceKind,
+  IMAGE_HEAD_BYTES, MIGRATIONS, NewerFormatError, formatFor, PICTURE_HEAD_BYTES, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, imageSize, isReferenceKind,
   migrateMap, packBaseClimate, pictureKind, referencePictureProblem, unpackBaseClimate,
 } from "@mapmaker/core";
 
@@ -157,7 +157,7 @@ export class ProjectStore {
       if (!existsSync(pj)) continue;
       try {
         const m = JSON.parse(await readFile(pj, "utf8")) as MapMeta;
-        out.push({ id: name, name: m.name, width: m.width, height: m.height, kmPerPx: m.kmPerPx, updatedAt: m.updatedAt, ...(m.parent && { parent: m.parent }), ...(m.kind === "battle" && { kind: "battle" as const }) });
+        out.push({ id: name, name: m.name, width: m.width, height: m.height, kmPerPx: m.kmPerPx, updatedAt: m.updatedAt, ...(m.parent && { parent: m.parent }), ...((m.kind === "battle" || m.kind === "city") && { kind: m.kind }) });
       } catch {
         /* skip unreadable */
       }
@@ -227,8 +227,10 @@ export class ProjectStore {
     const meta = JSON.parse(await readFile(path.join(d, "project.json"), "utf8")) as MapMeta;
     meta.id = id;
     // A map saved by a newer program is not opened at all: an older one would drop what it doesn't understand the next time it saved.
-    const found = formatOf(meta);
-    if (found > this.format) throw new NewerFormatError(found, this.format, meta.name);
+    // (A city map is always format CITY_FORMAT or newer, whatever its file says: see formatFor.)
+    const fmt = formatFor(meta.kind, this.format);
+    const found = meta.kind === "city" ? Math.max(formatOf(meta), fmt) : formatOf(meta);
+    if (found > fmt) throw new NewerFormatError(found, fmt, meta.name);
     const live = path.join(d, "map", "height.f32.gz");
     const seed = path.join(d, "seed", "height.f32.gz");
     const src = existsSync(live) ? live : existsSync(seed) ? seed : null;
@@ -258,8 +260,9 @@ export class ProjectStore {
 
   /** A level's own files, from an older format: migrated in memory (they are saved in the new form with the next save; levels are newer than any older format). */
   private upgradeInMemory(doc: MapDoc, found: number): MapDoc {
-    if (found < this.format) migrateMap(doc, found, this.format, this.steps);
-    doc.meta.formatVersion = this.format;
+    const fmt = formatFor(doc.meta.kind, this.format);
+    if (found < fmt) migrateMap(doc, found, fmt, this.steps);
+    doc.meta.formatVersion = fmt;
     return doc;
   }
 
@@ -268,13 +271,14 @@ export class ProjectStore {
    * only marked as such in memory (merely opening a map never rewrites it).
    */
   private async upgrade(doc: MapDoc, found: number): Promise<MapDoc> {
-    if (found >= this.format) {
-      doc.meta.formatVersion = this.format;
+    const fmt = formatFor(doc.meta.kind, this.format);
+    if (found >= fmt) {
+      doc.meta.formatVersion = fmt;
       return doc;
     }
     const kept = await this.backupFiles(doc.meta.id, `before-format-${found}`);
-    this.notice(doc.meta.id, `This map was saved in an older file format (${found}) and has been brought up to date (${this.format}). The files as they were are kept in ${path.relative(this.root, kept).split(path.sep).join("/")}.`);
-    migrateMap(doc, found, this.format, this.steps);
+    this.notice(doc.meta.id, `This map was saved in an older file format (${found}) and has been brought up to date (${fmt}). The files as they were are kept in ${path.relative(this.root, kept).split(path.sep).join("/")}.`);
+    migrateMap(doc, found, fmt, this.steps);
     await this.save(doc);
     return doc;
   }
@@ -335,7 +339,7 @@ export class ProjectStore {
 
   private async saveAt(d: string, doc: MapDoc): Promise<void> {
     // Take the snapshot before the first await: the compression below runs in the background, and an edit made meanwhile must not leak into this file.
-    const meta = JSON.stringify({ ...doc.meta, formatVersion: this.format }, null, 2);
+    const meta = JSON.stringify({ ...doc.meta, formatVersion: formatFor(doc.meta.kind, this.format) }, null, 2);
     const features = JSON.stringify(doc.features ?? emptyFeatures(), null, 1);
     const bytes = Buffer.from(doc.height.data.slice().buffer);
     await mkdir(path.join(d, "map"), { recursive: true });
@@ -577,5 +581,13 @@ export class ProjectStore {
 async function atomicWrite(file: string, data: string | Uint8Array) {
   const tmp = `${file}.tmp-${process.pid}`;
   await writeFile(tmp, data);
-  await rename(tmp, file);
+  // On Windows a rename over a file that something is reading at that moment (a listing of the checkpoints, a virus scanner) fails with EPERM/EBUSY/EACCES for a few milliseconds:
+  // try again a few times before giving up (an automatic backup was silently lost to this in the tests).
+  for (let attempt = 0; ; attempt++) {
+    try { await rename(tmp, file); return; } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 8 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw e;
+      await new Promise((r) => setTimeout(r, 15 * (attempt + 1)));
+    }
+  }
 }

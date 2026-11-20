@@ -9,6 +9,7 @@ import {
   CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
+import { Popover, ToolBar } from "./ToolBar.tsx";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
@@ -18,6 +19,7 @@ import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
+import { makeResizeKeeper } from "./viewResize.ts";
 
 export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
@@ -100,7 +102,8 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
 export const BATTLE_TOOLS = BATTLE_TOOL_GROUPS.flatMap((g) => g.tools);
 
 export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
-  brush: "Drag to paint the chosen floor. Pick a material below. [ and ] change the brush size.",
+  pan: "Drag to move the map. Hold Space, or drag with the right button, to move it with any tool. + and - zoom.",
+  brush: "Drag to paint the chosen floor. Pick a material with the floor button above. [ and ] change the brush size.",
   area: "Drag a shape (rectangles snap to whole squares): it floors the area but builds no walls. Choose Rectangle, Circle (drag out from the centre) or Free-form (click the corners, double-click to finish).",
   room: "Drag a shape: it is floored with the chosen material and walled in. Choose Rectangle, Circle (drag out from the centre) or Free-form (click the corners, double-click or Enter to finish). Add doors afterwards with the Door tool.",
   wall: "Click the points of the wall. Double-click or press Enter to finish; click the first point to close a loop. Backspace removes the last point, Esc cancels. Points snap to half squares.",
@@ -112,9 +115,9 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   zone: "Draw an area with its own light level (Rectangle, Circle or Free-form like the Area tool). Then select it to set how bright it is where no light reaches: indoors dimmer than outdoors, or a lit hall in a dark cave. Edges are soft.",
   note: "Click a room to place a numbered note, then give it a title and text in the panel. Notes are for you: they show here and in previews, never in the exported picture. Export the key as a list from Export.",
   prop: "Choose an object in the Assets tab, then click the map to place it (hold Shift or Alt to place without snapping). Q and E rotate, X mirrors.",
-  roof: "Draw the outline of a roof (Rectangle, Circle or Free-form like the Area tool), a little wider than the walls for an overhang. Choose its look below, or change it afterwards in the panel. Roofs show faintly while you work (Settings, Layers, Roofs: off, faint or solid). In a Foundry scene each roof becomes a tile that fades out of the way when a token stands under it; roofs are never in the ordinary picture or the Universal VTT file.",
-  stairs: "Drag a rectangle for stairs (or click for one square by two). They belong to the level you are on and lead up or down, as chosen below; in a Foundry scene they are a Change Level region over both levels. You need at least two levels (Levels panel, top left of the map).",
-  ladder: "Drag a rectangle for a ladder (or click for one square). It leads up or down, as chosen below, and works like stairs in a Foundry scene.",
+  roof: "Draw the outline of a roof (Rectangle, Circle or Free-form like the Area tool), a little wider than the walls for an overhang. Choose its look above, or change it afterwards in the panel. Roofs show faintly while you work (Settings, Layers, Roofs: off, faint or solid). In a Foundry scene each roof becomes a tile that fades out of the way when a token stands under it; roofs are never in the ordinary picture or the Universal VTT file.",
+  stairs: "Drag a rectangle for stairs (or click for one square by two). They belong to the level you are on and lead up or down, as chosen above; in a Foundry scene they are a Change Level region over both levels. You need at least two levels (Levels panel, top left of the map).",
+  ladder: "Drag a rectangle for a ladder (or click for one square). It leads up or down, as chosen above, and works like stairs in a Foundry scene.",
   hole: "Drag a rectangle for a hole in this level's floor (or click for one square). It is open to the level below: a pit in the picture, and a gap in this level's floor in a Foundry scene.",
   select: "Click a wall piece, door, light, note or shaded area to select it. Drag a light, note or object to move it. Delete removes the selection.",
 };
@@ -169,6 +172,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const roofSig = useRef("");
   const wallTimer = useRef<number | undefined>(undefined);
   const viewRef = useRef<View>({ scale: 20, ox: 0, oy: 0 });
+  // when the canvas changes size (a panel shown or hidden): a fitted view is fitted again, any other keeps its middle (viewResize.ts)
+  const keeper = useRef(makeResizeKeeper(() => viewRef.current, (v) => { viewRef.current = v; }, () => fit())).current;
   const fittedFor = useRef<string | null>(null);
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
@@ -466,6 +471,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const scale = Math.min(W / squaresX, H / squaresY) * 0.95;
     viewRef.current = { scale, ox: (W - squaresX * scale) / 2, oy: (H - squaresY * scale) / 2 };
     fittedFor.current = m.id;
+    keeper.fitted();
   }
 
   const toSq = (sx: number, sy: number) => { const v = viewRef.current; return { x: (sx - v.ox) / v.scale, y: (sy - v.oy) / v.scale }; };
@@ -673,7 +679,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   useEffect(() => { draft.current = null; shapeDraft.current = null; requestDraw(); }, [ui.tool, ui.roomShape, requestDraw]);
 
   useEffect(() => {
-    const ro = new ResizeObserver(() => requestDraw());
+    const ro = new ResizeObserver(() => { const w = wrapRef.current; if (w) keeper.resized(w.clientWidth, w.clientHeight); requestDraw(); });
     if (wrapRef.current) ro.observe(wrapRef.current);
     const typing = (e: KeyboardEvent) => { const t = e.target as HTMLElement | null; return !!t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable); };
     const kd = (e: KeyboardEvent) => {
@@ -1336,23 +1342,12 @@ function drawNoteBadges(ctx: CanvasRenderingContext2D, notes: MapNote[], v: View
 }
 
 // ---------------------------------------------------------------- side panels
-/** The tool picker, material palette and brush size. */
-export function BattleTools({ ui, onUi, canUndo, canRedo, meta, assetsOn, onOpenAssets }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void; canUndo: boolean; canRedo: boolean; meta: MapMeta | null; assetsOn: boolean; onOpenAssets: () => void }) {
+/** The tool bar: the settings of the tool in use (floor material, brush size, object size, shapes). The tools themselves are in the rail. */
+export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void; meta: MapMeta | null; assetsOn: boolean; onOpenAssets: () => void }) {
+  const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
+  const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <section data-testid="battle-tools">
-      {BATTLE_TOOL_GROUPS.map((g) => (
-        <div key={g.name}>
-          <h3>{g.name}</h3>
-          <div className="tools">
-            {g.tools.map((x) => (
-              <button key={x.id} className={ui.tool === x.id ? "on" : ""} onClick={() => onUi({ tool: x.id })} title={`${x.tip} (${x.key})`} data-testid={`btool-${x.id}`}>
-                {x.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      {BATTLE_HINTS[ui.tool] && <p className="tool-hint" data-testid="tool-hint">{BATTLE_HINTS[ui.tool]}</p>}
+    <ToolBar hint={BATTLE_HINTS[ui.tool]}>
       {ui.tool === "roof" && (
         <label className="field">New roofs look like
           <select value={ui.roofStyle} onChange={(e) => onUi({ roofStyle: e.target.value as RoofStyle })} data-testid="roof-new-style">
@@ -1375,32 +1370,32 @@ export function BattleTools({ ui, onUi, canUndo, canRedo, meta, assetsOn, onOpen
         </div>
       )}
       {isFloorTool(ui.tool) && (
-        <>
-          <h3>Floor material</h3>
-          <div className="materials" data-testid="materials">
-            {MATERIALS.map((m) => (
-              <button
-                key={m.id} className={`swatch ${ui.material === m.id ? "on" : ""}`} onClick={() => onUi({ material: m.id })} title={m.id === 0 ? "void (erases floor)" : m.name}
-                style={{ background: `rgb(${m.colour.join(",")})` }} data-testid={`material-${m.name.replace(/\s+/g, "-")}`}
-              >
-                {m.id === 0 ? "✕" : ""}
-              </button>
-            ))}
-            {(meta?.battle?.palette ?? []).map((e) => (
-              <button
-                key={e.id} className={`swatch tex ${ui.material === e.id ? "on" : ""}`} onClick={() => onUi({ material: e.id })} title={`${e.name} (pack texture). Right-click to remove`}
-                style={{ backgroundImage: `url(${assetUrl(e.asset, 64)})` }} data-testid={`material-tex-${e.name.replace(/\s+/g, "-")}`}
-                onContextMenu={(ev) => { ev.preventDefault(); removeTexture(meta!, e, ui, onUi); }}
-              />
-            ))}
-            {assetsOn && <button className="swatch add" onClick={onOpenAssets} title="Add a floor texture from your asset packs">＋</button>}
-          </div>
-          <p className="muted">{materialLabel(meta, ui.material)}</p>
-        </>
+        <Popover label={<><span className="swatch now" style={swatchStyle} /> <b>{materialLabel(meta, ui.material)}</b></>} title="Choose the floor material" testId="floor-material-menu">
+          {(close) => (
+            <div className="materials" data-testid="materials">
+              {MATERIALS.map((m) => (
+                <button
+                  key={m.id} className={`swatch ${ui.material === m.id ? "on" : ""}`} onClick={() => { onUi({ material: m.id }); close(); }} title={m.id === 0 ? "void (erases floor)" : m.name}
+                  style={{ background: `rgb(${m.colour.join(",")})` }} data-testid={`material-${m.name.replace(/\s+/g, "-")}`}
+                >
+                  {m.id === 0 ? "✕" : ""}
+                </button>
+              ))}
+              {(meta?.battle?.palette ?? []).map((e) => (
+                <button
+                  key={e.id} className={`swatch tex ${ui.material === e.id ? "on" : ""}`} onClick={() => { onUi({ material: e.id }); close(); }} title={`${e.name} (pack texture). Right-click to remove`}
+                  style={{ backgroundImage: `url(${assetUrl(e.asset, 64)})` }} data-testid={`material-tex-${e.name.replace(/\s+/g, "-")}`}
+                  onContextMenu={(ev) => { ev.preventDefault(); removeTexture(meta!, e, ui, onUi); }}
+                />
+              ))}
+              {assetsOn && <button className="swatch add" onClick={() => { close(); onOpenAssets(); }} title="Add a floor texture from your asset packs">＋</button>}
+            </div>
+          )}
+        </Popover>
       )}
       {ui.tool === "prop" && (
         <div className="prop-options" data-testid="prop-options">
-          <p className="muted">{ui.asset ? `Placing: ${assetLabel(parseAssetId(ui.asset)?.path ?? ui.asset)}` : "No object chosen yet: open the Assets tab and click one."}</p>
+          <span className="muted">{ui.asset ? `Placing: ${assetLabel(parseAssetId(ui.asset)?.path ?? ui.asset)}` : "No object chosen yet: open the Assets tab and click one."}</span>
           <label className="slider"><span>Size <b>{Math.round(ui.propScale * 100)}%</b></span>
             <input type="range" min={10} max={400} step={5} value={Math.round(ui.propScale * 100)} onChange={(e) => onUi({ propScale: Number(e.target.value) / 100 })} data-testid="prop-scale" />
           </label>
@@ -1421,14 +1416,10 @@ export function BattleTools({ ui, onUi, canUndo, canRedo, meta, assetsOn, onOpen
           <input type="range" min={1} max={40} value={Math.round(ui.brush * 4)} onChange={(e) => onUi({ brush: Number(e.target.value) / 4 })} />
         </label>
       )}
-      <div className="cavewalls" data-testid="cave-walls">
+      {(isFloorTool(ui.tool) || ui.tool === "wall") && <div className="cavewalls" data-testid="cave-walls">
         <button onClick={() => buildWallsAroundFloor(meta)} title="Draw a wall along the edge of all the floor: handy for caves and anything you painted freehand" data-testid="walls-around-floor">▢ Walls around the floor</button>
-      </div>
-      <div className="row">
-        <button disabled={!canUndo} onClick={() => store.send({ t: "undo" })} title="Undo (Ctrl+Z)">↶ Undo</button>
-        <button disabled={!canRedo} onClick={() => store.send({ t: "redo" })} title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
-      </div>
-    </section>
+      </div>}
+    </ToolBar>
   );
 }
 

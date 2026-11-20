@@ -15,6 +15,17 @@ import type { MapDoc } from "./doc.ts";
 /** The format this build reads and writes. */
 export const CURRENT_FORMAT = 1;
 
+/**
+ * City maps (kind "city") are written in format 2, though every other map stays in format 1: a Dragon Drop from before city maps would treat a city as a world map and
+ * drop its buildings the next time it saved, so it must refuse it (it refuses any map in a format newer than its own). Everything else is unchanged by this.
+ */
+export const CITY_FORMAT = 2;
+
+/** The format a map of this kind is read and written in, given the format the program writes ordinary maps in. */
+export function formatFor(kind: string | undefined, general: number = CURRENT_FORMAT): number {
+  return kind === "city" ? Math.max(general, CITY_FORMAT) : general;
+}
+
 /** One step: turns a map of format `n` into format `n + 1`, changing `doc` in place. */
 export type MapMigration = (doc: MapDoc) => void;
 

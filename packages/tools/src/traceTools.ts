@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import {
-  IMAGE_HEAD_BYTES, type MapDoc, type RGBAImage, type TracePicture, battleSpec, cleanTrace, fitTrace, imageSize, isBattle, overlayTrace, traceFromPins, traceSummary,
+  IMAGE_HEAD_BYTES, type MapDoc, type RGBAImage, type TracePicture, battleSpec, citySpec, cleanTrace, fitTrace, imageSize, isBattle, isCity, overlayTrace, traceFromPins, traceSummary,
 } from "@mapmaker/core";
 import { decodeImage } from "./images.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
@@ -17,8 +17,9 @@ const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] 
 const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
 const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 
-/** The map's size and units: map px on a world map, squares on a battlemap. */
+/** The map's size and units: map px on a world map, squares on a battlemap, metres on a city map. */
 function mapUnits(doc: MapDoc): { w: number; h: number; units: string } {
+  if (isCity(doc)) { const sp = citySpec(doc); return { w: sp.widthM, h: sp.heightM, units: "metres" }; }
   if (isBattle(doc)) { const sp = battleSpec(doc); return { w: sp.squaresX, h: sp.squaresY, units: "squares" }; }
   return { w: doc.meta.width, h: doc.meta.height, units: "map px" };
 }

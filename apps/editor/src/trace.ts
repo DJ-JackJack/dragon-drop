@@ -33,8 +33,9 @@ function loadOpacity(): number {
   try { const n = Number(localStorage.getItem(OPACITY_KEY)); return n >= 0.1 && n <= 1 ? n : 0.5; } catch { return 0.5; }
 }
 
-/** The map's size in its own units: map px on a world map, squares on a battlemap. */
+/** The map's size in its own units: map px on a world map, squares on a battlemap, metres on a city map. */
 export function mapUnitsOf(meta: MapMeta): { w: number; h: number } {
+  if (meta.city) return { w: meta.city.widthM, h: meta.city.heightM };
   return meta.battle ? { w: meta.battle.squaresX, h: meta.battle.squaresY } : { w: meta.width, h: meta.height };
 }
 

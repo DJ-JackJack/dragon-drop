@@ -11,6 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
+  citySizeError, createCityDoc, defaultCellM, isCity, isWorld, renderCity, type RoofPools, groupRoofAssets,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -112,7 +113,7 @@ export class Hub {
   setSelection(selection: Selection | null, lock: boolean) {
     const op = this.open;
     if (!op) return;
-    if (isBattle(op.session.doc)) { selection = null; lock = false; }
+    if (!isWorld(op.session.doc)) { selection = null; lock = false; }
     const shape = selectionShape(selection, op.session.doc.features);
     this.selection = selection;
     this.selectionLock = lock && !!shape;
@@ -231,7 +232,7 @@ export class Hub {
       for (const c of this.clients) await this.sendProject(c);
       // something about the files had to be dealt with while loading (an older format brought up to date, a file that couldn't be read)
       for (const message of this.store.takeNotices(id)) this.broadcast({ t: "error", message });
-      if (!isBattle(doc)) {
+      if (isWorld(doc)) {
         setTimeout(() => void this.refreshDerived(op), 0);
         // Texture noise for previews: about 10 s of CPU on a 2048 map, so it waits until the editor has started up instead of competing with it.
         setTimeout(() => { if (this.open === op) this.compute.warm(op.session.doc); }, WARM_DELAY_MS);
@@ -247,6 +248,19 @@ export class Hub {
     return (await this.store.list()).find((p) => p.id === doc.meta.id)!;
   }
 
+  /** Make a city map (a city seen from above, made of buildings and streets, sized in metres) and open it. */
+  async createCity(o: { name: string; widthM: number; heightM: number; cellM?: number }) {
+    const cell = o.cellM ?? defaultCellM(o.widthM, o.heightM);
+    const err = citySizeError(o.widthM, o.heightM, cell);
+    if (err) throw new Error(err);
+    const name = (o.name ?? "").trim() || "City";
+    const id = await this.store.uniqueId(name);
+    const doc = createCityDoc({ id, name, widthM: o.widthM, heightM: o.heightM, cellM: cell, seed: Math.floor(Math.random() * 2 ** 31) });
+    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A city map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres. Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
+    await this.openProject(id);
+    return (await this.store.list()).find((p) => p.id === id)!;
+  }
+
   /** Make a battlemap (a grid-based tabletop map) and open it. */
   async createBattle(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }) {
     const px = o.pxPerSquare ?? 70;
@@ -258,6 +272,29 @@ export class Hub {
     await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A battlemap, ${doc.meta.battle!.squaresX} x ${doc.meta.battle!.squaresY} squares at ${doc.meta.battle!.feetPerSquare} ft per square. Record what the scene is, who is here and what the DM has decided.*\n`);
     await this.openProject(id);
     return (await this.store.list()).find((p) => p.id === id)!;
+  }
+
+  private roofPoolsCache: { scan: string | null; pools: RoofPools } | null = null;
+
+  /** The roof textures of the asset packs sorted by roof look (null when there is no asset library): what a city's buildings are drawn from before a roof is drawn. */
+  roofPools(): RoofPools | null {
+    const lib = this.assets;
+    if (!lib) return null;
+    if (this.roofPoolsCache && this.roofPoolsCache.scan === lib.lastScan && !lib.scanning) return this.roofPoolsCache.pools;
+    const pools = groupRoofAssets(lib.roofTextures());
+    this.roofPoolsCache = { scan: lib.lastScan, pools };
+    return pools;
+  }
+
+  /** The roof pictures the open city's buildings use, decoded (by asset id), for drawing it; one that can't be had is left out (its buildings are drawn from their look). */
+  async cityRoofTiles(doc: MapDoc): Promise<Record<string, import("@mapmaker/core").TileData>> {
+    const lib = this.assets, out: Record<string, import("@mapmaker/core").TileData> = {};
+    if (!lib) return out;
+    for (const a of new Set((doc.features?.buildings ?? []).map((b) => b.asset).filter((a): a is string => !!a))) {
+      const t = await lib.tile(a, undefined, true);
+      if (t) out[a] = t;
+    }
+    return out;
   }
 
   /** Pack textures and object images the open battlemap needs, decoded for the render worker, and how many couldn't be had. */
@@ -273,7 +310,7 @@ export class Hub {
     const roofTiles: Record<string, import("@mapmaker/core").TileData> = {};
     for (const r of pictured) {
       if (roofTiles[r.asset!]) continue;
-      const t = await lib.tile(r.asset!, r.tile ?? 2);
+      const t = await lib.tile(r.asset!, r.tile ?? 2, true);
       if (t) roofTiles[r.asset!] = t; else missing++;
     }
     const tiles: Record<number, import("@mapmaker/core").TileData> = {};
@@ -392,7 +429,7 @@ export class Hub {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const parent = op.session.doc;
-    if (isBattle(parent)) throw new Error("Open a world map first: this makes a battlemap from a spot on one.");
+    if (!isWorld(parent)) throw new Error("Open a world map first: this makes a battlemap from a spot on one.");
     if (op.session.inTransaction) op.session.commit();
     if (!(o.x >= 0 && o.y >= 0 && o.x < parent.height.w && o.y < parent.height.h)) throw new Error(`That point is off the map (${parent.height.w} x ${parent.height.h} px).`);
     const sx = o.squaresX ?? 30, sy = o.squaresY ?? 20;
@@ -544,7 +581,7 @@ export class Hub {
   async createRegional(o: { name: string; rect: Rect }) {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
-    if (isBattle(op.session.doc)) throw new Error("A battlemap can't have a regional map.");
+    if (!isWorld(op.session.doc)) throw new Error("Only a world map can have a regional map.");
     if (op.session.inTransaction) op.session.commit();
     const parent = op.session.doc;
     const plan = planRegional(o.rect, parent.height.w, parent.height.h);
@@ -617,7 +654,7 @@ export class Hub {
    */
   private async refreshDerived(op: OpenProject, force = false): Promise<Derived | null> {
     if (this.open !== op) return null;
-    if (isBattle(op.session.doc)) return null; // battlemaps have no climate
+    if (!isWorld(op.session.doc)) return null; // battlemaps and cities have no climate
     if (op.derived && op.derivedVersion === op.contentVersion) return op.derived;
     if (op.session.inTransaction && !force) return op.derived; // mid-brush-stroke: wait for the stroke to end
     if (op.deriving && op.derivingVersion === op.contentVersion) return op.deriving;
@@ -660,6 +697,10 @@ export class Hub {
       const doc = op.session.doc;
       const { w, h } = battleImageSize(battleSpec(doc));
       return { img: { w, h, data: await this.compute.battle(doc, { notes: true, ...(o.roofs && { roofs: 0.8 }), ...(await this.battleAssets(doc)).opts }) }, rivers: [] };
+    }
+    if (isCity(op.session.doc)) {
+      const tiles = await this.cityRoofTiles(op.session.doc);
+      return { img: renderCity(op.session.doc, { maxSize: 2048, tileFor: (a) => tiles[a] ?? null }).img, rivers: [] };
     }
     const d = await this.refreshDerived(op, true);
     if (!d) throw new Error("The map's climate and rivers couldn't be computed.");
@@ -819,6 +860,8 @@ export class Hub {
         }
         case "create_battle":
           return await this.createBattle(msg);
+        case "create_city":
+          return await this.createCity(msg);
         case "create_battle_here":
           return await this.createBattleFromWorld({ name: msg.name, x: msg.x, y: msg.y, squaresX: msg.squaresX, squaresY: msg.squaresY });
         case "create_regional":
@@ -828,7 +871,7 @@ export class Hub {
         case "sketch_import": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
-          if (isBattle(op.session.doc)) throw new Error("Sketch import is for world maps.");
+          if (!isWorld(op.session.doc)) throw new Error("Sketch import is for world maps.");
           if (!/^[\w. -]{1,120}$/.test(msg.ref)) throw new Error("Bad image name.");
           const bytes = await this.store.readRef(op.id, msg.ref);
           if (!bytes) throw new Error(`No reference image named ${msg.ref}.`);
@@ -842,7 +885,7 @@ export class Hub {
         case "route_line": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
-          if (isBattle(op.session.doc)) throw new Error("Roads are for world maps.");
+          if (!isWorld(op.session.doc)) throw new Error("Roads are for world maps. (On a city map, streets are lines with a width.)");
           const d = await this.refreshDerived(op, true);
           const r = routeWaypoints(op.session.doc, d, msg.points, { steepOk: msg.kind === "trail" });
           if ("error" in r) throw new Error(r.error);
@@ -990,6 +1033,13 @@ export class Hub {
       } : undefined,
       createBattle: async (o) => {
         const info = await self.createBattle(o);
+        self.projectsCache = await self.store.list();
+        return info;
+      },
+      roofPools: () => self.roofPools(),
+      cityTiles: () => self.cityRoofTiles(self.session.doc),
+      createCity: async (o) => {
+        const info = await self.createCity(o);
         self.projectsCache = await self.store.list();
         return info;
       },

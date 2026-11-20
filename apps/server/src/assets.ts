@@ -13,8 +13,8 @@ import { createHash } from "node:crypto";
 import { type FileHandle, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  type AssetCategory, type AssetItem, type RandomAccess, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
-  categoryOf, defaultTileSquares, imageSize, parseAssetId, readPck, readPckFile,
+  type AssetCategory, type AssetItem, type RandomAccess, type RoofAsset, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
+  categoryOf, defaultTileSquares, imageSize, opaqueRowCount, parseAssetId, readPck, readPckFile, roofLookOfAsset,
 } from "@mapmaker/core";
 import { decodeImage } from "@mapmaker/tools";
 import { PNG } from "pngjs";
@@ -388,6 +388,28 @@ export class AssetLibrary {
     return { total: matches.length, items };
   }
 
+  private roofCache: { scan: string | null; items: RoofAsset[] } | null = null;
+
+  /**
+   * Every roof texture of the usable packs, in one pass over the library (kept until the next scan): pictures meant to be tiled across a roof, of a setting that fits an old-world
+   * city (core's roofAssets.ts says which pictures count). City buildings are drawn from these in preference to drawing a roof.
+   */
+  roofTextures(): RoofAsset[] {
+    if (this.roofCache && this.roofCache.scan === this.lastScan && !this.scanning) return this.roofCache.items;
+    const items: RoofAsset[] = [];
+    for (const p of this.usablePacks()) {
+      for (const e of p.entries) {
+        if (!/roof/i.test(e.path)) continue;
+        const cat = categoryOf(e.path);
+        if (cat === "data") continue;
+        const it: RoofAsset = { id: assetId(p.info.key, e.path), pack: p.info.key, packName: p.info.name, path: e.path, name: assetLabel(e.path), cat };
+        if (roofLookOfAsset(it)) items.push(it);
+      }
+    }
+    this.roofCache = { scan: this.lastScan, items };
+    return items;
+  }
+
   /** One asset by id (with its pixel size), or null if it doesn't exist or its pack is restricted. */
   async info(id: string): Promise<AssetItem | null> {
     const a = parseAssetId(id);
@@ -486,15 +508,19 @@ export class AssetLibrary {
     return value;
   }
 
-  /** A square RGBA tile (512 px) from a terrain texture, for floors. */
-  async tile(id: string, squares?: number): Promise<TileData | null> {
-    const key = `tile:${id}:${squares ?? ""}`;
+  /**
+   * A square RGBA tile (512 px) from a terrain texture, for floors. With `roof`, a see-through strip at the bottom of the picture is cut off first (`opaqueRowCount`), so the tile
+   * repeats without a seam: the roof pictures of the packs have one.
+   */
+  async tile(id: string, squares?: number, roof = false): Promise<TileData | null> {
+    const key = `tile:${id}:${squares ?? ""}${roof ? ":roof" : ""}`;
     const hit = this.decoded.get(key);
     if (hit) return hit.value as TileData | null;
     const img = await this.decode(id);
     if (!img) return null;
     const size = 512;
-    const data = img.w === size && img.h === size ? img.data : boxResize(img.data, img.w, img.h, size, size);
+    const rows = roof ? opaqueRowCount(img.data, img.w, img.h) : img.h;
+    const data = img.w === size && rows === size ? img.data : boxResize(rows === img.h ? img.data : img.data.subarray(0, img.w * rows * 4), img.w, rows, size, size);
     return this.remember(key, { data, size, squares: squares ?? defaultTileSquares(img.w) }, data.length);
   }
 

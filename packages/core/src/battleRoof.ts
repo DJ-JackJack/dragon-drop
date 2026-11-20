@@ -81,6 +81,25 @@ function signedDistance(P: [number, number][], x: number, y: number): number {
   return inside ? best : -best;
 }
 
+/**
+ * How far a roof is turned from the axes, in radians: the angle of its longest side folded into (-45 deg, 45 deg], or 0 when that side runs along an axis (within half a degree).
+ * A roof turned any other way keeps its ridge along that side: its slopes, rows and picture are worked out in a frame turned by this much (see `paintRoof`). A roof along the axes
+ * is drawn exactly as it always was.
+ */
+export function roofTurn(points: [number, number][]): number {
+  let best = 0, ang = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const [x0, y0] = points[i], [x1, y1] = points[(i + 1) % n], l = Math.hypot(x1 - x0, y1 - y0);
+    if (l > best + 1e-9) { best = l; ang = Math.atan2(y1 - y0, x1 - x0); }
+  }
+  if (best === 0) return 0;
+  const q = Math.PI / 2;
+  let t = ang - Math.round(ang / q) * q;
+  if (t <= -Math.PI / 4 + 1e-9) t += q; // (-45 deg and 45 deg are the same turn: take 45)
+  return Math.abs(t) < (0.5 * Math.PI) / 180 ? 0 : t;
+}
+
 /** A roof's outline in pixels, and its box (outline plus the eave's shadow) cut to the picture: the pixels `paintRoof` may touch. */
 function roofGeometry(roof: MapRoof, px: number, W: number, H: number, shadow = true) {
   const P = roof.points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])).map(([x, y]) => [x * px, y * px] as [number, number]);
@@ -119,7 +138,16 @@ function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number,
   if (!g) return;
   const { P, minX, minY, maxX, maxY, reach, sx, sy } = g;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, hw = Math.max(1, (maxX - minX) / 2), hh = Math.max(1, (maxY - minY) / 2);
-  const horizontal = hw >= hh; // the ridge runs the longer way
+  // a roof turned off the axes works in a frame turned to match (u along its longest side, v across); one along the axes uses the plain frame, exactly as before
+  const turn = roofTurn(roof.points), turned = turn !== 0;
+  const ux = Math.cos(turn), uy = Math.sin(turn), vx = -uy, vy = ux;
+  let cu = 0, cv = 0, hu = 1, hv = 1;
+  if (turned) {
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const [x, y] of P) { const u = x * ux + y * uy, v = x * vx + y * vy; if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+    cu = (u0 + u1) / 2; cv = (v0 + v1) / 2; hu = Math.max(1, (u1 - u0) / 2); hv = Math.max(1, (v1 - v0) / 2);
+  }
+  const horizontal = turned ? hu >= hv : hw >= hh; // the ridge runs the longer way
   const own = roofColour(roof.colour), base = own ?? ROOF_BASE[roof.style] ?? ROOF_BASE.slate;
   const tex = roof.asset ? tileFor?.(roof.asset) ?? null : null;
   const period = Math.max(0.25, roof.tile ?? 2) * px;
@@ -139,18 +167,19 @@ function paintRoof(out: LookImage, ox: number, oy: number, W: number, H: number,
         continue;
       }
       let r: number, g2: number, b: number;
+      const tx = turned ? X * ux + Y * uy : X, ty = turned ? X * vx + Y * vy : Y; // (the point in the roof's own frame: the picture and the rows follow the ridge)
       if (tex) {
-        const u = (((X / period) % 1) + 1) % 1, v = (((Y / period) % 1) + 1) % 1;
+        const u = (((tx / period) % 1) + 1) % 1, v = (((ty / period) % 1) + 1) % 1;
         const i = (Math.min(tex.size - 1, Math.floor(v * tex.size)) * tex.size + Math.min(tex.size - 1, Math.floor(u * tex.size))) * 4;
         r = tex.data[i]; g2 = tex.data[i + 1]; b = tex.data[i + 2];
         if (own) { r = (r * own[0]) / 200; g2 = (g2 * own[1]) / 200; b = (b * own[2]) / 200; } // (a colour tints a picture: 200 keeps a mid-grey as the colour)
       } else {
-        const k = pattern(roof.style, X, Y, px);
+        const k = pattern(roof.style, tx, ty, px);
         r = base[0] * k; g2 = base[1] * k; b = base[2] * k;
       }
       let shade = 1;
       if (!roof.flat) {
-        const s = clamp(horizontal ? (Y - cy) / hh : (X - cx) / hw, -1, 1); // -1 on the slope that faces the light, +1 on the other
+        const s = clamp(turned ? (horizontal ? (ty - cv) / hv : (tx - cu) / hu) : horizontal ? (Y - cy) / hh : (X - cx) / hw, -1, 1); // -1 on the slope that faces the light, +1 on the other
         shade *= 1 - 0.2 * s;
         shade *= 1 + 0.24 * (1 - smooth(0, 0.05, Math.abs(s))); // the ridge catches the light
         const cap = smooth(0.05, 0.065, Math.abs(s)) * (1 - smooth(0.065, 0.09, Math.abs(s)));
@@ -173,6 +202,14 @@ export function renderRoofPicture(spec: BattleSpec, roof: MapRoof, opts: { tileF
   const out: LookImage = { w: rect.w, h: rect.h, data: new Uint8ClampedArray(rect.w * rect.h * 4) };
   paintRoof(out, rect.x, rect.y, W, H, px, roof, opts.tileFor, false);
   return { ...rect, data: out.data };
+}
+
+/**
+ * Roofs painted into `out`, which holds the part of a picture that starts at (ox, oy) whole-picture pixels; `px` pixels per unit (outlines are in units from the picture's top-left
+ * corner), W x H the whole picture. City maps use it to draw their buildings (units are metres) at any scale.
+ */
+export function paintRoofsInto(out: LookImage, ox: number, oy: number, W: number, H: number, px: number, roofs: MapRoof[], opts: { tileFor?: RoofTileSource; shadow?: boolean } = {}) {
+  for (const r of roofs) paintRoof(out, ox, oy, W, H, px, r, opts.tileFor, opts.shadow !== false);
 }
 
 /** The roofs of a battlemap as one layer the size of its picture (squares x pxPerSquare); transparent where there is no roof. */

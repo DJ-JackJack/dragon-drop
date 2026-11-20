@@ -5,7 +5,7 @@ Every map is a plain folder on your PC. Nothing is stored in an account or in th
 ```
 projects\<map-name>\
   project.json              the map's settings: name, size, scale, sea level, climate, style, grid, title and scale bar, `formatVersion`
-  features.json             places, labels, roads, borders, climate regions, reefs, river sources (battlemaps: walls, doors, lights, notes),
+  features.json             places, labels, roads, borders, climate regions, reefs, river sources (battlemaps: walls, doors, lights, notes; city maps: buildings and streets),
                             and where the trace picture lies (which reference picture, its corner, size and turn)
   brief.md                  your notes about the map, shared with Claude
   chat.json                 the chat history with Claude
@@ -31,6 +31,7 @@ projects\<map-name>\
 - **Automatic backups.** While you edit, Dragon Drop saves the map as a checkpoint named **Auto 2026-11-18 14:05** (your PC's clock) at the first save after you start and then at most every 15 minutes. The newest six are kept and older ones are deleted; checkpoints you save yourself are never deleted. They show in the **Checkpoints** list in the left panel: **Restore** puts the map back as it was (you can undo that). They are kept per map, inside its `map\checkpoints` folder, so deleting a map's `map` folder deletes them too. To change the interval or the count, set `MAPMAKER_AUTO_BACKUP_MINUTES` (0 turns them off) and `MAPMAKER_AUTO_BACKUP_KEEP`.
 - **The file format has a version** (`formatVersion` in `project.json`; a map from before the version existed counts as 1).
   - A map from an **older** version is copied into `backups\before-format-<version>-<time>` first, then brought up to date, and you are told.
+  - **City maps are written in file format 2; every other map stays in format 1**, so a Dragon Drop from before city maps still opens all your other maps. It refuses a city map (the same message: update the program), because it would treat it as a world map and drop its buildings the next time it saved.
   - A map from a **newer** version (someone sent you one, or you went back to an older Dragon Drop) is **not opened**: you get a message to update the program, and the files are left exactly as they were. An older program saving it could silently throw away what it doesn't understand.
 - **A places-and-labels file that can't be read** (cut off by a crash, damaged by a sync tool) is never overwritten with an empty one. It is renamed to `features.unreadable-<time>.json`, the newest checkpoint's copy is used instead if there is one, and you are told.
 

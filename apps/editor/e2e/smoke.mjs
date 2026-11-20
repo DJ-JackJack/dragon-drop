@@ -75,6 +75,11 @@ const browser = await chromium.launch();
 let failShot = async () => {};
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  // The Map panel shows one tab at a time (Map, History). For the long walk through the editor below every tab body is shown at once, as the old single column was; one step checks the tabs themselves. The Assets panel is given room of its own so it does not shrink to nothing among them.
+  await page.addInitScript(() => {
+    const show = () => { const st = document.createElement("style"); st.id = "e2e-show-all-tabs"; st.textContent = ".tab-off { display: contents !important; } .side-body > .assets-panel { flex: none !important; min-height: 700px !important; }"; document.head.append(st); };
+    if (document.head) show(); else document.addEventListener("DOMContentLoaded", show);
+  });
   failShot = () => page.screenshot({ path: path.join(shots, "e2e-FAIL.png") }).catch(() => {}); // (what the page looked like when a step failed)
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -127,6 +132,36 @@ try {
   await page.getByRole("button", { name: "Painted", exact: true }).click();
   await page.getByTestId("history").getByText("Style: painted").waitFor({ timeout: 10000 });
 
+  // the Map panel: its tabs show one list at a time, and each panel can be hidden and shown again (the Claude panel is on by default, and the choice is remembered)
+  {
+    await page.evaluate(() => document.getElementById("e2e-show-all-tabs")?.remove());
+    await page.getByTestId("places").waitFor({ timeout: 5000 }); // (the Map tab is showing)
+    if (await page.getByTestId("history").isVisible()) fail("the History list shows on the Map tab");
+    await page.getByTestId("mp-tab-history").click();
+    await page.getByTestId("history").waitFor({ timeout: 5000 });
+    if (await page.getByTestId("places").isVisible()) fail("the Places list shows on the History tab");
+    await page.getByTestId("mp-tab-map").click();
+    await page.getByTestId("places").waitFor({ timeout: 5000 });
+    if ((await page.getByTestId("toggle-claude-panel").getAttribute("aria-pressed")) !== "true") fail("the Claude panel is not on by default");
+    if (!(await page.locator(".right-panel").count())) fail("no Claude panel on a fresh page");
+    await page.getByTestId("toggle-claude-panel").click();
+    if (await page.locator(".right-panel").count()) fail("the Claude panel is still there after hiding it");
+    await page.reload();
+    await page.getByText("Connected").waitFor({ timeout: 15000 });
+    if (await page.locator(".right-panel").count()) fail("the Claude panel came back after a reload: the choice was not remembered");
+    await page.getByTestId("toggle-claude-panel").click();
+    await page.locator(".right-panel").waitFor({ timeout: 5000 });
+    await page.getByTestId("toggle-map-panel").click();
+    if (await page.getByTestId("places").count()) fail("the Map panel is still showing after hiding it");
+    await page.getByTestId("toggle-map-panel").click();
+    await page.getByTestId("places").waitFor({ timeout: 5000 });
+    // (the map is painted again after the reload: wait for it as the first load does)
+    await page.waitForFunction(() => !document.querySelector(".mapview-empty"), null, { timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+    await page.waitForTimeout(1500);
+    await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+  }
+
   // paint a raise stroke across the map centre
   await page.getByRole("button", { name: "Raise" }).click();
   const box = await page.locator('[data-testid="map-canvas"]').boundingBox();
@@ -156,7 +191,12 @@ try {
       for (let i = 0; i < d.length; i += 4 * 211) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0;
       return h;
     });
-    const fitted = await sig();
+    const canvasSize = () => page.evaluate(() => { const c = document.querySelector('[data-testid="map-canvas"]'); return `${c.clientWidth}x${c.clientHeight} (pixels ${c.width}x${c.height})`; });
+    const sizeBefore = await canvasSize();
+    // (the painted map can still be catching up after the Undo above: wait until two samples half a second apart agree)
+    const settle = async () => { let prev = await sig(); for (let i = 0; i < 24; i++) { await page.waitForTimeout(500); const now = await sig(); if (now === prev) return now; prev = now; } return prev; };
+    const fitted = await settle();
+    await page.screenshot({ path: path.join(shots, "e2e-fit-before.png") });
     await page.keyboard.press("+");
     await page.keyboard.press("+");
     await page.waitForTimeout(400);
@@ -167,13 +207,14 @@ try {
     if ((await sig()) === zoomed) fail("an arrow key didn't move the view");
     await page.keyboard.press("0");
     await page.waitForTimeout(600);
-    if ((await sig()) !== fitted) fail("pressing 0 didn't bring back the fitted view");
+    await page.screenshot({ path: path.join(shots, "e2e-fit-after.png") });
+    if ((await settle()) !== fitted) fail(`pressing 0 didn't bring back the fitted view (canvas ${sizeBefore} before, ${await canvasSize()} after)`);
     await page.keyboard.press("-");
     await page.waitForTimeout(300);
     if ((await sig()) === fitted) fail("pressing - didn't zoom out");
     await page.keyboard.press("Control+0");
     await page.waitForTimeout(600);
-    if ((await sig()) !== fitted) fail("pressing Ctrl+0 didn't bring back the fitted view");
+    if ((await settle()) !== fitted) fail("pressing Ctrl+0 didn't bring back the fitted view");
 
     await page.keyboard.press("Control+s");
     await page.getByTestId("saved").waitFor({ timeout: 10000 });
@@ -208,7 +249,9 @@ try {
   await page.getByTestId("places").getByText("Port", { exact: true }).waitFor({ timeout: 10000 });
   // and one of the new pictures: choose a lighthouse in the Place tool, place one, see it in the list
   await page.getByRole("button", { name: "Place", exact: true }).click();
+  await page.getByTestId("place-kind-menu").click(); // (the kinds open from a button in the tool bar, and it closes when one is chosen)
   await page.getByTestId("place-kind-lighthouse").click();
+  await page.getByTestId("place-kind-menu-body").waitFor({ state: "detached", timeout: 5000 });
   await page.mouse.click(cx - 70, cy + 50);
   await answer("Test Light");
   await page.getByTestId("places").getByText("Lighthouse", { exact: true }).waitFor({ timeout: 10000 });
@@ -586,6 +629,7 @@ try {
     if ((await painted()) < 12) fail("battlemap canvas looks blank");
     // a wooden room inside the starting room
     await page.getByTestId("btool-room").click();
+    await page.getByTestId("floor-material-menu").click(); // (the floors open from a button in the tool bar; it closes when one is chosen)
     await page.getByTestId("material-wood-planks").click();
     await drag([10, 5], [14, 9]);
     await page.getByTestId("history").getByText("Room walls (4×4)").waitFor({ timeout: 10000 });
@@ -750,6 +794,7 @@ try {
     await page.getByTestId("battle-key").getByText("Wooden room").waitFor({ timeout: 5000 });
     await page.screenshot({ path: path.join(shots, "e2e-4d3-key.png") });
     await page.getByTestId("btool-brush").click();
+    await page.getByTestId("floor-material-menu").click();
     await page.getByTestId("material-shallow-water").click();
     await drag([4, 11], [9, 12]);
     await page.getByTestId("history").getByText("Paint shallow water").waitFor({ timeout: 10000 });
@@ -771,7 +816,9 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 1, null, { timeout: 10000 });
     await page.getByTestId("asset-item").first().click(); // adds the texture to the palette and picks the brush
     await page.getByTestId("history").getByText("Add floor texture Grass").waitFor({ timeout: 10000 });
+    await page.getByTestId("floor-material-menu").click();
     await page.getByTestId("material-tex-Grass").waitFor({ timeout: 10000 });
+    await page.keyboard.press("Escape");
     await drag([4, 12], [8, 12]);
     await page.getByTestId("history").getByText("Paint Grass").first().waitFor({ timeout: 10000 });
     await page.waitForTimeout(1500); // the texture loads, then the floor repaints
@@ -1083,6 +1130,71 @@ try {
     await page.keyboard.press("Escape");
     await page.getByTestId("selection-bar").waitFor({ state: "detached", timeout: 5000 });
     await waitServerSel((q) => q.selection === null, "nothing selected after Esc");
+  }
+
+  // a city map: made from the New map dialog, buildings and streets drawn with the mouse, selected, turned, moved, undone and deleted
+  {
+    await page.getByRole("button", { name: "+ New map" }).click();
+    await page.getByTestId("new-kind-city").click();
+    await page.getByTestId("new-name").fill("E2E City");
+    await page.getByTestId("new-create").click();
+    await page.getByTestId("city-canvas").waitFor({ timeout: 20000 });
+    await page.getByTestId("city-status").getByText(/600 × 400 m · 0 buildings · 0 streets/).waitFor({ timeout: 10000 });
+    const cb = await page.getByTestId("city-canvas").boundingBox();
+    const fitS = Math.min(cb.width / 600, cb.height / 400) * 0.95;
+    const cx = (m) => cb.x + (cb.width - 600 * fitS) / 2 + m * fitS, cy = (m) => cb.y + (cb.height - 400 * fitS) / 2 + m * fitS;
+    const status = (re) => page.getByTestId("city-status").getByText(re).waitFor({ timeout: 10000 });
+    // a click with the Building tool places a house; a drag sizes one
+    await page.keyboard.press("b");
+    await page.mouse.click(cx(100), cy(100));
+    await status(/1 buildings/);
+    await page.mouse.move(cx(200), cy(100));
+    await page.mouse.down();
+    await page.mouse.move(cx(240), cy(130), { steps: 5 });
+    await page.mouse.up();
+    await status(/2 buildings/);
+    // a street, finished by a double-click
+    await page.keyboard.press("s");
+    await page.mouse.click(cx(50), cy(200));
+    await page.mouse.click(cx(250), cy(220));
+    await page.mouse.dblclick(cx(450), cy(200));
+    await status(/1 streets/);
+    // select the first house, turn it, move it, delete it; each is one undo step
+    await page.keyboard.press("v");
+    await page.mouse.click(cx(100), cy(100));
+    await page.getByTestId("city-inspector").getByText("Building").first().waitFor({ timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.keyboard.press("e");
+    await page.getByTestId("history").getByText("Turn building").first().waitFor({ timeout: 5000 });
+    await page.mouse.move(cx(100), cy(100));
+    await page.mouse.down();
+    await page.mouse.move(cx(120), cy(160), { steps: 5 });
+    await page.mouse.up();
+    await page.getByTestId("history").getByText(/^Move$/).first().waitFor({ timeout: 5000 });
+    await page.keyboard.press("Delete");
+    await status(/1 buildings/);
+    await page.keyboard.press("Control+z");
+    await status(/2 buildings/);
+    // the ground: pick water and paint a stroke
+    await page.keyboard.press("p");
+    await page.getByTestId("city-ground-menu").click();
+    await page.getByTestId("city-material-deep-water").click();
+    await page.mouse.move(cx(500), cy(50));
+    await page.mouse.down();
+    await page.mouse.move(cx(520), cy(350), { steps: 6 });
+    await page.mouse.up();
+    await page.getByTestId("history").getByText("Paint deep water").first().waitFor({ timeout: 5000 });
+    // the trace picture works on a city map too (a new map has no pictures of its own: add one first)
+    await page.getByTestId("references").getByTestId("ref-file").setInputFiles(path.join(tmp, "e2e-sketch.png"));
+    await page.getByTestId("references").getByTestId("ref-card").first().waitFor({ timeout: 15000 });
+    await page.getByTestId("references").getByTestId("ref-card").first().getByTestId("ref-trace").click();
+    await page.getByTestId("trace-bar").waitFor({ timeout: 10000 });
+    await page.getByTestId("trace-stop").click();
+    await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
+    await page.screenshot({ path: path.join(shots, "e2e-5-city.png") });
+    // a city map is its own kind of project, listed as such, and the other kinds' tools are not on screen
+    if (!(await page.locator("select.project").evaluate((s) => s.selectedOptions[0].textContent)).includes("(city)")) fail("a city map is not listed as a city");
+    if (await page.getByRole("button", { name: "Raise", exact: true }).count()) fail("the world map's terrain tools are showing on a city map");
   }
 
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);

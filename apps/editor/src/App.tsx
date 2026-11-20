@@ -7,7 +7,13 @@ import { traceCtl } from "./trace.ts";
 import { Brand } from "./Brand.tsx";
 import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
 import { DesktopSettings } from "./DesktopSettings.tsx";
-import { BATTLE_TOOLS, BattleInspector, BattleKey, BattleSettings, BattleTools, BattleView, type BattleUi, defaultBattleUi } from "./Battle.tsx";
+import { AssetPanel } from "./AssetPanel.tsx";
+import { CityView } from "./CityView.tsx";
+import { CityInspector, CitySummary, CityToolBar } from "./CityPanels.tsx";
+import { CITY_TOOL_DEFS, CITY_TOOL_GROUPS, type CityUi, defaultCityUi } from "./cityUi.ts";
+import { BATTLE_TOOLS, BATTLE_TOOL_GROUPS, BattleInspector, BattleKey, BattleSettings, BattleToolBar, BattleView, type BattleUi, defaultBattleUi } from "./Battle.tsx";
+import { ToolRail } from "./ToolRail.tsx";
+import { WorldToolBar } from "./WorldToolBar.tsx";
 import { type AreaShape, type Brush, type Tool, MapView } from "./MapView.tsx";
 import { type ToolDef, TOOL_GROUPS } from "./toolDefs.ts";
 import { ShortcutHelp } from "./ShortcutHelp.tsx";
@@ -15,19 +21,10 @@ import { SelectionBar } from "./SelectionBar.tsx";
 import { useAssist } from "./useAssist.ts";
 import { ask, confirmBox, DialogHost, notice } from "./dialogs.tsx";
 import { regionSummary } from "./drawRegions.ts";
-import { ClimatePanel, ExtrasPanel, GridPanel, GroundLegend, Inspector, LABEL_KINDS } from "./Panels.tsx";
-import { PlaceKindPicker } from "./PlaceKindPicker.tsx";
+import { ClimatePanel, ExtrasPanel, GridPanel, GroundLegend, Inspector } from "./Panels.tsx";
 import { type AppState, store } from "./store.ts";
 
 const TOOLS: ToolDef[] = TOOL_GROUPS.flatMap((g) => g.tools);
-/** What to do next with the active tool (shown under the tool buttons). */
-const AREA_SHAPES: { id: AreaShape; label: string; tip: string }[] = [
-  { id: "rect", label: "Rectangle", tip: "Drag from one corner to the opposite one" },
-  { id: "circle", label: "Circle", tip: "Drag from the centre outwards" },
-  { id: "free", label: "Freehand", tip: "Draw round the area; it closes itself when you let go" },
-  { id: "poly", label: "Polygon", tip: "Click the corners; double-click, click the first corner or press Enter to close it. Backspace drops a corner, Esc cancels" },
-];
-
 function featureKindOf(f: Features, id: string): SelectedFeatureKind | null {
   if (f.places.some((p) => p.id === id)) return "place";
   if (f.labels.some((l) => l.id === id)) return "label";
@@ -37,22 +34,6 @@ function featureKindOf(f: Features, id: string): SelectedFeatureKind | null {
   return null;
 }
 
-const TOOL_HINTS: Partial<Record<Tool, string>> = {
-  area: "Drag out an area (pick its shape above), or for a polygon click its corners and double-click to close. Claude can see it, and while the lock is on its edits stay inside it. Click for a single point. Esc clears.",
-  place: "Click on the map where the place goes. A box will ask for its name.",
-  label: "Click for a straight label, or click and drag to draw a line for the name to follow. A box will ask for the text.",
-  region: "Click the corners of the area, one at a time. Double-click, click the first corner, or press Enter to finish. Esc cancels.",
-  line: "", // depends on the kind: see lineHint()
-  battlehere: "Click the spot. A box will ask for the battlemap's name; its floors come from that spot's climate, slope, rivers, lakes and coast. You can build rooms, add objects and lights afterwards.",
-  detail: "Drag a box on the map. The new map keeps this one's land, climate and names, with 2× to 16× the detail.",
-  select: "Click a place, label, region or road to select it. Drag to move it. Delete removes it.",
-};
-function lineHint(kind: LineKind, auto: boolean): string {
-  if (kind === "reef") return "Click the points along the reef (for a strait, from one coast to the other). Double-click or press Enter to finish. Backspace removes the last point, Esc cancels.";
-  if (kind === "border") return "Click the points along the border. Double-click or press Enter to finish. Click the first point to close a territory. Backspace removes the last point, Esc cancels.";
-  if (auto) return `Click where the ${kind} starts, then where it ends (click more points to make it pass through them). Double-click or press Enter to finish: the route is found over the terrain for you. Esc cancels.`;
-  return `Click the points the ${kind} passes through. Double-click or press Enter to finish. Backspace removes the last point, Esc cancels.`;
-}
 /** Does the open map have any land? (A quick sample, for wording in dialogs.) */
 function mapHasLand(): boolean {
   const hf = store.heights, m = store.getState().meta;
@@ -60,7 +41,6 @@ function mapHasLand(): boolean {
   for (let i = 0; i < hf.data.length; i += 37) if (hf.data[i] > m.seaLevel) return true;
   return false;
 }
-const BRUSHES: Tool[] = ["raise", "lower", "smooth", "flatten", "land", "water"];
 
 export function App() {
   const s = useSyncExternalStore(store.subscribe, store.getState);
@@ -115,6 +95,11 @@ export function App() {
   const clearSelection = useCallback(() => { setPendingId(null); if (store.getState().selection) store.setSelection(null); }, []);
   const style = s.meta?.style ?? "painted";
   const isBattle = s.meta?.kind === "battle";
+  const isCity = s.meta?.kind === "city";
+  const isWorld = !isBattle && !isCity;
+  const [cui, setCui] = useState<CityUi>(defaultCityUi);
+  const onCui = useCallback((p: Partial<CityUi>) => setCui((c) => ({ ...c, ...p })), []);
+  useEffect(() => setCui((c) => (c.selected.length ? { ...c, selected: [] } : c)), [s.meta?.id]);
   const [bui, setBui] = useState<BattleUi>(defaultBattleUi);
   const onBui = useCallback((p: Partial<BattleUi>) => setBui((b) => ({ ...b, ...p })), []);
   useEffect(() => setBui((b) => (b.selected || b.multi.length ? { ...b, selected: null, multi: [] } : b)), [s.meta?.id, s.levels?.active]);
@@ -164,18 +149,29 @@ export function App() {
   const [wide, setWide] = useState(() => { try { return localStorage.getItem("dd-wide") === "1"; } catch { return false; } });
   const toggleWide = useCallback(() => setWide((w) => { try { localStorage.setItem("dd-wide", w ? "0" : "1"); } catch { /* private mode */ } return !w; }), []);
   const [rightTab, setRightTab] = useState<RightTab>(defaultTab(!!window.dragonDrop));
+  // the Map panel (layers, lists, history, assets) and the Claude panel can each be hidden; both are showing by default, and the choice is remembered
+  const flag = (key: string) => { try { return localStorage.getItem(key) !== "0"; } catch { return true; } };
+  const [mapOpen, setMapOpenState] = useState(() => flag("dd-map-open"));
+  const [claudeOpen, setClaudeOpenState] = useState(() => flag("dd-claude-open"));
+  const setMapOpen = useCallback((on: boolean) => { setMapOpenState(on); try { localStorage.setItem("dd-map-open", on ? "1" : "0"); } catch { /* private window */ } }, []);
+  const setClaudeOpen = useCallback((on: boolean) => { setClaudeOpenState(on); try { localStorage.setItem("dd-claude-open", on ? "1" : "0"); } catch { /* private window */ } }, []);
+  const [mapTab, setMapTab] = useState<"map" | "history" | "assets">("map");
+  const tabNow = mapTab === "assets" && !isBattle ? "map" : mapTab;
+  // picking something on the map shows its editor (the Map tab), unless the person is browsing assets
+  const selKey = isCity ? cui.selected.join(",") : isBattle ? `${bui.selected ?? ""}|${bui.multi.join(",")}` : selectedId ?? "";
+  useEffect(() => { if (selKey.replace("|", "")) setMapTab((t) => (t === "history" ? "map" : t)); }, [selKey]);
   const [assetFocus, setAssetFocus] = useState({ cat: "objects", n: 0 });
-  const openAssets = useCallback((cat = "terrain") => { setAssetFocus((f) => ({ cat, n: f.n + 1 })); setRightTab("assets"); }, []);
+  const openAssets = useCallback((cat = "terrain") => { setAssetFocus((f) => ({ cat, n: f.n + 1 })); setMapTab("assets"); setMapOpen(true); }, [setMapOpen]);
   const onAsk = async (text: string, selection: string, locked: boolean) => {
     const r = await assist.ask(text, selection, locked);
-    if (r.ok) setRightTab("claude"); // so the DM sees the answer
+    if (r.ok) { setRightTab("claude"); setClaudeOpen(true); } // so the DM sees the answer
     return r;
   };
   const onAskPicture = async (r: RefInfo) => {
     const text = await ask(`What should Claude do with "${r.name}"? It goes to Claude Code in the terminal panel.`, "Tell me what you see in it and how it could help this map.", "Ask Claude");
     if (!text?.trim()) return;
     const res = await assist.askPicture(r.name, text);
-    if (res.ok) setRightTab("claude"); // so the DM sees the answer
+    if (res.ok) { setRightTab("claude"); setClaudeOpen(true); } // so the DM sees the answer
     else void notice(res.message);
   };
   useEffect(() => {
@@ -243,6 +239,13 @@ export function App() {
       if (mod) return;
       if (e.key === "?") { e.preventDefault(); setHelpOpen((o) => !o); return; }
       if (e.key.toLowerCase() === "u" && !e.altKey && store.getState().features.trace) { traceCtl.toggleShown(); return; } // show or hide the trace picture
+      if (store.getState().meta?.kind === "city") {
+        const ct = CITY_TOOL_DEFS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
+        if (ct) setCui((c) => ({ ...c, tool: ct.id }));
+        if (e.key === "[") setCui((c) => ({ ...c, brush: Math.max(1, Math.round(c.brush / 1.25)) }));
+        if (e.key === "]") setCui((c) => ({ ...c, brush: Math.min(60, Math.round(c.brush * 1.25 + 1)) }));
+        return;
+      }
       if (store.getState().meta?.kind === "battle") {
         const bt = BATTLE_TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
         if (bt) setBui((b) => ({ ...b, tool: bt.id }));
@@ -264,82 +267,68 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar s={s} onNew={() => setNewOpen(true)} onHelp={() => setHelpOpen(true)} onSettings={desktop ? () => setSettingsOpen(true) : undefined} />
-      <div className={`main${desktop && wide ? " wide" : ""}`}>
-        <aside className="side">
+      <TopBar
+        s={s} onNew={() => setNewOpen(true)} onHelp={() => setHelpOpen(true)} onSettings={desktop ? () => setSettingsOpen(true) : undefined}
+        mapOpen={mapOpen} onMap={setMapOpen} claudeOpen={claudeOpen} onClaude={setClaudeOpen} claudeDot={assist.ready}
+      />
+      {isCity && s.meta && <CityToolBar ui={cui} onUi={onCui} />}
+      {isBattle && s.meta && <BattleToolBar ui={bui} onUi={onBui} meta={s.meta} assetsOn={isBattle} onOpenAssets={() => openAssets("terrain")} />}
+      {isWorld && (
+        <WorldToolBar
+          tool={tool} brush={brush} onBrush={setBrush} lineKind={lineKind} onLineKind={setLineKind} lineAuto={lineAuto} onLineAuto={setLineAuto}
+          areaShape={areaShape} onAreaShape={setAreaShape} placeType={placeType} onPlaceType={setPlaceType} labelKind={labelKind} onLabelKind={setLabelKind}
+        />
+      )}
+      <div className={`main${desktop && wide ? " wide" : ""}${mapOpen ? "" : " no-map"}${claudeOpen ? "" : " no-claude"}${isBattle && tabNow === "assets" && mapOpen ? " assets-wide" : ""}`}>
+        {isCity ? (
+          <ToolRail groups={CITY_TOOL_GROUPS} active={cui.tool} onPick={(id) => onCui({ tool: id as CityUi["tool"] })} testId={(id) => `ctool-${id}`} />
+        ) : isBattle ? (
+          <ToolRail groups={BATTLE_TOOL_GROUPS} active={bui.tool} onPick={(id) => onBui({ tool: id as BattleUi["tool"] })} testId={(id) => `btool-${id}`} />
+        ) : (
+          <ToolRail groups={TOOL_GROUPS} active={tool} onPick={(id) => setTool(id as Tool)} />
+        )}
+        {isCity ? (
+          <CityView meta={s.meta} features={s.features} ui={cui} onUi={onCui} />
+        ) : isBattle ? (
+          <BattleView meta={s.meta} features={s.features} levels={s.levels} ui={bui} onUi={onBui} />
+        ) : (
+        <MapView
+          meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
+          features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions}
+          lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere}
+          selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
+        >
+          <SelectionBar
+            selection={s.selection} lock={s.selectionLock} lockPref={s.lockPref} features={s.features} kmPerPx={s.meta?.kmPerPx ?? 1}
+            canAsk={!!desktop} onClear={clearSelection} onLockPref={(on) => store.setLockPref(on)} onAsk={onAsk}
+          />
+        </MapView>
+        )}
+        <aside className={`side${mapOpen ? "" : " closed"}`} aria-label="Map panel" data-testid="map-panel">
+          {mapOpen && (
+            <>
+              <div className="tabs" role="tablist" aria-label="Map panel">
+                <button role="tab" aria-selected={tabNow === "map"} className={tabNow === "map" ? "on" : ""} onClick={() => setMapTab("map")} data-testid="mp-tab-map">Map</button>
+                <button role="tab" aria-selected={tabNow === "history"} className={tabNow === "history" ? "on" : ""} onClick={() => setMapTab("history")} data-testid="mp-tab-history">History</button>
+                {isBattle && <button role="tab" aria-selected={tabNow === "assets"} className={tabNow === "assets" ? "on" : ""} onClick={() => setMapTab("assets")} data-testid="tab-assets">Assets</button>}
+              </div>
+              <div className="side-body">
+                {/* (both lists stay in the page, one hidden: a tab keeps what it was showing, and the browser test can show them all) */}
+                <div className={tabNow === "map" ? "tab-on" : "tab-off"} data-testid="tab-body-map">
+          {isCity && s.meta && (
+            <>
+              <CityInspector features={s.features} ui={cui} onUi={onCui} />
+              <CitySummary meta={s.meta} features={s.features} />
+            </>
+          )}
           {isBattle && s.meta && (
             <>
-              <BattleTools ui={bui} onUi={onBui} canUndo={s.canUndo} canRedo={s.canRedo} meta={s.meta} assetsOn={isBattle} onOpenAssets={() => openAssets("terrain")} />
               <BattleInspector features={s.features} levels={s.levels} chosenAsset={bui.asset} selected={bui.selected} multi={bui.multi} bounds={{ w: s.meta.battle?.squaresX ?? 0, h: s.meta.battle?.squaresY ?? 0 }} onClear={() => onBui({ selected: null, multi: [] })} onSelect={(ids) => onBui(selectionFromIds(ids))} />
               <BattleKey features={s.features} selected={bui.selected} onSelect={(id) => onBui({ selected: id, multi: [], tool: "select" })} />
               <BattleSettings meta={s.meta} features={s.features} ui={bui} onUi={onBui} />
             </>
           )}
-          {!isBattle && <>
-          <section>
-            {TOOL_GROUPS.map((g) => (
-              <div key={g.name}>
-                <h3>{g.name}</h3>
-                <div className="tools">
-                  {g.tools.map((x) => (
-                    <button key={x.id} className={tool === x.id ? "on" : ""} onClick={() => setTool(x.id)} title={`${x.tip} (${x.key})`}>
-                      {x.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {tool === "line" && (
-              <>
-                <label className="field">Draw a
-                  <select value={lineKind} onChange={(e) => setLineKind(e.target.value as LineKind)} data-testid="line-kind">
-                    <option value="road">Road</option>
-                    <option value="trail">Trail</option>
-                    <option value="border">Border</option>
-                    <option value="reef">Reef</option>
-                  </select>
-                </label>
-                {(lineKind === "road" || lineKind === "trail") && (
-                  <label className="check"><input type="checkbox" checked={lineAuto} onChange={(e) => setLineAuto(e.target.checked)} /> Find the route over the terrain</label>
-                )}
-              </>
-            )}
-            {tool === "area" && (
-              <div className="seg" role="group" aria-label="Area shape" data-testid="area-shapes">
-                {AREA_SHAPES.map((a) => (
-                  <button key={a.id} className={areaShape === a.id ? "on" : ""} onClick={() => setAreaShape(a.id)} title={a.tip} data-testid={`area-${a.id}`}>{a.label}</button>
-                ))}
-              </div>
-            )}
-            {(tool === "line" || TOOL_HINTS[tool]) && <p className="tool-hint" data-testid="tool-hint">{tool === "line" ? lineHint(lineKind, lineAuto) : TOOL_HINTS[tool]}</p>}
-            {tool === "place" && (
-              <div className="field" data-testid="place-kinds">New place: <b className="kind-name">{placeKind(placeType).name}</b>
-                <PlaceKindPicker value={placeType} onChange={setPlaceType} />
-              </div>
-            )}
-            {tool === "label" && (
-              <label className="field">New label kind
-                <select value={labelKind} onChange={(e) => setLabelKind(e.target.value as LabelKind)}>
-                  {LABEL_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
-                </select>
-              </label>
-            )}
-            {BRUSHES.includes(tool) && <>
-            <label className="slider">
-              <span>Brush size <b>{brush.radius}</b> px</span>
-              <input type="range" min={1} max={150} value={brush.radius} onChange={(e) => setBrush({ ...brush, radius: Number(e.target.value) })} />
-            </label>
-            <label className="slider">
-              <span>Strength <b>{Math.round(brush.strength * 100)}%</b></span>
-              <input type="range" min={5} max={100} value={Math.round(brush.strength * 100)} onChange={(e) => setBrush({ ...brush, strength: Number(e.target.value) / 100 })} />
-            </label>
-            </>}
-            <div className="row">
-              <button disabled={!s.canUndo} onClick={() => store.send({ t: "undo" })} title="Undo (Ctrl+Z)">↶ Undo</button>
-              <button disabled={!s.canRedo} onClick={() => store.send({ t: "redo" })} title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
-            </div>
-          </section>
-
+          {isWorld && <>
           <Inspector features={s.features} selectedId={selectedId} kmPerPx={s.meta?.kmPerPx ?? 1} onClear={() => onSelect(null)} />
 
           <section>
@@ -426,6 +415,8 @@ export function App() {
 
           </>}
 
+                </div>
+                <div className={tabNow === "history" ? "tab-on" : "tab-off"} data-testid="tab-body-history">
           <section>
             <h3>Checkpoints</h3>
             <div className="checkpoints" data-testid="checkpoints">
@@ -444,7 +435,7 @@ export function App() {
             </div>
           </section>
 
-          {s.meta && <References refs={s.refs} worldMap={!isBattle} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} tracing={s.features.trace?.ref} onTrace={(r) => void traceCtl.start(s.meta!, r)} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
+          {s.meta && <References refs={s.refs} worldMap={isWorld} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} tracing={s.features.trace?.ref} onTrace={(r) => void traceCtl.start(s.meta!, r)} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
 
           <section className="grow">
             <h3>History</h3>
@@ -458,31 +449,21 @@ export function App() {
               ))}
             </div>
           </section>
+                </div>
+                {tabNow === "assets" && isBattle && <AssetPanel meta={s.meta} ui={bui} onUi={onBui} desktop={!!desktop} focus={assetFocus} />}
+              </div>
+            </>
+          )}
         </aside>
-
-        {isBattle ? (
-          <BattleView meta={s.meta} features={s.features} levels={s.levels} ui={bui} onUi={onBui} />
+        {claudeOpen ? (
+          <RightPanel s={s} desktop={!!desktop} assist={assist} wide={wide} onToggleWide={toggleWide} tab={rightTab} onTab={setRightTab} />
         ) : (
-        <MapView
-          meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
-          features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions}
-          lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere}
-          selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
-        >
-          <SelectionBar
-            selection={s.selection} lock={s.selectionLock} lockPref={s.lockPref} features={s.features} kmPerPx={s.meta?.kmPerPx ?? 1}
-            canAsk={!!desktop} onClear={clearSelection} onLockPref={(on) => store.setLockPref(on)} onAsk={onAsk}
-          />
-        </MapView>
+          <div className="slot-closed" />
         )}
-        <RightPanel
-          s={s} desktop={!!desktop} assist={assist} wide={wide} onToggleWide={toggleWide} tab={rightTab} onTab={setRightTab}
-          battle={isBattle} ui={bui} onUi={onBui} focus={assetFocus}
-        />
       </div>
       {newOpen && <NewMapDialog onClose={() => setNewOpen(false)} />}
       {settingsOpen && desktop && <DesktopSettings onClose={() => setSettingsOpen(false)} />}
-      {helpOpen && <ShortcutHelp battle={isBattle} onClose={() => setHelpOpen(false)} />}
+      {helpOpen && <ShortcutHelp battle={isBattle} city={isCity} onClose={() => setHelpOpen(false)} />}
       {sketchRef && <SketchDialog refInfo={sketchRef} mapHasLand={mapHasLand()} onClose={() => setSketchRef(null)} />}
       <DialogHost />
       {routingId && <div className="toast info" data-testid="routing">Finding the best route over the terrain…</div>}
@@ -501,7 +482,10 @@ export function App() {
   );
 }
 
-function TopBar({ s, onNew, onHelp, onSettings }: { s: AppState; onNew: () => void; onHelp: () => void; onSettings?: () => void }) {
+function TopBar({ s, onNew, onHelp, onSettings, mapOpen, onMap, claudeOpen, onClaude, claudeDot }: {
+  s: AppState; onNew: () => void; onHelp: () => void; onSettings?: () => void;
+  mapOpen: boolean; onMap: (on: boolean) => void; claudeOpen: boolean; onClaude: (on: boolean) => void; claudeDot: boolean;
+}) {
   return (
     <header className="top">
       <Brand />
@@ -511,10 +495,16 @@ function TopBar({ s, onNew, onHelp, onSettings }: { s: AppState; onNew: () => vo
         onChange={(e) => store.send({ t: "open_project", id: e.target.value })}
         title="Open project"
       >
-        {s.projects.map((p) => <option key={p.id} value={p.id}>{p.parent ? `${p.name} (part of ${p.parent.name})` : p.kind === "battle" ? `${p.name} (battlemap)` : p.name}</option>)}
+        {s.projects.map((p) => <option key={p.id} value={p.id}>{p.parent ? `${p.name} (part of ${p.parent.name})` : p.kind === "battle" ? `${p.name} (battlemap)` : p.kind === "city" ? `${p.name} (city)` : p.name}</option>)}
       </select>
       <button className="ghost" onClick={onNew}>+ New map</button>
       <div className="spacer" />
+      <button className="ghost" disabled={!s.canUndo} onClick={() => store.send({ t: "undo" })} title="Undo (Ctrl+Z)" data-testid="undo">↶ Undo</button>
+      <button className="ghost" disabled={!s.canRedo} onClick={() => store.send({ t: "redo" })} title="Redo (Ctrl+Shift+Z)" data-testid="redo">↷ Redo</button>
+      <button className={`ghost toggle${mapOpen ? " on" : ""}`} aria-pressed={mapOpen} onClick={() => onMap(!mapOpen)} title="Show or hide the Map panel: layers, lists, history and assets" data-testid="toggle-map-panel">Map panel</button>
+      <button className={`ghost toggle${claudeOpen ? " on" : ""}`} aria-pressed={claudeOpen} onClick={() => onClaude(!claudeOpen)} title="Show or hide the Claude panel" data-testid="toggle-claude-panel">
+        Claude{claudeDot && !claudeOpen ? <span className="tab-dot" title="Claude has suggestions for you"> ●</span> : null}
+      </button>
       <span className={`conn ${s.connected ? "ok" : "bad"}`}>{s.connected ? "Connected" : "Reconnecting…"}</span>
       <button className="ghost" onClick={onHelp} title="Keyboard and mouse controls (?)" data-testid="shortcuts-button">?</button>
       {onSettings && <button className="ghost" onClick={onSettings} title="API key, maps folder, Claude Code connection" data-testid="settings-button">Settings</button>}
@@ -523,8 +513,10 @@ function TopBar({ s, onNew, onHelp, onSettings }: { s: AppState; onNew: () => vo
 }
 
 function NewMapDialog({ onClose }: { onClose: () => void }) {
-  const [kind, setKind] = useState<"world" | "battle">("world");
+  const [kind, setKind] = useState<"world" | "battle" | "city">("world");
   const [name, setName] = useState("New Map");
+  const [cw, setCw] = useState(600);
+  const [ch, setCh] = useState(400);
   const [size, setSize] = useState(1024);
   const [miles, setMiles] = useState(1000);
   const [template, setTemplate] = useState("ocean");
@@ -535,17 +527,20 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const [room, setRoom] = useState(true);
   const kmPerPx = Number(((miles * 1.609344) / size).toFixed(3));
   const battleOk = sx >= 3 && sy >= 3 && sx <= 150 && sy <= 150 && sx * sy * 70 * 70 <= 25_000_000;
-  const switchKind = (k: "world" | "battle") => {
-    setName((n) => (n === "New Map" && k === "battle" ? "New Battlemap" : n === "New Battlemap" && k === "world" ? "New Map" : n));
+  const cityOk = cw >= 50 && ch >= 50 && cw <= 6000 && ch <= 6000;
+  const switchKind = (k: "world" | "battle" | "city") => {
+    const stock: Record<string, string> = { world: "New Map", battle: "New Battlemap", city: "New City" };
+    setName((n) => (Object.values(stock).includes(n) ? stock[k] : n));
     setKind(k);
   };
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} data-testid="new-map-dialog">
-        <h2>{kind === "world" ? "New map" : "New battlemap"}</h2>
+        <h2>{kind === "world" ? "New map" : kind === "city" ? "New city" : "New battlemap"}</h2>
         <div className="seg" role="group" aria-label="Kind of map">
           <button className={kind === "world" ? "on" : ""} onClick={() => switchKind("world")} data-testid="new-kind-world">World map</button>
           <button className={kind === "battle" ? "on" : ""} onClick={() => switchKind("battle")} data-testid="new-kind-battle">Battlemap</button>
+          <button className={kind === "city" ? "on" : ""} onClick={() => switchKind("city")} data-testid="new-kind-city">City</button>
         </div>
         <label>Name<input value={name} onChange={(e) => setName(e.target.value)} autoFocus data-testid="new-name" /></label>
         {kind === "world" ? (
@@ -567,6 +562,15 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
                 <option value="continent">Continent</option>
               </select>
             </label>
+          </>
+        ) : kind === "city" ? (
+          <>
+            <label>Width in metres<input type="number" min={50} max={6000} value={cw} onChange={(e) => setCw(Number(e.target.value))} data-testid="new-cw" /></label>
+            <label>Height in metres<input type="number" min={50} max={6000} value={ch} onChange={(e) => setCh(Number(e.target.value))} data-testid="new-ch" /></label>
+            <p className="muted">
+              {cityOk ? <>A city seen from above, made of buildings and streets on a ground. A village is about 300 × 200 m, a walled town 1,000 × 700, a big city 3,000 × 2,000.</>
+                : <>Between 50 and 6,000 metres each way.</>}
+            </p>
           </>
         ) : (
           <>
@@ -590,9 +594,11 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
         <div className="row end">
           <button className="ghost" onClick={onClose}>Cancel</button>
           <button
-            className="primary" data-testid="new-create" disabled={kind === "battle" && !battleOk}
+            className="primary" data-testid="new-create" disabled={(kind === "battle" && !battleOk) || (kind === "city" && !cityOk)}
             onClick={() => {
-              if (kind === "battle") {
+              if (kind === "city") {
+                store.send({ t: "create_city", name: name.trim() || "New City", widthM: cw, heightM: ch });
+              } else if (kind === "battle") {
                 store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: feet, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
               } else {
                 store.send({ t: "create_project", name: name.trim() || "New Map", width: size, height: size, kmPerPx, template, seed: Math.floor(Math.random() * 1e9) });

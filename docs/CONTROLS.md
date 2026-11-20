@@ -2,6 +2,21 @@
 
 Press **?** in the editor (or the **?** button in the top bar) for this list inside the program. The tool letters in the sheet come from the same list as the toolbar, so they can't drift.
 
+## The screen
+
+| Where | What |
+|---|---|
+| Left edge | The **tool rail**: every tool of the kind of map you have open, with its key. The tool letters come from one list per kind of map, so the rail, the keys and the `?` sheet agree. |
+| Under the top bar | The **tool bar**: the settings of the tool in use, and a line saying what to do next with it. |
+| Top bar | Map picker, **+ New map**, **Undo**, **Redo**, and the switches **Map panel** and **Claude**. Both panels are on by default and can be hidden; the choice is remembered. |
+| Right | The **Map panel** (tabs **Map**, **History**, and **Assets** on battlemaps), then the **Claude** panel. |
+
+When a panel is shown or hidden, a view that still shows the whole map is fitted again; any other view keeps the same point of the map in the middle.
+
+## City maps
+
+A city map has its own tools (the sheet from `?` lists them): `H` Pan, `V` Select, `B` Building, `O` Outline, `S` Street, `P` Paint ground. The view keys (`0`, `+`, `-`, arrows, `Space`) are the same as everywhere. On a city map, with something selected, `Q` and `E` turn the buildings 15° (with the Building tool and nothing selected they set the angle of the next one), the arrow keys nudge the selection half a metre (`Shift`: 5 m; quick presses are one undo step), `Delete` removes it, dragging on bare ground with Select draws a box that selects, and `Shift`-click adds to the selection. Copy, paste and duplicate are not there yet.
+
 ## Moving around
 
 | Do | How |

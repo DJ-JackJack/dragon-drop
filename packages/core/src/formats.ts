@@ -43,7 +43,7 @@ export const FORMATS_READ: FormatInfo[] = [
   {
     id: "map", name: "Dragon Drop maps", files: "a map folder: `project.json`, `features.json`, `brief.md`, `chat.json`, the gzipped height file",
     use: "Opening and keeping your maps (world maps, regional maps and battlemaps).",
-    limits: "Maps from older versions are upgraded when opened (a copy is kept first). A map from a newer Dragon Drop is refused and left untouched. Maps made in other programs can't be opened. See [MAP-FILES.md](MAP-FILES.md).",
+    limits: "Maps from older versions are upgraded when opened (a copy is kept first). A map from a newer Dragon Drop is refused and left untouched, and so is a city map by a Dragon Drop from before city maps (they are saved in file format 2; every other map stays in format 1). Maps made in other programs can't be opened. See [MAP-FILES.md](MAP-FILES.md).",
   },
   {
     id: "reference", name: "Reference pictures", files: ".png, .jpg, .jpeg, .webp",

@@ -7,13 +7,14 @@ import {
   type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
   MI_PER_KM, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
   clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, renderFull,
-  isBattle, routeWaypoints, sketchToHeights, textWidth,
+  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
-  type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
+  type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
+import { CITY_TOOLS, CITY_TOOL_NAMES, citySummary } from "./cityTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
 
@@ -34,6 +35,12 @@ export interface ToolContext {
     thumbnail(id: string, size: number): Promise<Uint8Array | null>;
     info(id: string): Promise<AssetItem | null>;
   };
+  /** Optional: the roof textures of the asset packs by roof look (null without an asset library): city buildings are drawn from these in preference to drawing a roof. */
+  roofPools?(): RoofPools | null;
+  /** Optional: the roof pictures the open city's buildings use, decoded by asset id, for drawing it. */
+  cityTiles?(): Promise<Record<string, { data: Uint8ClampedArray; size: number }>>;
+  /** Optional: make a city map (sized in metres) and open it. */
+  createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap and open it. */
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
@@ -319,6 +326,7 @@ const pts = (p: number[][]) => p.map((q) => [q[0], q[1]] as [number, number]);
 function summary(ctx: ToolContext) {
   const s = ctx.session();
   if (isBattle(s.doc)) return battleSummary(ctx);
+  if (isCity(s.doc)) return citySummary(ctx);
   const m = s.doc.meta;
   const st = mapStats(s.doc);
   return {
@@ -1534,6 +1542,7 @@ export const TOOLS = [
   ...BATTLE_TOOLS,
   ...ASSET_TOOLS,
   ...TRACE_TOOLS,
+  ...CITY_TOOLS,
 ] as const;
 
 function normShape(s: z.infer<typeof Shape>) {
@@ -1556,14 +1565,21 @@ const WORLD_ONLY = new Set([
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
   "get_selection", "select_area", "clear_selection",
 ]);
+const CITY_ONLY = new Set(CITY_TOOL_NAMES.filter((n) => n !== "create_city"));
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);
 
 /** Validate input against the tool's schema and run it; errors become is_error results. */
 export async function runTool(ctx: ToolContext, name: string, input: unknown): Promise<ToolResult> {
   const tool = findTool(name);
   if (!tool) return { ...text(`Unknown tool: ${name}`), isError: true };
-  let battle: boolean | null = null;
-  try { battle = isBattle(ctx.session().doc); } catch { /* no project open */ }
+  let battle: boolean | null = null, city = false;
+  try { const d = ctx.session().doc; battle = isBattle(d); city = isCity(d); } catch { /* no project open */ }
+  if (city && (WORLD_ONLY.has(name) || BATTLE_ONLY.has(name))) {
+    return { ...text(`${name} isn't available on a city map. A city map is made of buildings, streets and ground: use render_city, paint_ground, add_streets, add_buildings, list_buildings and the like (get_map_summary says what is there).`), isError: true };
+  }
+  if (!city && battle !== null && CITY_ONLY.has(name)) {
+    return { ...text(`${name} is for city maps, and the open project is ${battle ? "a battlemap" : "a world map"}. create_city makes a city map; open_project switches to one.`), isError: true };
+  }
   if (battle === true && WORLD_ONLY.has(name)) {
     return { ...text(`${name} is for world maps, and the open project is a battlemap. Use list_battle, render_battlemap, paint_floor, add_room, add_wall, add_door and add_light.`), isError: true };
   }

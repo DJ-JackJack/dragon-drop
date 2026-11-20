@@ -63,11 +63,11 @@ code { background: #08080a; padding: 1px 4px; border-radius: 4px; font-size: 12.
 .conn.ok { color: var(--ok); }
 .conn.bad { color: var(--error); }
 
-.main { flex: 1; display: grid; grid-template-columns: 240px 1fr 400px; min-height: 0; }
+.main { --mapw: 260px; --claudew: 400px; flex: 1; display: grid; grid-template-columns: 68px minmax(0, 1fr) var(--mapw) var(--claudew); min-height: 0; }
 
 .side {
-  background: var(--panel); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0;
 }
 .side section { padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .side section.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -106,6 +106,10 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .drop-overlay div { display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; max-width: 420px; padding: 18px 22px; border-radius: 10px; background: var(--panel); border: 1px solid var(--accent); }
 .drop-overlay b { font-size: 16px; color: var(--gold-hi); }
 .drop-overlay span { color: var(--muted); font-size: 13px; }
+/* city maps (CityPanels.tsx) */
+.seg.wrap { flex-wrap: wrap; gap: 4px; }
+.seg.wrap button { flex: 1 1 45%; border-radius: 6px; white-space: nowrap; }
+.chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; border: 1px solid rgba(0, 0, 0, 0.45); }
 /* the trace bar (TraceBar.tsx): at the bottom of the map, above the status line */
 .trace-bar { position: absolute; left: 0; right: 0; bottom: 44px; margin-inline: auto; width: max-content; z-index: 3; display: flex; flex-direction: column; gap: 6px; max-width: calc(100% - 24px); padding: 7px 10px; font-size: 12.5px; color: #f1ead4; background: rgba(20, 18, 12, 0.94); border: 1px solid rgba(212, 175, 55, 0.45); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45); }
 .trace-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -203,11 +207,12 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #4a2323; border: 1px solid var(--error); padding: 8px 14px; border-radius: 8px; cursor: pointer; z-index: 20; }
 
 @media (max-width: 1100px) {
-  .main { grid-template-columns: 200px 1fr 320px; }
+  .main { --mapw: 210px; --claudew: 320px; }
+  .main.assets-wide { --mapw: 300px; }
 }
 @media (max-width: 760px) {
   .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; }
-  .side { display: none; }
+  .side, .rail { display: none; }
   .chat { border-left: none; border-top: 1px solid var(--line); }
 }
 .mapview-busy {
@@ -373,7 +378,10 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 .modal label.check { flex-direction: row; align-items: center; color: var(--text); font-size: 13.5px; }
 
 /* embedded Claude Code terminal */
-.main.wide { grid-template-columns: 240px 1fr 660px; }
+.main.wide { --claudew: 660px; }
+.main.no-map { --mapw: 0px; }
+.main.no-claude { --claudew: 0px; }
+.main.assets-wide { --mapw: 380px; }
 .right-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--line); }
 .right-panel > .chat { flex: 1; min-height: 0; border-left: none; }
 .right-panel .tabs { display: flex; background: #0e0e11; border-bottom: 1px solid var(--line); }
@@ -469,3 +477,59 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 
 /* several places and labels selected together on a world map */
 .mapview-group { position: absolute; left: 10px; bottom: 40px; background: var(--glass); border: 1px solid rgba(212, 175, 55, 0.45); padding: 3px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }
+
+/* the tool rail (ToolRail.tsx): one picture and a short name for each tool, down the left edge */
+.rail { background: linear-gradient(180deg, #121215, #0e0e11); border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: none; padding: 4px; display: flex; flex-direction: column; align-items: center; min-height: 0; }
+.rail::-webkit-scrollbar { display: none; }
+.rail-group { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; padding: 4px 0; border-bottom: 1px solid #211f19; }
+.rail-group:last-child { border-bottom: none; }
+.rail-tool { position: relative; width: 58px; padding: 3px 0 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--muted); font-size: 10px; line-height: 1.15; }
+.rail-tool:hover:not(:disabled) { color: var(--text); background: var(--panel-2); border-color: transparent; }
+.rail-tool.on, .rail-tool.on:hover:not(:disabled) { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); border-color: var(--gold-hi); color: #17130a; font-weight: 600; }
+.ticon { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.rail-key { position: absolute; top: 2px; right: 4px; font-size: 8.5px; opacity: 0.55; }
+.rail-name { white-space: nowrap; }
+/* on a short screen the names go, so the whole rail still fits */
+@media (max-height: 820px) { .rail-name { display: none; } .rail-tool { padding: 6px 0; } }
+
+/* the tool bar (ToolBar.tsx): the settings of the tool in use, and what to do next with it */
+.toolbar { flex: none; background: #101013; border-bottom: 1px solid var(--line); padding: 6px 12px; display: flex; flex-direction: column; gap: 4px; min-height: 66px; position: relative; z-index: 5; }
+.tb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; min-height: 28px; }
+.toolbar .seg { margin: 0; }
+.toolbar .seg button { padding: 4px 10px; white-space: nowrap; flex: none; }
+.toolbar .field { flex-direction: row; align-items: center; gap: 8px; margin: 0; }
+.toolbar .slider { display: flex; align-items: center; gap: 8px; margin: 0; }
+.toolbar .slider span { display: inline; white-space: nowrap; }
+.toolbar .slider input { width: 120px; }
+.toolbar .check { margin: 0; }
+.toolbar .muted { margin: 0; }
+.toolbar .tool-hint { margin: 0; padding: 3px 8px; font-size: 12px; min-height: 22px; }
+.toolbar .tool-hint.empty { visibility: hidden; }
+.toolbar .prop-options { display: contents; }
+.toolbar .cavewalls { margin: 0 0 0 auto; }
+.toolbar .cavewalls button { width: auto; }
+.pop { position: relative; }
+.pop-btn { display: inline-flex; align-items: center; gap: 6px; }
+.pop-body { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 220px; max-height: 60vh; overflow-y: auto; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
+.pop-body .kind-picker { width: 380px; max-width: 70vw; }
+.pop-body .materials { grid-template-columns: repeat(6, 38px); }
+.swatch.now { display: inline-block; width: 16px; height: 16px; border-width: 1px; vertical-align: middle; background-size: cover; background-position: center; }
+
+/* the Map panel (tabs, then the layers, lists, history and assets) and the Claude panel can be hidden from the top bar */
+.side { overflow: hidden; }
+.side .tabs { flex: none; display: flex; background: #0e0e11; border-bottom: 1px solid var(--line); }
+.side .tabs button { flex: 1; border: none; border-radius: 0; background: transparent; padding: 7px 4px; color: var(--muted); border-bottom: 2px solid transparent; }
+.side .tabs button.on { color: var(--gold-hi); border-bottom-color: var(--accent); }
+.side-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.side.closed, .slot-closed { overflow: hidden; border: 0; padding: 0; }
+.top .toggle { color: var(--muted); border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; }
+.top .toggle.on { color: var(--gold-hi); border-bottom-color: var(--accent); }
+.top .tab-dot { color: #7fb3ff; }
+.kv { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 2px 0; color: var(--muted); }
+.kv b { color: var(--text); font-weight: 600; }
+.top button, .top .conn, .wordmark { white-space: nowrap; }
+.top { gap: 8px; }
+.top .toggle { padding: 4px 9px; }
+@media (max-width: 1000px) { .wordmark { display: none; } .project { min-width: 130px; } }
+.tab-on { display: contents; }
+.tab-off { display: none; }

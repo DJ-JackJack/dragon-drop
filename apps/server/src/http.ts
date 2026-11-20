@@ -273,6 +273,7 @@ async function handleAssets(hub: Hub, url: URL, req: IncomingMessage, res: Serve
   if (route === "status") return sendJson(res, lib ? { configured: true, ...lib.status() } : { configured: false });
   if (!lib) return void res.writeHead(404, { "content-type": "text/plain" }).end("No asset folder is set.");
   if (route === "packs") return sendJson(res, lib.packList());
+  if (route === "roofs") return sendJson(res, hub.roofPools()); // (the roof textures of the packs, by roof look: city buildings are drawn from these)
   if (route === "list") {
     const r = lib.list({
       pack: url.searchParams.get("pack") || undefined, cat: url.searchParams.get("cat") || undefined, q: url.searchParams.get("q") || undefined,

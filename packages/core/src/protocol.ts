@@ -24,8 +24,8 @@ export interface ProjectInfo {
   updatedAt: string;
   /** Regional maps: the map and area this one was made from. */
   parent?: ParentLink;
-  /** "battle" for battlemaps (width/height are then floor cells; see meta.battle). Missing means a world map. */
-  kind?: "world" | "battle";
+  /** "battle" for battlemaps (width/height are then floor cells; see meta.battle), "city" for city maps (width/height are ground cells; see meta.city). Missing means a world map. */
+  kind?: "world" | "battle" | "city";
 }
 
 export interface RefInfo {
@@ -100,6 +100,8 @@ export type ClientMsg =
   | { t: "chat_stop" }
   | { t: "chat_settings"; settings: Partial<ChatSettings> }
   | { t: "chat_reset" }
+  /** Make a city map (a city seen from above, made of buildings and streets, sized in metres) and open it. */
+  | { t: "create_city"; name: string; widthM: number; heightM: number; cellM?: number }
   /** Reference pictures (they are added with POST /api/projects/<id>/refs): give one a new name (its file type stays), or take it off the list (it is moved to the map's backups folder). */
   | { t: "ref_rename"; name: string; to: string }
   | { t: "ref_remove"; name: string }

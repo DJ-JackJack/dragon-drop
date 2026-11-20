@@ -4,6 +4,7 @@ import type { Rect } from "./geom.ts";
 import type { MapFurniture } from "./furniture.ts";
 import type { MapGrid } from "./grid.ts";
 import type { BattleSpec } from "./battle.ts";
+import type { CitySpec } from "./city.ts";
 import type { BaseClimate, ParentLink } from "./regional.ts";
 
 export type MapStyle = "painted" | "relief";
@@ -66,8 +67,8 @@ export interface MapMeta {
   name: string;
   /** Version of the saved files (see format.ts). Missing on maps saved before it existed: that means 1. */
   formatVersion?: number;
-  /** "world": a terrain map. "battle": a grid battlemap, where the field holds floor materials (see battle.ts). */
-  kind: "world" | "battle";
+  /** "world": a terrain map. "battle": a grid battlemap, where the field holds floor materials (see battle.ts). "city": a city seen from above, made of buildings and streets, where the field holds the ground material of coarse cells (see city.ts). */
+  kind: "world" | "battle" | "city";
   width: number;
   height: number;
   /** Real-world size of one map pixel, in kilometres. */
@@ -95,6 +96,8 @@ export interface MapMeta {
   zoom?: number;
   /** Battlemaps: grid size and image scale. */
   battle?: BattleSpec;
+  /** City maps: size in metres and the size of a ground cell. */
+  city?: CitySpec;
   /** Battlemaps made from a spot on a world map: which map and where. */
   origin?: { id: string; name: string; x: number; y: number };
 }

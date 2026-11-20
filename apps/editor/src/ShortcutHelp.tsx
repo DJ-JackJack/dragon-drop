@@ -3,6 +3,7 @@
  * handler use, so they can't drift; the rest is what the views and App's key handler really do.
  */
 import { BATTLE_TOOL_GROUPS } from "./Battle.tsx";
+import { CITY_TOOL_GROUPS } from "./cityUi.ts";
 import { TOOL_GROUPS } from "./toolDefs.ts";
 
 const Key = ({ children }: { children: string }) => <kbd>{children}</kbd>;
@@ -16,8 +17,8 @@ function Row({ keys, what }: { keys: string[]; what: string }) {
   );
 }
 
-export function ShortcutHelp({ battle, onClose }: { battle: boolean; onClose: () => void }) {
-  const tools: { id: string; label: string; key: string }[] = (battle ? BATTLE_TOOL_GROUPS : TOOL_GROUPS).flatMap((g) => g.tools as { id: string; label: string; key: string }[]);
+export function ShortcutHelp({ battle, city = false, onClose }: { battle: boolean; city?: boolean; onClose: () => void }) {
+  const tools: { id: string; label: string; key: string }[] = (city ? CITY_TOOL_GROUPS : battle ? BATTLE_TOOL_GROUPS : TOOL_GROUPS).flatMap((g) => g.tools as { id: string; label: string; key: string }[]);
   return (
     <div className="modal-back" onMouseDown={onClose} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
       <div className="modal wide shortcuts" role="dialog" aria-modal="true" data-testid="shortcuts" onMouseDown={(e) => e.stopPropagation()}>
@@ -38,20 +39,21 @@ export function ShortcutHelp({ battle, onClose }: { battle: boolean; onClose: ()
           <Row keys={["Ctrl+Z"]} what="Undo (Claude's edits too)" />
           <Row keys={["Ctrl+Shift+Z", "Ctrl+Y"]} what="Redo" />
           <Row keys={["Shift + click"]} what="Select several: add something to the selection, or take it out" />
-          <Row keys={[battle ? "Drag a box" : "Shift + drag a box"]} what={battle ? "With the Select tool, on bare ground: select everything inside the box (Shift adds to what is selected)" : "With the Select tool, on bare ground: select the places and labels inside the box"} />
+          <Row keys={battle || city ? ["Drag a box"] : ["Shift + drag a box"]} what={battle || city ? "With the Select tool, on bare ground: select everything inside the box (Shift adds to what is selected)" : "With the Select tool, on bare ground: select the places and labels inside the box"} />
           <Row keys={["Drag"]} what="Move everything that is selected together" />
-          <Row keys={["Ctrl+C", "Ctrl+V"]} what={battle ? "Copy and paste the selected objects, lights, walls and light zones (it lands under the pointer)" : "Copy and paste the selected place or label (it lands under the pointer; a place is named \"... (copy)\")"} />
+          {!city && <Row keys={["Ctrl+C", "Ctrl+V"]} what={battle ? "Copy and paste the selected objects, lights, walls and light zones (it lands under the pointer)" : "Copy and paste the selected place or label (it lands under the pointer; a place is named \"... (copy)\")"} />}
           <Row keys={["Ctrl+V"]} what="With a picture copied (after any map things): add it to References. Dropping a picture anywhere in the window does the same" />
           <Row keys={["U"]} what="Show or hide the trace picture (a reference picture laid over the map: Trace over map in References)" />
-          <Row keys={["Ctrl+D"]} what="Duplicate the selection, a little along and down" />
+          {!city && <Row keys={["Ctrl+D"]} what="Duplicate the selection, a little along and down" />}
+          {city && <Row keys={["Q", "E"]} what="Turn the selected buildings (or the one you are about to place) 15° left / right. Arrow keys nudge the selection half a metre (Shift: 5 m)" />}
           <Row keys={["Ctrl+S"]} what="Save now (the map also saves itself a moment after every change)" />
           <Row keys={["[", "]"]} what="Smaller / larger brush" />
-          <Row keys={["G"]} what="Show or hide the grid" />
+          {!city && <Row keys={["G"]} what="Show or hide the grid" />}
           <Row keys={["Esc"]} what="Cancel what you are drawing, or clear the selection" />
           <Row keys={["Enter", "Double-click"]} what="Finish a wall, line or outline" />
           <Row keys={["Backspace"]} what="Remove the last point while drawing; with something selected, delete it" />
           <Row keys={["Delete"]} what="Delete what is selected" />
-          {battle && <Row keys={["Q", "E"]} what="Turn the selected object (or the one you are about to place) 15° left / right" />}
+          {battle && !city && <Row keys={["Q", "E"]} what="Turn the selected object (or the one you are about to place) 15° left / right" />}
           {battle && <Row keys={["X"]} what="Flip the selected object (or the one you are about to place)" />}
           {battle && <Row keys={["Page Up", "Page Down"]} what="Switch to the level above / below (a battlemap can have several levels: use the Levels panel in the corner of the map)" />}
           {battle && <Row keys={["Shift", "Alt"]} what="Hold either while placing or moving things (for Shift, once the drag has started) to put them anywhere instead of snapping to the grid" />}

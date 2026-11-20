@@ -200,6 +200,53 @@ export interface MapRoof {
   flat?: boolean;
 }
 
+/** What a building is, for pickers and for Claude (a free choice: it changes nothing about how it is drawn). */
+export const BUILDING_KINDS = ["house", "shop", "tavern", "inn", "temple", "hall", "tower", "barn", "warehouse", "arena", "gatehouse", "other"] as const;
+export type BuildingKind = (typeof BUILDING_KINDS)[number];
+
+/**
+ * A building on a city map: its outline seen from above, in METRES from the map's top-left corner, drawn as a roof (`roof`, `colour` and `flat` mean what they do for a
+ * battlemap roof; with no colour, each building gets a slightly different shade of its roof look, so a street of houses does not look stamped).
+ */
+export interface MapBuilding {
+  id: string;
+  name?: string;
+  /** The outline, closed, in metres: a rectangle's four corners or any polygon. */
+  points: [number, number][];
+  /** The roof look (default slate). */
+  roof?: RoofStyle;
+  /** "#rrggbb": replaces the look's own colour (or tints the roof picture). */
+  colour?: string;
+  /** No ridge and slopes. */
+  flat?: boolean;
+  kind?: BuildingKind;
+  floors?: number;
+  /** A roof texture from an asset pack ("<pack>:<path>"), tiled across the roof in place of drawing the look: buildings get one whenever the packs have an appropriate one (roofAssets.ts). */
+  asset?: string;
+  /** Metres one repeat of the roof picture covers (default 6). */
+  tile?: number;
+}
+
+/** The kinds of street, with the width (metres) each starts with. */
+export const STREET_KINDS = [
+  { id: "avenue", name: "Avenue", width: 12 },
+  { id: "street", name: "Street", width: 7 },
+  { id: "lane", name: "Lane", width: 4 },
+  { id: "alley", name: "Alley", width: 2 },
+  { id: "path", name: "Path", width: 1.5 },
+] as const;
+export type StreetKind = (typeof STREET_KINDS)[number]["id"];
+
+/** A street, lane or path on a city map: a line through points in metres, with a width in metres. */
+export interface MapStreet {
+  id: string;
+  name?: string;
+  points: [number, number][];
+  /** Metres across. */
+  width: number;
+  kind?: StreetKind;
+}
+
 export type ConnectorKind = "stairs" | "ladder" | "hole";
 export const CONNECTOR_KINDS: readonly ConnectorKind[] = ["stairs", "ladder", "hole"];
 
@@ -283,6 +330,10 @@ export interface Features {
   sources?: RiverSource[];
   /** The trace picture: a reference picture laid over the map (or this battlemap level) to redraw from. Never exported (trace.ts). */
   trace?: TracePicture;
+  /** City maps: the buildings (outlines in metres, drawn as roofs). */
+  buildings?: MapBuilding[];
+  /** City maps: streets, lanes and paths. */
+  streets?: MapStreet[];
 }
 
 export interface FeaturesPatch {
@@ -312,6 +363,10 @@ export interface FeaturesPatch {
   removeRoofs?: string[];
   /** Lay a trace picture over the map (replacing any), or null to take it away. */
   setTrace?: TracePicture | null;
+  upsertBuildings?: MapBuilding[];
+  removeBuildings?: string[];
+  upsertStreets?: MapStreet[];
+  removeStreets?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -391,6 +446,18 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertRoofs ?? []) roofs.set(x.id, x);
     out.roofs = [...roofs.values()];
   }
+  if (f.buildings || p.upsertBuildings || p.removeBuildings) {
+    const buildings = new Map((f.buildings ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeBuildings ?? []) buildings.delete(id);
+    for (const x of p.upsertBuildings ?? []) buildings.set(x.id, x);
+    out.buildings = [...buildings.values()];
+  }
+  if (f.streets || p.upsertStreets || p.removeStreets) {
+    const streets = new Map((f.streets ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeStreets ?? []) streets.delete(id);
+    for (const x of p.upsertStreets ?? []) streets.set(x.id, x);
+    out.streets = [...streets.values()];
+  }
   const trace = p.setTrace === undefined ? f.trace : p.setTrace;
   if (trace) out.trace = trace;
   return out;
@@ -424,6 +491,10 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.removeRoofs?.length) parts.push(`remove ${p.removeRoofs.length} roof(s)`);
   if (p.removeConnectors?.length) parts.push(`remove ${p.removeConnectors.length} stair(s), ladder(s) or hole(s)`);
   if (p.setTrace !== undefined) parts.push(p.setTrace ? `trace picture ${p.setTrace.ref}` : "remove the trace picture");
+  if (p.upsertBuildings?.length) parts.push(p.upsertBuildings.length === 1 ? (p.upsertBuildings[0].name ?? p.upsertBuildings[0].kind ?? "building") : `${p.upsertBuildings.length} buildings`);
+  if (p.removeBuildings?.length) parts.push(`remove ${p.removeBuildings.length} building(s)`);
+  if (p.upsertStreets?.length) parts.push(p.upsertStreets.length === 1 ? (p.upsertStreets[0].name ?? p.upsertStreets[0].kind ?? "street") : `${p.upsertStreets.length} streets`);
+  if (p.removeStreets?.length) parts.push(`remove ${p.removeStreets.length} street(s)`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 
@@ -490,6 +561,6 @@ export function labelText(l: MapLabel): string {
 }
 
 let counter = 0;
-export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f"): string {
+export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f" | "b" | "t"): string {
   return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }

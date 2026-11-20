@@ -17,6 +17,7 @@ import { MIN_CELL_SCREEN_PX, drawMapGrid } from "./drawMapGrid.ts";
 import { drawRegions, regionAt } from "./drawRegions.ts";
 import { PaintClient } from "./paintClient.ts";
 import { store } from "./store.ts";
+import { makeResizeKeeper } from "./viewResize.ts";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
@@ -92,6 +93,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
   const viewRef = useRef<View>({ scale: 1, ox: 0, oy: 0 });
+  // when the canvas changes size (a panel shown or hidden): a fitted view is fitted again, any other keeps its middle (viewResize.ts)
+  const keeper = useRef(makeResizeKeeper(() => viewRef.current, (v) => { viewRef.current = v; }, () => fit())).current;
   const fittedFor = useRef<string | null>(null);
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
@@ -343,6 +346,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     const scale = Math.min(W / m.width, H / m.height) * 0.95;
     viewRef.current = { scale, ox: (W - m.width * scale) / 2, oy: (H - m.height * scale) / 2 };
     fittedFor.current = m.id;
+    keeper.fitted();
   }
 
   function draw() {
@@ -585,7 +589,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   useEffect(() => { if (meta && store.heights) openMap(); }, [meta?.id, meta?.width, meta?.height, meta?.seed]);
 
   useEffect(() => {
-    const ro = new ResizeObserver(() => requestDraw());
+    const ro = new ResizeObserver(() => { const w = wrapRef.current; if (w) keeper.resized(w.clientWidth, w.clientHeight); requestDraw(); });
     if (wrapRef.current) ro.observe(wrapRef.current);
     const kd = (e: KeyboardEvent) => {
       if (e.code === "Space" && !isTyping(e)) { setSpaceDown(true); e.preventDefault(); }

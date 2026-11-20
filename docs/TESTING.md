@@ -79,7 +79,7 @@ pnpm start
 
 ### 1c. Save a safety checkpoint
 
-In the left panel, **Save checkpoint**, name it `Before testing`. **Expect** it to appear in the Checkpoints list. Restore it at the end of testing if you want the map back exactly as shipped.
+In the Map panel (right side), on the **History** tab, **Save checkpoint**, name it `Before testing`. **Expect** it to appear in the Checkpoints list. Restore it at the end of testing if you want the map back exactly as shipped.
 
 ---
 
@@ -169,7 +169,7 @@ When finished, delete your test places and labels (or use the checkpoint).
 
 ---
 
-**Grid** (left panel, under Layers)
+**Grid** (Map panel, under Layers)
 1. Click **Hex**. **Expect** a hex grid over the map, a size box, quick-size buttons (1 mi, 5 mi, 6 mi …) and an orientation choice.
 2. Type `60` in the size box and press Enter, or click **60 mi**. **Expect** the hexes get that size, and the text under it says how many cells fit across the map.
 3. Click **Square**: square cells at the same size. Try **Flat edge on top** for hexes, and the **Line strength** slider.
@@ -198,7 +198,7 @@ When finished, delete your test places and labels (or use the checkpoint).
    - [ ] It looks like a closer view of that area, with the same mountains, bays and coast shapes, plus extra detail.
    - [ ] Any place or label you had inside the box came across.
    - [ ] No big round lake that the world map doesn't have.
-   - [ ] The left panel has a **Regional maps** section with a `⬑ First Map  parent` button.
+   - [ ] The Map panel has a **Regional maps** section with a `⬑ First Map  parent` button.
    - [ ] The map dropdown at the top shows it as "… (part of First Map)".
    - [ ] The climate looks the same as on the world map (colours, snow). In the Climate panel it says the climate comes from the parent, with an "Update from …" button.
 4. Press the `parent` button: back on the world map, with a **dashed white outline** and a name tag showing where the detail map sits.
@@ -209,7 +209,7 @@ When finished, delete your test places and labels (or use the checkpoint).
 ## 9. Export, viewer and persistence
 
 **Map extras and export**
-1. Open **Map extras** in the left panel. Type a title, tick **Scale bar** and **Compass rose**, and try **Frame**. **Expect** a title banner, a scale bar (0, a half, and a tidy full length such as 500 mi) and a compass rose to appear on the map; each change is one undo step. Try other corners and **Kilometres**. (The title can cover a coastline: move it to the bottom, or turn it off.)
+1. Open **Map extras** in the Map panel. Type a title, tick **Scale bar** and **Compass rose**, and try **Frame**. **Expect** a title banner, a scale bar (0, a half, and a tidy full length such as 500 mi) and a compass rose to appear on the map; each change is one undo step. Try other corners and **Kilometres**. (The title can cover a coastline: move it to the bottom, or turn it off.)
 2. Click **⤓ Export**. Pick **2×** and click **Export**. **Expect** a file such as `First Map.png`, 4096 × 4096, with rivers, names, the extras and any grid you've set. Open it and zoom in: the lettering, lines and compass should be sharp even though the terrain is softer.
 3. Try **8×**: the dialog says "16 tiles in one .zip". It takes a few seconds to a minute on a normal PC and makes a `…_tiles.zip` (hundreds of MB) holding 16 images of 4096 px and a README. Unzip it. **Expect** the tiles to line up with no visible seams. If your PC runs out of memory, tell me, and use 4× instead.
 4. Turn the checkboxes off in the dialog (rivers, names…) and export 1×: those things should be missing from the file.
@@ -319,7 +319,7 @@ This **replaces the whole map**, so first click **Save checkpoint** (it also sav
 
 **Quick check first (file types):** attach a **GIF** picture with the paperclip in the chat. It is left out and a note says only PNG, JPEG and WebP can be attached; a PNG, JPEG or WebP picture attaches (and Claude can see it).
 
-1. Find the **References** area in the left panel (attach a rough sketch in the chat first if there is none: green land on blue sea, with red strokes for mountain ranges if you like). Click **Make terrain…** under it.
+1. Find the **References** area (Map panel, **History** tab) (attach a rough sketch in the chat first if there is none: green land on blue sea, with red strokes for mountain ranges if you like). Click **Make terrain…** under it.
 2. **Expect** a dialog with a small coloured preview: blue sea, green land, and (if "Red strokes mark mountain ranges" is ticked) brown mountain strokes along any red lines. The preview should look like your sketch: its islands and their shapes. Move the "How different from the sea counts as land" slider and watch the preview change.
 3. Leave the defaults and click **Create terrain**. After a few seconds **Expect** the map to be replaced by one with the same islands and ranges (rougher and plainer than a map refined by hand over many passes: this is a starting point). History shows "Terrain from sketch …", and the Checkpoints list has "Before sketch import".
 4. **Ctrl+Z** (Undo) brings your old map back exactly, or use the checkpoint's **Restore**.
@@ -396,7 +396,7 @@ Checked by the developer on Linux against a running server, with the access key 
 
 ## 14f. Scenes, caves and odd shapes
 
-1. On a world map pick **Battlemap here** and click: the middle of an island, a coast, a river, a mountain, the sea. Each time name it. **Expect** a battlemap that fits the spot (the left panel says where it came from; **↑ Back to the world map** returns). Try it where a river runs and on a coast: the river should run the same way as on the world map, and the sea should be on the sea's side.
+1. On a world map pick **Battlemap here** and click: the middle of an island, a coast, a river, a mountain, the sea. Each time name it. **Expect** a battlemap that fits the spot (the Map panel says where it came from; **↑ Back to the world map** returns). Try it where a river runs and on a coast: the river should run the same way as on the world map, and the sea should be on the sea's side.
 2. In a battlemap choose **Area** with **Circle** and drag out a pond; **Room** with **Free-form**: click corners, double-click to close. **Expect** a round or polygon floor, and with Room a wall all the way round.
 3. Paint a cave with the Brush (dirt) in blobs and a corridor, then click **▢ Walls around the floor**. **Expect** a wall along the whole edge, with holes walled too. Paint a bit more floor and click again: the walls should follow the new shape without doubling up.
 4. Cut a door into the traced wall (Door tool).
@@ -409,7 +409,7 @@ Tell me how natural the scene floors look, and whether the cave walls follow the
 ## 14g. Walls, doors and the light level
 
 1. In a battlemap with a room, a door and a window, look closely (zoom in with the wheel). **Expect** thick grey stone walls with a lit top-left edge and a soft shadow on the floor to their right and below; wooden doors (a brass handle when shut; **Open** swings the door back into the room); a window with pale blue glass; a small gold diamond on a secret door; a dashed purple line for an invisible wall. Zooming in keeps the edges sharp after a moment.
-2. Under **Light level** (left panel, below Grid) click **Dim**, then **Dark**. **Expect** everything to darken except where a light reaches (its pool, shaped by the walls: a torch in a closed room lights only that room, through an open door it spills out). **Bright** puts it back. Drag the slider for in-between levels. Untick **Light glows** to see the whole map while you build.
+2. Under **Light level** (Map panel, below Grid) click **Dim**, then **Dark**. **Expect** everything to darken except where a light reaches (its pool, shaped by the walls: a torch in a closed room lights only that room, through an open door it spills out). **Bright** puts it back. Drag the slider for in-between levels. Untick **Light glows** to see the whole map while you build.
 3. **⤓ Export** with Dim or Dark set, and look at the PNG. **Expect** it to stay bright with the walls drawn in (the tabletop does its own lighting). The Foundry scene file carries the level as its Darkness Level (`environment.darknessLevel`) and the Universal VTT file as a grey `ambient_light`. **The dim Foundry scene was tried in Foundry v14 (Darkness Level shows, the scene looks dark except round the lights); the Universal VTT ambient light has not been tried; please tell me what you see.**
 4. Ask Claude: *"Make this scene dark with two torches"* (it uses `set_battle_lighting` and `add_light`) and *"Render it for me."*
 5. **Time of day:** click **Dawn**, **Dusk**, **Night**. **Expect** a level and a colour each (pink-gold, orange, blue). Pick your own **Ambient colour**; **No colour** removes it.
@@ -437,7 +437,7 @@ Open or make a battlemap with a room in it.
 ## 14g3. Stairs, ladders and holes between levels
 
 Use a battlemap with two levels (14g2) and a room on each.
-1. On the **Ground floor** pick **Stairs** (left panel, "Between levels", or `T`). **Expect** a hint about Change Level, and **Leads up / Leads down** buttons. Drag a rectangle (1 square wide, 3 long). **Expect** pale stone steps with a ▲ on them, and the inspector says **Stairs** and "Leads up to Upper floor".
+1. On the **Ground floor** pick **Stairs** (tool rail, "Stairs", or `T`). **Expect** a hint about Change Level, and **Leads up / Leads down** buttons. Drag a rectangle (1 square wide, 3 long). **Expect** pale stone steps with a ▲ on them, and the inspector says **Stairs** and "Leads up to Upper floor".
 2. Switch the stairs to **Leads down** in the inspector. **Expect** "There is no level below this one: it won't be in a Foundry scene". Switch back to Up.
 3. Pick **Ladder** (`J`) and just click: **Expect** a one-square wooden ladder. Pick **Hole** (`O`) and click: **Expect** a dark pit with a stone rim and a ▼ (a hole always leads down; its Leads box is greyed out).
 4. With only one level, try a stair tool. **Expect** a message to add another level first.
@@ -451,9 +451,9 @@ Use a battlemap with two levels (14g2) and a room on each.
 ## 14g4. Roofs
 
 Use a battlemap with a room on the Ground floor.
-1. Pick **Roof** (left panel, "Roofs", or `F`). **Expect** a hint, and a "New roofs look like" box. Drag a rectangle a little wider than the room. **Expect** a faint slate roof over the room (you can see the room through it), the inspector says **Roof** with its look.
+1. Pick **Roof** (tool rail, "Roof", or `F`). **Expect** a hint, and a "New roofs look like" box. Drag a rectangle a little wider than the room. **Expect** a faint slate roof over the room (you can see the room through it), the inspector says **Roof** with its look.
 2. In the inspector change the **Look** to Clay tile, Thatch and Wood shingles in turn, tick **Own colour** and pick one, tick **Flat**. **Expect** each change at once, one undo step each. A pitched roof has a light slope, a dark slope and a ridge along its longer side.
-3. In the left panel (Layers → **Roofs**) choose **Solid**: **Expect** the roof to hide the room; **Hidden**: gone.
+3. In the Map panel (Layers → **Roofs**) choose **Solid**: **Expect** the roof to hide the room; **Hidden**: gone.
 4. Pick the **Circle** or **Free-form** shape under the Roof tool and make an odd-shaped roof. Select a roof and drag it, `Ctrl+C`/`Ctrl+V` it, `Delete` it.
 5. In the **Assets** tab choose a floor or roof texture from your packs (a picture, not an object), select a roof and press **Use the picture chosen in Assets**: **Expect** the picture repeated across the roof; change **One repeat is** to resize it.
 6. **⤓ Export → Image only** and **Universal VTT**: **Expect** no roof in them. **Foundry scene**: **Expect** a `...-roof-1.png` (one for each roof, cropped to it) next to the level's picture, and in Foundry a **Tile** and a **Define Surface** region (a ceiling) for each roof. Select a token (so you control it) and move it under a roof: **expect** that roof to disappear while the token is under it and come back when it leaves, other roofs staying; a token you haven't selected stays hidden under the roof; holding **Alt** (Highlight Objects), or resting the GM's mouse over a roof, shows the inside. A cut roof leaves no dark ring or thin line behind (the roofs have no shadow in this export). **Tell me what a player's view does** (log in as a player who owns a token): that hasn't been looked at.
@@ -482,7 +482,7 @@ Tell me whether the jungle and desert now read as different kinds of ground, and
 
 ## 14j. Smooth zoom, Suggest and Assist
 
-1. **Smooth zoom:** in the left panel under **Layers**, **Smooth zoom** is ticked. Zoom a long way into the terrain. **Expect** soft blending (not hard blocks; the coastline still steps a little). Untick it: hard blocks again. Reload the page: the choice is remembered.
+1. **Smooth zoom:** in the Map panel under **Layers**, **Smooth zoom** is ticked. Zoom a long way into the terrain. **Expect** soft blending (not hard blocks; the coastline still steps a little). Untick it: hard blocks again. Reload the page: the choice is remembered.
 2. **The Claude bar:** open the **Claude Code** tab (desktop app). **Expect** a bar with **Suggest**, **Assist** and a dot. A few seconds after Claude Code starts, the dot turns **green** ("ready"). If it stays grey, tell me (the hooks aren't reaching the app).
 3. **Suggest:** make a change (add a place, raise some land), then click **Suggest**. **Expect** a line starting `[Assist]` or `[Suggest]` to be typed into the terminal and sent; the dot goes gold while Claude works, and Claude answers with up to three numbered suggestions and **does not change the map**. The dot goes green again. Click Suggest *while Claude is working*: **expect** a message that it is busy, and nothing typed.
 4. Reply "do 1" in the terminal. **Expect** Claude carries out suggestion 1 as a normal request (and it can be undone in History).
@@ -567,8 +567,8 @@ Tell me if the lock ever lets a change through outside the box, or gets in your 
 6. Look for the finer ground: a thin pale beach on gentle low coast, a yellow-green reed fringe round lakes (and wet ground behind it), blue-white glacier with crevasses on the highest coldest peaks, patches of purple-brown heather moor in the cool uplands, grey-olive scrub on warm, moderately dry ground, and layered terracotta and cream bands in dry rugged country. Where a warm, wet, low coast meets the sea, expect dark mangrove with channels.
 7. Wet forests: on a wet cool coast **expect** deep emerald rainforest with pale mist in the hollows; on warm wet mountainsides a blue-green, mist-banked cloud forest; bright yellow-green bamboo stands in warm lowland woods; and stands of gold, orange and red among the cooler mixed woods.
 8. Volcanic ground: select a climate region (Region tool, C, draw an area) and tick **Volcanic ground**, or ask Claude for a volcanic region on a part of the map you describe. **Expect** pale ash plains with cinder-brown patches and near-black basalt, blending into the land at a soft border, and lava flows: tongues that start at the summits and upper slopes and run *downhill* (longer down steep flanks, short across flat ground), narrow at the vent and broader towards a blunt front, sometimes forking. About a third glow (a dark crust over orange, a bright core, a reddish scorch beside them); the rest are cooled black basalt. They stay inside the volcanic ground and may bury a river they cross. Zoom in and out: they must not shift or flicker, and a repaint after sculpting the mountain should move the flows with the new slopes. Rivers elsewhere in it keep grey banks.
-9. Open **Ground legend** in the left sidebar (painted style). **Expect** every kind of ground grouped with a colour swatch and where it appears.
-10. Names and markers: zoom all the way in on a town. **Expect** the name and the marker to stay a sensible size (a little bigger than at full view, never huge), and the **Label size** slider in the left sidebar (Layers) to make every name and marker smaller or larger, remembered next time. The phone page (/view) behaves the same way.
+9. Open **Ground legend** in the Map panel (painted style). **Expect** every kind of ground grouped with a colour swatch and where it appears.
+10. Names and markers: zoom all the way in on a town. **Expect** the name and the marker to stay a sensible size (a little bigger than at full view, never huge), and the **Label size** slider in the Map panel (Layers) to make every name and marker smaller or larger, remembered next time. The phone page (/view) behaves the same way.
 11. In the Claude Code terminal ask *"What grounds does the map have, and how would I make a tundra island?"*. **Expect** it to call `list_grounds` (or know the list already) and answer with the same grounds as the Ground legend, with a recipe such as a region with a low temperature (about 0.08) for tundra. (Before this was added, the terminal knew nothing about the legend.)
 12. Tell me which islands look wrong for the weather and flow of this world, and which looks you want next.
 
@@ -618,7 +618,7 @@ Tell me if an Auto backup never appears, if the list fills up with them, or if R
 6. Copy and paste: on a world map select a place (click it in the Places list), press **Ctrl+D**. **Expect** a new place called "<name> (copy)" a little along from it, selected. Press **Delete** to remove it. Press **Ctrl+C**, move the pointer over the map and press **Ctrl+V**: **Expect** a copy under the pointer. Paste again without moving the pointer: **Expect** the next copy a little to one side, not exactly on top.
 7. In a battlemap select an object or a light, then **Ctrl+D**, **Ctrl+C** and **Ctrl+V**: **Expect** copies, each one undo step ("Duplicate 1 item", "Paste 1 item"). A wall you copy comes in as an ordinary wall.
 
-8. Select several: in a battlemap with the Select tool, drag a box round a few objects and lights on bare floor. **Expect** a box that follows the pointer, a "N things selected" panel on the left that says what they are, and gold outlines on each. Drag one of them: **Expect** all of them to move, snapping as they would one at a time (hold **Alt** to move anywhere), as one undo step ("Move N items"). Press **Delete**: all are removed in one step. **Shift**-click adds one, or takes one out. Click bare ground: nothing is selected.
+8. Select several: in a battlemap with the Select tool, drag a box round a few objects and lights on bare floor. **Expect** a box that follows the pointer, a "N things selected" panel in the Map panel that says what they are, and gold outlines on each. Drag one of them: **Expect** all of them to move, snapping as they would one at a time (hold **Alt** to move anywhere), as one undo step ("Move N items"). Press **Delete**: all are removed in one step. **Shift**-click adds one, or takes one out. Click bare ground: nothing is selected.
 9. Same on a world map: with the Select tool, **Shift**-drag a box round several places and labels. **Expect** a note at the bottom-left ("N places and labels selected"), then drag one to move them all and **Delete** to remove them. A plain drag on bare ground still moves the view.
 
 10. Arrow keys: select a place (or, in a battlemap, an object or a light) and tap an **arrow key** a few times quickly. **Expect** it to move a little each time and to be one undo step ("Nudge ..."). Hold **Shift** for bigger steps. Press **Esc** to clear the selection: the arrow keys now move the view.
