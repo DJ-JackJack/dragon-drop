@@ -10,6 +10,7 @@ import { type RoofTileSource, paintRoofsInto } from "./battleRoof.ts";
 import { type CitySpec, buildingToRoof, citySpec } from "./city.ts";
 import { type LandGrid, cityClimate, cityGroundColours, contourLines, landGrid, landShade, snowCover, treeColour, treeCrowns } from "./cityLand.ts";
 import { pointInPolygon } from "./geom.ts";
+import { BRIDGE_COLOURS, type BridgeSpan, cityBridges, deckDistance } from "./cityBridges.ts";
 import { type Rect, distToSegment } from "./geom.ts";
 import type { RGBAImage } from "./render.ts";
 
@@ -61,6 +62,7 @@ export function renderCity(doc: MapDoc, o: CityRenderOptions = {}): CityRender {
   paintGround(doc, spec, img, OX, OY, px, land);
   if (land && o.contours !== false) paintContours(land, img, OX, OY, px);
   paintStreets(doc, img, OX, OY, px);
+  paintBridges(cityBridges(spec, doc.height, doc.features?.streets ?? []), img, OX, OY, px);
   if (o.trees !== false) paintTrees(doc, spec, img, OX, OY, px);
   if (o.buildings !== false) {
     const have = (a: string) => !!o.tileFor?.(a);
@@ -159,6 +161,60 @@ function paintTrees(doc: MapDoc, spec: CitySpec, img: LookImage, OX: number, OY:
           }
         }
       }
+    }
+  }
+}
+
+/**
+ * Bridges over the streets where they cross water: the shadow on the water, stone piers (with pointed cutwaters, sticking out beyond the deck) or wooden posts, then the deck
+ * between its low walls or railings. A ford is the street seen through shallow water.
+ */
+function paintBridges(spans: BridgeSpan[], img: LookImage, OX: number, OY: number, px: number) {
+  const d = img.data, C = BRIDGE_COLOURS;
+  for (const b of spans) {
+    const half = b.width / 2, wall = b.kind === "stone" ? Math.max(0.45, b.width * 0.07) : Math.max(0.3, b.width * 0.05), reach = half + wall + 2.5;
+    let a = Infinity, c = -Infinity, e = Infinity, f = -Infinity;
+    for (const [x, y] of b.points) { if (x < a) a = x; if (x > c) c = x; if (y < e) e = y; if (y > f) f = y; }
+    const X0 = Math.max(0, Math.floor((a - reach) * px - OX)), X1 = Math.min(img.w - 1, Math.ceil((c + reach) * px - OX));
+    const Y0 = Math.max(0, Math.floor((e - reach) * px - OY)), Y1 = Math.min(img.h - 1, Math.ceil((f + reach) * px - OY));
+    if (X0 > X1 || Y0 > Y1) continue;
+    const at = (x: number, y: number) => [(OX + x + 0.5) / px, (OY + y + 0.5) / px] as const;
+    if (b.kind === "ford") {
+      for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+        const [mx, my] = at(x, y), k = clamp((half - deckDistance(mx, my, b.points)) * px + 0.5, 0, 1);
+        if (k > 0) over(d, (y * img.w + x) * 4, C.ford[0], C.ford[1], C.ford[2], k * 0.55);
+      }
+      continue;
+    }
+    // the shadow on the water, down and to the right
+    const sh = Math.max(0.8, b.width * 0.15), shPts = b.points.map(([x, y]) => [x + sh, y + sh] as [number, number]);
+    for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+      const [mx, my] = at(x, y), k = clamp((half + wall - deckDistance(mx, my, shPts)) * px + 0.5, 0, 1);
+      if (k > 0) over(d, (y * img.w + x) * 4, 0, 0, 0, k * 0.3);
+    }
+    // stone piers: a block across the deck with a point at each end, in the water
+    for (const p of b.piers) {
+      const ca = Math.cos(p.angle), sa = Math.sin(p.angle), across = half + wall + 1.8, thick = Math.max(1.3, b.width * 0.16);
+      for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+        const [mx, my] = at(x, y), u = (mx - p.x) * ca + (my - p.y) * sa, v = -(mx - p.x) * sa + (my - p.y) * ca;
+        // (a diamond-ended block: inside when |u| fits the thickness, narrowing to a point over the last metre at each end)
+        const room = across + 1 - Math.abs(v), w = Math.min(thick / 2, room * (thick / 2));
+        if (Math.abs(u) <= w) over(d, (y * img.w + x) * 4, C.stonePier[0], C.stonePier[1], C.stonePier[2], 1);
+      }
+    }
+    // the deck between its walls or railings
+    const edge = b.kind === "stone" ? C.stoneWall : C.woodRail, deck = b.kind === "stone" ? C.stoneDeck : C.woodDeck;
+    for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+      const [mx, my] = at(x, y), dist = deckDistance(mx, my, b.points), o = (y * img.w + x) * 4;
+      const outer = clamp((half + wall - dist) * px + 0.5, 0, 1);
+      if (outer <= 0) continue;
+      over(d, o, edge[0], edge[1], edge[2], outer);
+      const inner = clamp((half - wall * 0.4 - dist) * px + 0.5, 0, 1);
+      if (inner > 0) over(d, o, deck[0], deck[1], deck[2], inner);
+    }
+    for (const [x, y] of b.posts) {
+      const sx = x * px - OX, sy = y * px - OY, r = Math.max(0.6, 0.3 * px);
+      for (let yy = Math.max(0, Math.floor(sy - r)); yy <= Math.min(img.h - 1, Math.ceil(sy + r)); yy++) for (let xx = Math.max(0, Math.floor(sx - r)); xx <= Math.min(img.w - 1, Math.ceil(sx + r)); xx++) over(d, (yy * img.w + xx) * 4, C.woodRail[0], C.woodRail[1], C.woodRail[2], 1);
     }
   }
 }

@@ -40,7 +40,8 @@ export interface AppState {
   selectionLock: boolean;
   lockPref: boolean;
   /** Pictures being added as references, or just added (a note at the bottom of the window). `at` changes each time. */
-  pictureNote: { text: string; busy: boolean; at: number } | null;
+  /** A short note at the bottom of the window ("Added ... to References", "... was deleted"); it goes away by itself after `ms` (4 s when not given). */
+  pictureNote: { text: string; busy: boolean; at: number; ms?: number } | null;
 }
 
 function loadLockPref(): boolean {
@@ -296,6 +297,9 @@ class Store {
         break;
       case "saved":
         this.set({ savedAt: Date.now() });
+        break;
+      case "map_deleted":
+        this.set({ pictureNote: { text: `"${m.name}" was deleted. Its folder is kept in your maps folder, under "Deleted maps", if you ever want it back.`, busy: false, at: Date.now(), ms: 9000 } });
         break;
       case "derived_ready":
         // lite clients get no derived frames; this is their cue that the map changed

@@ -36,6 +36,10 @@ projects\<map-name>\
   - A map from a **newer** version (someone sent you one, or you went back to an older Dragon Drop) is **not opened**: you get a message to update the program, and the files are left exactly as they were. An older program saving it could silently throw away what it doesn't understand.
 - **A places-and-labels file that can't be read** (cut off by a crash, damaged by a sync tool) is never overwritten with an empty one. It is renamed to `features.unreadable-<time>.json`, the newest checkpoint's copy is used instead if there is one, and you are told.
 
+## Deleting a map
+
+**Delete this map…** at the bottom of the Map panel (it asks first). The map's whole folder is **moved**, not erased: it goes into a folder called `Deleted maps` inside your maps folder, under its own name (`new-city`, or `new-city-2` when one of that name is already there). Another map opens in its place (a new First Map when it was the last one). To bring it back, close Dragon Drop and move its folder from `Deleted maps` back into the maps folder. To free the space for good, delete it from `Deleted maps` yourself. Claude can't delete maps.
+
 ## Backing up or moving a map
 
 Close Dragon Drop and copy the map's whole folder (or the whole `projects` folder). Put it in another maps folder to use it there. The only thing that isn't in the folder is the app's own settings (API key, which maps folder to use), which live in `%APPDATA%\Dragon Drop`.

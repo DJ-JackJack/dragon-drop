@@ -1205,6 +1205,16 @@ try {
     await page.mouse.move(cx(520), cy(350), { steps: 6 });
     await page.mouse.up();
     await page.getByTestId("history").getByText("Paint deep water").first().waitFor({ timeout: 5000 });
+    // a street across that water becomes a bridge: wooden, as chosen in the tool bar, and the street's inspector says so
+    await page.keyboard.press("s");
+    await page.getByTestId("city-street-bridge").selectOption("wood");
+    await page.mouse.click(cx(460), cy(300));
+    await page.mouse.dblclick(cx(575), cy(300));
+    await status(/2 streets/);
+    await page.getByTestId("city-street-edit-bridge").evaluate((s) => s.value === "wood" || Promise.reject(new Error(`bridge setting: ${s.value}`)));
+    await page.getByTestId("city-street-edit-bridge").selectOption("stone");
+    await page.getByTestId("history").getByText("Bridge: stone").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-street-bridge").selectOption("auto");
     // the land: a hill by a click with the Land tool, a valley by points; the status reads the height; the hill is selected by its top and made higher in the inspector
     await page.keyboard.press("l");
     await page.getByTestId("tool-hint").getByText(/drag out from its top/).waitFor({ timeout: 5000 });
@@ -1253,6 +1263,34 @@ try {
     // a city map is its own kind of project, listed as such, and the other kinds' tools are not on screen
     if (!(await page.locator("select.project").evaluate((s) => s.selectedOptions[0].textContent)).includes("(city)")) fail("a city map is not listed as a city");
     if (await page.getByRole("button", { name: "Raise", exact: true }).count()) fail("the world map's terrain tools are showing on a city map");
+    // delete it: Cancel keeps it; Delete moves it aside, another map opens, and a note says where it went
+    await page.getByTestId("delete-map-open").click();
+    await page.getByTestId("delete-map-dialog").getByText(/Deleted maps/).waitFor({ timeout: 5000 });
+    await page.getByTestId("delete-map-cancel").click();
+    if ((await page.getByTestId("delete-map-dialog").count()) !== 0) fail("Cancel left the delete dialog open");
+    await page.getByTestId("delete-map-open").click();
+    await page.getByTestId("delete-map-confirm").click();
+    await page.getByTestId("picture-note").getByText(/"E2E City" was deleted/).waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => ![...document.querySelectorAll("select.project option")].some((o) => o.textContent.includes("E2E City")), null, { timeout: 10000 });
+    await page.getByTestId("map-canvas").or(page.getByTestId("battle-canvas")).first().waitFor({ timeout: 20000 });
+  }
+
+  // the world map's labels and place markers can be hidden (and the choice is remembered); the map is drawn without them
+  {
+    await page.locator("select.project").selectOption(await page.locator("select.project option").filter({ hasText: /^First Map$/ }).first().getAttribute("value")) // (the generated first map);
+    await page.getByTestId("map-canvas").waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector(".mapview-empty"), null, { timeout: 15000 });
+    await page.waitForTimeout(800);
+    const shot = () => page.getByTestId("map-canvas").screenshot();
+    const withLabels = await shot();
+    await page.getByTestId("show-labels").uncheck();
+    await page.getByTestId("show-markers").uncheck();
+    await page.waitForTimeout(400);
+    const bare = await shot();
+    if (Buffer.compare(withLabels, bare) === 0) fail("hiding the labels and markers changed nothing on the map");
+    if ((await page.evaluate(() => [localStorage.getItem("dd.showLabels"), localStorage.getItem("dd.showMarkers")].join())) !== "0,0") fail("the label and marker switches are not remembered");
+    await page.getByTestId("show-labels").check();
+    await page.getByTestId("show-markers").check();
   }
 
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);

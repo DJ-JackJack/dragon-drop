@@ -18,8 +18,9 @@ export interface CityUi {
   kind: BuildingKind;
   /** The next rectangular building is turned this many degrees clockwise (Q and E change it). */
   angle: number;
-  /** What the next street is. */
+  /** What the next street is, and what it becomes where it crosses water ("auto": stone for avenues and streets, wood for the rest). */
   streetKind: StreetKind;
+  streetBridge: "auto" | "stone" | "wood" | "none";
   /** Ground material id and brush radius in metres. */
   material: number;
   brush: number;
@@ -36,7 +37,7 @@ export interface CityUi {
 }
 
 export const defaultCityUi: CityUi = {
-  tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", material: 4, brush: 6,
+  tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", streetBridge: "auto", material: 4, brush: 6,
   landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", contours: true,
 };
 

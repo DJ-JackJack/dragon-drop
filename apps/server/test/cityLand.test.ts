@@ -118,7 +118,9 @@ describe("a city's climate and trees", () => {
     expect((await ok(hub, "list_trees", { region: { x: 0, y: 0, w: 150, h: 100 } })).total).toBe(1);
     const img = renderCity(hub.session.doc, { maxSize: 300 }).img;
     const g = (x: number, y: number) => img.data[(y * img.w + x) * 4 + 1];
-    expect(g(70, 55)).toBeLessThan(g(250, 30) - 10); // (the wood is darker than the open grass)
+    // the wood is darker than the open grass, on average (one pixel may fall on a lit crown or a gap; the trees stand where their random ids put them)
+    const mean = (x0: number, y0: number, x1: number, y1: number) => { let t = 0, n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { t += g(x, y); n++; } return t / n; };
+    expect(mean(30, 30, 110, 80)).toBeLessThan(mean(150, 10, 290, 40) - 10);
     const all = await ok(hub, "list_trees");
     await ok(hub, "remove_trees", { ids: [all.groups[0].id] });
     expect((await ok(hub, "list_trees")).total).toBe(2);
@@ -146,6 +148,28 @@ describe("a city's climate and trees", () => {
     const r = await tool(hub, "shape_land", { landforms: [{ kind: "hill", x: 10, y: 10, height: 5, radius: 5 }] });
     expect(r.isError).toBe(true);
     expect(textOf(r)).toMatch(/city/i);
+    await hub.close();
+  });
+});
+
+describe("bridges", () => {
+  it("are made where Claude's streets cross water, listed, changed to wood or a ford, and counted in the summary", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Bridge Town", width_m: 300, height_m: 200 });
+    await ok(hub, "paint_ground", { shape: { type: "rect", x: 0, y: 90, w: 300, h: 20 }, material: "deep water" });
+    const r = await ok(hub, "add_streets", { streets: [{ points: [[100, 10], [100, 190]], kind: "street" }, { points: [[10, 30], [290, 30]], kind: "lane" }] });
+    expect(r.bridges).toHaveLength(1);
+    expect(r.bridges[0]).toMatchObject({ kind: "stone bridge" });
+    expect(r.bridges[0].length_m).toBeGreaterThanOrEqual(20);
+    const id = r.ids[0];
+    const u = await ok(hub, "update_streets", { changes: [{ id, bridge: "wood" }] });
+    expect(u.bridges[0].kind).toBe("wood bridge");
+    expect((await ok(hub, "list_streets")).streets.find((s: { id: string }) => s.id === id)).toMatchObject({ bridge_setting: "wood", bridges: [{ kind: "wood bridge" }] });
+    await ok(hub, "update_streets", { changes: [{ id, bridge: "none" }] });
+    expect((await ok(hub, "list_streets")).streets[0].bridges[0].kind).toMatch(/ford/);
+    await ok(hub, "update_streets", { changes: [{ id, bridge: "auto" }] });
+    expect((await ok(hub, "list_streets")).streets[0].bridge_setting).toBeUndefined();
+    expect((await ok(hub, "get_map_summary")).bridges).toBe(1);
     await hub.close();
   });
 });

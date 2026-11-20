@@ -49,6 +49,9 @@ interface Props {
   placeType: PlaceType;
   labelKind: LabelKind;
   showRegions: boolean;
+  /** The Layers switches for the labels and place names, and for the place markers. */
+  showLabels?: boolean;
+  showMarkers?: boolean;
   /** Road tool: what is being drawn, and whether roads and trails are routed over the terrain for you. */
   lineKind: LineKind;
   lineAuto: boolean;
@@ -88,7 +91,7 @@ interface RiverChunk {
   w: number;
 }
 
-export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
+export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -130,8 +133,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const metaRef = useRef(meta);
   metaRef.current = meta;
-  const optsRef = useRef({ labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, lineKind, lineAuto, areaShape });
-  optsRef.current = { labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, lineKind, lineAuto, areaShape };
+  const optsRef = useRef({ labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, showLabels, showMarkers, lineKind, lineAuto, areaShape });
+  optsRef.current = { labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, showLabels, showMarkers, lineKind, lineAuto, areaShape };
   const selectionRef = useRef({ selection, lock: selectionLock });
   selectionRef.current = { selection, lock: selectionLock };
   const onAreaRef = useRef(onArea);
@@ -458,7 +461,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       for (const [x, y] of rd) { ctx.beginPath(); ctx.arc(v.ox + x * v.scale, v.oy + y * v.scale, 3.5, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     }
-    hitsRef.current = drawFeatures(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
+    hitsRef.current = drawFeatures(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
     drawSelectionOverlay(ctx, v, selectionRef.current.selection, selectionRef.current.lock, f, drag.current, pointer.current, optsRef.current.areaShape, toMapRef.current);
     // title, scale bar, compass and frame (what exports will show)
     drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });
@@ -580,7 +583,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   }), [paintView]);
   // a new style, or relief shading switched on or off
   useEffect(() => { const v = paintView(); if (v) clientRef.current?.repaint(null, v); }, [hillshade, showRivers, meta?.style, paintView]);
-  useEffect(() => { requestDraw(); }, [labelScale, showGrid, smooth, showRivers, tool, brush, features, selectedId, meta, selection, selectionLock, areaShape, requestDraw]);
+  useEffect(() => { requestDraw(); }, [labelScale, showGrid, smooth, showRivers, showRegions, showLabels, showMarkers, tool, brush, features, selectedId, meta, selection, selectionLock, areaShape, requestDraw]);
   useEffect(() => {
     // fonts load asynchronously; redraw labels once Cinzel is ready
     void loadLabelFonts().then(() => requestDraw());

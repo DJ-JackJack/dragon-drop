@@ -855,6 +855,11 @@ export class Hub {
           return this.sendProject(ws);
         case "open_project":
           return this.openProject(msg.id);
+        case "delete_project": {
+          const r = await this.deleteProject(msg.id);
+          this.broadcast({ t: "map_deleted", name: r.name, folder: r.folder });
+          return;
+        }
         case "create_project": {
           const info = await this.createProject({ name: msg.name, width: msg.width, height: msg.height, kmPerPx: msg.kmPerPx });
           if (msg.template && msg.template !== "ocean") {
@@ -1213,9 +1218,34 @@ export class Hub {
     // a brand-new install starts with a small generated archipelago with no names or history of its own (never anyone's campaign world);
     // so does a maps folder where nothing would open (a new map, beside the others, which are left as they are)
     if (skipped.length) this.startupNotes.push(`None of your maps could be opened (${skipped.map((k) => `"${k.name}"`).join(", ")}), so a new map was made beside them; they are untouched. ${skipped[0].why}`);
+    await this.makeFirstMap();
+  }
+
+  /** The small generated archipelago a new install starts with (and what is open when the last map is deleted). */
+  private async makeFirstMap() {
     await this.createProject({ name: "First Map", width: 1024, height: 1024, kmPerPx: 2 });
     this.session.execute({ op: "generate_terrain", params: { template: "archipelago", seed: 7, landFraction: 0.3, mountains: 0.5 } }, "system");
     if (this.open) this.open.lastAutoBackup = Date.now(); // (a map nobody has touched yet needs no rolling backup: the first one comes at the first save after the interval)
     await this.flush();
+  }
+
+  /**
+   * Delete a map (the DM's own choice, from the editor: Claude has no tool for it). Its folder is moved into "Deleted maps" inside the maps folder, never erased. When it is the
+   * open map, its last edits are saved and another map is opened first (the most recently changed; a new First Map when it was the only one), so nothing writes into it after.
+   */
+  async deleteProject(id: string): Promise<{ name: string; folder: string }> {
+    const info = (await this.store.list()).find((p) => p.id === id);
+    if (!info) throw new Error(`There is no map "${id}" to delete.`);
+    if (this.open?.id === id) {
+      await this.flush();
+      const others = (await this.store.list()).filter((p) => p.id !== id);
+      let opened = false;
+      for (const p of others) { try { await this.openProject(p.id); opened = true; break; } catch { /* (one that won't open: try the next) */ } }
+      if (!opened) await this.makeFirstMap();
+    }
+    const folder = await this.store.moveToDeleted(id);
+    await this.refreshProjects();
+    this.broadcast({ t: "projects", projects: this.projectsCache });
+    return { name: info.name, folder };
   }
 }

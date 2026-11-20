@@ -37,6 +37,8 @@ interface CheckpointEntry extends CheckpointInfo {
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/** Where deleted maps go, inside the maps folder (not a valid map id, so never listed as a map). */
+export const DELETED_DIR = "Deleted maps";
 const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}$/;
 
 const LEVEL_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -146,6 +148,26 @@ export class ProjectStore {
 
   dir(id: string) {
     return path.join(this.root, safeId(id));
+  }
+
+  /**
+   * Delete a map by moving its whole folder (levels, checkpoints, pictures, chat) into "Deleted maps" inside the maps folder, under its own id (or id-2, id-3... when that is
+   * taken), so it can be brought back by moving the folder back. Nothing is erased. That folder's name can't be a map id, so it is never listed as a map.
+   */
+  async moveToDeleted(id: string): Promise<string> {
+    if (!ID_RE.test(id) || !existsSync(path.join(this.dir(id), "project.json"))) throw new Error(`There is no map "${id}".`);
+    const bin = path.join(this.root, DELETED_DIR);
+    await mkdir(bin, { recursive: true });
+    let dest = path.join(bin, id);
+    for (let n = 2; existsSync(dest); n++) dest = path.join(bin, `${id}-${n}`);
+    // (Windows can refuse a rename for a moment while another program, such as a virus scanner, is reading a file in it)
+    for (let attempt = 0; ; attempt++) {
+      try { await rename(this.dir(id), dest); return dest; } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (attempt >= 8 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw e;
+        await new Promise((r) => setTimeout(r, 40 * (attempt + 1)));
+      }
+    }
   }
 
   async list(): Promise<ProjectInfo[]> {

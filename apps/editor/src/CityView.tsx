@@ -5,9 +5,9 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  ARROW_DIRECTION, MATERIALS, STREET_EDGE, STREET_SURFACE, type CityClimate, type Features, type MapBuilding, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  ARROW_DIRECTION, BRIDGE_COLOURS, MATERIALS, STREET_EDGE, STREET_SURFACE, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
-  landAt, landGrid, landShade, newFeatureId, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
+  landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
   viewKeyAction,
 } from "@mapmaker/core";
 import { type CityUi, DEFAULT_HOUSE, landName, selectedOf, sendCityFeatures } from "./cityUi.ts";
@@ -82,6 +82,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   /** Points of a ridge, valley, plateau or hollow (the Land tool), or of a row or an area of trees (the Trees tool), being clicked out. */
   const landDraft = useRef<Pt[] | null>(null);
   const treeDraft = useRef<Pt[] | null>(null);
+  /** Each street's bridges, worked out once for what the street is and the ground as it is (`groundVer` counts the ground's changes). */
+  const groundVer = useRef(0);
+  const bridgeCache = useRef(new Map<string, BridgeSpan[]>());
   /** Each group of trees' crowns and their colours, worked out once per group and climate (features arrive as new objects with every change, so this is keyed by what the group is). */
   const crowns = useRef(new Map<string, { list: TreeCrown[]; fills: string[]; x0: number; y0: number; x1: number; y1: number }>());
   const lastClick = useRef<{ t: number; x: number; y: number } | null>(null);
@@ -182,6 +185,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     }
     const x0 = r ? Math.max(0, r.x - 1) : 0, y0 = r ? Math.max(0, r.y - 1) : 0;
     const x1 = r ? Math.min(W, r.x + r.w + 1) : W, y1 = r ? Math.min(H, r.y + r.h + 1) : H;
+    groundVer.current++; bridgeCache.current.clear(); // (the water may have moved: the bridges are worked out again)
     if (x1 > x0 && y1 > y0) {
       const d = imgRef.current!.data;
       // the ground's colours in the city's climate, shaded by the land (light from the top left)
@@ -267,6 +271,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const edge = Math.max(1, 0.4 * v.scale) * 2;
     for (const s of streets) stroke(s, s.width + edge / v.scale, `rgba(${STREET_EDGE.join(",")},0.85)`);
     for (const s of streets) stroke(s, s.width, `rgb(${STREET_SURFACE.join(",")})`);
+    // bridges where the streets cross water
+    drawBridges(ctx, v, streets.flatMap((s) => bridgesOf(dx(s.id) || dy(s.id) ? { ...s, points: s.points.map(([x, y]) => [x + dx(s.id), y + dy(s.id)] as Pt) } : s, spec.cellM)));
 
     // trees, under the buildings (a garden's trees stand beside the house, not on its roof)
     const climate = cityClimate(spec);
@@ -360,6 +366,53 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     ctx.save(); ctx.lineCap = "round";
     if (c.interval * v.scale >= 4) stroke(c.minor, "rgba(72,54,32,0.32)", 1);
     stroke(c.major, "rgba(72,54,32,0.55)", 1.4);
+    ctx.restore();
+  }
+
+  /** A street's bridges (cached until the street or the ground changes). */
+  function bridgesOf(s: MapStreet, cellM: number): BridgeSpan[] {
+    const hf = store.heights;
+    if (!hf) return [];
+    const key = `${s.id}|${s.width}|${s.kind ?? ""}|${s.bridge ?? ""}|${s.points.join(";")}`;
+    let hit = bridgeCache.current.get(key);
+    if (!hit) { hit = streetBridges(s, hf, cellM); if (bridgeCache.current.size > 4000) bridgeCache.current.clear(); bridgeCache.current.set(key, hit); }
+    return hit;
+  }
+
+  /** Bridges, as the pictures draw them: a shadow on the water, stone piers or wooden posts, the deck between walls or railings (square at each end); a ford is the street under shallow water. */
+  function drawBridges(ctx: CanvasRenderingContext2D, v: View, spans: BridgeSpan[]) {
+    if (!spans.length) return;
+    const X = (x: number) => v.ox + x * v.scale, Y = (y: number) => v.oy + y * v.scale, C = BRIDGE_COLOURS, rgb = (c: readonly number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    const line = (pts: readonly (readonly number[])[], ox = 0, oy = 0) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x + ox), Y(y + oy)) : ctx.moveTo(X(x + ox), Y(y + oy)))); };
+    ctx.save(); ctx.lineCap = "butt"; ctx.lineJoin = "round";
+    for (const b of spans) {
+      const half = b.width / 2, wall = b.kind === "stone" ? Math.max(0.45, b.width * 0.07) : Math.max(0.3, b.width * 0.05);
+      if (b.kind === "ford") { line(b.points); ctx.lineWidth = Math.max(1, b.width * v.scale); ctx.strokeStyle = rgb(C.ford, 0.55); ctx.stroke(); continue; }
+      const sh = Math.max(0.8, b.width * 0.15);
+      line(b.points, sh, sh); ctx.lineWidth = Math.max(1, (b.width + 2 * wall) * v.scale); ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.stroke();
+      for (const p of b.piers) {
+        const across = half + wall + 1.8, thick = Math.max(1.3, b.width * 0.16);
+        ctx.save(); ctx.translate(X(p.x), Y(p.y)); ctx.rotate(p.angle); ctx.scale(v.scale, v.scale);
+        ctx.beginPath(); ctx.moveTo(0, -across - 1); ctx.lineTo(thick / 2, -across); ctx.lineTo(thick / 2, across); ctx.lineTo(0, across + 1); ctx.lineTo(-thick / 2, across); ctx.lineTo(-thick / 2, -across); ctx.closePath();
+        ctx.fillStyle = rgb(C.stonePier); ctx.fill(); ctx.restore();
+      }
+      line(b.points); ctx.lineWidth = Math.max(1, (b.width + 2 * wall) * v.scale); ctx.strokeStyle = rgb(b.kind === "stone" ? C.stoneWall : C.woodRail); ctx.stroke();
+      line(b.points); ctx.lineWidth = Math.max(1, (b.width - 0.8 * wall) * v.scale); ctx.strokeStyle = rgb(b.kind === "stone" ? C.stoneDeck : C.woodDeck); ctx.stroke();
+      if (b.kind === "wood" && v.scale >= 2.5) {
+        // the planks, across the deck
+        ctx.beginPath();
+        for (let i = 0; i + 1 < b.points.length; i++) {
+          const [ax, ay] = b.points[i], [bx, by] = b.points[i + 1], len = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / (len || 1), uy = (by - ay) / (len || 1), w = half - wall * 0.4;
+          for (let d = 0.35; d < len; d += 0.7) { const cx = ax + ux * d, cy = ay + uy * d; ctx.moveTo(X(cx - uy * w), Y(cy + ux * w)); ctx.lineTo(X(cx + uy * w), Y(cy - ux * w)); }
+        }
+        ctx.lineWidth = 1; ctx.strokeStyle = rgb(C.woodPlank, 0.45); ctx.stroke();
+      }
+      if (b.posts.length) {
+        ctx.fillStyle = rgb(C.woodRail);
+        const r = Math.max(1, 0.32 * v.scale);
+        for (const [x, y] of b.posts) ctx.fillRect(X(x) - r, Y(y) - r, r * 2, r * 2);
+      }
+    }
     ctx.restore();
   }
 
@@ -563,8 +616,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     streetDraft.current = null;
     requestDraw();
     if (!pts || pts.length < 2) return;
-    const clean = inside(pts)!, kind = uiRef.current.streetKind, id = newFeatureId("t");
-    sendCityFeatures({ upsertStreets: [{ id, points: clean, width: streetWidthFor(kind), kind }] }, `Add ${kind}`);
+    const clean = inside(pts)!, kind = uiRef.current.streetKind, bridge = uiRef.current.streetBridge, id = newFeatureId("t");
+    sendCityFeatures({ upsertStreets: [{ id, points: clean, width: streetWidthFor(kind), kind, ...(bridge !== "auto" && { bridge }) }] }, `Add ${kind}`);
     onUiRef.current({ selected: [id] });
   }
 

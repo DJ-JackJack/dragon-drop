@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   BUILDING_KINDS, MATERIALS, type MapBuilding, type MapStreet, type Rect, type RoofChoice, type Shape, ROOF_STYLES, STREET_KINDS, chooseRoof, citySpec, cityGroundMaterial, cleanBuilding, cleanStreet,
-  drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetWidthFor,
+  drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
@@ -50,13 +50,21 @@ export function citySummary(ctx: ToolContext) {
   return {
     project: doc.meta.id, name: doc.meta.name, kind: "city map", size_metres: [sp.widthM, sp.heightM], ground_cell_metres: sp.cellM,
     ground: Object.entries(counts).map(([m, n]) => ({ material: MATERIALS[Number(m)]?.name ?? "?", share_percent: Math.round((n / sampled) * 100) })).filter((g) => g.share_percent > 0),
-    buildings: (f.buildings ?? []).length, buildings_by_kind: kinds, streets: (f.streets ?? []).length,
+    buildings: (f.buildings ?? []).length, buildings_by_kind: kinds, streets: (f.streets ?? []).length, bridges: bridgesOf(ctx, f.streets ?? []).length,
     roofs_from_asset_packs: (f.buildings ?? []).filter((b) => b.asset).length, roof_textures_available: ctx.roofPools?.() ? Object.fromEntries(ROOF_STYLES.map((s) => [s, ctx.roofPools!()![s].length])) : "no asset library is set up",
     trace_picture: f.trace?.ref ?? null, latest_change: ctx.session().seq,
     land: landSummary(ctx),
     note: "Coordinates are metres from the top-left corner. render_city looks at it; shape_land, set_city_climate, paint_ground, add_streets, add_buildings and add_trees build it.",
   };
 }
+
+/** The bridges of some streets, as Claude reads them: which street, stone, wood or a ford, how long. */
+function bridgesOf(ctx: ToolContext, streets: readonly MapStreet[]) {
+  const doc = ctx.session().doc, cell = citySpec(doc).cellM;
+  return streets.flatMap((s) => streetBridges(s, doc.height, cell).map((b) => ({ street: s.id, ...(s.name && { street_name: s.name }), kind: b.kind === "ford" ? "ford (no bridge)" : `${b.kind} bridge`, length_m: Math.round(b.length), from: b.points[0].map(Math.round), to: b.points[b.points.length - 1].map(Math.round) })));
+}
+const Bridge = z.enum(["auto", "stone", "wood", "none"]).optional().describe(
+  "Where it crosses water (ground painted shallow or deep water) it becomes a bridge, by itself: auto (the default) is stone for avenues and streets, wood for lanes, alleys and paths; none is a ford");
 
 const bbox = (b: { points: [number, number][] }) => pointsBounds(b.points);
 const centreOf = (b: { points: [number, number][] }) => polygonCentroid(b.points);
@@ -325,11 +333,12 @@ export const CITY_TOOLS = [
     name: "add_streets",
     description:
       "Add streets, lanes and paths (up to 200 per call, one edit): each a line through points (metres) with a width (metres; by kind if omitted: avenue 12, street 7, lane 4, alley 2, path 1.5). " +
-      "Streets are drawn over the ground and under the buildings; give the corners of a curve as several points. A name only if the DM gave one.",
+      "Streets are drawn over the ground and under the buildings; give the corners of a curve as several points. A name only if the DM gave one. " +
+      "Where a street crosses water it becomes a bridge by itself (the result lists them): cross a river where it is narrow and the banks are firm, square to the water, and keep long bridges for the main roads.",
     schema: z.object({
       streets: z.array(z.object({
         points: z.array(Pt).min(2).max(200), width: z.number().min(0.5).max(60).optional(),
-        kind: z.enum(STREET_KINDS.map((k) => k.id) as [string, ...string[]]).optional(), name: z.string().min(1).max(80).optional(),
+        kind: z.enum(STREET_KINDS.map((k) => k.id) as [string, ...string[]]).optional(), name: z.string().min(1).max(80).optional(), bridge: Bridge,
       })).min(1).max(200),
     }),
     async run(ctx, i) {
@@ -337,24 +346,53 @@ export const CITY_TOOLS = [
       const sp = citySpec(ctx.session().doc);
       const added: MapStreet[] = [], errors: string[] = [];
       i.streets.forEach((s, n) => {
-        const c = cleanStreet({ id: newFeatureId("t"), points: s.points, width: s.width ?? streetWidthFor(s.kind), kind: s.kind, name: s.name }, sp);
+        const c = cleanStreet({ id: newFeatureId("t"), points: s.points, width: s.width ?? streetWidthFor(s.kind), kind: s.kind, name: s.name, ...(s.bridge && s.bridge !== "auto" && { bridge: s.bridge }) }, sp);
         if ("error" in c) errors.push(`#${n + 1}: ${c.error.replace(/^street [^ ]+ /, "")}`); else added.push(c);
       });
       if (!added.length) return fail(`Nothing was added. ${errors.slice(0, 8).join("; ")}`);
       const r = ctx.execute({ op: "features", patch: { upsertStreets: added } }, `Add ${added.length} street${added.length === 1 ? "" : "s"}`);
-      return json({ change: r.seq, added: added.length, ids: added.map((s) => s.id), skipped: errors.length, ...(errors.length && { errors: errors.slice(0, 10) }) });
+      const bridges = bridgesOf(ctx, added);
+      return json({ change: r.seq, added: added.length, ids: added.map((s) => s.id), skipped: errors.length, ...(errors.length && { errors: errors.slice(0, 10) }), ...(bridges.length && { bridges }) });
+    },
+  }),
+
+  define({
+    name: "update_streets",
+    description: "Change streets by id (from list_streets): name, kind (sets the width that goes with it unless width is given), width, or bridge (what it becomes where it crosses water). One edit.",
+    schema: z.object({
+      changes: z.array(z.object({
+        id: z.string(), name: z.string().max(80).optional().describe("Only a name the DM gave; empty removes it"), kind: z.enum(STREET_KINDS.map((k) => k.id) as [string, ...string[]]).optional(),
+        width: z.number().min(0.5).max(60).optional(), bridge: Bridge,
+      })).min(1).max(200),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      const sp = citySpec(ctx.session().doc), by = new Map((featuresOf(ctx).streets ?? []).map((s) => [s.id, s]));
+      const out: MapStreet[] = [], skipped: string[] = [];
+      for (const ch of i.changes) {
+        const cur = by.get(ch.id);
+        if (!cur) { skipped.push(`${ch.id}: no such street`); continue; }
+        const { bridge: _b, name: _n, ...rest } = cur;
+        const bridge = ch.bridge === undefined ? cur.bridge : ch.bridge === "auto" ? undefined : ch.bridge, name = ch.name === undefined ? cur.name : ch.name || undefined;
+        const c = cleanStreet({ ...rest, ...(ch.kind && { kind: ch.kind, width: streetWidthFor(ch.kind) }), ...(ch.width !== undefined && { width: ch.width }), ...(bridge && { bridge }), ...(name && { name }) }, sp);
+        if ("error" in c) skipped.push(c.error); else out.push(c);
+      }
+      if (!out.length) return fail(`Nothing changed. ${skipped.join("; ")}`);
+      const r = ctx.execute({ op: "features", patch: { upsertStreets: out } }, out.length === 1 ? `Change ${out[0].name ?? out[0].kind ?? "street"}` : `Change ${out.length} streets`);
+      const bridges = bridgesOf(ctx, out);
+      return json({ change: r.seq, changed: out.length, ...(skipped.length && { skipped }), ...(bridges.length && { bridges }) });
     },
   }),
 
   define({
     name: "list_streets",
-    description: "List the streets (id, kind, name, width, length, first and last point).",
+    description: "List the streets (id, kind, name, width, length, first and last point, and their bridges).",
     schema: z.object({ limit: z.number().int().min(1).max(300).optional(), offset: z.number().int().min(0).optional() }),
     async run(ctx, i) {
       const bad = needCity(ctx); if (bad) return bad;
       const all = featuresOf(ctx).streets ?? [], off = i.offset ?? 0, lim = i.limit ?? 100;
       const len = (s: MapStreet) => s.points.slice(1).reduce((a, p, k) => a + Math.hypot(p[0] - s.points[k][0], p[1] - s.points[k][1]), 0);
-      return json({ total: all.length, offset: off, streets: all.slice(off, off + lim).map((s) => ({ id: s.id, ...(s.kind && { kind: s.kind }), ...(s.name && { name: s.name }), width: s.width, length_m: Math.round(len(s)), from: s.points[0], to: s.points[s.points.length - 1] })) });
+      return json({ total: all.length, offset: off, streets: all.slice(off, off + lim).map((s) => ({ id: s.id, ...(s.kind && { kind: s.kind }), ...(s.name && { name: s.name }), width: s.width, length_m: Math.round(len(s)), from: s.points[0], to: s.points[s.points.length - 1], ...(s.bridge && { bridge_setting: s.bridge }), ...((() => { const b = bridgesOf(ctx, [s]); return b.length ? { bridges: b.map(({ kind, length_m }) => ({ kind, length_m })) } : {}; })()) })) });
     },
   }),
 

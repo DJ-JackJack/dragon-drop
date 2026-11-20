@@ -227,6 +227,7 @@ export function cleanStreet(s: unknown, spec: CitySpec): MapStreet | { error: st
   if (width < 0.5 || width > 60) return { error: `street ${o.id}'s width must be between 0.5 and 60 metres` };
   const out: MapStreet = { id: o.id, points, width: r2(width) };
   if (kind) out.kind = kind;
+  if (o.bridge === "stone" || o.bridge === "wood" || o.bridge === "none") out.bridge = o.bridge;
   if (typeof o.name === "string" && o.name.trim()) out.name = o.name.trim().slice(0, 80);
   return out;
 }

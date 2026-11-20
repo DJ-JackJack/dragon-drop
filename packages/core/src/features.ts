@@ -245,6 +245,8 @@ export interface MapStreet {
   /** Metres across. */
   width: number;
   kind?: StreetKind;
+  /** Where it crosses water (cityBridges.ts): a stone or wooden bridge, or none (a ford). Missing: stone for avenues and streets, wood for the rest. */
+  bridge?: "stone" | "wood" | "none";
 }
 
 /**

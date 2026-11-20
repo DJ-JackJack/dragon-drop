@@ -76,6 +76,8 @@ export type ChatEvent =
 export type ClientMsg =
   | { t: "hello" }
   | { t: "open_project"; id: string }
+  /** Delete a map: its folder is moved into the maps folder's "Deleted maps" folder (never erased), and another map is opened if it was the open one. Only the DM does this (no tool of Claude's). */
+  | { t: "delete_project"; id: string }
   | { t: "create_project"; name: string; width: number; height: number; kmPerPx: number; template: string; seed: number }
   /** Make a battlemap (a grid-based tabletop map) and open it. */
   | { t: "create_battle"; name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }
@@ -149,6 +151,8 @@ export type ServerMsg =
   | { t: "checkpoints"; list: CheckpointInfo[] }
   /** The map is on disk (the answer to "save_now"). */
   | { t: "saved" }
+  /** A map was deleted: its name, and where its folder now is. */
+  | { t: "map_deleted"; name: string; folder: string }
   /** New derived layers are ready (sent to every client; "lite" clients get no binary frames). */
   | { t: "derived_ready"; projectId: string; version: number }
   /** What Claude Code last said (through its hooks): lets Assist mode wait until it is idle. */

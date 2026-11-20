@@ -35,6 +35,9 @@ const TREE_KINDS: { id: TreeGroup; name: string; hint: string }[] = [
   { id: "row", name: "Row", hint: "Click points along a row of trees (an avenue, a hedgerow, a river bank); double-click or press Enter to finish." },
   { id: "tree", name: "One tree", hint: "Click to plant a tree." },
 ];
+const BRIDGE_CHOICES: { id: CityUi["streetBridge"]; name: string }[] = [
+  { id: "auto", name: "Bridge (stone for streets, wood for lanes)" }, { id: "stone", name: "Stone bridge" }, { id: "wood", name: "Wooden bridge" }, { id: "none", name: "No bridge (a ford)" },
+];
 const SPECIES_NAMES: Record<TreeSpecies, string> = { conifer: "Firs and pines", broadleaf: "Broad trees", palm: "Palms", olive: "Olives", cypress: "Cypresses", thorn: "Thorny trees" };
 const KIND_NAMES: Record<BuildingKind, string> = { house: "House", shop: "Shop", tavern: "Tavern", inn: "Inn", temple: "Temple", hall: "Hall", tower: "Tower", barn: "Barn", warehouse: "Warehouse", arena: "Arena", gatehouse: "Gatehouse", other: "Other" };
 const rgb = (c: readonly number[]) => `rgb(${c.join(",")})`;
@@ -76,11 +79,18 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
         </>
       )}
       {ui.tool === "street" && (
-        <label className="field">Kind of street
-          <select value={ui.streetKind} onChange={(e) => onUi({ streetKind: e.target.value as StreetKind })} data-testid="city-street-kind">
-            {STREET_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name} ({k.width} m wide)</option>)}
-          </select>
-        </label>
+        <>
+          <label className="field">Kind of street
+            <select value={ui.streetKind} onChange={(e) => onUi({ streetKind: e.target.value as StreetKind })} data-testid="city-street-kind">
+              {STREET_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name} ({k.width} m wide)</option>)}
+            </select>
+          </label>
+          <label className="field">Over water
+            <select value={ui.streetBridge} onChange={(e) => onUi({ streetBridge: e.target.value as CityUi["streetBridge"] })} data-testid="city-street-bridge" title="Where the street crosses water (ground painted as water) it becomes a bridge">
+              {BRIDGE_CHOICES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </label>
+        </>
       )}
       {ui.tool === "ground" && (
         <>
@@ -303,6 +313,11 @@ function StreetEditor({ s, onClear, onRemove }: { s: MapStreet; onClear: () => v
       </label>
       <label className="slider"><span>Width <b>{s.width}</b> m</span>
         <input type="range" min={1} max={30} step={0.5} value={Math.min(30, s.width)} onChange={(e) => set({ width: Number(e.target.value) }, "Street width")} data-testid="city-street-width" />
+      </label>
+      <label className="field">Over water
+        <select value={s.bridge ?? "auto"} onChange={(e) => { const { bridge: _b, ...rest } = s; const v = e.target.value; sendCityFeatures({ upsertStreets: [v === "auto" ? rest : { ...rest, bridge: v as MapStreet["bridge"] }] }, v === "none" ? "No bridge (a ford)" : `Bridge: ${v === "auto" ? "automatic" : v}`); }} data-testid="city-street-edit-bridge">
+          {BRIDGE_CHOICES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
       </label>
       <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
     </section>

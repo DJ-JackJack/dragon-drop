@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
+import { placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
 import { PICTURE_RULE, References } from "./References.tsx";
 import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipboard.ts";
@@ -56,6 +56,11 @@ export function App() {
   const setLabelSize = (n: number) => { setLabelSizeState(n); try { localStorage.setItem("dd.labelSize", String(n)); } catch { /* private window */ } };
   const [showRivers, setShowRivers] = useState(true);
   const [showRegions, setShowRegions] = useState(true);
+  // the labels and place names, and the place markers, can be hidden to see the land (remembered)
+  const [showLabels, setShowLabelsState] = useState(() => { try { return localStorage.getItem("dd.showLabels") !== "0"; } catch { return true; } });
+  const setShowLabels = (on: boolean) => { setShowLabelsState(on); try { localStorage.setItem("dd.showLabels", on ? "1" : "0"); } catch { /* private window */ } };
+  const [showMarkers, setShowMarkersState] = useState(() => { try { return localStorage.getItem("dd.showMarkers") !== "0"; } catch { return true; } });
+  const setShowMarkers = (on: boolean) => { setShowMarkersState(on); try { localStorage.setItem("dd.showMarkers", on ? "1" : "0"); } catch { /* private window */ } };
   const [lineKind, setLineKind] = useState<LineKind>("road");
   const [lineAuto, setLineAuto] = useState(true);
   // a road being routed by the server: show progress until it arrives (or fails)
@@ -223,7 +228,7 @@ export function App() {
   useEffect(() => {
     const n = s.pictureNote;
     if (!n || n.busy) return;
-    const t = setTimeout(() => store.dismissPictureNote(), 4000);
+    const t = setTimeout(() => store.dismissPictureNote(), n.ms ?? 4000);
     return () => clearTimeout(t);
   }, [s.pictureNote]);
 
@@ -294,7 +299,7 @@ export function App() {
         ) : (
         <MapView
           meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
-          features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions}
+          features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions} showLabels={showLabels} showMarkers={showMarkers}
           lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere}
           selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
         >
@@ -348,6 +353,8 @@ export function App() {
             <h3>Layers</h3>
             <label className="check"><input type="checkbox" checked={showRivers} onChange={(e) => setShowRivers(e.target.checked)} /> Rivers</label>
             <label className="check"><input type="checkbox" checked={showRegions} onChange={(e) => setShowRegions(e.target.checked)} /> Climate region outlines</label>
+            <label className="check" title="The map's labels and the names of places (hidden, they can't be clicked either)"><input type="checkbox" data-testid="show-labels" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} /> Labels and names</label>
+            <label className="check" title="The places' markers (towns, castles, temples...)"><input type="checkbox" data-testid="show-markers" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} /> Place markers</label>
             {style === "relief" && (
               <label className="check"><input type="checkbox" checked={hillshade} onChange={(e) => setHillshade(e.target.checked)} /> Relief shading</label>
             )}
@@ -414,6 +421,7 @@ export function App() {
           )}
 
           </>}
+          {s.meta && <DeleteMap meta={s.meta} />}
 
                 </div>
                 <div className={tabNow === "history" ? "tab-on" : "tab-off"} data-testid="tab-body-history">
@@ -611,5 +619,29 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Delete the open map, after asking. Its folder is moved into the maps folder's "Deleted maps" (nothing is erased), and another map opens. */
+function DeleteMap({ meta }: { meta: MapMeta }) {
+  const [asking, setAsking] = useState(false);
+  const kind = meta.kind === "city" ? "city map" : meta.kind === "battle" ? "battlemap" : "map";
+  return (
+    <section data-testid="delete-map">
+      <button className="danger" onClick={() => setAsking(true)} data-testid="delete-map-open">Delete this {kind}…</button>
+      {asking && (
+        <div className="modal-back" onMouseDown={() => setAsking(false)}>
+          <div className="modal" role="dialog" aria-modal="true" data-testid="delete-map-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <h2>Delete "{meta.name}"?</h2>
+            <p className="muted">It disappears from your maps, with its {meta.kind === "battle" ? "levels, " : ""}checkpoints, pictures and chat. Its folder is not erased: it is moved into <b>Deleted maps</b> inside your maps folder, so you can bring it back by moving the folder back out. Another map opens in its place.</p>
+            <p className="muted">Maps made from it (regional maps, battlemaps) are kept.</p>
+            <div className="row end">
+              <button onClick={() => setAsking(false)} data-testid="delete-map-cancel">Cancel</button>
+              <button className="danger" onClick={() => { setAsking(false); store.send({ t: "delete_project", id: meta.id }); }} data-testid="delete-map-confirm">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
