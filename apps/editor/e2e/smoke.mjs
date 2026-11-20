@@ -895,6 +895,7 @@ try {
     await page.getByTestId("btool-hole").click();
     await page.keyboard.press("PageUp");
     await waitOn("level-2");
+    await page.getByTestId("battle-summary").getByText(/0 doors/).waitFor({ timeout: 10000 }); // (the level's own map has arrived: the row lights up a moment before)
     await click(18, 11); // (a click makes one square)
     await page.getByTestId("battle-inspector").getByRole("heading", { name: "Hole" }).waitFor({ timeout: 5000 });
     await page.getByTestId("connector-target").getByText(/Leads down to Ground floor/).waitFor({ timeout: 5000 });
@@ -943,7 +944,7 @@ try {
 
   // a smaller window (a laptop, or the window dragged narrower): the top bar stays on one line with nothing spilling sideways, and the map keeps room with both panels open
   {
-    const measure = () => page.evaluate(() => ({ page: document.documentElement.scrollWidth - innerWidth, top: Math.max(...[...document.querySelectorAll(".top")].map((e) => e.scrollWidth - e.clientWidth)), canvas: document.querySelector('[data-testid="map-canvas"]').getBoundingClientRect().width }));
+    const measure = () => page.evaluate(() => ({ page: document.documentElement.scrollWidth - innerWidth, top: Math.max(...[...document.querySelectorAll(".top")].map((e) => e.scrollWidth - e.clientWidth)), canvas: document.querySelector('[data-testid="map-canvas"]').getBoundingClientRect().width, wide: [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).slice(0, 5).map((e) => `${e.tagName}.${String(e.className).slice(0, 30)} right=${Math.round(e.getBoundingClientRect().right)}`) }));
     for (const [w, h] of [[1024, 768], [900, 700]]) {
       await page.setViewportSize({ width: w, height: h });
       await page.waitForTimeout(500);

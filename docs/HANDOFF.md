@@ -4,7 +4,7 @@ Read `CLAUDE.md` first (the project's own instructions), then this page. Everyth
 
 ## Where things stand
 
-- **v0.1.9 is released** (2026-11-20, tag on `898aa34`, release notes written by hand; a feature list page was made for the person). A version tag builds the installer and publishes a public GitHub Release that every installed copy updates to by itself, so **ask the person before tagging** the next one.
+- **v0.1.9 is released** (2026-11-20, tag on `898aa34`, release notes written by hand; a feature list page was made for the person). A version tag builds the installer and publishes a public GitHub Release that every installed copy updates to by itself, so **ask the person before tagging** the next one (the steps are in `docs/RELEASING.md`).
   - CI-built installers are numbered 0.1.0 (only a tag sets the version), so installing one makes the in-app updater fetch v0.1.8. To test a CI build use the itch copy (artifact `Dragon-Drop-itch-windows`), which has the updater off.
 - **RT9 is done and passed** (`docs/foundry-test-kit/results/v14.367/RESULTS-RETEST-6.md`): a real Dragon Drop roof export behaves in Foundry as RT8 predicted. It found two small defects, both fixed (tile centres on whole pixels; no eave
   shadow in the exported roof pictures). The fixed export has not been looked at in Foundry again, but both changes only move values RT8 already proved (whole-number centres) or remove pixels (the shadow).
