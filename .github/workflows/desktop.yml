@@ -11,9 +11,9 @@ jobs:
     name: Type check and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -27,9 +27,9 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false" # no code-signing certificate yet
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Build the editor
@@ -103,13 +103,13 @@ jobs:
           # the uninstaller should run silently too (best effort: it finishes in the background)
           $un = Join-Path (Split-Path $exe) "Uninstall Dragon Drop.exe"
           if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList "/S" -Wait; Write-Host "Uninstaller ran" }
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Dragon-Drop-itch-windows
           path: apps/desktop/release/Dragon-Drop-itch-windows.zip
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Dragon-Drop-Windows-installer
           path: apps/desktop/release/Dragon-Drop-Setup-*.exe
