@@ -941,6 +941,20 @@ try {
     await page.waitForFunction(() => !document.querySelector(".mapview-empty"), null, { timeout: 15000 });
   }
 
+  // a smaller window (a laptop, or the window dragged narrower): the top bar stays on one line with nothing spilling sideways, and the map keeps room with both panels open
+  {
+    const measure = () => page.evaluate(() => ({ page: document.documentElement.scrollWidth - innerWidth, top: Math.max(...[...document.querySelectorAll(".top")].map((e) => e.scrollWidth - e.clientWidth)), canvas: document.querySelector('[data-testid="map-canvas"]').getBoundingClientRect().width }));
+    for (const [w, h] of [[1024, 768], [900, 700]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.waitForTimeout(500);
+      const o = await measure();
+      if (o.page > 0 || o.top > 1) fail(`at ${w} px wide the top bar spills sideways: ${JSON.stringify(o)}`);
+      if (o.canvas < 380) fail(`at ${w} px wide the map is only ${Math.round(o.canvas)} px wide`);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(500);
+  }
+
   // the phone viewer: server render + labels, places list, place card
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   phone.on("pageerror", (e) => errors.push(String(e)));

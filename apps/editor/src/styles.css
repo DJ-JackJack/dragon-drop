@@ -210,6 +210,10 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
   .main { --mapw: 210px; --claudew: 320px; }
   .main.assets-wide { --mapw: 300px; }
 }
+@media (max-width: 960px) {
+  .main { --mapw: 180px; --claudew: 260px; }
+  .main.assets-wide { --mapw: 260px; }
+}
 @media (max-width: 760px) {
   .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; }
   .side, .rail { display: none; }
@@ -479,11 +483,11 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 .mapview-group { position: absolute; left: 10px; bottom: 40px; background: var(--glass); border: 1px solid rgba(212, 175, 55, 0.45); padding: 3px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }
 
 /* the tool rail (ToolRail.tsx): one picture and a short name for each tool, down the left edge */
-.rail { background: linear-gradient(180deg, #121215, #0e0e11); border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: none; padding: 4px; display: flex; flex-direction: column; align-items: center; min-height: 0; }
-.rail::-webkit-scrollbar { display: none; }
+.rail { background: linear-gradient(180deg, #121215, #0e0e11); border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a4638 transparent; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; min-height: 0; }
+/* on a short screen the rail scrolls: a thin scrollbar shows there is more below (the tools are narrower then, so the bar has room) */
 .rail-group { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; padding: 4px 0; border-bottom: 1px solid #211f19; }
 .rail-group:last-child { border-bottom: none; }
-.rail-tool { position: relative; width: 58px; padding: 3px 0 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--muted); font-size: 10px; line-height: 1.15; }
+.rail-tool { position: relative; width: calc(100% - 4px); max-width: 58px; padding: 3px 0 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--muted); font-size: 10px; line-height: 1.15; }
 .rail-tool:hover:not(:disabled) { color: var(--text); background: var(--panel-2); border-color: transparent; }
 .rail-tool.on, .rail-tool.on:hover:not(:disabled) { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); border-color: var(--gold-hi); color: #17130a; font-weight: 600; }
 .ticon { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -531,5 +535,7 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 .top { gap: 8px; }
 .top .toggle { padding: 4px 9px; }
 @media (max-width: 1000px) { .wordmark { display: none; } .project { min-width: 130px; } }
+/* on a narrower window the connection light keeps its dot and loses its word, so the top bar still fits */
+@media (max-width: 1100px) { .conn { font-size: 0; padding: 2px 4px; } .conn.ok::before, .conn.bad::before { margin-right: 0; } }
 .tab-on { display: contents; }
 .tab-off { display: none; }

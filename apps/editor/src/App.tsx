@@ -505,7 +505,7 @@ function TopBar({ s, onNew, onHelp, onSettings, mapOpen, onMap, claudeOpen, onCl
       <button className={`ghost toggle${claudeOpen ? " on" : ""}`} aria-pressed={claudeOpen} onClick={() => onClaude(!claudeOpen)} title="Show or hide the Claude panel" data-testid="toggle-claude-panel">
         Claude{claudeDot && !claudeOpen ? <span className="tab-dot" title="Claude has suggestions for you"> ●</span> : null}
       </button>
-      <span className={`conn ${s.connected ? "ok" : "bad"}`}>{s.connected ? "Connected" : "Reconnecting…"}</span>
+      <span className={`conn ${s.connected ? "ok" : "bad"}`} title={s.connected ? "Connected to the map server" : "Reconnecting to the map server…"}>{s.connected ? "Connected" : "Reconnecting…"}</span>
       <button className="ghost" onClick={onHelp} title="Keyboard and mouse controls (?)" data-testid="shortcuts-button">?</button>
       {onSettings && <button className="ghost" onClick={onSettings} title="API key, maps folder, Claude Code connection" data-testid="settings-button">Settings</button>}
     </header>
