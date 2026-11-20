@@ -38,9 +38,9 @@ describe("making a city", () => {
     expect(citySizeError(Number.NaN, 400, 1)).toMatch(/numbers/);
   });
 
-  it("is only an older program's problem: city maps are format 2, everything else stays 1", () => {
-    expect(CITY_FORMAT).toBe(2);
-    expect(formatFor("city", CURRENT_FORMAT)).toBe(2);
+  it("is only an older program's problem: city maps are format 3 (2 before land, trees and climate), everything else stays 1", () => {
+    expect(CITY_FORMAT).toBe(3);
+    expect(formatFor("city", CURRENT_FORMAT)).toBe(3);
     expect(formatFor("world", CURRENT_FORMAT)).toBe(CURRENT_FORMAT);
     expect(formatFor("battle", 1)).toBe(1);
     expect(formatFor(undefined, 1)).toBe(1);

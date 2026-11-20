@@ -39,6 +39,7 @@ export * from "./battleTerrain.ts";
 export * from "./traceWalls.ts";
 export * from "./trace.ts";
 export * from "./city.ts";
+export * from "./cityLand.ts";
 export * from "./roofAssets.ts";
 export * from "./cityRender.ts";
 export * from "./lighting.ts";

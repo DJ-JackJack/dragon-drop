@@ -32,7 +32,7 @@ export type Command =
   | { op: "erode"; params: ErodeParams }
   | { op: "paint_floor"; params: PaintFloorParams }
   | { op: "set_sea_level"; levelM: number }
-  | { op: "set_meta"; patch: Pick<Partial<MapMeta>, "style" | "climate" | "name" | "notes" | "grid" | "furniture" | "battle">; label?: string }
+  | { op: "set_meta"; patch: Pick<Partial<MapMeta>, "style" | "climate" | "name" | "notes" | "grid" | "furniture" | "battle" | "city">; label?: string }
   | { op: "restore"; data: Float32Array; meta: Pick<Partial<MapMeta>, "seaLevel" | "style" | "climate">; features?: Features; label: string }
   | { op: "features"; patch: FeaturesPatch; label?: string }
   | { op: "replace_heights"; data: Float32Array; label?: string };
@@ -164,9 +164,17 @@ export class MapSession {
       case "set_sea_level":
         this.doc.meta.seaLevel = cmd.levelM;
         break;
-      case "set_meta":
-        Object.assign(this.doc.meta, cmd.patch);
+      case "set_meta": {
+        const patch = { ...cmd.patch };
+        // a city's size and ground cells never change this way (its ground would no longer fit): only its climate and elevation do
+        if (patch.city) {
+          const cur = this.doc.meta.city;
+          if (cur) patch.city = { ...patch.city, widthM: cur.widthM, heightM: cur.heightM, cellM: cur.cellM };
+          else delete patch.city;
+        }
+        Object.assign(this.doc.meta, patch);
         break;
+      }
       case "restore":
         if (cmd.data.length !== hf.data.length) throw new Error("restore: size mismatch");
         hf.data.set(cmd.data);
@@ -203,7 +211,7 @@ export class MapSession {
       after: rect ? hf.copyRect(rect) : null,
     };
     if (metaChanged) {
-      const keys = ["seaLevel", "style", "climate", "name", "notes", "grid", "furniture", "battle"] as const;
+      const keys = ["seaLevel", "style", "climate", "name", "notes", "grid", "furniture", "battle", "city"] as const;
       entry.metaBefore = {};
       entry.metaAfter = {};
       for (const key of keys) {

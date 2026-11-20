@@ -318,7 +318,7 @@ export function App() {
           {isCity && s.meta && (
             <>
               <CityInspector features={s.features} ui={cui} onUi={onCui} />
-              <CitySummary meta={s.meta} features={s.features} />
+              <CitySummary meta={s.meta} features={s.features} ui={cui} onUi={onCui} />
             </>
           )}
           {isBattle && s.meta && (

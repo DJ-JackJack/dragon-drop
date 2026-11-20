@@ -16,10 +16,14 @@ import type { MapDoc } from "./doc.ts";
 export const CURRENT_FORMAT = 1;
 
 /**
- * City maps (kind "city") are written in format 2, though every other map stays in format 1: a Dragon Drop from before city maps would treat a city as a world map and
+ * City maps (kind "city") are written in their own format, though every other map stays in format 1: a Dragon Drop from before city maps would treat a city as a world map and
  * drop its buildings the next time it saved, so it must refuse it (it refuses any map in a format newer than its own). Everything else is unchanged by this.
+ *   2: city maps (0.1.10).
+ *   3: a city's land (hills, ridges, valleys...), trees and climate (0.1.11). 0.1.10 would drop them the first time it changed the city, so it must refuse these.
  */
-export const CITY_FORMAT = 2;
+export const CITY_FORMAT = 3;
+/** The format the first city maps were written in (a city's file never means less). */
+export const FIRST_CITY_FORMAT = 2;
 
 /** The format a map of this kind is read and written in, given the format the program writes ordinary maps in. */
 export function formatFor(kind: string | undefined, general: number = CURRENT_FORMAT): number {
@@ -29,8 +33,14 @@ export function formatFor(kind: string | undefined, general: number = CURRENT_FO
 /** One step: turns a map of format `n` into format `n + 1`, changing `doc` in place. */
 export type MapMigration = (doc: MapDoc) => void;
 
-/** Steps by the version they start from (key 1 turns format 1 into 2). Empty while 1 is the only format there has been. */
-export const MIGRATIONS: Record<number, MapMigration> = {};
+/**
+ * Steps by the version they start from (key 1 turns format 1 into 2). Only city maps have gone past format 1 so far, and a city is written in 2 from the start, so there is
+ * no step 1 yet. A step must leave every other kind of map as it is (when ordinary maps reach that format, the same table serves them).
+ */
+export const MIGRATIONS: Record<number, MapMigration> = {
+  // city maps 2 -> 3: the land, the trees and the climate are new and optional (a city without them is flat, treeless and temperate), so nothing changes
+  2: () => {},
+};
 
 /** A map saved by a newer Dragon Drop than this one. */
 export class NewerFormatError extends Error {

@@ -1205,6 +1205,43 @@ try {
     await page.mouse.move(cx(520), cy(350), { steps: 6 });
     await page.mouse.up();
     await page.getByTestId("history").getByText("Paint deep water").first().waitFor({ timeout: 5000 });
+    // the land: a hill by a click with the Land tool, a valley by points; the status reads the height; the hill is selected by its top and made higher in the inspector
+    await page.keyboard.press("l");
+    await page.getByTestId("tool-hint").getByText(/drag out from its top/).waitFor({ timeout: 5000 });
+    await page.mouse.click(cx(380), cy(120));
+    await page.getByTestId("history").getByText("Add hill").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-land-valley").click();
+    await page.mouse.click(cx(20), cy(330));
+    await page.mouse.click(cx(200), cy(300));
+    await page.mouse.dblclick(cx(420), cy(340));
+    await page.getByTestId("history").getByText("Add valley").first().waitFor({ timeout: 5000 });
+    await page.mouse.move(cx(370), cy(130));
+    await page.getByTestId("city-status").getByText(/m above the sea/).waitFor({ timeout: 5000 });
+    await page.mouse.click(cx(380), cy(120));
+    await page.getByTestId("city-inspector").getByText("Hill").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-land-edit-height").fill("30");
+    await page.getByTestId("city-land-edit-height").press("Tab");
+    await page.getByTestId("history").getByText("Hill: 30 m").first().waitFor({ timeout: 5000 });
+    // trees: a wood (an outline finished by a double-click) and one tree; then a cold climate
+    await page.getByTestId("ctool-trees").click(); // (the rail: the keyboard is still in the height box)
+    await page.mouse.click(cx(60), cy(40));
+    await page.mouse.click(cx(170), cy(40));
+    await page.mouse.click(cx(170), cy(130));
+    await page.mouse.dblclick(cx(60), cy(130));
+    await page.getByTestId("history").getByText("Add a wood").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-trees-tree").click();
+    await page.mouse.click(cx(300), cy(60));
+    await page.getByTestId("history").getByText("Add a tree").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-climate").selectOption("cold");
+    await page.getByTestId("history").getByText("Climate: Cold").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-land").getByText(/firs and pines/i).waitFor({ timeout: 5000 });
+    await page.getByTestId("city-summary").getByText("2 groups").waitFor({ timeout: 5000 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(shots, "e2e-5b-city-land.png") });
+    // the climate is one undo step
+    await page.getByRole("button", { name: /Undo/ }).click(); // (the keyboard is in the climate list, where Ctrl+Z is the list's own)
+    await page.getByTestId("history").getByText("Undo: Climate: Cold").first().waitFor({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector('[data-testid="city-climate"]')?.value === "temperate", null, { timeout: 5000 });
     // the trace picture works on a city map too (a new map has no pictures of its own: add one first)
     await page.getByTestId("references").getByTestId("ref-file").setInputFiles(path.join(tmp, "e2e-sketch.png"));
     await page.getByTestId("references").getByTestId("ref-card").first().waitFor({ timeout: 15000 });

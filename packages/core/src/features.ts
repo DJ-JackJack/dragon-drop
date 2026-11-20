@@ -247,6 +247,40 @@ export interface MapStreet {
   kind?: StreetKind;
 }
 
+/**
+ * The lie of the land on a city map, as shapes (cityLand.ts adds them up into heights, the shading and the contour lines). A hill is its top (one point); a ridge is a line along its
+ * crest, and with a negative height it is a valley; a plateau is an outline raised (or, negative, sunk) evenly with a soft edge; a slope is two points, the ground rising by `height` from
+ * the first to the second across the whole city (the land falling to the sea, say).
+ */
+export const LANDFORM_KINDS = ["hill", "ridge", "plateau", "slope"] as const;
+export type LandformKind = (typeof LANDFORM_KINDS)[number];
+export interface MapLandform {
+  id: string;
+  kind: LandformKind;
+  points: [number, number][];
+  /** Metres higher (negative: lower) than the ground around it at its top or crest; for a slope, the rise from the first point to the second. */
+  height: number;
+  /** Metres: a hill's radius, a ridge's half-width, a plateau's soft edge (unused by a slope). */
+  radius: number;
+  name?: string;
+}
+
+/** Trees on a city map: an area of wood, orchard or scattered trees (an outline), a row along a line, or one tree (one point). Their kind follows the city's climate unless given. */
+export const TREE_GROUPS = ["wood", "orchard", "scattered", "row", "tree"] as const;
+export type TreeGroup = (typeof TREE_GROUPS)[number];
+export const TREE_SPECIES = ["conifer", "broadleaf", "palm", "olive", "cypress", "thorn"] as const;
+export type TreeSpecies = (typeof TREE_SPECIES)[number];
+export interface MapTrees {
+  id: string;
+  kind: TreeGroup;
+  points: [number, number][];
+  /** Crown across, metres (default by kind: 7 in a wood, 5 in an orchard). */
+  size?: number;
+  /** One kind of tree for all of them (default: the climate's mix). */
+  species?: TreeSpecies;
+  name?: string;
+}
+
 export type ConnectorKind = "stairs" | "ladder" | "hole";
 export const CONNECTOR_KINDS: readonly ConnectorKind[] = ["stairs", "ladder", "hole"];
 
@@ -334,6 +368,10 @@ export interface Features {
   buildings?: MapBuilding[];
   /** City maps: streets, lanes and paths. */
   streets?: MapStreet[];
+  /** City maps: the lie of the land (hills, ridges, valleys, plateaus, slopes). */
+  land?: MapLandform[];
+  /** City maps: woods, orchards, rows and single trees. */
+  trees?: MapTrees[];
 }
 
 export interface FeaturesPatch {
@@ -367,6 +405,10 @@ export interface FeaturesPatch {
   removeBuildings?: string[];
   upsertStreets?: MapStreet[];
   removeStreets?: string[];
+  upsertLand?: MapLandform[];
+  removeLand?: string[];
+  upsertTrees?: MapTrees[];
+  removeTrees?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -458,6 +500,19 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertStreets ?? []) streets.set(x.id, x);
     out.streets = [...streets.values()];
   }
+  // (the land and the trees keep their array when a patch doesn't touch them: the heights, shading and tree crowns worked out from them are cached by it)
+  if (p.upsertLand || p.removeLand) {
+    const land = new Map((f.land ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeLand ?? []) land.delete(id);
+    for (const x of p.upsertLand ?? []) land.set(x.id, x);
+    out.land = [...land.values()];
+  } else if (f.land) out.land = f.land;
+  if (p.upsertTrees || p.removeTrees) {
+    const trees = new Map((f.trees ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeTrees ?? []) trees.delete(id);
+    for (const x of p.upsertTrees ?? []) trees.set(x.id, x);
+    out.trees = [...trees.values()];
+  } else if (f.trees) out.trees = f.trees;
   const trace = p.setTrace === undefined ? f.trace : p.setTrace;
   if (trace) out.trace = trace;
   return out;
@@ -495,6 +550,10 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.removeBuildings?.length) parts.push(`remove ${p.removeBuildings.length} building(s)`);
   if (p.upsertStreets?.length) parts.push(p.upsertStreets.length === 1 ? (p.upsertStreets[0].name ?? p.upsertStreets[0].kind ?? "street") : `${p.upsertStreets.length} streets`);
   if (p.removeStreets?.length) parts.push(`remove ${p.removeStreets.length} street(s)`);
+  if (p.upsertLand?.length) parts.push(p.upsertLand.length === 1 ? (p.upsertLand[0].name ?? (p.upsertLand[0].kind === "ridge" && p.upsertLand[0].height < 0 ? "valley" : p.upsertLand[0].kind)) : `${p.upsertLand.length} landforms`);
+  if (p.removeLand?.length) parts.push(`remove ${p.removeLand.length} landform(s)`);
+  if (p.upsertTrees?.length) parts.push(p.upsertTrees.length === 1 ? (p.upsertTrees[0].name ?? p.upsertTrees[0].kind) : `${p.upsertTrees.length} groups of trees`);
+  if (p.removeTrees?.length) parts.push(`remove ${p.removeTrees.length} group(s) of trees`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 
@@ -561,6 +620,6 @@ export function labelText(l: MapLabel): string {
 }
 
 let counter = 0;
-export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f" | "b" | "t"): string {
+export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f" | "b" | "t" | "h" | "v"): string {
   return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }

@@ -22,7 +22,7 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 import {
   type BaseClimate, type BattleLevel, type CheckpointInfo, type Features, type LevelsFile, type MapDoc, type MapMeta, type MapMigration, type ProjectInfo, type RefInfo, CURRENT_FORMAT, HeightField,
-  IMAGE_HEAD_BYTES, MIGRATIONS, NewerFormatError, formatFor, PICTURE_HEAD_BYTES, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, imageSize, isReferenceKind,
+  FIRST_CITY_FORMAT, IMAGE_HEAD_BYTES, MIGRATIONS, NewerFormatError, formatFor, PICTURE_HEAD_BYTES, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, imageSize, isReferenceKind,
   migrateMap, packBaseClimate, pictureKind, referencePictureProblem, unpackBaseClimate,
 } from "@mapmaker/core";
 
@@ -227,9 +227,9 @@ export class ProjectStore {
     const meta = JSON.parse(await readFile(path.join(d, "project.json"), "utf8")) as MapMeta;
     meta.id = id;
     // A map saved by a newer program is not opened at all: an older one would drop what it doesn't understand the next time it saved.
-    // (A city map is always format CITY_FORMAT or newer, whatever its file says: see formatFor.)
+    // (City maps began at format 2, so a city's file never means less than that; one with no stamp at all, edited by hand, is taken as current. See formatFor.)
     const fmt = formatFor(meta.kind, this.format);
-    const found = meta.kind === "city" ? Math.max(formatOf(meta), fmt) : formatOf(meta);
+    const found = meta.kind !== "city" ? formatOf(meta) : typeof meta.formatVersion === "number" ? Math.max(formatOf(meta), FIRST_CITY_FORMAT) : fmt;
     if (found > fmt) throw new NewerFormatError(found, fmt, meta.name);
     const live = path.join(d, "map", "height.f32.gz");
     const seed = path.join(d, "seed", "height.f32.gz");

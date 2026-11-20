@@ -1,14 +1,16 @@
 /**
- * The city map: the ground, streets and buildings drawn as vectors on a canvas (the same colours as the server's pictures, `buildingColour`), and the tools to build them. Everything is
- * in metres from the map's top-left corner. The ground is the map's own grid of material cells, drawn as a small picture that is scaled up smoothly. Every change is one undoable
- * edit sent to the server when the mouse is let go.
+ * The city map: the ground, streets, trees and buildings drawn as vectors on a canvas (the same colours as the server's pictures: `buildingColour`, `cityGroundColours`, `treeColour`),
+ * and the tools to build them. Everything is in metres from the map's top-left corner. The ground is the map's own grid of material cells in the climate's colours, shaded by the
+ * land, drawn as a small picture that is scaled up smoothly; the contour lines go over it. Every change is one undoable edit sent to the server when the mouse is let go.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  ARROW_DIRECTION, MATERIALS, STREET_EDGE, STREET_SURFACE, type Features, type MapBuilding, type MapMeta, type MapStreet, type Rect, type ViewKeyAction, applyViewKey,
-  buildingColour, distToSegment, newFeatureId, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, streetWidthFor, viewKeyAction,
+  ARROW_DIRECTION, MATERIALS, STREET_EDGE, STREET_SURFACE, type CityClimate, type Features, type MapBuilding, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
+  landAt, landGrid, landShade, newFeatureId, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
+  viewKeyAction,
 } from "@mapmaker/core";
-import { type CityUi, DEFAULT_HOUSE, selectedOf, sendCityFeatures } from "./cityUi.ts";
+import { type CityUi, DEFAULT_HOUSE, landName, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { loadRoofPools, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
@@ -25,7 +27,7 @@ const GOLD = "rgba(255, 224, 120, 0.95)";
 interface Props { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }
 
 type Drag = {
-  mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush";
+  mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope";
   sx: number; sy: number; ox: number; oy: number;
   /** Where it started, in metres. */
   ax: number; ay: number;
@@ -77,6 +79,11 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   /** Corners of a building outline or a street being clicked out, in metres. */
   const outline = useRef<Pt[] | null>(null);
   const streetDraft = useRef<Pt[] | null>(null);
+  /** Points of a ridge, valley, plateau or hollow (the Land tool), or of a row or an area of trees (the Trees tool), being clicked out. */
+  const landDraft = useRef<Pt[] | null>(null);
+  const treeDraft = useRef<Pt[] | null>(null);
+  /** Each group of trees' crowns and their colours, worked out once per group and climate (features arrive as new objects with every change, so this is keyed by what the group is). */
+  const crowns = useRef(new Map<string, { list: TreeCrown[]; fills: string[]; x0: number; y0: number; x1: number; y1: number }>());
   const lastClick = useRef<{ t: number; x: number; y: number } | null>(null);
   /** Things being dragged or nudged: which, and how far (metres) from where they were. */
   const moving = useRef<{ ids: string[]; dx: number; dy: number } | null>(null);
@@ -88,7 +95,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const [spaceDown, setSpaceDown] = useState(false);
   const spaceRef = useRef(false); spaceRef.current = spaceDown;
   const [loadedId, setLoadedId] = useState<string | null>(null);
-  const [hover, setHover] = useState<{ x: number; y: number; ground: string } | null>(null);
+  const [hover, setHover] = useState<{ x: number; y: number; ground: string; land: string } | null>(null);
   /** Per building: its box, colour and ridge, worked out once (a building's points never change in place: an edit makes a new object). */
   const cache = useRef(new WeakMap<object, { x0: number; y0: number; x1: number; y1: number; fill: string; ridge: [number, number, number, number]; slope: [number, number, number, number, number]; turn: number }>());
   /** Roof pictures of the asset packs, loaded as they are first drawn: the picture, its average colour (for when it is too small to see) and a tiling pattern. */
@@ -177,10 +184,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const x1 = r ? Math.min(W, r.x + r.w + 1) : W, y1 = r ? Math.min(H, r.y + r.h + 1) : H;
     if (x1 > x0 && y1 > y0) {
       const d = imgRef.current!.data;
+      // the ground's colours in the city's climate, shaded by the land (light from the top left)
+      const cols = cityGroundColours(cityClimate(m.city)), land = landGrid({ meta: m, features: featRef.current });
+      const shade = land && land.w === W && land.h === H ? landShade(land) : null;
       for (let y = y0; y < y1; y++) {
         for (let x = x0; x < x1; x++) {
-          const c = (MATERIALS[Math.round(hf.data[y * W + x])] ?? MATERIALS[5]).colour;
-          const k = 0.96 + 0.08 * (((Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0) % 256) / 255; // (a little mottling)
+          const c = cols[Math.round(hf.data[y * W + x])] ?? cols[5] ?? MATERIALS[5].colour;
+          const k = (0.96 + 0.08 * (((Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0) % 256) / 255) * (shade ? shade[y * W + x] : 1); // (a little mottling)
           const o = (y * W + x) * 4;
           d[o] = c[0] * k; d[o + 1] = c[1] * k; d[o + 2] = c[2] * k; d[o + 3] = 255;
         }
@@ -237,6 +247,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     ctx.restore();
     ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1);
+    if (o.contours) drawContours(ctx, v, W, H);
     traceCtl.draw(ctx, f.trace, m.id, v); // (over the ground, under the streets and buildings: you see through to what you are redrawing)
 
     const mv = moving.current, mvSet = mv ? new Set(mv.ids) : null;
@@ -257,6 +268,10 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     for (const s of streets) stroke(s, s.width + edge / v.scale, `rgba(${STREET_EDGE.join(",")},0.85)`);
     for (const s of streets) stroke(s, s.width, `rgb(${STREET_SURFACE.join(",")})`);
 
+    // trees, under the buildings (a garden's trees stand beside the house, not on its roof)
+    const climate = cityClimate(spec);
+    drawTrees(ctx, v, f.trees ?? [], climate, dx, dy, vx0, vy0, vx1, vy1);
+
     // buildings: a soft shadow, the roof in its own colour with a ridge, and a dark outline
     const detail = v.scale >= 1.4, shadow = Math.min(4, 0.45 * v.scale);
     const path = (pts: [number, number][], ddx: number, ddy: number, sx = 0, sy = 0) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + ddx) + sx, py(y + ddy) + sy) : ctx.moveTo(px(x + ddx) + sx, py(y + ddy) + sy))); ctx.closePath(); };
@@ -276,6 +291,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ctx.fill();
       ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
     }
+    // snow lying on the roofs in a cold climate
+    const snow = snowCover(climate);
+    if (snow > 0) { ctx.fillStyle = `rgba(236,241,247,${(snow * 0.55).toFixed(3)})`; for (const b of bs) { path(b.points, dx(b.id), dy(b.id)); ctx.fill(); } }
     if (v.scale >= 2.5) {
       // the slope that faces the light is brighter, the other darker (light comes from the top left)
       for (const b of bs) {
@@ -306,7 +324,16 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       s.points.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + dx(s.id)), py(y + dy(s.id))) : ctx.moveTo(px(x + dx(s.id)), py(y + dy(s.id)))));
       ctx.stroke();
     }
+    for (const t of f.trees ?? []) if (sel.has(t.id)) {
+      const ox = dx(t.id), oy = dy(t.id), pts = t.points;
+      ctx.beginPath();
+      if (t.kind === "tree") ctx.arc(px(pts[0][0] + ox), py(pts[0][1] + oy), Math.max(5, ((t.size ?? 8) / 2) * v.scale + 3), 0, Math.PI * 2);
+      else { pts.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + ox), py(y + oy)) : ctx.moveTo(px(x + ox), py(y + oy)))); if (t.kind !== "row") ctx.closePath(); }
+      ctx.stroke();
+    }
     ctx.restore();
+    // the landforms: shown while the Land tool is in use, and the selected one always
+    if (o.tool === "hills" || (f.land ?? []).some((l) => sel.has(l.id))) drawLand(ctx, v, (f.land ?? []).filter((l) => o.tool === "hills" || sel.has(l.id)), sel, dx, dy);
 
     drawTools(ctx, v, o, W, H);
     // the scale bar
@@ -314,6 +341,100 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(W - 24 - bar * v.scale - 8, H - 62, bar * v.scale + 16, 22);
     ctx.fillStyle = "#fff"; ctx.fillRect(W - 24 - bar * v.scale, H - 49, bar * v.scale, 2);
     ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, W - 24 - (bar * v.scale) / 2, H - 53); ctx.restore();
+  }
+
+  /** Contour lines: every interval faintly (once they are far enough apart to read), every fifth a little stronger; only those in view. */
+  function drawContours(ctx: CanvasRenderingContext2D, v: View, W: number, H: number) {
+    const m = metaRef.current, g = m ? landGrid({ meta: m, features: featRef.current }) : null;
+    if (!g) return;
+    const c = contourLines(g), vx0 = -v.ox / v.scale, vy0 = -v.oy / v.scale, vx1 = (W - v.ox) / v.scale, vy1 = (H - v.oy) / v.scale;
+    const stroke = (segs: Float32Array, style: string, width: number) => {
+      ctx.beginPath();
+      for (let i = 0; i < segs.length; i += 4) {
+        const ax = segs[i], ay = segs[i + 1], bx = segs[i + 2], by = segs[i + 3];
+        if (Math.max(ax, bx) < vx0 || Math.min(ax, bx) > vx1 || Math.max(ay, by) < vy0 || Math.min(ay, by) > vy1) continue;
+        ctx.moveTo(v.ox + ax * v.scale, v.oy + ay * v.scale); ctx.lineTo(v.ox + bx * v.scale, v.oy + by * v.scale);
+      }
+      ctx.lineWidth = width; ctx.strokeStyle = style; ctx.stroke();
+    };
+    ctx.save(); ctx.lineCap = "round";
+    if (c.interval * v.scale >= 4) stroke(c.minor, "rgba(72,54,32,0.32)", 1);
+    stroke(c.major, "rgba(72,54,32,0.55)", 1.4);
+    ctx.restore();
+  }
+
+  /** A group of trees' crowns and colours, worked out once for what it is and the climate. */
+  function crownsOf(t: MapTrees, climate: CityClimate) {
+    const key = `${t.id}|${t.kind}|${t.size ?? ""}|${t.species ?? ""}|${climate.temperature},${climate.moisture}|${t.points.join(";")}`;
+    let hit = crowns.current.get(key);
+    if (!hit) {
+      const list = treeCrowns(t, climate), bb = pointsBounds(t.points as Pt[]), pad = (t.size ?? 8) + 2;
+      hit = { list, fills: list.map((c) => { const [r, g, b] = treeColour(c.species, climate, c.tone); return `rgb(${r},${g},${b})`; }), x0: bb.x0 - pad, y0: bb.y0 - pad, x1: bb.x1 + pad, y1: bb.y1 + pad };
+      if (crowns.current.size > 3000) crowns.current.clear();
+      crowns.current.set(key, hit);
+    }
+    return hit;
+  }
+
+  /** Trees: a soft shadow down and to the right, the crown, and, close up, a firs's points, a palm's fronds and the light on the crown's top-left side. */
+  function drawTrees(ctx: CanvasRenderingContext2D, v: View, trees: MapTrees[], climate: CityClimate, dx: (id: string) => number, dy: (id: string) => number, vx0: number, vy0: number, vx1: number, vy1: number) {
+    const shown = trees.map((t) => ({ t, c: crownsOf(t, climate), ox: dx(t.id), oy: dy(t.id) })).filter(({ c, ox, oy }) => c.x1 + ox >= vx0 && c.x0 + ox <= vx1 && c.y1 + oy >= vy0 && c.y0 + oy <= vy1);
+    if (!shown.length) return;
+    const X = (x: number) => v.ox + x * v.scale, Y = (y: number) => v.oy + y * v.scale;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.24)";
+    for (const { c, ox, oy } of shown) {
+      ctx.beginPath();
+      for (const k of c.list) { const r = k.r * v.scale; if (r < 1.5) continue; const sx = X(k.x + ox) + r * 0.35, sy = Y(k.y + oy) + r * 0.35; ctx.moveTo(sx + r, sy); ctx.arc(sx, sy, r, 0, Math.PI * 2); }
+      ctx.fill();
+    }
+    for (const { c, ox, oy } of shown) {
+      c.list.forEach((k, i) => {
+        const r = k.r * v.scale, sx = X(k.x + ox), sy = Y(k.y + oy);
+        if (sx + r < 0 || sy + r < 0 || sx - r > ctx.canvas.width || sy - r > ctx.canvas.height) return;
+        ctx.fillStyle = c.fills[i];
+        if (r < 1.2) { ctx.fillRect(sx - 0.8, sy - 0.8, 1.6, 1.6); return; }
+        ctx.beginPath();
+        if (k.species === "conifer" && r >= 5) {
+          for (let j = 0; j < 16; j++) { const a = (j / 16) * Math.PI * 2, rr = j % 2 ? r * 0.72 : r; ctx.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr); }
+          ctx.closePath();
+        } else ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+        if (r >= 3) {
+          ctx.fillStyle = "rgba(255,255,255,0.14)";
+          ctx.beginPath(); ctx.arc(sx - r * 0.28, sy - r * 0.28, r * 0.55, 0, Math.PI * 2); ctx.fill();
+        }
+        if (k.species === "palm" && r >= 6) {
+          ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 1; ctx.beginPath();
+          for (let j = 0; j < 7; j++) { const a = (j / 7) * Math.PI * 2 + k.tone; ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * r * 0.95, sy + Math.sin(a) * r * 0.95); }
+          ctx.stroke();
+        }
+      });
+    }
+    ctx.restore();
+  }
+
+  /** The landforms, as marks over the map: a hill's reach and top, a ridge's or valley's line, a plateau's outline, a slope's arrow from low to high; each with its height. */
+  function drawLand(ctx: CanvasRenderingContext2D, v: View, land: MapLandform[], sel: Set<string>, dx: (id: string) => number, dy: (id: string) => number) {
+    const X = (x: number) => v.ox + x * v.scale, Y = (y: number) => v.oy + y * v.scale;
+    ctx.save(); ctx.lineJoin = "round"; ctx.lineCap = "round";
+    for (const l of land) {
+      const on = sel.has(l.id), ox = dx(l.id), oy = dy(l.id), pts = l.points.map(([x, y]) => [X(x + ox), Y(y + oy)] as Pt);
+      const col = on ? GOLD : l.height < 0 ? "rgba(150,200,255,0.85)" : "rgba(255,255,255,0.75)";
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = on ? 2 : 1.4; ctx.setLineDash(on ? [] : [6, 4]);
+      ctx.beginPath();
+      if (l.kind === "hill") { ctx.arc(pts[0][0], pts[0][1], l.radius * v.scale, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], 4, 0, Math.PI * 2); ctx.fill(); }
+      else if (l.kind === "slope") {
+        const [[ax, ay], [bx, by]] = pts, a = Math.atan2(by - ay, bx - ax);
+        ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx - 12 * Math.cos(a - 0.4), by - 12 * Math.sin(a - 0.4)); ctx.lineTo(bx - 12 * Math.cos(a + 0.4), by - 12 * Math.sin(a + 0.4)); ctx.closePath(); ctx.fill();
+      } else { pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); if (l.kind === "plateau") ctx.closePath(); ctx.stroke(); }
+      const at = l.kind === "slope" ? pts[1] : l.kind === "hill" ? pts[0] : pts[Math.floor(pts.length / 2)];
+      ctx.setLineDash([]); ctx.font = "bold 11px sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.fillStyle = "#fff";
+      const label = `${landName(l)} ${l.height > 0 ? "+" : ""}${l.height} m`;
+      ctx.strokeText(label, at[0] + 7, at[1] - 7); ctx.fillText(label, at[0] + 7, at[1] - 7);
+    }
+    ctx.restore();
   }
 
   /** The tool's own marks: a building being sized, an outline or street being clicked out, the brush, the box being dragged. */
@@ -347,6 +468,25 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         line(streetDraft.current, false, GOLD, 1.2, [5, 4]);
         for (const [x, y] of streetDraft.current) { ctx.beginPath(); ctx.arc(px(x), py(y), 3.5, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill(); }
       }
+      if ((o.tool === "hills" && landDraft.current?.length) || (o.tool === "trees" && treeDraft.current?.length)) {
+        const pts = (o.tool === "hills" ? landDraft.current : treeDraft.current)!;
+        const closed = o.tool === "hills" ? o.landMode === "plateau" || o.landMode === "hollow" : o.treeKind !== "row";
+        line([...pts, [m.x, m.y]], false, GOLD, 1.8, [6, 4]);
+        if (closed && pts.length >= 2) line([[m.x, m.y], pts[0]], false, "rgba(255,224,120,0.45)", 1.2, [3, 4]);
+        for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(px(x), py(y), 3.5, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill(); }
+      }
+      if (o.tool === "hills" && d?.mode === "hill") {
+        const r = Math.max(4, Math.hypot(m.x - d.ax, m.y - d.ay)) * v.scale;
+        ctx.beginPath(); ctx.arc(px(d.ax), py(d.ay), r, 0, Math.PI * 2); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.6; ctx.stroke();
+        label(`${(r / v.scale).toFixed(0)} m across ${o.landMode === "hill" ? "the top" : ""}`.trim(), p.x + 12, p.y - 10);
+      }
+      if (o.tool === "hills" && d?.mode === "slope") { line([[d.ax, d.ay], [m.x, m.y]], false, GOLD, 2); label(`rises ${o.landHeight} m this way`, p.x + 12, p.y - 10); }
+      if (o.tool === "hills" && !d && !landDraft.current && o.landMode === "hill") {
+        ctx.beginPath(); ctx.arc(p.x, p.y, o.landSize * v.scale, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (o.tool === "trees" && o.treeKind === "tree") {
+        ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(3, ((o.treeSize || 8) / 2) * v.scale), 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.lineWidth = 1.2; ctx.stroke();
+      }
       if (o.tool === "ground") {
         const r = Math.max(2, o.brush * v.scale);
         ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -360,7 +500,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   }
 
   // ------------------------------------------------------------ what is under a point
-  function hitAt(mx: number, my: number): { kind: "building" | "street"; id: string } | null {
+  function hitAt(mx: number, my: number): { kind: "building" | "street" | "trees"; id: string } | null {
     const f = featRef.current, v = viewRef.current;
     const bs = f.buildings ?? [];
     for (let i = bs.length - 1; i >= 0; i--) { const c = infoOf(bs[i]); if (mx >= c.x0 && mx <= c.x1 && my >= c.y0 && my <= c.y1 && pointInPolygon(mx, my, bs[i].points as Pt[])) return { kind: "building", id: bs[i].id }; }
@@ -368,6 +508,24 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     for (let i = ss.length - 1; i >= 0; i--) {
       const s = ss[i];
       for (let k = 0; k + 1 < s.points.length; k++) if (distToSegment(mx, my, s.points[k][0], s.points[k][1], s.points[k + 1][0], s.points[k + 1][1]) <= s.width / 2 + tol) return { kind: "street", id: s.id };
+    }
+    const ts = f.trees ?? [];
+    for (let i = ts.length - 1; i >= 0; i--) {
+      const t = ts[i], pts = t.points as Pt[], half = (t.size ?? 7) / 2 + tol;
+      if (t.kind === "tree" ? Math.hypot(mx - pts[0][0], my - pts[0][1]) <= half : t.kind === "row" ? distToPolyline(mx, my, pts) <= half : pointInPolygon(mx, my, pts)) return { kind: "trees", id: t.id };
+    }
+    return null;
+  }
+
+  /** The landform whose mark is under a point (the Land tool shows them): a hill's top or edge, a ridge's line, a plateau's outline, a slope's arrow. */
+  function hitLand(mx: number, my: number): string | null {
+    const land = featRef.current.land ?? [], tol = 8 / viewRef.current.scale;
+    for (let i = land.length - 1; i >= 0; i--) {
+      const l = land[i], pts = l.points as Pt[];
+      const near = l.kind === "hill" ? (() => { const d = Math.hypot(mx - pts[0][0], my - pts[0][1]); return d <= tol * 1.5 || Math.abs(d - l.radius) <= tol; })()
+        : l.kind === "plateau" ? distToPolyline(mx, my, [...pts, pts[0]]) <= tol
+        : distToPolyline(mx, my, pts) <= tol;
+      if (near) return l.id;
     }
     return null;
   }
@@ -410,6 +568,40 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     onUiRef.current({ selected: [id] });
   }
 
+  /** A landform from the Land tool's settings (a valley is a ridge sunk, a hollow a plateau sunk). */
+  function addLand(points: Pt[], radius: number) {
+    const spec = metaRef.current?.city, o = uiRef.current, pts = inside(points);
+    if (!spec || !pts) return;
+    const kind = o.landMode === "valley" ? "ridge" : o.landMode === "hollow" ? "plateau" : o.landMode;
+    const sunk = o.landMode === "valley" || o.landMode === "hollow";
+    const c = cleanLandform({ id: newFeatureId("h"), kind, points: pts, height: sunk ? -o.landHeight : o.landHeight, radius: kind === "slope" ? 0 : Math.max(1, radius) }, spec);
+    if ("error" in c) return;
+    sendCityFeatures({ upsertLand: [c] }, `Add ${landName(c).toLowerCase()}`);
+    onUiRef.current({ selected: [c.id] });
+  }
+  function finishLand() {
+    const pts = landDraft.current, o = uiRef.current;
+    landDraft.current = null;
+    requestDraw();
+    const need = o.landMode === "plateau" || o.landMode === "hollow" ? 3 : 2;
+    if (pts && pts.length >= need) addLand(pts, o.landSize);
+  }
+  /** Trees from the Trees tool's settings. */
+  function addTrees(points: Pt[]) {
+    const spec = metaRef.current?.city, o = uiRef.current, pts = inside(points);
+    if (!spec || !pts) return;
+    const c = cleanTrees({ id: newFeatureId("v"), kind: o.treeKind, points: pts, ...(o.treeSize > 0 && { size: o.treeSize }), ...(o.treeSpecies && { species: o.treeSpecies }) }, spec);
+    if ("error" in c) return;
+    sendCityFeatures({ upsertTrees: [c] }, o.treeKind === "tree" ? "Add a tree" : `Add ${o.treeKind === "row" ? "a row of trees" : o.treeKind === "scattered" ? "scattered trees" : `an ${o.treeKind === "orchard" ? "orchard" : "wood"}`}`.replace("an wood", "a wood"));
+    onUiRef.current({ selected: [c.id] });
+  }
+  function finishTrees() {
+    const pts = treeDraft.current, o = uiRef.current;
+    treeDraft.current = null;
+    requestDraw();
+    if (pts && pts.length >= (o.treeKind === "row" ? 2 : 3)) addTrees(pts);
+  }
+
   function paintStroke(points: Pt[]) {
     const spec = metaRef.current?.city;
     if (!spec) return;
@@ -422,14 +614,17 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   function moveSelected(ids: string[], dx: number, dy: number, label: string) {
     const spec = metaRef.current?.city, f = featRef.current;
     if (!spec) return;
-    const { buildings, streets } = selectedOf(f, ids);
-    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points)] as Pt[];
+    const { buildings, streets, trees, land } = selectedOf(f, ids);
+    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points)] as Pt[];
     if (!all.length) return;
     const bb = pointsBounds(all);
     dx = Math.max(-bb.x0, Math.min(spec.widthM - bb.x1, dx)); dy = Math.max(-bb.y0, Math.min(spec.heightM - bb.y1, dy));
     if (Math.abs(dx) < 0.005 && Math.abs(dy) < 0.005) return;
     const mv = (p: [number, number]): [number, number] => [r2(p[0] + dx), r2(p[1] + dy)];
-    sendCityFeatures({ upsertBuildings: buildings.map((b) => ({ ...b, points: b.points.map(mv) })), upsertStreets: streets.map((s) => ({ ...s, points: s.points.map(mv) })) }, label);
+    sendCityFeatures({
+      ...(buildings.length && { upsertBuildings: buildings.map((b) => ({ ...b, points: b.points.map(mv) })) }), ...(streets.length && { upsertStreets: streets.map((s) => ({ ...s, points: s.points.map(mv) })) }),
+      ...(trees.length && { upsertTrees: trees.map((t) => ({ ...t, points: t.points.map(mv) })) }), ...(land.length && { upsertLand: land.map((l) => ({ ...l, points: l.points.map(mv) })) }),
+    }, label);
   }
   function nudge(dx: number, dy: number, big: boolean): boolean {
     const ids = uiRef.current.selected;
@@ -460,9 +655,14 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     return true;
   }
   function deleteSelected() {
-    const { buildings, streets } = selectedOf(featRef.current, uiRef.current.selected);
-    if (!buildings.length && !streets.length) return;
-    sendCityFeatures({ removeBuildings: buildings.map((b) => b.id), removeStreets: streets.map((s) => s.id) }, buildings.length + streets.length === 1 ? (buildings.length ? "Delete building" : "Delete street") : `Delete ${buildings.length + streets.length} items`);
+    const { buildings, streets, trees, land } = selectedOf(featRef.current, uiRef.current.selected);
+    const n = buildings.length + streets.length + trees.length + land.length;
+    if (!n) return;
+    const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : `Delete ${landName(land[0]).toLowerCase()}`;
+    sendCityFeatures({
+      ...(buildings.length && { removeBuildings: buildings.map((b) => b.id) }), ...(streets.length && { removeStreets: streets.map((s) => s.id) }),
+      ...(trees.length && { removeTrees: trees.map((t) => t.id) }), ...(land.length && { removeLand: land.map((l) => l.id) }),
+    }, what);
     onUiRef.current({ selected: [] });
   }
 
@@ -471,7 +671,10 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   useEffect(() => { void loadRoofPools(); return roofAssetsStore.subscribe(requestDraw); }, [meta?.id, requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
   useEffect(() => { requestDraw(); }, [features, ui, meta, requestDraw]);
-  useEffect(() => { outline.current = null; streetDraft.current = null; requestDraw(); }, [ui.tool, requestDraw]);
+  useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
+  // the land or the climate changed: the ground's colours and shading with it
+  const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}`;
+  useEffect(() => { if (metaRef.current?.city && store.heights && offRef.current) paintGround(null); }, [groundKey, paintGround]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => { const w = wrapRef.current; if (w) keeper.resized(w.clientWidth, w.clientHeight); requestDraw(); });
@@ -485,9 +688,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const keys = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const o = uiRef.current;
-      const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : null;
+      const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : o.tool === "hills" ? landDraft : o.tool === "trees" ? treeDraft : null;
       if (draft?.current) {
-        if (e.key === "Enter") (o.tool === "outline" ? finishOutline : finishStreet)();
+        if (e.key === "Enter") (o.tool === "outline" ? finishOutline : o.tool === "street" ? finishStreet : o.tool === "hills" ? finishLand : finishTrees)();
         else if (e.key === "Escape") draft.current = null;
         else if (e.key === "Backspace" || e.key === "Delete") { draft.current.pop(); if (!draft.current.length) draft.current = null; }
         else return;
@@ -555,6 +758,31 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       requestDraw();
       return;
     }
+    if (o.tool === "hills") {
+      // a landform's mark selects it (and dragging moves it); anywhere else makes a new one
+      const hit = landDraft.current ? null : hitLand(q.x, q.y);
+      if (hit) {
+        onUiRef.current({ selected: [hit] });
+        drag.current = { mode: "move", ...base };
+        moving.current = { ids: [hit], dx: 0, dy: 0 };
+        return;
+      }
+      if (o.landMode === "hill") { drag.current = { mode: "hill", ...base }; return; }
+      if (o.landMode === "slope") { drag.current = { mode: "slope", ...base }; return; }
+      const pts = landDraft.current ?? [], closed = o.landMode === "plateau" || o.landMode === "hollow";
+      const nearFirst = closed && pts.length >= 3 && Math.hypot((pts[0][0] - q.x) * v.scale, (pts[0][1] - q.y) * v.scale) < 10;
+      if (nearFirst || (dbl && pts.length >= (closed ? 3 : 2))) finishLand(); else landDraft.current = dbl ? pts : [...pts, [q.x, q.y]];
+      requestDraw();
+      return;
+    }
+    if (o.tool === "trees") {
+      if (o.treeKind === "tree") { addTrees([[q.x, q.y]]); return; }
+      const pts = treeDraft.current ?? [], closed = o.treeKind !== "row";
+      const nearFirst = closed && pts.length >= 3 && Math.hypot((pts[0][0] - q.x) * v.scale, (pts[0][1] - q.y) * v.scale) < 10;
+      if (nearFirst || (dbl && pts.length >= (closed ? 3 : 2))) finishTrees(); else treeDraft.current = dbl ? pts : [...pts, [q.x, q.y]];
+      requestDraw();
+      return;
+    }
     if (o.tool === "ground") {
       store.send({ t: "txn_begin", label: `Paint ${(MATERIALS[o.material] ?? MATERIALS[5]).name}` });
       paintStroke([[q.x, q.y]]);
@@ -568,7 +796,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const q = toM(p.x, p.y), m = metaRef.current, hf = store.heights;
     if (m?.city && hf && q.x >= 0 && q.y >= 0 && q.x < m.city.widthM && q.y < m.city.heightM) {
       const id = Math.round(hf.data[Math.floor(q.y / m.city.cellM) * hf.w + Math.floor(q.x / m.city.cellM)]);
-      setHover({ x: q.x, y: q.y, ground: MATERIALS[id]?.name ?? "" });
+      const f = featRef.current, at = (f.land?.length || m.city.elevation) ? landAt({ meta: m, features: f }, q.x, q.y) : null;
+      setHover({ x: q.x, y: q.y, ground: MATERIALS[id]?.name ?? "", land: at ? `${Math.round(at.height)} m above the sea${at.slope >= 0.5 ? `, ${Math.round(at.slope)}% slope` : ""}` : "" });
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
@@ -596,9 +825,15 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         const f = featRef.current, found: string[] = [];
         for (const bl of f.buildings ?? []) { const [cx, cy] = polygonCentroid(bl.points as Pt[]); if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(bl.id); }
         for (const s of f.streets ?? []) if (s.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(s.id);
+        for (const t of f.trees ?? []) { const [cx, cy] = t.points.length >= 3 ? polygonCentroid(t.points as Pt[]) : t.points[0]; if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(t.id); }
         onUiRef.current({ selected: d.add ? [...new Set([...(d.base ?? []), ...found])] : found });
       }
     }
+    if (d?.mode === "hill" && p) {
+      const b = toM(p.x, p.y), dragged = Math.hypot(p.x - d.sx, p.y - d.sy) >= 6;
+      addLand([[d.ax, d.ay]], dragged ? Math.hypot(b.x - d.ax, b.y - d.ay) : uiRef.current.landSize); // (a click: the usual size)
+    }
+    if (d?.mode === "slope" && p && Math.hypot(p.x - d.sx, p.y - d.sy) >= 6) { const b = toM(p.x, p.y); addLand([[d.ax, d.ay], [b.x, b.y]], 0); }
     if (d?.mode === "rect" && p) {
       const o = uiRef.current, b = toM(p.x, p.y);
       if (Math.hypot(p.x - d.sx, p.y - d.sy) < 4) addBuilding(rectPolygon(d.ax, d.ay, DEFAULT_HOUSE.w, DEFAULT_HOUSE.h, o.angle)); // a click: the usual house
@@ -629,7 +864,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
       <div className="mapview-status" data-testid="city-status">
-        {hover ? <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} m · {hover.ground}</> : spec ? <>{spec.widthM} × {spec.heightM} m · {counts}</> : null}
+        {hover ? <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} m · {hover.ground}{hover.land && <> · {hover.land}</>}</> : spec ? <>{spec.widthM} × {spec.heightM} m · {counts}</> : null}
         {hover && <> · {counts}</>}
       </div>
       <div className="map-buttons">

@@ -1,8 +1,11 @@
 /** The city map's tools, their keys and the editor's own settings for them (nothing here is saved with the map). One list: the toolbar, the key handler and the shortcut sheet read it. */
-import type { BuildingKind, Features, FeaturesPatch, MapBuilding, MapStreet, RoofStyle, StreetKind } from "@mapmaker/core";
+import type { BuildingKind, Features, FeaturesPatch, MapBuilding, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
 import { store } from "./store.ts";
 
-export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "ground";
+export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "ground" | "hills" | "trees";
+
+/** What the Land tool makes: a hill (a click, or a drag for its size), a ridge or valley (points along it), a plateau or hollow (an outline), a slope (a drag from low to high). */
+export type LandMode = "hill" | "ridge" | "valley" | "plateau" | "hollow" | "slope";
 
 export interface CityUi {
   tool: CityTool;
@@ -20,9 +23,22 @@ export interface CityUi {
   /** Ground material id and brush radius in metres. */
   material: number;
   brush: number;
+  /** The Land tool: what it makes, how high or deep (metres) and how big (a hill's radius, a ridge's half-width, a plateau's soft edge, metres). */
+  landMode: LandMode;
+  landHeight: number;
+  landSize: number;
+  /** The Trees tool: what it plants, the crown size (metres, 0 for the usual) and the kind of tree ("" for the climate's mix). */
+  treeKind: TreeGroup;
+  treeSize: number;
+  treeSpecies: TreeSpecies | "";
+  /** Draw the contour lines. */
+  contours: boolean;
 }
 
-export const defaultCityUi: CityUi = { tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", material: 4, brush: 6 };
+export const defaultCityUi: CityUi = {
+  tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", material: 4, brush: 6,
+  landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", contours: true,
+};
 
 export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: string; key: string; tip: string }[] }[] = [
   { name: "Move", tools: [
@@ -34,8 +50,10 @@ export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: str
     { id: "outline", label: "Outline", key: "O", tip: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish; Backspace drops a corner, Esc cancels" },
     { id: "street", label: "Street", key: "S", tip: "Click the points a street passes through; double-click or press Enter to finish. Backspace drops a point, Esc cancels" },
   ] },
-  { name: "Ground", tools: [
+  { name: "Land", tools: [
     { id: "ground", label: "Paint ground", key: "P", tip: "Paint water, grass, cobbles and the like. [ and ] change the brush size" },
+    { id: "hills", label: "Land", key: "L", tip: "Shape the land: hills, ridges, valleys, plateaus and slopes. Click one to select it" },
+    { id: "trees", label: "Trees", key: "T", tip: "Plant woods, orchards, scattered trees, rows and single trees; their kind follows the climate" },
   ] },
 ];
 export const CITY_TOOL_DEFS = CITY_TOOL_GROUPS.flatMap((g) => g.tools);
@@ -49,7 +67,15 @@ export function sendCityFeatures(patch: FeaturesPatch, label: string) {
 }
 
 /** The selected things, split by kind. */
-export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[] } {
+export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[] } {
   const want = new Set(ids);
-  return { buildings: (f.buildings ?? []).filter((b) => want.has(b.id)), streets: (f.streets ?? []).filter((s) => want.has(s.id)) };
+  return {
+    buildings: (f.buildings ?? []).filter((b) => want.has(b.id)), streets: (f.streets ?? []).filter((s) => want.has(s.id)),
+    trees: (f.trees ?? []).filter((t) => want.has(t.id)), land: (f.land ?? []).filter((l) => want.has(l.id)),
+  };
+}
+
+/** A landform as the DM thinks of it: a ridge sunk is a valley, a plateau sunk a hollow. */
+export function landName(l: MapLandform): string {
+  return l.name ?? (l.kind === "ridge" ? (l.height < 0 ? "Valley" : "Ridge") : l.kind === "plateau" ? (l.height < 0 ? "Hollow" : "Plateau") : l.kind === "hill" ? "Hill" : "Slope");
 }

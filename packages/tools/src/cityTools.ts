@@ -9,6 +9,7 @@ import {
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
+import { landSummary } from "./cityLandTools.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
 
 function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
@@ -52,7 +53,8 @@ export function citySummary(ctx: ToolContext) {
     buildings: (f.buildings ?? []).length, buildings_by_kind: kinds, streets: (f.streets ?? []).length,
     roofs_from_asset_packs: (f.buildings ?? []).filter((b) => b.asset).length, roof_textures_available: ctx.roofPools?.() ? Object.fromEntries(ROOF_STYLES.map((s) => [s, ctx.roofPools!()![s].length])) : "no asset library is set up",
     trace_picture: f.trace?.ref ?? null, latest_change: ctx.session().seq,
-    note: "Coordinates are metres from the top-left corner. render_city looks at it; add_buildings, add_streets and paint_ground build it.",
+    land: landSummary(ctx),
+    note: "Coordinates are metres from the top-left corner. render_city looks at it; shape_land, set_city_climate, paint_ground, add_streets, add_buildings and add_trees build it.",
   };
 }
 
@@ -126,13 +128,15 @@ export const CITY_TOOLS = [
       max_size: z.number().int().min(256).max(1568).optional().describe("Longest side of the image in px (default 1200)"),
       grid: z.boolean().optional().describe("Draw the labelled grid (default true)"),
       buildings: z.boolean().optional().describe("Draw the buildings (default true; false shows the ground and streets alone)"),
+      contours: z.boolean().optional().describe("Draw the contour lines (default true when the city has any land; every fifth line is darker)"),
+      trees: z.boolean().optional().describe("Draw the trees (default true)"),
       trace: z.boolean().optional(),
     }),
     async run(ctx, i) {
       const bad = needCity(ctx); if (bad) return bad;
       const doc = ctx.session().doc;
       const tiles = (await ctx.cityTiles?.()) ?? {};
-      const r = renderCity(doc, { region: i.region, maxSize: i.max_size ?? 1200, buildings: i.buildings, tileFor: (a) => tiles[a] ?? null });
+      const r = renderCity(doc, { region: i.region, maxSize: i.max_size ?? 1200, buildings: i.buildings, contours: i.contours, trees: i.trees, tileFor: (a) => tiles[a] ?? null });
       const traced = i.trace ? await traceOverlay(ctx, r.img, { x: Math.round(r.region.x * r.px), y: Math.round(r.region.y * r.px) }, 1, r.px) : "";
       const step = i.grid === false ? null : drawGrid(r.img, r.region, r.px);
       const jpg = encodeJpeg(r.img);

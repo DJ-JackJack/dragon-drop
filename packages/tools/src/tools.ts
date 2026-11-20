@@ -15,6 +15,7 @@ import {
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
 import { CITY_TOOLS, CITY_TOOL_NAMES, citySummary } from "./cityTools.ts";
+import { CITY_LAND_TOOLS, CITY_LAND_TOOL_NAMES } from "./cityLandTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
 
@@ -1543,6 +1544,7 @@ export const TOOLS = [
   ...ASSET_TOOLS,
   ...TRACE_TOOLS,
   ...CITY_TOOLS,
+  ...CITY_LAND_TOOLS,
 ] as const;
 
 function normShape(s: z.infer<typeof Shape>) {
@@ -1565,7 +1567,7 @@ const WORLD_ONLY = new Set([
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
   "get_selection", "select_area", "clear_selection",
 ]);
-const CITY_ONLY = new Set(CITY_TOOL_NAMES.filter((n) => n !== "create_city"));
+const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city"), ...CITY_LAND_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);
 
 /** Validate input against the tool's schema and run it; errors become is_error results. */

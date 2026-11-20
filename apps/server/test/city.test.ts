@@ -1,5 +1,5 @@
 /** City maps: made through the hub, built with Claude's tools, saved in their own file format, and kept apart from world maps and battlemaps. */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -35,7 +35,7 @@ describe("making and saving a city", () => {
     expect(made.summary).toMatchObject({ kind: "city map", size_metres: [800, 500], buildings: 0, streets: 0 });
     await hub.flush();
     const meta = JSON.parse(readFileSync(path.join(dir, "test-town", "project.json"), "utf8")) as { formatVersion: number; kind: string };
-    expect(meta).toMatchObject({ kind: "city", formatVersion: 2 });
+    expect(meta).toMatchObject({ kind: "city", formatVersion: 3 });
     expect(formatOf(meta)).toBeGreaterThan(1); // (a Dragon Drop from before city maps refuses any map in a newer format than its own: it will refuse this)
     await hub.createProject({ name: "World", width: 64, height: 64, kmPerPx: 2 });
     await hub.flush();
@@ -84,25 +84,33 @@ describe("the file format of a city", () => {
     const file = path.join(dir, "town", "project.json");
     const meta = JSON.parse(readFileSync(file, "utf8"));
     expect(formatOf(meta)).toBeGreaterThan(1);
-    // this program opens it (kind city, format 2)
-    expect((await new ProjectStore(dir).load("town")).meta).toMatchObject({ kind: "city", formatVersion: 2 });
-    // a city file with no format stamp at all (edited by hand) still counts as a city: format 2, and is stamped when saved
+    // this program opens it (kind city, format 3)
+    expect((await new ProjectStore(dir).load("town")).meta).toMatchObject({ kind: "city", formatVersion: 3 });
+    // a city file with no format stamp at all (edited by hand) still counts as a city in this format, and is stamped when saved
     delete meta.formatVersion;
     writeFileSync(file, JSON.stringify(meta));
     const store = new ProjectStore(dir);
     const back = await store.load("town");
-    expect(back.meta.formatVersion).toBe(2);
+    expect(back.meta.formatVersion).toBe(3);
     await store.save(back);
-    expect(JSON.parse(readFileSync(file, "utf8")).formatVersion).toBe(2);
+    expect(JSON.parse(readFileSync(file, "utf8")).formatVersion).toBe(3);
     // a city saved by a program whose own format is newer is refused by this one
     writeFileSync(file, JSON.stringify({ ...meta, formatVersion: 9 }));
     await expect(new ProjectStore(dir).load("town")).rejects.toThrow(/newer|update/i);
-    // and a program whose ordinary format is 3 writes a city in 3 too
-    writeFileSync(file, JSON.stringify({ ...meta, formatVersion: 3 }));
-    const v3 = new ProjectStore(dir, { format: 3, migrations: {} });
-    const c3 = await v3.load("town");
-    await v3.save(c3);
+    // and a program whose ordinary format is 4 writes a city in 4 too
+    writeFileSync(file, JSON.stringify({ ...meta, formatVersion: 4 }));
+    const v4 = new ProjectStore(dir, { format: 4, migrations: {} });
+    const c4 = await v4.load("town");
+    await v4.save(c4);
+    expect(JSON.parse(readFileSync(file, "utf8")).formatVersion).toBe(4);
+    // a city from 0.1.10 (format 2) is copied aside, then brought up to 3 with nothing lost
+    writeFileSync(file, JSON.stringify({ ...meta, formatVersion: 2 }));
+    const now = new ProjectStore(dir);
+    const old = await now.load("town");
+    expect(old.meta.formatVersion).toBe(3);
+    expect(old.meta.city).toMatchObject({ widthM: 300, heightM: 200 });
     expect(JSON.parse(readFileSync(file, "utf8")).formatVersion).toBe(3);
+    expect(readdirSync(path.join(dir, "town", "backups")).some((n) => n.startsWith("before-format-2"))).toBe(true);
   });
 
   it("gives the phone page a picture of the city", async () => {

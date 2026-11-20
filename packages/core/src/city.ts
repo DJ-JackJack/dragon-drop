@@ -20,6 +20,16 @@ export interface CitySpec {
   heightM: number;
   /** Metres per ground cell (the ground is painted at this resolution; buildings and streets are not limited by it). */
   cellM: number;
+  /** The climate (cityLand.ts): colours the grass, brings snow or dust, and picks the trees. A city made before climates is temperate. */
+  climate?: CityClimate;
+  /** Metres above the sea of the city's ground before its landforms (shown and used for the climate; 0 when unknown). */
+  elevation?: number;
+}
+
+/** The same scales as a world map's climate regions: temperature 0 frozen, 0.25 cold, 0.5 temperate, 0.75 warm, 1 hot; moisture 0 desert to 1 rainforest. */
+export interface CityClimate {
+  temperature: number;
+  moisture: number;
 }
 
 export function isCity(doc: MapDoc | { meta: { kind: string } }): boolean {
@@ -164,7 +174,8 @@ export function buildingToRoof(b: MapBuilding, assetOk = true): MapRoof {
 const ID_OK = /^[A-Za-z0-9][A-Za-z0-9_-]{0,40}$/;
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 
-function cleanPoints(raw: unknown, min: number, spec: CitySpec): Pt[] | string {
+/** Points from outside, checked to be numbers inside the city and rounded to the centimetre; an error message (to follow the thing's name) when they aren't. */
+export function cleanPoints(raw: unknown, min: number, spec: CitySpec): Pt[] | string {
   if (!Array.isArray(raw) || raw.length < min) return `needs at least ${min} points`;
   if (raw.length > 200) return "has more than 200 points";
   const out: Pt[] = [];
