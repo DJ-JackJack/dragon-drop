@@ -37,6 +37,24 @@ Considered and kept for later: a **picture map** (the picture is the map's groun
 
 Later: a city made from a description ("a walled port town of 5,000 people").
 
+## Land, climate, bridges and better planning (decided 2026-11-20, for 0.1.11)
+
+From the DM's first try of stage 1 in the desktop app: building works, but Claude laid everything out in perfect straight rows with no thought for the land or what is on it, a street across water had no bridge, and a city had no terrain or climate. The DM chose: **each city has its own land and climate, shaped by the DM or Claude, and can optionally start from a spot on one of the DM's world maps.** In four steps, each ending with something to look at:
+
+1. **Land and climate.**
+   - A city gets a **height layer** (metres above the sea, one value per ground cell, beside the ground paint). It is drawn as soft hill shading and, as a layer switch, faint contour lines (every 5 m). A new city is flat, so cities made before look the same.
+   - The DM shapes it with Raise, Lower, Smooth and Flatten brushes; Claude with a tool that adds hills, ridges, valleys and slopes in metres. Water stays ground paint (the DM or Claude paints the river in the valley and the sea along the low side).
+   - A **climate** for the city (cold, temperate, warm and wet, Mediterranean, dry, tropical, or temperature and rainfall as numbers, as the world map's climate regions have): it sets the colour of the grass and fields, snow on roofs and ground when it is cold, dust and sand when it is dry.
+   - **Trees** (groups, orchards, gardens, woods): drawn as tree tops whose kind follows the climate (firs when cold, broad trees when temperate, olives and cypresses on the Mediterranean, palms when tropical, few and thorny when dry). A Trees tool in the editor, a tool for Claude.
+   - File format: the height layer and the trees are new things in a city file that 0.1.10 would drop on its next save, so city maps move to format 3 (older versions refuse them; a format 2 city is migrated with a flat height layer).
+2. **Bridges.** Where a street crosses water it is drawn as a bridge, worked out from the street and the ground each time (move the street or paint the river and the bridge follows): a deck the width of the street, low walls along its sides, and stone piers or wooden posts in the water. Each street has a bridge setting: automatic (stone for avenues and streets, wood for lanes, alleys and paths), stone, wood, or none (a ford). In the editor, Claude's previews and the pictures.
+3. **Claude plans like a town grew.** The straight rows come from Claude placing every building by its numbers, so it gets better building blocks:
+   - **Line a street with buildings**: one or both sides of chosen streets filled with buildings that face the street and follow its curves, varied in width, depth, setback and roof, with gaps for alleys and yards, skipping water, streets, other buildings and ground too steep to build on; dense terraces in the centre, detached houses with gardens further out, farms at the edge.
+   - **A street that follows the land**: from one point to another (through chosen points), bending along the slope and around water (or crossing it on a bridge where asked), and meeting existing streets at junctions.
+   - **Check the city**: buildings in water, on streets or overlapping, buildings on steep ground, streets that end nowhere, very long bridges; with counts and where.
+   - **Rules in Claude's instructions**: how towns grow (at a river crossing, a harbour, round a castle on a hill, along a road), the main streets following the land and the old tracks between the gates, lanes branching off at angles, irregular blocks (a grid only for a planned town), the temple on a rise or a square, the keep on the highest ground, docks on deep water, mills on the river, a market at the crossing, roofs varying by district; and checking before saying it is done.
+4. **Start from a world map.** In the New map dialog and for Claude: choose a world map and a place (or a point) on it. The city takes its climate from the world map's climate there, its height from the world map's land there, and a rough first shore or river where the world map has sea or a river inside the city's area (a world-map pixel is a kilometre or more, so this is a starting point to edit). The city remembers where it is, with a way back to the world map.
+
 ## The picture reader: what the spike showed
 
 `spikes/city-reader/` (README there). On the DM's own city picture:
