@@ -106,6 +106,18 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .drop-overlay div { display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; max-width: 420px; padding: 18px 22px; border-radius: 10px; background: var(--panel); border: 1px solid var(--accent); }
 .drop-overlay b { font-size: 16px; color: var(--gold-hi); }
 .drop-overlay span { color: var(--muted); font-size: 13px; }
+/* the trace bar (TraceBar.tsx): at the bottom of the map, above the status line */
+.trace-bar { position: absolute; left: 0; right: 0; bottom: 44px; margin-inline: auto; width: max-content; z-index: 3; display: flex; flex-direction: column; gap: 6px; max-width: calc(100% - 24px); padding: 7px 10px; font-size: 12.5px; color: #f1ead4; background: rgba(20, 18, 12, 0.94); border: 1px solid rgba(212, 175, 55, 0.45); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45); }
+.trace-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.trace-row button { font-size: 12px; padding: 3px 8px; white-space: nowrap; }
+.trace-row button.on { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); border-color: var(--gold-hi); color: #17130a; font-weight: 600; }
+.trace-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-opacity { display: flex; align-items: center; gap: 6px; }
+.trace-opacity input { width: 90px; }
+.trace-help { color: #e8dcb4; max-width: 640px; }
+.trace-help > span:first-child { flex: 1 1 260px; }
+.trace-adjust { display: flex; align-items: center; gap: 4px; }
+.trace-adjust button { min-width: 26px; }
 .history { overflow-y: auto; flex: 1; min-height: 0; }
 .hist { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 12.5px; border-bottom: 1px solid #1e1c17; }
 .hist.undo .what, .hist.redo .what { color: var(--muted); font-style: italic; }

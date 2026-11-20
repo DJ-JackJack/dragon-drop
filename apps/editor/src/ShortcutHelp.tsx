@@ -42,6 +42,7 @@ export function ShortcutHelp({ battle, onClose }: { battle: boolean; onClose: ()
           <Row keys={["Drag"]} what="Move everything that is selected together" />
           <Row keys={["Ctrl+C", "Ctrl+V"]} what={battle ? "Copy and paste the selected objects, lights, walls and light zones (it lands under the pointer)" : "Copy and paste the selected place or label (it lands under the pointer; a place is named \"... (copy)\")"} />
           <Row keys={["Ctrl+V"]} what="With a picture copied (after any map things): add it to References. Dropping a picture anywhere in the window does the same" />
+          <Row keys={["U"]} what="Show or hide the trace picture (a reference picture laid over the map: Trace over map in References)" />
           <Row keys={["Ctrl+D"]} what="Duplicate the selection, a little along and down" />
           <Row keys={["Ctrl+S"]} what="Save now (the map also saves itself a moment after every change)" />
           <Row keys={["[", "]"]} what="Smaller / larger brush" />

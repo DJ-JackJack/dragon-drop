@@ -62,7 +62,7 @@ pnpm build
 
 **Expect:** `typecheck` prints nothing and exits cleanly. `pnpm test` ends with every test passing (49 at the time of writing, in 6 files). `pnpm build` ends with `built in …ms`.
 
-Optional, needs a one-time download: `npx playwright install chromium`, then `pnpm e2e`. **Expect** `E2E OK`.
+Optional, needs a one-time download of Playwright's own browser (about 170 MB; the `playwright` package itself comes with `pnpm install`): `pnpm exec playwright install chromium`, then `pnpm build` and `pnpm e2e`. **Expect** `E2E OK`. It drives the built editor through every main feature with a scripted Claude; set `E2E_SHOTS` to a folder to keep its screenshots.
 
 ### 1b. Start the app
 

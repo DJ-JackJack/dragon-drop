@@ -37,6 +37,7 @@ export * from "./assets.ts";
 export * from "./image.ts";
 export * from "./battleTerrain.ts";
 export * from "./traceWalls.ts";
+export * from "./trace.ts";
 export * from "./lighting.ts";
 export * from "./battleLook.ts";
 export * from "./battleRoof.ts";

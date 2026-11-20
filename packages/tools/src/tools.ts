@@ -14,6 +14,7 @@ import {
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
+import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
 
 export interface ToolContext {
@@ -365,6 +366,7 @@ export const TOOLS = [
       markers: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().optional() })).optional()
         .describe("Temporary labelled points drawn on this preview only"),
       selection: z.boolean().optional().describe("Crop to what the DM has selected (the area with a margin, or a window round a point or feature). The selected area's outline is drawn in gold on every preview."),
+      trace: z.boolean().optional().describe("Draw the trace picture (get_trace_picture) half see-through over the map, to compare with it or redraw from it (default false)"),
     }),
     async run(ctx, i) {
       const s = ctx.session();
@@ -378,6 +380,7 @@ export const TOOLS = [
       const region = focus ?? i.region ?? { x: 0, y: 0, w: full.w, h: full.h };
       const { img, scale } = cropScale(full, region, i.max_size ?? 1024);
       drawRivers(img, region, scale, rivers);
+      const traced = i.trace ? await traceOverlay(ctx, img, region, scale, 1) : "";
       const step = i.grid === false ? null : drawGrid(img, region, scale, i.grid_step);
       if (i.labels !== false) {
         drawRegions(img, region, scale, s.doc.features);
@@ -391,7 +394,7 @@ export const TOOLS = [
       const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
       const note = `Preview of ${focus ? `the DM's selection (region x${region.x} y${region.y} ${region.w}x${region.h})` : i.region ? `region x${region.x} y${region.y} ${region.w}x${region.h}` : "the whole map"}` +
         ` (${s.doc.meta.width}x${s.doc.meta.height} px, ${s.doc.meta.kmPerPx} km/px, ${s.doc.meta.style ?? "painted"} style); image ${img.w}x${img.h}` +
-        (step ? `, grid every ${step} map px` : "") + (outline ? ", the DM's selected area outlined in gold" : "") + `. Change #${s.seq}.`;
+        (step ? `, grid every ${step} map px` : "") + (outline ? ", the DM's selected area outlined in gold" : "") + traced + `. Change #${s.seq}.`;
       return { content: [{ type: "text", text: note }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
     },
   }),
@@ -1530,6 +1533,7 @@ export const TOOLS = [
   }),
   ...BATTLE_TOOLS,
   ...ASSET_TOOLS,
+  ...TRACE_TOOLS,
 ] as const;
 
 function normShape(s: z.infer<typeof Shape>) {

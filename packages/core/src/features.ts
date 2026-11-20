@@ -1,5 +1,6 @@
 /** Vector features drawn over the terrain: named places (the gazetteer) and map labels. */
 import type { RiverInflow } from "./hydrology.ts";
+import type { TracePicture } from "./trace.ts";
 
 import { PLACE_KINDS, type PlaceType } from "./placeKinds.ts"; // (PlaceType itself is exported from placeKinds.ts, through the index)
 
@@ -280,6 +281,8 @@ export interface Features {
   regions?: ClimateRegion[];
   /** River sources: where a river starts with more water than its land supplies (optional). */
   sources?: RiverSource[];
+  /** The trace picture: a reference picture laid over the map (or this battlemap level) to redraw from. Never exported (trace.ts). */
+  trace?: TracePicture;
 }
 
 export interface FeaturesPatch {
@@ -307,6 +310,8 @@ export interface FeaturesPatch {
   removeConnectors?: string[];
   upsertRoofs?: MapRoof[];
   removeRoofs?: string[];
+  /** Lay a trace picture over the map (replacing any), or null to take it away. */
+  setTrace?: TracePicture | null;
 }
 
 export function emptyFeatures(): Features {
@@ -386,6 +391,8 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertRoofs ?? []) roofs.set(x.id, x);
     out.roofs = [...roofs.values()];
   }
+  const trace = p.setTrace === undefined ? f.trace : p.setTrace;
+  if (trace) out.trace = trace;
   return out;
 }
 
@@ -416,6 +423,7 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.upsertRoofs?.length) parts.push(p.upsertRoofs.length === 1 ? (p.upsertRoofs[0].name ?? "roof") : `${p.upsertRoofs.length} roofs`);
   if (p.removeRoofs?.length) parts.push(`remove ${p.removeRoofs.length} roof(s)`);
   if (p.removeConnectors?.length) parts.push(`remove ${p.removeConnectors.length} stair(s), ladder(s) or hole(s)`);
+  if (p.setTrace !== undefined) parts.push(p.setTrace ? `trace picture ${p.setTrace.ref}` : "remove the trace picture");
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 

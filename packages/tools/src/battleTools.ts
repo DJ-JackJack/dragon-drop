@@ -12,6 +12,7 @@ import { encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
 import { LEVEL_TOOLS } from "./levelTools.ts";
 import { ROOF_TOOLS } from "./roofTools.ts";
+import { traceOverlay } from "./traceTools.ts";
 
 function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
   return t;
@@ -493,6 +494,7 @@ export const BATTLE_TOOLS = [
       region: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional().describe("Crop in squares; omit for the whole map"),
       max_size: z.number().int().min(256).max(1568).optional().describe("Longest side of the image in px (default 1200)"),
       grid: z.boolean().optional().describe("Draw the labelled grid (default true)"),
+      trace: z.boolean().optional().describe("Draw the trace picture (get_trace_picture) half see-through over the level, to redraw its rooms, walls and doors from it (default false)"),
     }),
     async run(ctx, i) {
       const doc = ctx.session().doc, sp = battleSpec(doc);
@@ -500,11 +502,12 @@ export const BATTLE_TOOLS = [
       const px = sp.pxPerSquare;
       const region: Rect = i.region ? { x: Math.floor(i.region.x * px), y: Math.floor(i.region.y * px), w: Math.ceil(i.region.w * px), h: Math.ceil(i.region.h * px) } : { x: 0, y: 0, w: full.w, h: full.h };
       const { img, scale } = cropScale(full, region, i.max_size ?? 1200);
+      const traced = i.trace ? await traceOverlay(ctx, img, region, scale, px) : "";
       if (i.grid !== false) drawSquareGrid(img, region, scale, px);
       const jpg = encodeJpeg(img);
       const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
       const note = `Battlemap ${sp.squaresX}x${sp.squaresY} squares (${sp.feetPerSquare} ft each)` +
-        (i.region ? `, region x${i.region.x} y${i.region.y} ${i.region.w}x${i.region.h} squares` : ", whole map") + `; image ${img.w}x${img.h}. Grid numbers are squares. Change #${ctx.session().seq}.`;
+        (i.region ? `, region x${i.region.x} y${i.region.y} ${i.region.w}x${i.region.h} squares` : ", whole map") + `; image ${img.w}x${img.h}${traced}. Grid numbers are squares. Change #${ctx.session().seq}.`;
       return { content: [{ type: "text", text: note }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
     },
   }),

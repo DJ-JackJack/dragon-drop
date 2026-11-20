@@ -3,6 +3,7 @@ import { placeKind, selectionFromIds, type Features, type LabelKind, type LineKi
 import { SketchDialog } from "./SketchDialog.tsx";
 import { PICTURE_RULE, References } from "./References.tsx";
 import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipboard.ts";
+import { traceCtl } from "./trace.ts";
 import { Brand } from "./Brand.tsx";
 import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
 import { DesktopSettings } from "./DesktopSettings.tsx";
@@ -241,6 +242,7 @@ export function App() {
       if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); store.send({ t: "redo" }); return; }
       if (mod) return;
       if (e.key === "?") { e.preventDefault(); setHelpOpen((o) => !o); return; }
+      if (e.key.toLowerCase() === "u" && !e.altKey && store.getState().features.trace) { traceCtl.toggleShown(); return; } // show or hide the trace picture
       if (store.getState().meta?.kind === "battle") {
         const bt = BATTLE_TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
         if (bt) setBui((b) => ({ ...b, tool: bt.id }));
@@ -442,7 +444,7 @@ export function App() {
             </div>
           </section>
 
-          {s.meta && <References refs={s.refs} worldMap={!isBattle} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
+          {s.meta && <References refs={s.refs} worldMap={!isBattle} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} tracing={s.features.trace?.ref} onTrace={(r) => void traceCtl.start(s.meta!, r)} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
 
           <section className="grow">
             <h3>History</h3>

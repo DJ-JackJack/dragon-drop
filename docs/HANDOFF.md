@@ -12,7 +12,7 @@ Read `CLAUDE.md` first (the project's own instructions), then this page. Everyth
 
 ## What was built this stretch
 
-**After v0.1.9: adding reference pictures** (part 1 of "pictures and a trace layer"; part 2, the trace layer, is next): the References panel's Add picture button, a picture dropped anywhere in the window or pasted on the map, refusals with a note that says what to do (HEIC, GIF, SVG, PDF, too big), rename, remove (to `backups/removed-pictures`), a full-size viewer, and "Ask Claude…" on a picture. See the reference-pictures bullet in `CLAUDE.md`. **Not tried:** a real Ctrl+V of a picture copied in another program (the browser pane sends no paste events for simulated keys; a simulated paste works), "Ask Claude…" in the desktop app, and the e2e run (Playwright isn't installed on the person's PC: `npx playwright install chromium` plus the `playwright` package).
+**After v0.1.9: reference pictures and the trace picture.** Part 1: adding pictures without the chat (the References panel's Add picture button, a picture dropped anywhere or pasted on the map), refusals with a note that says what to do (HEIC, GIF, SVG, PDF, too big), rename, remove (to `backups/removed-pictures`), a full-size viewer, "Ask Claude…" on a picture. Part 2: the trace picture, a reference laid over the map (or battlemap level) to redraw a found map: Move, Pin 2 points, Match grid, Fit, Lock, `U`, and Claude's `get_trace_picture` / `set_trace_picture` / `clear_trace_picture` and `trace: true` on the previews. See the two bullets in `CLAUDE.md`. Playwright is now a dev dependency, and `pnpm e2e` passes on the person's PC with the new steps (after `pnpm exec playwright install chromium`). **Not tried:** a real Ctrl+V of a picture copied in another program (the e2e and the browser pane can only send a simulated paste), "Ask Claude…" in the desktop app, and Claude really tracing a map from a picture.
 
 Before v0.1.9: WebP decoder (libwebp 1.6.0 as WebAssembly, `tools/webp-wasm/`); roofs as Foundry tiles with ceiling regions (from RT6 to RT8, see `docs/FOUNDRY.md`); a server fix so a client attaching while the projects folder can't be read no longer leaves an unhandled rejection; the note about too many lakes on new maps.
 
@@ -20,6 +20,7 @@ Before v0.1.9: WebP decoder (libwebp 1.6.0 as WebAssembly, `tools/webp-wasm/`); 
 
 - **Too many lakes on new island and continent maps** (measured: about 19% of the land is lake on a continent): in `docs/PLAN.md`, Water model. The real fix is to drain the generated terrain.
 - **The Help menu (Open-source licences) can't be reached on Windows**: the window has a custom title bar and Alt does nothing. Add a button in Settings.
+- **Timing-sensitive test:** `apps/server/test/autobackup.test.ts` ("keeps the newest few") failed once in a full `pnpm test` run and passed alone and in the next full run.
 - **Flaky end-to-end step:** the Hole step after Page Up (`apps/editor/e2e/smoke.mjs`) timed out once in two runs.
 - **Foundry not tried:** a player's (non-GM) view of a roof; a token above a ceiling (Foundry holds a token a token-height below it); what a hole does to a token.
 - **The person's own to do:** make the old `AI-Mapmaker-Build` repo private (settings; the tools here were read-only), the Dependabot PR #1, the repository security settings.

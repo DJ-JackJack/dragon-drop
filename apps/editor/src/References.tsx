@@ -14,8 +14,11 @@ const stem = (name: string) => name.replace(/\.(png|jpe?g|webp)$/i, "");
 /** What the Add picture button and the drop note say a picture can be. */
 export const PICTURE_RULE = `PNG, JPEG or WebP, up to ${REFERENCE_PICTURE_MAX_BYTES / 1048576} MB`;
 
-export function References({ refs, worldMap, addedAt, onMakeTerrain, onAskClaude }: {
+export function References({ refs, worldMap, addedAt, tracing, onTrace, onMakeTerrain, onAskClaude }: {
   refs: RefInfo[];
+  /** The picture laid over the map (or this battlemap level) to trace, if any. */
+  tracing?: string;
+  onTrace: (r: RefInfo) => void;
   /** World maps can turn a drawing into terrain; battlemaps can't. */
   worldMap: boolean;
   /** Changes when pictures have just been added (the panel scrolls into view). */
@@ -62,6 +65,7 @@ export function References({ refs, worldMap, addedAt, onMakeTerrain, onAskClaude
                 <div className="ref-name" title={r.name}>{r.name}</div>
                 <div className="ref-meta muted">{describe(r)}</div>
                 <div className="ref-actions">
+                  <button disabled={tracing === r.name} onClick={() => onTrace(r)} title={tracing === r.name ? "This picture is over the map: line it up with the trace bar under the map" : "Lay this picture over the map, see-through, to redraw the map on top of it"} data-testid="ref-trace">{tracing === r.name ? "Tracing" : "Trace over map"}</button>
                   {worldMap && <button onClick={() => onMakeTerrain(r)} title="Turn this drawing into terrain" data-testid="sketch-open">Make terrain…</button>}
                   {onAskClaude && <button onClick={() => onAskClaude(r)} title="Ask Claude Code, in the terminal panel, about this picture" data-testid="ref-ask">Ask Claude…</button>}
                   <button onClick={() => rename(r)} data-testid="ref-rename">Rename</button>
@@ -80,11 +84,15 @@ export function References({ refs, worldMap, addedAt, onMakeTerrain, onAskClaude
 
 /** One reference picture as big as the window allows. Esc, a click outside it or Close shuts it. */
 function PictureViewer({ r, onClose }: { r: RefInfo; onClose: () => void }) {
+  // (attached once: a listener swapped on every render can be taken off in the middle of a real key press, when an earlier keydown
+  // handler makes React redraw before this one's turn comes, and then Escape does nothing)
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") close.current(); };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, []);
   return (
     <div className="picture-viewer" role="dialog" aria-label={r.name} onClick={onClose} data-testid="picture-viewer">
       <figure onClick={(e) => e.stopPropagation()}>

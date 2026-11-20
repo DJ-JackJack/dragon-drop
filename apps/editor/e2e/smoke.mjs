@@ -386,6 +386,31 @@ try {
       await page.getByTestId("dialog").getByRole("button", { name: "Remove" }).click();
       await refs.getByTestId("ref-card").filter({ hasText: n }).waitFor({ state: "detached", timeout: 10000 });
     }
+    // the trace picture: laid over the map, hidden and shown with U, dragged with Move (one undoable edit), locked, then taken off
+    const sketchCard = refs.getByTestId("ref-card").filter({ hasText: "e2e-sketch.png" });
+    await sketchCard.getByTestId("ref-trace").click();
+    const bar = page.getByTestId("trace-bar");
+    await bar.getByText("e2e-sketch.png").waitFor({ timeout: 10000 });
+    await page.getByTestId("history").getByText("Trace picture e2e-sketch.png").first().waitFor({ timeout: 10000 });
+    await page.keyboard.press("u");
+    await bar.getByTestId("trace-shown").getByText("Show").waitFor({ timeout: 5000 });
+    await page.keyboard.press("u");
+    await bar.getByTestId("trace-shown").getByText("Hide").waitFor({ timeout: 5000 });
+    await bar.getByTestId("trace-move").click();
+    await bar.getByTestId("trace-help").waitFor({ timeout: 5000 });
+    const mbox = await page.locator('[data-testid="map-canvas"]').boundingBox();
+    await page.mouse.move(mbox.x + mbox.width / 2, mbox.y + mbox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(mbox.x + mbox.width / 2 + 60, mbox.y + mbox.height / 2 + 30, { steps: 5 });
+    await page.mouse.up();
+    await page.getByTestId("history").getByText("Move the trace picture").first().waitFor({ timeout: 10000 });
+    await bar.getByTestId("trace-done").click();
+    await bar.getByTestId("trace-lock").click();
+    await bar.getByTestId("trace-lock").getByText("Locked").waitFor({ timeout: 5000 });
+    if (!(await bar.getByTestId("trace-move").isDisabled())) fail("Move still works on a locked trace picture");
+    await page.screenshot({ path: path.join(shots, "e2e-4b-trace.png") });
+    await bar.getByTestId("trace-stop").click();
+    await bar.waitFor({ state: "detached", timeout: 10000 });
   }
 
   // roads and borders: a routed road over real terrain, then a closed border

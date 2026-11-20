@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
+import { traceCtl } from "./trace.ts";
+import { TraceBar } from "./TraceBar.tsx";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
@@ -94,7 +96,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{
-    mode: "pan" | "brush" | "move" | "draw" | "rect" | "area" | "marquee"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
+    mode: "pan" | "brush" | "move" | "draw" | "rect" | "area" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
     hit?: Hit;
     /** move: the places and labels moving together (when there are two or more), whether the pointer has really moved yet, and whether it went down on one of a group (a click without a drag then picks that one). marquee: whether it adds to the group, and what was in it before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[];
@@ -166,6 +168,14 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       draw();
     });
   }, []);
+
+  // the trace picture redraws this view when it loads, while it is dragged and when its settings change
+  useEffect(() => {
+    traceCtl.redraw = requestDraw;
+    const off = traceCtl.subscribe(requestDraw);
+    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; };
+  }, [requestDraw]);
+  const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
 
   /** What the paint worker should draw: the chosen style and its settings. */
   const paintView = useCallback((): PaintView | null => {
@@ -369,6 +379,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       }
       ctx.restore();
     }
+    // the trace picture: over the ground, under the grid and the map's own marks
+    traceCtl.draw(ctx, featuresRef.current.trace, m.id, v);
     if (optsRef.current.showGrid) drawGridOverlay(ctx, m, v, W, H);
     // square or hex grid (a map setting); say so when it's too fine to draw at this zoom
     const gridOk = drawMapGrid(ctx, m.grid, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, mapHeight: m.height, kmPerPx: m.kmPerPx }, W, H);
@@ -676,6 +688,15 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     const v = viewRef.current;
     canvasRef.current!.setPointerCapture(e.pointerId);
     if (moveOverride.current && !drag.current) commitNudge(); // (a nudge still waiting goes first, so it can't be mistaken for this drag)
+    // lining up the trace picture takes a left click, whatever the tool (Space still pans)
+    if (e.button === 0 && !spaceDownRef.current) {
+      const tm = toMap(p.x, p.y);
+      if (traceCtl.down(featuresRef.current.trace, tm)) {
+        drag.current = { mode: "trace", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: tm.x, lastY: tm.y };
+        requestDraw();
+        return;
+      }
+    }
     const panning = e.button === 1 || e.button === 2 || optsRef.current.tool === "pan" || spaceDownRef.current;
     if (panning) {
       drag.current = { mode: "pan", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: 0, lastY: 0 };
@@ -804,6 +825,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       setHover({ x: Math.floor(m.x), y: Math.floor(m.y), e: Math.round(hf.sample(m.x, m.y) - mt.seaLevel) });
     } else setHover(null);
     const d = drag.current;
+    if (d?.mode === "trace") { traceCtl.move(m); return; }
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "move" && d.hit) {
@@ -840,6 +862,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
 
   const endDrag = () => {
     const d = drag.current;
+    if (d?.mode === "trace") { drag.current = null; traceCtl.up(); return; }
     if (d?.mode === "brush") store.send({ t: "txn_end" });
     if (d?.mode === "pan" && d.pick && optsRef.current.tool === "select") {
       const pp = pointer.current;
@@ -999,7 +1022,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     requestDraw();
   };
 
-  const cursor = spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab")
+  const cursor = traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
+    : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab")
     : tool === "select" ? "default" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" ? "crosshair" : "none";
 
   return (
@@ -1032,6 +1056,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit map to window">⤢ Fit</button>
       </div>
       {children}
+      {meta && <TraceBar trace={features.trace} meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
       {status && meta && loadedId === meta.id && <div className="mapview-busy">{status}</div>}
       {exportOpen && meta && (

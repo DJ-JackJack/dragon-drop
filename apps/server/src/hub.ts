@@ -900,8 +900,15 @@ export class Hub {
         case "ref_remove": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
-          if (msg.t === "ref_rename") await this.store.renameRef(op.id, msg.name, String(msg.to ?? ""));
-          else await this.store.removeRef(op.id, msg.name);
+          // (a trace picture made from it, on any level, follows: renamed with it, or taken away with it)
+          const traced = () => op.runtime.filter((rt) => rt.session.doc.features?.trace?.ref === msg.name);
+          if (msg.t === "ref_rename") {
+            const to = await this.store.renameRef(op.id, msg.name, String(msg.to ?? ""));
+            if (to !== msg.name) for (const rt of traced()) rt.session.execute({ op: "features", patch: { setTrace: { ...rt.session.doc.features!.trace!, ref: to } }, label: `Trace picture renamed to ${to}` }, "user");
+          } else {
+            await this.store.removeRef(op.id, msg.name);
+            for (const rt of traced()) rt.session.execute({ op: "features", patch: { setTrace: null }, label: `Stop tracing ${msg.name} (the picture was removed)` }, "user");
+          }
           this.broadcast({ t: "refs", refs: await this.store.listRefs(op.id) });
           return;
         }

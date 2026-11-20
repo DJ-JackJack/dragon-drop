@@ -542,6 +542,65 @@ describe("reference pictures", () => {
   });
 });
 
+describe("the trace picture", () => {
+  it("Claude lays a reference picture over the map, lines it up with two pins, sees it in a preview, and respects the DM's lock", async () => {
+    const png = await import("pngjs");
+    const im = new png.PNG({ width: 200, height: 100 });
+    im.data.fill(200);
+    const up = await fetch(`http://127.0.0.1:${PORT}/api/projects/${hub.activeId}/refs`, { method: "POST", headers: { "x-file-name": "trace-me.png" }, body: new Uint8Array(png.PNG.sync.write(im)) });
+    expect(up.status).toBe(200);
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORT}/mcp`)));
+    const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+    const textOf = (r: Awaited<ReturnType<typeof raw>>) => (r.content as { type: string; text?: string }[]).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+
+    if (hub.session.doc.features?.trace) hub.session.execute({ op: "features", patch: { setTrace: null } }, "user");
+    expect(textOf(await raw("get_trace_picture"))).toMatch(/no trace picture/);
+    expect((await raw("set_trace_picture", { name: "missing.png" })).isError).toBe(true);
+    // with only a name it is fitted inside the 256 x 256 map
+    const fitted = await raw("set_trace_picture", { name: "trace-me.png" });
+    expect(fitted.isError, textOf(fitted)).toBeFalsy();
+    expect(hub.session.doc.features?.trace).toMatchObject({ ref: "trace-me.png", w: 200, h: 100, x: 0, y: 64, rotation: 0 });
+    expect(hub.session.doc.features!.trace!.scale).toBeCloseTo(1.28);
+    // two pins: picture (0, 0) to map (20, 30) and picture (200, 0) to map (20, 130): half size, turned a quarter clockwise
+    const pinned = await raw("set_trace_picture", { name: "trace-me.png", pins: [{ picture: [0, 0], map: [20, 30] }, { picture: [200, 0], map: [20, 130] }] });
+    expect(pinned.isError, textOf(pinned)).toBeFalsy();
+    const t = hub.session.doc.features!.trace!;
+    expect([t.x, t.y, t.scale, t.rotation].map((n) => Math.round(n * 1000) / 1000)).toEqual([20, 30, 0.5, 90]);
+    expect(textOf(await raw("get_trace_picture"))).toMatch(/"rotation_degrees": 90/);
+    // the preview draws it only when asked
+    expect(textOf(await raw("render_preview", { max_size: 256 }))).not.toMatch(/trace picture/);
+    expect(textOf(await raw("render_preview", { max_size: 256, trace: true }))).toMatch(/the trace picture trace-me\.png drawn half see-through/);
+    // locked by the DM: Claude can neither move nor remove it
+    hub.session.execute({ op: "features", patch: { setTrace: { ...t, locked: true } } }, "user");
+    expect(textOf(await raw("set_trace_picture", { name: "trace-me.png", x: 0 }))).toMatch(/locked/);
+    expect((await raw("clear_trace_picture")).isError).toBe(true);
+    hub.session.execute({ op: "features", patch: { setTrace: t } }, "user");
+    await client.close();
+  }, 60000);
+
+  it("follows its picture: renamed with it, taken away with it (and Undo brings it back)", async () => {
+    const c = await connect();
+    await c.wait(() => c.msgs.some((m) => m.t === "project"));
+    const sendAndWait = async (msg: object, p: (m: ServerMsg) => boolean) => {
+      const from = c.msgs.length;
+      c.ws.send(JSON.stringify(msg));
+      await c.wait(() => c.msgs.slice(from).some(p));
+    };
+    expect(hub.session.doc.features?.trace?.ref).toBe("trace-me.png");
+    await sendAndWait({ t: "ref_rename", name: "trace-me.png", to: "Old coast" }, (m) => m.t === "refs" && m.refs.some((r) => r.name === "Old coast.png"));
+    expect(hub.session.doc.features?.trace?.ref).toBe("Old coast.png");
+    expect(hub.session.changes.at(-1)?.label).toBe("Trace picture renamed to Old coast.png");
+    await sendAndWait({ t: "ref_remove", name: "Old coast.png" }, (m) => m.t === "refs" && !m.refs.some((r) => r.name === "Old coast.png"));
+    expect(hub.session.doc.features?.trace).toBeUndefined();
+    expect(hub.session.changes.at(-1)?.label).toBe("Stop tracing Old coast.png (the picture was removed)");
+    hub.session.undo("user");
+    expect(hub.session.doc.features?.trace?.ref).toBe("Old coast.png");
+    hub.session.execute({ op: "features", patch: { setTrace: null } }, "user");
+    c.ws.close();
+  });
+});
+
 describe("map extras", () => {
   it("set_map_furniture sets, merges, clears, undoes and persists", async () => {
     const client = new Client({ name: "test", version: "1.0.0" });

@@ -3,7 +3,7 @@
  * crisp vectors), the tool panels, and the export dialog. Coordinates in here are grid SQUARES unless
  * a name says "cells" (the floor is stored at `sub` cells per square).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
   CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
@@ -11,6 +11,8 @@ import {
 import { LevelBar } from "./LevelBar.tsx";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
+import { traceCtl } from "./trace.ts";
+import { TraceBar } from "./TraceBar.tsx";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
@@ -170,7 +172,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const fittedFor = useRef<string | null>(null);
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move" | "marquee"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string;
+  const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string;
     /** move: what is being dragged, whether the pointer has really moved yet, and whether it started on a member of a group (a click without a drag then picks that one). marquee: whether it adds to the selection, and what was selected before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[] } | null>(null);
   const draft = useRef<{ kind: WallKind; pts: [number, number][] } | null>(null);
@@ -215,6 +217,14 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     drawQueued.current = true;
     requestAnimationFrame(() => { drawQueued.current = false; draw(); });
   }, []);
+
+  // the trace picture redraws this view when it loads, while it is dragged and when its settings change
+  useEffect(() => {
+    traceCtl.redraw = requestDraw;
+    const off = traceCtl.subscribe(requestDraw);
+    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; };
+  }, [requestDraw]);
+  const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
 
   const spriteFor = (id: string) => {
     const hit = sprites.current.get(id);
@@ -486,6 +496,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     ctx.drawImage(off, v.ox, v.oy, MW, MH);
     ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1);
+    // the trace picture: over the floor, under the grid, walls, objects and lights
+    traceCtl.draw(ctx, featRef.current.trace, m.id, v);
     if (o.showGrid && spec.gridType !== "none") {
       // the shared grid drawer works in map px; here one map px is one floor cell
       drawMapGrid(ctx, { type: spec.gridType, sizeMi: spec.feetPerSquare / 5280, orient: "pointy", opacity: 0.3 },
@@ -853,6 +865,12 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     canvasRef.current!.setPointerCapture(e.pointerId);
     if (moveGroup.current && !drag.current) commitNudge(); // (a nudge still waiting goes first, so it can't be mistaken for this drag)
     const q = toSq(p.x, p.y);
+    // lining up the trace picture takes a left click, whatever the tool (Space still pans)
+    if (e.button === 0 && !spaceRef.current && traceCtl.down(featRef.current.trace, q)) {
+      drag.current = { mode: "trace", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
+      requestDraw();
+      return;
+    }
     if (e.button === 1 || e.button === 2 || o.tool === "pan" || spaceRef.current) {
       drag.current = { mode: "pan", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: 0, ay: 0, lastX: 0, lastY: 0 };
       return;
@@ -975,6 +993,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       setHover({ x: q.x, y: q.y, m: hf.get(Math.floor(q.x * m.battle.sub), Math.floor(q.y * m.battle.sub)) });
     } else setHover(null);
     const d = drag.current;
+    if (d?.mode === "trace") { traceCtl.move(q); return; }
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "brush") {
@@ -1001,6 +1020,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const endDrag = () => {
     const d = drag.current, p = pointer.current, spec = metaRef.current?.battle;
     drag.current = null;
+    if (d?.mode === "trace") { traceCtl.up(); return; }
     if (d?.mode === "brush") send({ t: "txn_end" } as never);
     if (d?.mode === "move" && d.ids && spec) {
       const mg = moveGroup.current, f = featRef.current;
@@ -1064,7 +1084,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   };
 
   const tool = ui.tool;
-  const cursor = spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab") : tool === "select" ? "default" : tool === "brush" ? "none" : "crosshair";
+  const cursor = traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
+    : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab") : tool === "select" ? "default" : tool === "brush" ? "none" : "crosshair";
   const spec = meta?.battle;
   return (
     <div className="mapview" ref={wrapRef}>
@@ -1082,6 +1103,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         ) : null}
       </div>
       {levels && <LevelBar levels={levels} />}
+      {meta && <TraceBar trace={features.trace} meta={meta} level={levels?.active} />}
       <div className="map-buttons">
         <button onClick={() => setExportOpen(true)} title="Export for Foundry, Universal VTT or as an image" data-testid="battle-export-button">⤓ Export</button>
         <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit map to window">⤢ Fit</button>
