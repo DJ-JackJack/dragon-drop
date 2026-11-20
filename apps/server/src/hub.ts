@@ -91,6 +91,8 @@ export class Hub {
   /** Clients that only want JSON (the phone viewer): no heightmap or derived-layer frames. */
   private lite = new WeakSet<WebSocket>();
   private opening: Promise<void> = Promise.resolve();
+  /** What happened at start that the person should know (a map that wouldn't open and was skipped): told to the first editor that connects. */
+  private startupNotes: string[] = [];
   /** The user's asset library, when a folder is configured. */
   assets: AssetLibrary | null = null;
   /** Texture noise kept on disk, served to the editor (none in tests that don't want it). */
@@ -795,6 +797,8 @@ export class Hub {
     await this.sendProject(ws);
     this.send(ws, { t: "claude_state", state: this.claude });
     this.send(ws, { t: "selection", selection: this.selection, lock: this.selectionLock });
+    // what happened at start (a map skipped), told once, to the first editor that connects
+    if (!opts.lite && this.startupNotes.length) for (const message of this.startupNotes.splice(0)) this.send(ws, { t: "error", message });
   }
 
   /**
@@ -1185,12 +1189,30 @@ export class Hub {
   }
 
   /** Make sure something is open: last-opened project, else the newest, else a fresh demo map. */
+  /**
+   * Open a map at start: the one open last time, else the first that opens. The program must always start, whatever is in the maps folder (a map saved by a newer Dragon Drop,
+   * one that can't be read): otherwise it can't even reach its own updater. A map that won't open is skipped, left exactly as it is, and the person is told when the editor connects.
+   */
   async ensureProject(): Promise<void> {
     await this.refreshProjects();
     const last = await this.store.readLastOpen();
-    const pick = last && (await this.store.exists(last)) ? last : this.projectsCache[0]?.id;
-    if (pick) return this.openProject(pick);
-    // a brand-new install starts with a small generated archipelago with no names or history of its own (never anyone's campaign world)
+    const order = [...new Set([...(last && (await this.store.exists(last)) ? [last] : []), ...this.projectsCache.map((p) => p.id)])];
+    const skipped: { name: string; why: string }[] = [];
+    for (const id of order) {
+      try {
+        await this.openProject(id);
+        if (skipped.length) {
+          const opened = this.projectsCache.find((p) => p.id === id)?.name ?? id;
+          for (const k of skipped) this.startupNotes.push(`"${k.name}" couldn't be opened, so "${opened}" was opened instead. ${k.why}`);
+        }
+        return;
+      } catch (e) {
+        skipped.push({ name: this.projectsCache.find((p) => p.id === id)?.name ?? id, why: (e as Error).message });
+      }
+    }
+    // a brand-new install starts with a small generated archipelago with no names or history of its own (never anyone's campaign world);
+    // so does a maps folder where nothing would open (a new map, beside the others, which are left as they are)
+    if (skipped.length) this.startupNotes.push(`None of your maps could be opened (${skipped.map((k) => `"${k.name}"`).join(", ")}), so a new map was made beside them; they are untouched. ${skipped[0].why}`);
     await this.createProject({ name: "First Map", width: 1024, height: 1024, kmPerPx: 2 });
     this.session.execute({ op: "generate_terrain", params: { template: "archipelago", seed: 7, landFraction: 0.3, mountains: 0.5 } }, "system");
     if (this.open) this.open.lastAutoBackup = Date.now(); // (a map nobody has touched yet needs no rolling backup: the first one comes at the first save after the interval)
