@@ -6,6 +6,7 @@
 import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
+  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
 
@@ -38,6 +39,8 @@ export interface AppState {
   selection: Selection | null;
   selectionLock: boolean;
   lockPref: boolean;
+  /** Pictures being added as references, or just added (a note at the bottom of the window). `at` changes each time. */
+  pictureNote: { text: string; busy: boolean; at: number } | null;
 }
 
 function loadLockPref(): boolean {
@@ -48,8 +51,21 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(),
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null,
 };
+
+/** The most pictures added in one go (a whole folder dropped by mistake shouldn't start hundreds of uploads). */
+const MAX_PICTURES_AT_ONCE = 20;
+
+/** Send one picture to the server, from a worker (see pictureUploadWorker.ts). */
+function uploadPicture(url: string, file: Blob, name: string): Promise<{ ok: true; name: string } | { ok: false; message: string }> {
+  return new Promise((resolve) => {
+    const w = new Worker(new URL("./pictureUploadWorker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (e) => { resolve(e.data); w.terminate(); };
+    w.onerror = () => { resolve({ ok: false, message: `"${name}" couldn't be added: the upload didn't start.` }); w.terminate(); };
+    w.postMessage({ url, file, name });
+  });
+}
 
 /** The climate layers' size and rivers (the rivers are drawn as vectors on the main thread; the layers themselves live in the paint worker). */
 export interface DerivedLite {
@@ -185,6 +201,42 @@ class Store {
 
   dismissError() {
     this.set({ error: null });
+  }
+
+  /**
+   * Add pictures as references of the open map (the Add picture button, or pictures dropped or pasted anywhere). Each is checked here
+   * first with the server's own rules (`referencePictureProblem`), so one that can't be used is refused with a note that says what to do
+   * instead of being sent. The new pictures come back in `refs` from the server.
+   */
+  async addPictures(files: File[]): Promise<void> {
+    const id = this.state.meta?.id;
+    if (!id || !files.length) return;
+    const take = files.slice(0, MAX_PICTURES_AT_ONCE);
+    this.set({ pictureNote: { text: take.length === 1 ? "Adding the picture…" : `Adding ${take.length} pictures…`, busy: true, at: Date.now() } });
+    const added: string[] = [], problems: string[] = [];
+    for (const f of take) {
+      const kind = pictureKind(new Uint8Array(await f.slice(0, PICTURE_HEAD_BYTES).arrayBuffer()));
+      const name = f.name || `pasted-picture.${kind === "jpeg" ? "jpg" : kind ?? "png"}`;
+      const problem = referencePictureProblem(name, kind, f.size);
+      if (problem) { problems.push(problem); continue; }
+      const r = await uploadPicture(`/api/projects/${encodeURIComponent(id)}/refs`, f, name);
+      if (r.ok) added.push(r.name); else problems.push(r.message);
+    }
+    if (files.length > take.length) problems.push(`Only ${MAX_PICTURES_AT_ONCE} pictures can be added at once: the other ${files.length - take.length} were left out.`);
+    const text = added.length === 1 ? `Added ${added[0]} to References.` : `Added ${added.length} pictures to References.`;
+    this.set({ pictureNote: added.length ? { text, busy: false, at: Date.now() } : null, ...(problems.length && { error: problems.join(" ") }) });
+  }
+
+  dismissPictureNote() {
+    this.set({ pictureNote: null });
+  }
+
+  /** Give a reference picture a new name (its file type stays), or take it off the list (the server moves it to the map's backups folder). */
+  renamePicture(name: string, to: string) {
+    this.send({ t: "ref_rename", name, to });
+  }
+  removePicture(name: string) {
+    this.send({ t: "ref_remove", name });
   }
 
   private handleFrame(buf: ArrayBuffer) {

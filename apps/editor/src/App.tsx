@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
+import { PICTURE_RULE, References } from "./References.tsx";
+import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipboard.ts";
 import { Brand } from "./Brand.tsx";
 import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
 import { DesktopSettings } from "./DesktopSettings.tsx";
@@ -168,10 +170,65 @@ export function App() {
     if (r.ok) setRightTab("claude"); // so the DM sees the answer
     return r;
   };
+  const onAskPicture = async (r: RefInfo) => {
+    const text = await ask(`What should Claude do with "${r.name}"? It goes to Claude Code in the terminal panel.`, "Tell me what you see in it and how it could help this map.", "Ask Claude");
+    if (!text?.trim()) return;
+    const res = await assist.askPicture(r.name, text);
+    if (res.ok) setRightTab("claude"); // so the DM sees the answer
+    else void notice(res.message);
+  };
   useEffect(() => {
     if (!desktop) return;
     document.documentElement.classList.add("desktop", `platform-${desktop.platform}`);
   }, [desktop]);
+
+  // Pictures dropped anywhere in the window, or pasted on the map, become references. (The chat panel takes a dropped picture for its
+  // message itself: it handles the drop first, so it is skipped here. Ctrl+V chooses between a picture and copied map items: clipboard.ts.)
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    let hide = 0;
+    const carriesFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+    const over = (e: DragEvent) => {
+      if (!carriesFiles(e)) return;
+      if (e.defaultPrevented || !store.getState().meta) { setDropping(false); return; }
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = "copy";
+      setDropping(true);
+      window.clearTimeout(hide);
+      hide = window.setTimeout(() => setDropping(false), 250); // (dragleave fires for every element crossed: this is steadier)
+    };
+    const drop = (e: DragEvent) => {
+      if (!carriesFiles(e)) return;
+      setDropping(false);
+      if (e.defaultPrevented) return;
+      e.preventDefault(); // (never let the window open the file itself)
+      void store.addPictures([...(e.dataTransfer?.files ?? [])]);
+    };
+    const copy = (e: ClipboardEvent) => onCopyEvent(e);
+    const paste = (e: ClipboardEvent) => onPasteEvent(e, (files) => void store.addPictures(files));
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    window.addEventListener("beforecopy", onBeforeCopy);
+    window.addEventListener("beforepaste", onBeforePaste);
+    window.addEventListener("copy", copy);
+    window.addEventListener("paste", paste);
+    return () => {
+      window.clearTimeout(hide);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+      window.removeEventListener("beforecopy", onBeforeCopy);
+      window.removeEventListener("beforepaste", onBeforePaste);
+      window.removeEventListener("copy", copy);
+      window.removeEventListener("paste", paste);
+    };
+  }, []);
+  // "Added ... to References" goes away by itself
+  useEffect(() => {
+    const n = s.pictureNote;
+    if (!n || n.busy) return;
+    const t = setTimeout(() => store.dismissPictureNote(), 4000);
+    return () => clearTimeout(t);
+  }, [s.pictureNote]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -385,21 +442,7 @@ export function App() {
             </div>
           </section>
 
-          <section>
-            <h3>References</h3>
-            {s.refs.length === 0 ? (
-              <p className="muted">Attach images in the chat; they're kept here for Claude to re-read.</p>
-            ) : (
-              <div className="refs">
-                {s.refs.map((r) => (
-                  <div key={r.name} className="ref">
-                    <a href={r.url} target="_blank" rel="noreferrer" title={r.name}><img src={r.url} alt={r.name} /></a>
-                    {!isBattle && <button onClick={() => setSketchRef(r)} title="Turn this drawing into terrain" data-testid="sketch-open">Make terrain…</button>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          {s.meta && <References refs={s.refs} worldMap={!isBattle} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
 
           <section className="grow">
             <h3>History</h3>
@@ -443,6 +486,12 @@ export function App() {
       {routingId && <div className="toast info" data-testid="routing">Finding the best route over the terrain…</div>}
       {savedFlash && <div className="toast info" data-testid="saved">Saved. Dragon Drop also saves by itself after every change.</div>}
       {making && <div className="toast info" data-testid="making">Making “{making}”… this takes a few seconds.</div>}
+      {s.pictureNote && !s.error && <div className="toast info" data-testid="picture-note">{s.pictureNote.text}</div>}
+      {dropping && (
+        <div className="drop-overlay" data-testid="drop-overlay">
+          <div><b>Drop to add to References</b><span>{PICTURE_RULE}. Claude can look at it, and on a world map you can turn a sketch into terrain.</span></div>
+        </div>
+      )}
       {s.error && (
         <div className="toast" onClick={() => store.dismissError()}>{s.error} <span className="muted">(click to dismiss)</span></div>
       )}

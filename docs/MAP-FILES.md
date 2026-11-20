@@ -8,7 +8,7 @@ projects\<map-name>\
   features.json             places, labels, roads, borders, climate regions, reefs, river sources (battlemaps: walls, doors, lights, notes)
   brief.md                  your notes about the map, shared with Claude
   chat.json                 the chat history with Claude
-  refs\                     reference images you attached
+  refs\                     your reference pictures (the References panel)
   exports\                  files you exported for a tabletop program
   map\
     height.f32.gz           the terrain: one 32-bit float per pixel (metres; a battlemap stores floor material numbers instead), row by row,
@@ -16,7 +16,8 @@ projects\<map-name>\
     base-climate.bin.gz     regional maps only: the climate carried over from the parent map
     checkpoints\            restore points: the ones you save and the automatic ones (below)
     previews\               small pictures made for the chat
-  backups\                  copies of the files from before a map was brought up to a newer file format (below)
+  backups\                  copies of the files from before a map was brought up to a newer file format (below),
+                            and removed-pictures\, where a picture you remove from References goes
   levels.json               battlemaps with more than one level: the levels, their names and elevations (a map with one level has no such file)
   levels\<id>\              each further level of a battlemap: the same files as above (features.json, map\ and so on). The first level is the map's own files
 ```

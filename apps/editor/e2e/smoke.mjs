@@ -3,7 +3,7 @@
 // Run: pnpm build && pnpm e2e        (needs Playwright installed)
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -331,6 +331,62 @@ try {
   if (claudeBadge < 1) fail("Claude's edit is not attributed in history");
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(shots, "e2e-4-chat.png") });
+
+  // References: add pictures without the chat (the Add picture button, a drop anywhere, a paste on the map), refuse a GIF with a
+  // note, look at one full size, rename it (its ending stays) and remove it
+  {
+    const refs = page.getByTestId("references");
+    const gif = { name: "left-out.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00;", "binary") };
+    await refs.getByTestId("ref-file").setInputFiles(gif);
+    const gifNote = page.locator(".toast").filter({ hasText: /"left-out\.gif" is a GIF/ });
+    await gifNote.waitFor({ timeout: 10000 });
+    await gifNote.click(); // (dismissed)
+    const { readFileSync: readPng } = await import("node:fs");
+    await refs.getByTestId("ref-file").setInputFiles({ name: "from button.png", mimeType: "image/png", buffer: readPng(path.join(tmp, "e2e-sketch.png")) });
+    const card = refs.getByTestId("ref-card").filter({ hasText: "from button.png" });
+    await card.waitFor({ timeout: 15000 });
+    await card.getByText("256 × 256 px", { exact: false }).waitFor({ timeout: 5000 });
+    await page.getByTestId("picture-note").filter({ hasText: "Added from button.png to References." }).waitFor({ timeout: 10000 });
+    await card.locator(".ref-thumb").click();
+    await page.getByTestId("picture-viewer").waitFor({ timeout: 5000 });
+    await page.keyboard.press("Escape");
+    await page.getByTestId("picture-viewer").waitFor({ state: "detached", timeout: 5000 });
+    await card.getByTestId("ref-rename").click();
+    await answer("Renamed by e2e");
+    const renamed = refs.getByTestId("ref-card").filter({ hasText: "Renamed by e2e.png" });
+    await renamed.waitFor({ timeout: 10000 });
+    await renamed.getByTestId("ref-remove").click();
+    await page.getByTestId("dialog").getByRole("button", { name: "Remove" }).click();
+    await renamed.waitFor({ state: "detached", timeout: 10000 });
+    if (!readdirSync(tmp).some((d) => existsSync(path.join(tmp, d, "backups", "removed-pictures", "Renamed by e2e.png")))) fail("a removed picture did not go to the map's backups folder");
+    // a picture dropped on the map: the drop note shows while it is dragged over, then it is added
+    const sendPicture = (how, name) => page.evaluate(async ({ how, name }) => {
+      const c = document.createElement("canvas");
+      c.width = 32; c.height = 24;
+      c.getContext("2d").fillRect(4, 4, 8, 8);
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], name, { type: "image/png" }));
+      const target = document.querySelector('[data-testid="map-canvas"]');
+      if (how === "paste") { document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); return true; }
+      target.dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      const shown = !!document.querySelector('[data-testid="drop-overlay"]') || (await new Promise((r) => requestAnimationFrame(() => r(!!document.querySelector('[data-testid="drop-overlay"]')))));
+      target.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      return shown;
+    }, { how, name });
+    if (!(await sendPicture("drop", "dropped.png"))) fail("the drop note did not show while a picture was dragged over the map");
+    await refs.getByTestId("ref-card").filter({ hasText: "dropped.png" }).waitFor({ timeout: 15000 });
+    await page.getByTestId("drop-overlay").waitFor({ state: "detached", timeout: 5000 });
+    await sendPicture("paste", "pasted.png");
+    await refs.getByTestId("ref-card").filter({ hasText: "pasted.png" }).waitFor({ timeout: 15000 });
+    await page.screenshot({ path: path.join(shots, "e2e-4a-references.png") });
+    // (taken off again, so the sketch step below finds the sketch first)
+    for (const n of ["dropped.png", "pasted.png"]) {
+      await refs.getByTestId("ref-card").filter({ hasText: n }).getByTestId("ref-remove").click();
+      await page.getByTestId("dialog").getByRole("button", { name: "Remove" }).click();
+      await refs.getByTestId("ref-card").filter({ hasText: n }).waitFor({ state: "detached", timeout: 10000 });
+    }
+  }
 
   // roads and borders: a routed road over real terrain, then a closed border
   {

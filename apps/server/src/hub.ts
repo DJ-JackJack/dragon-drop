@@ -10,13 +10,14 @@ import {
   type BattleExportFormat, battleKey, foundryConnectorProblems, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
+  type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
 import type { NoiseStore } from "./noiseStore.ts";
-import { ProjectStore } from "./store.ts";
+import { PictureRefused, ProjectStore } from "./store.ts";
 
 export interface HubOptions {
   /**
@@ -755,6 +756,19 @@ export class Hub {
     this.send(ws, { t: "selection", selection: this.selection, lock: this.selectionLock });
   }
 
+  /**
+   * A picture the DM added (the References panel's Add picture button, or one dropped or pasted in the editor): kept as a reference of
+   * the open map, where Claude finds it with list_references. Throws PictureRefused (with a message for the person) for anything that
+   * isn't a PNG, JPEG or still WebP of at most 30 MB.
+   */
+  async addReference(projectId: string, name: string, bytes: Uint8Array): Promise<RefInfo> {
+    const op = this.open;
+    if (!op || op.id !== projectId) throw new Error("That map isn't open any more. Open it and add the picture again.");
+    const ref = await this.store.addRef(op.id, name, bytes);
+    this.broadcast({ t: "refs", refs: await this.store.listRefs(op.id) });
+    return ref;
+  }
+
   private send(ws: WebSocket, msg: ServerMsg) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
@@ -856,15 +870,20 @@ export class Hub {
         case "chat_send": {
           const op = this.open;
           if (!op) throw new Error("Open a project first.");
-          const imgs = [];
+          const imgs = [], refused: string[] = [];
           for (const im of msg.images.slice(0, 8)) {
             const bytes = new Uint8Array(Buffer.from(im.data, "base64"));
-            if (bytes.byteLength > 30 * 1024 * 1024) throw new Error(`${im.name} is too large (max 30 MB).`);
-            const ref = await this.store.addRef(op.id, im.name || "image.png", bytes);
-            imgs.push({ name: ref.name, mediaType: im.mediaType, bytes, url: ref.url });
+            try {
+              const ref = await this.store.addRef(op.id, im.name || "picture.png", bytes);
+              imgs.push({ name: ref.name, mediaType: REFERENCE_KIND_TYPE[pictureKind(bytes.subarray(0, PICTURE_HEAD_BYTES)) as ReferenceKind], bytes, url: ref.url });
+            } catch (e) {
+              if (!(e instanceof PictureRefused)) throw e;
+              refused.push(e.message); // (the message still goes; only that picture is left out)
+            }
           }
           if (imgs.length) this.broadcast({ t: "refs", refs: await this.store.listRefs(op.id) });
-          void op.agent.send(msg.text, imgs);
+          if (refused.length) this.send(ws, { t: "error", message: `Left out of your message: ${refused.join(" ")}` });
+          if (msg.text.trim() || imgs.length) void op.agent.send(msg.text, imgs);
           return;
         }
         case "chat_stop":
@@ -877,6 +896,15 @@ export class Hub {
           await this.open?.agent.reset();
           for (const c of this.clients) await this.sendProject(c);
           return;
+        case "ref_rename":
+        case "ref_remove": {
+          const op = this.open;
+          if (!op) throw new Error("No project is open.");
+          if (msg.t === "ref_rename") await this.store.renameRef(op.id, msg.name, String(msg.to ?? ""));
+          else await this.store.removeRef(op.id, msg.name);
+          this.broadcast({ t: "refs", refs: await this.store.listRefs(op.id) });
+          return;
+        }
         case "checkpoint_save":
           await this.saveCheckpoint(msg.name);
           return;

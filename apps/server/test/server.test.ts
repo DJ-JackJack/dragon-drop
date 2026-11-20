@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,13 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { type ServerMsg, buildNoiseCache, decodeFrame, serializeNoise } from "@mapmaker/core";
+import { type ServerMsg, REFERENCE_PICTURE_MAX_BYTES, buildNoiseCache, decodeFrame, serializeNoise } from "@mapmaker/core";
 import type { ModelCall } from "../src/agent.ts";
 import { Hub } from "../src/hub.ts";
 import { createAppServer } from "../src/http.ts";
 import { loadConfig } from "../src/config.ts";
 import { NoiseStore } from "../src/noiseStore.ts";
-import { ProjectStore } from "../src/store.ts";
+import { ProjectStore, refFileName, safeFileName } from "../src/store.ts";
 
 const PORT = 47000 + Math.floor(Math.random() * 1000);
 const dir = mkdtempSync(path.join(tmpdir(), "mapmaker-test-"));
@@ -430,6 +430,116 @@ describe("sketch to terrain", () => {
     expect(Array.from(hub.session.doc.height.data.subarray(0, 4096))).toEqual(Array.from(before.subarray(0, 4096)));
     await client.close();
   }, 60000);
+});
+
+describe("reference pictures", () => {
+  const base = `http://127.0.0.1:${PORT}`;
+  const upload = (name: string, body: Uint8Array<ArrayBuffer>, id = hub.activeId!) =>
+    fetch(`${base}/api/projects/${id}/refs`, { method: "POST", headers: { "x-file-name": encodeURIComponent(name), "content-type": "application/octet-stream" }, body });
+  let pngBytes: Uint8Array<ArrayBuffer>;
+  beforeAll(async () => {
+    const png = await import("pngjs");
+    const im = new png.PNG({ width: 40, height: 30 });
+    im.data.fill(120);
+    pngBytes = new Uint8Array(png.PNG.sync.write(im));
+  });
+
+  it("refFileName makes a safe name that ends in what the picture really is", () => {
+    const cases: [string, "png" | "jpeg" | "webp", string][] = [
+      ["map.png", "png", "map.png"], ["photo.JPEG", "jpeg", "photo.jpeg"], ["photo.jpg", "jpeg", "photo.jpg"], ["scan.webp", "png", "scan.png"],
+      ["..\\..\\evil.png", "png", "evil.png"], ["../../evil.png", "png", "evil.png"], ["___.png", "png", "picture.png"], ["", "webp", "picture.webp"],
+      ["CON.png", "png", "picture-CON.png"], ["Café map.png", "png", "Cafe map.png"], ["(1) Old map: north.PNG.jpg", "png", "1_ Old map_ north.PNG.png"],
+      ["a..b.png", "png", "a.b.png"], ["trailing dots... .png", "png", "trailing dots.png"],
+    ];
+    for (const [given, kind, want] of cases) expect(refFileName(given, kind), given).toBe(want);
+    const long = refFileName(`${"x".repeat(300)}.png`, "png");
+    expect(long.length).toBeLessThanOrEqual(105);
+    for (const [given, kind] of cases) expect(() => safeFileName(refFileName(given, kind))).not.toThrow();
+  });
+
+  it("keeps an uploaded picture under a safe name with its real ending, with its size, and tells every editor", async () => {
+    const c = await connect();
+    await c.wait(() => c.msgs.some((m) => m.t === "project"));
+    const r = await upload("(1) Old map: north.jpg", pngBytes); // (called .jpg, but it is a PNG)
+    expect(r.status, await r.clone().text()).toBe(200);
+    const ref = await r.json();
+    expect(ref).toMatchObject({ name: "1_ Old map_ north.png", w: 40, h: 30, bytes: pngBytes.byteLength });
+    await c.wait(() => c.msgs.some((m) => m.t === "refs" && m.refs.some((x) => x.name === ref.name && x.w === 40)));
+    const back = await fetch(`${base}${ref.url}`);
+    expect(new Uint8Array(await back.arrayBuffer())).toEqual(pngBytes);
+    // the same name again gets -2
+    expect((await (await upload("(1) Old map: north.jpg", pngBytes)).json()).name).toBe("1_ Old map_ north-2.png");
+    c.ws.close();
+  });
+
+  it("refuses what isn't a PNG, JPEG or still WebP, with a note that says what to do", async () => {
+    const before = (await hub.store.listRefs(hub.activeId!)).length;
+    const pad = (s: number[]) => new Uint8Array([...s, ...new Array(60).fill(0)]);
+    const gif = await upload("dance.gif", pad([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]));
+    expect(gif.status).toBe(415);
+    expect(await gif.text()).toMatch(/"dance\.gif" is a GIF.*Save it as PNG or JPEG/);
+    const heic = await upload("IMG_0001.png", pad([0, 0, 0, 0x18, ...[..."ftypheic"].map((ch) => ch.charCodeAt(0))])); // (named .png, but it is an iPhone photo)
+    expect(heic.status).toBe(415);
+    expect(await heic.text()).toMatch(/iPhone photo/);
+    const text = await upload("notes.png", new TextEncoder().encode("just some words, not a picture at all"));
+    expect(text.status).toBe(415);
+    expect(await text.text()).toMatch(/only PNG, JPEG and WebP/);
+    expect((await upload("empty.png", new Uint8Array(0))).status).toBe(415);
+    expect((await fetch(`${base}/api/projects/${hub.activeId}/refs`)).status).toBe(405); // (only POST adds)
+    expect((await upload("a.png", pngBytes, "not-the-open-map")).status).toBe(400);
+    expect((await hub.store.listRefs(hub.activeId!)).length).toBe(before);
+  });
+
+  it("refuses a picture over 30 MB without reading all of it", async () => {
+    const answer = await new Promise<{ code: number; text: string }>((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port: PORT, path: `/api/projects/${hub.activeId}/refs`, method: "POST", headers: { "content-length": String(REFERENCE_PICTURE_MAX_BYTES + 1), "x-file-name": "huge.png" } }, (res) => {
+        let t = "";
+        res.on("data", (d) => { t += d; });
+        res.on("end", () => resolve({ code: res.statusCode ?? 0, text: t }));
+      });
+      req.on("error", reject);
+      req.write(pngBytes); // (a start; the server answers from the declared size)
+    });
+    expect(answer.code).toBe(413);
+    expect(answer.text).toMatch(/"huge\.png" is 30 MB, and a picture can be at most 30 MB/);
+  });
+
+  it("renames a picture (its type stays) and removes it into the map's backups folder", async () => {
+    const id = hub.activeId!;
+    const c = await connect();
+    await c.wait(() => c.msgs.some((m) => m.t === "project"));
+    // send a message, then wait for an answer to it (only messages that arrive after it count)
+    const sendAndWait = async (msg: object, p: (m: ServerMsg) => boolean) => {
+      const from = c.msgs.length;
+      c.ws.send(JSON.stringify(msg));
+      await c.wait(() => c.msgs.slice(from).some(p));
+    };
+    const name = (await (await upload("to-rename.png", pngBytes)).json()).name as string;
+    await sendAndWait({ t: "ref_rename", name, to: "North coast.jpg" }, (m) => m.t === "refs" && m.refs.some((x) => x.name === "North coast.png"));
+    expect((await hub.store.listRefs(id)).some((x) => x.name === name)).toBe(false);
+    // a name that is taken is refused; a change of capitals only is fine
+    await upload("Other.png", pngBytes);
+    await sendAndWait({ t: "ref_rename", name: "North coast.png", to: "Other" }, (m) => m.t === "error" && /already a picture called Other\.png/.test(m.message));
+    await sendAndWait({ t: "ref_rename", name: "North coast.png", to: "north coast" }, (m) => m.t === "refs" && m.refs.some((x) => x.name === "north coast.png"));
+    // removing moves the file to backups/removed-pictures
+    await sendAndWait({ t: "ref_remove", name: "north coast.png" }, (m) => m.t === "refs" && !m.refs.some((x) => x.name === "north coast.png"));
+    expect(existsSync(path.join(dir, id, "backups", "removed-pictures", "north coast.png"))).toBe(true);
+    await sendAndWait({ t: "ref_remove", name: "north coast.png" }, (m) => m.t === "error" && /no picture called/.test(m.message));
+    await sendAndWait({ t: "ref_remove", name: "../project.json" }, (m) => m.t === "error" && /Invalid file name|no picture called/.test(m.message));
+    expect(existsSync(path.join(dir, id, "project.json"))).toBe(true);
+    c.ws.close();
+  });
+
+  it("chat attachments follow the same rules: a GIF is left out with a note, and a message with nothing left isn't sent", async () => {
+    const c = await connect();
+    await c.wait(() => c.msgs.some((m) => m.t === "project"));
+    const n = calls.length;
+    c.ws.send(JSON.stringify({ t: "chat_send", text: "", images: [{ name: "x.gif", mediaType: "image/png", data: Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00;", "binary").toString("base64") }] }));
+    await c.wait(() => c.msgs.some((m) => m.t === "error" && /Left out of your message: "x\.gif" is a GIF/.test(m.message)));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls.length).toBe(n);
+    c.ws.close();
+  });
 });
 
 describe("map extras", () => {
@@ -1034,6 +1144,7 @@ describe("the access key", () => {
       expect((await fetch(`${base}/api/health`, { headers })).status, JSON.stringify(headers)).toBe(401);
       expect((await fetch(`${base}/mcp`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: "{}" })).status).toBe(401);
       expect((await fetch(`${base}/api/claude-hook`, { method: "POST", headers, body: "{}" })).status).toBe(401);
+      expect((await fetch(`${base}/api/projects/locked-world/refs`, { method: "POST", headers, body: "not even read" })).status).toBe(401);
       expect(await wsStatus(headers)).toBe("401");
     }
     // the wrong Host is still refused first, key or no key (the DNS-rebinding check stays)

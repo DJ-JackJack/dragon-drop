@@ -4,11 +4,12 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { BATTLE_EXPORT_FORMATS, type BattleExportFormat, type ClientMsg, noiseFileSize } from "@mapmaker/core";
+import { BATTLE_EXPORT_FORMATS, type BattleExportFormat, type ClientMsg, REFERENCE_PICTURE_MAX_BYTES, noiseFileSize, referencePictureProblem } from "@mapmaker/core";
 import { type Config, apiKeyConfigured, editorBuilt } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { handleMcp } from "./mcp.ts";
 import { NOISE_MAX_SIDE, NOISE_MIN_SIDE } from "./noiseStore.ts";
+import { PictureRefused } from "./store.ts";
 import { encodeJpeg } from "@mapmaker/tools";
 
 const MIME: Record<string, string> = {
@@ -131,6 +132,8 @@ export function createAppServer(cfg: Config, hub: Hub) {
         }
         return;
       }
+      const up = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/refs$/);
+      if (up) return await handleRefUpload(hub, up[1], req, res);
       const m = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/(refs|previews)\/([^/]+)$/);
       if (m) {
         const file = hub.store.filePath(m[1], m[2] as "refs" | "previews", decodeURIComponent(m[3]));
@@ -234,6 +237,34 @@ async function handleNoise(hub: Hub, url: URL, req: IncomingMessage, res: Server
     return void res.writeHead(400).end();
   }
   res.writeHead(204).end();
+}
+
+/**
+ * A reference picture the DM adds in the editor (the Add picture button, or one dropped or pasted anywhere): the body is the file
+ * itself and `x-file-name` its name (URI-encoded). What it is comes from its bytes, never from the name or the content type. Answers
+ * the RefInfo, or a plain-text message for the person (415 for a kind of picture that can't be used, 413 for one that is too big).
+ */
+async function handleRefUpload(hub: Hub, id: string, req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== "POST") return void res.writeHead(405, { allow: "POST" }).end();
+  const say = (code: number, text: string, close = false) => res.writeHead(code, { "content-type": "text/plain; charset=utf-8", ...(close && { connection: "close" }) }).end(text, () => { if (close) req.destroy(); });
+  let name = "picture";
+  try { name = decodeURIComponent(String(req.headers["x-file-name"] ?? "picture")).slice(0, 300) || "picture"; } catch { /* keep the default */ }
+  const tooBig = (n: number) => say(413, referencePictureProblem(name, null, n) ?? "That picture is too big.", true);
+  const declared = Number(req.headers["content-length"]);
+  if (declared > REFERENCE_PICTURE_MAX_BYTES) return tooBig(declared);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > REFERENCE_PICTURE_MAX_BYTES) return tooBig(size);
+    chunks.push(c as Buffer);
+  }
+  const body = Buffer.concat(chunks);
+  try {
+    sendJson(res, await hub.addReference(id, name, new Uint8Array(body.buffer, body.byteOffset, body.byteLength)));
+  } catch (e) {
+    say(e instanceof PictureRefused ? 415 : 400, (e as Error).message);
+  }
 }
 
 async function handleAssets(hub: Hub, url: URL, req: IncomingMessage, res: ServerResponse) {

@@ -47,8 +47,8 @@ export const FORMATS_READ: FormatInfo[] = [
   },
   {
     id: "reference", name: "Reference pictures", files: ".png, .jpg, .jpeg, .webp",
-    use: "Pictures you attach in the chat, shown to Claude, turned into terrain (sketch import) or compared with the map.",
-    limits: "PNG, JPEG and WebP (a still picture: an animated WebP is not read). Other pictures (GIF and the like) are not accepted here, and the chat says so.",
+    use: "Pictures you add in the References panel (Add picture, or a picture dropped or pasted anywhere in the window) or attach in the chat: shown to Claude, turned into terrain (sketch import) or compared with the map.",
+    limits: "PNG, JPEG and WebP (a still picture: an animated WebP is not read), up to 30 MB each. Other kinds (GIF, an iPhone's HEIC photos, AVIF, BMP, TIFF, SVG, PDF) are refused with a note saying how to save them as one that works. What a file is comes from its contents, not its name.",
   },
   {
     id: "asset-pictures", name: "Asset pictures", files: ".png, .jpg, .jpeg, .webp (loose in folders)",

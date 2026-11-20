@@ -8,11 +8,11 @@
  *   projects/<id>/map/previews/       preview images shown in chat
  *   projects/<id>/chat.json           in-app chat history — not committed
  *   projects/<id>/map/checkpoints/    named restore points, and the automatic ones (rolling backups)
- *   projects/<id>/backups/            copies of the files taken before a map is migrated to a newer format
+ *   projects/<id>/backups/            copies of the files taken before a map is migrated to a newer format, and removed reference pictures (backups/removed-pictures)
  * (docs/MAP-FILES.md describes every file; project.json's formatVersion says which form they are in, see core's format.ts.)
  */
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
@@ -22,7 +22,8 @@ const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 import {
   type BaseClimate, type BattleLevel, type CheckpointInfo, type Features, type LevelsFile, type MapDoc, type MapMeta, type MapMigration, type ProjectInfo, type RefInfo, CURRENT_FORMAT, HeightField,
-  MIGRATIONS, NewerFormatError, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, migrateMap, packBaseClimate, unpackBaseClimate,
+  IMAGE_HEAD_BYTES, MIGRATIONS, NewerFormatError, PICTURE_HEAD_BYTES, REFERENCE_PICTURE_EXT, cleanLevels, createDoc, defaultLevels, emptyFeatures, formatOf, imageSize, isReferenceKind,
+  migrateMap, packBaseClimate, pictureKind, referencePictureProblem, unpackBaseClimate,
 } from "@mapmaker/core";
 
 type CheckpointMeta = Pick<Partial<MapMeta>, "seaLevel" | "style" | "climate">;
@@ -53,6 +54,50 @@ export function safeFileName(name: string): string {
   const base = path.basename(name);
   if (!FILE_RE.test(base) || base.includes("..")) throw new Error(`Invalid file name: ${name}`);
   return base;
+}
+
+/** A reference picture's file type was refused (not PNG, JPEG or a still WebP, empty, or too big): the message is for the person. */
+export class PictureRefused extends Error {}
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+
+/**
+ * A safe file name for a reference picture: what the person called it, with only letters, digits, spaces, dots, dashes and
+ * underscores, starting with a letter or digit, not too long, and ending in the picture's real type (.png, .jpg or .jpeg, .webp).
+ */
+export function refFileName(name: string, kind: "png" | "jpeg" | "webp"): string {
+  const base = path.basename(name.replace(/\\/g, "/"));
+  const given = base.match(/\.(png|jpe?g|webp)$/i)?.[1].toLowerCase();
+  const ext = kind === "jpeg" ? (given === "jpeg" ? "jpeg" : "jpg") : kind;
+  let stem = base.replace(/\.[^.]*$/, "").normalize("NFKD").replace(/[̀-ͯ]/g, "");
+  stem = stem.replace(/[^A-Za-z0-9._ -]+/g, "_").replace(/\.{2,}/g, ".").replace(/^[^A-Za-z0-9]+/, "").replace(/[. _-]+$/, "").slice(0, 100).replace(/[. _-]+$/, "");
+  if (!stem) stem = "picture";
+  if (WINDOWS_RESERVED.test(stem)) stem = `picture-${stem}`;
+  return `${stem}.${ext}`;
+}
+
+function refKindOfName(name: string): "png" | "jpeg" | "webp" {
+  const e = path.extname(name).toLowerCase();
+  return e === ".png" ? "png" : e === ".webp" ? "webp" : "jpeg";
+}
+
+/** `name` if no file in `dir` has it, else name-2, name-3 and so on (before the ending). */
+function freeName(dir: string, name: string): string {
+  let out = name;
+  for (let i = 2; existsSync(path.join(dir, out)); i++) out = name.replace(/(\.[^.]+)?$/, `-${i}$1`);
+  return out;
+}
+
+/** The first `n` bytes of a file (fewer if it is shorter). */
+async function readHead(file: string, n: number): Promise<Uint8Array> {
+  const fh = await open(file, "r");
+  try {
+    const buf = new Uint8Array(n);
+    const { bytesRead } = await fh.read(buf, 0, n, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
 }
 
 export function slugify(name: string): string {
@@ -323,12 +368,18 @@ export class ProjectStore {
     const d = path.join(this.dir(id), "refs");
     if (!existsSync(d)) return [];
     const out: RefInfo[] = [];
-    for (const name of (await readdir(d)).sort()) {
+    for (const name of (await readdir(d)).sort((a, b) => a.localeCompare(b))) {
       if (!REFERENCE_PICTURE_EXT.test(name)) continue;
-      const s = await stat(path.join(d, name));
-      out.push({ name, url: `/api/projects/${id}/refs/${encodeURIComponent(name)}`, bytes: s.size });
+      const f = path.join(d, name);
+      const s = await stat(f);
+      if (!s.isFile()) continue;
+      out.push({ ...this.refInfo(id, name, s.size), ...(imageSize(await readHead(f, IMAGE_HEAD_BYTES)) ?? {}) });
     }
     return out;
+  }
+
+  private refInfo(id: string, name: string, bytes: number): RefInfo {
+    return { name, url: `/api/projects/${id}/refs/${encodeURIComponent(name)}`, bytes };
   }
 
   async readRef(id: string, name: string): Promise<Uint8Array | null> {
@@ -336,14 +387,43 @@ export class ProjectStore {
     return existsSync(f) ? new Uint8Array(await readFile(f)) : null;
   }
 
+  /**
+   * Keep a reference picture. It must be a PNG, JPEG or still WebP (checked from its bytes, whatever it is called): anything else is
+   * refused with a message for the person (`PictureRefused`). The name is cleaned up and given the right ending, and a name that is
+   * already taken gets -2, -3 and so on.
+   */
   async addRef(id: string, name: string, bytes: Uint8Array): Promise<RefInfo> {
+    const kind = pictureKind(bytes.subarray(0, PICTURE_HEAD_BYTES));
+    const problem = referencePictureProblem(name, kind, bytes.byteLength);
+    if (problem || !isReferenceKind(kind)) throw new PictureRefused(problem ?? "Not a picture.");
     const d = path.join(this.dir(id), "refs");
     await mkdir(d, { recursive: true });
-    const clean = safeFileName(name.replace(/[^A-Za-z0-9._ -]/g, "_") || "image");
-    let final = clean;
-    for (let i = 2; existsSync(path.join(d, final)); i++) final = clean.replace(/(\.[^.]+)?$/, `-${i}$1`);
+    const final = freeName(d, refFileName(name, kind));
     await writeFile(path.join(d, final), bytes);
-    return { name: final, url: `/api/projects/${id}/refs/${encodeURIComponent(final)}`, bytes: bytes.byteLength };
+    return { ...this.refInfo(id, final, bytes.byteLength), ...(imageSize(bytes.subarray(0, IMAGE_HEAD_BYTES)) ?? {}) };
+  }
+
+  /** Give a reference picture a new name (the person's words; its ending stays what the picture is). Returns the name it now has. */
+  async renameRef(id: string, name: string, to: string): Promise<string> {
+    const d = path.join(this.dir(id), "refs");
+    const from = safeFileName(name);
+    if (!existsSync(path.join(d, from))) throw new Error(`There is no picture called ${name}.`);
+    const ext = path.extname(from);
+    const wanted = refFileName(to.trim().replace(/\.(png|jpe?g|webp)$/i, "") + ext, refKindOfName(from));
+    if (wanted === from) return from;
+    // (a change of capitals only is the same file on Windows: rename it straight away)
+    if (wanted.toLowerCase() !== from.toLowerCase() && existsSync(path.join(d, wanted))) throw new Error(`There is already a picture called ${wanted}.`);
+    await rename(path.join(d, from), path.join(d, wanted));
+    return wanted;
+  }
+
+  /** Take a reference picture off the list: it is moved to the map's backups folder (backups/removed-pictures), not deleted. */
+  async removeRef(id: string, name: string): Promise<void> {
+    const from = path.join(this.dir(id), "refs", safeFileName(name));
+    if (!existsSync(from)) throw new Error(`There is no picture called ${name}.`);
+    const d = path.join(this.dir(id), "backups", "removed-pictures");
+    await mkdir(d, { recursive: true });
+    await rename(from, path.join(d, freeName(d, path.basename(from))));
   }
 
   async savePreview(id: string, jpeg: Uint8Array): Promise<string> {

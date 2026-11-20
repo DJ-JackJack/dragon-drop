@@ -84,8 +84,28 @@ code { background: #08080a; padding: 1px 4px; border-radius: 4px; font-size: 12.
 .row.end button { flex: none; }
 .check { display: flex; gap: 6px; align-items: center; font-size: 13px; margin: 3px 0; }
 .muted { color: var(--muted); font-size: 12.5px; margin: 0; }
-.refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.refs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+/* References: the map's pictures (References.tsx) */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.side .section-head h3 { margin: 0; }
+button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
+.ref-list { display: flex; flex-direction: column; gap: 10px; }
+.ref-card { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ref-thumb { padding: 0; border-radius: 6px; overflow: hidden; background: #08080a; display: block; width: 100%; }
+.ref-thumb img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; }
+.ref-name { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ref-meta { font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ref-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.ref-actions button { font-size: 11.5px; padding: 2px 6px; }
+.side .hint { margin-top: 8px; font-size: 11.5px; }
+.picture-viewer { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.82); display: grid; place-items: center; padding: 24px; }
+.picture-viewer figure { margin: 0; display: flex; flex-direction: column; gap: 8px; max-width: 100%; max-height: 100%; min-height: 0; }
+.picture-viewer img { max-width: calc(100vw - 48px); max-height: calc(100vh - 100px); object-fit: contain; border-radius: 6px; background: #08080a; }
+.picture-viewer figcaption { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.picture-viewer figcaption .ref-name { flex: 1; font-size: 13px; }
+.drop-overlay { position: fixed; inset: 0; z-index: 40; pointer-events: none; display: grid; place-items: center; background: rgba(10, 10, 12, 0.55); outline: 2px dashed var(--accent); outline-offset: -12px; }
+.drop-overlay div { display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; max-width: 420px; padding: 18px 22px; border-radius: 10px; background: var(--panel); border: 1px solid var(--accent); }
+.drop-overlay b { font-size: 16px; color: var(--gold-hi); }
+.drop-overlay span { color: var(--muted); font-size: 13px; }
 .history { overflow-y: auto; flex: 1; min-height: 0; }
 .hist { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 12.5px; border-bottom: 1px solid #1e1c17; }
 .hist.undo .what, .hist.redo .what { color: var(--muted); font-style: italic; }
@@ -271,8 +291,6 @@ button.danger { color: var(--error); }
 .sketch-preview { display: flex; gap: 12px; align-items: flex-start; }
 .sketch-preview canvas { width: 180px; height: auto; border: 1px solid var(--line); border-radius: 6px; background: #0d0d10; flex: none; }
 .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; border: 1px solid rgba(255,255,255,0.25); }
-.refs .ref { display: flex; flex-direction: column; gap: 3px; }
-.refs .ref button { font-size: 11.5px; padding: 2px 4px; }
 .modal.wide { max-height: 92vh; overflow-y: auto; }
 
 /* battlemaps */

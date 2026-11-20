@@ -116,6 +116,14 @@ export function askMessage(o: { text: string; selection: string; locked: boolean
   return `[Selection] About what I have selected in Dragon Drop (${oneLine(o.selection, 160)}${o.locked ? "; your edits are locked to it" : ""}), call get_selection first. ${oneLine(o.text, 600)}`;
 }
 
+/**
+ * The one-line message a reference picture's "Ask Claude" button types into Claude Code: which picture (Claude looks at it with
+ * view_reference) and the DM's own words. One line, no control characters.
+ */
+export function pictureAskMessage(o: { name: string; text: string }): string {
+  return `[Picture] About the reference picture "${oneLine(o.name, 120)}" in Dragon Drop, look at it with view_reference first. ${oneLine(o.text, 600)}`;
+}
+
 /** The one-line message typed into Claude Code. `since` is the last change Claude has already been told about. */
 export function assistMessage(o: { since: number; latest: number; labels: string[]; manual?: boolean }): string {
   const shown = o.labels.slice(-6).map((l) => oneLine(l));

@@ -31,6 +31,7 @@ export * from "./foundryScene.ts";
 export * from "./pck.ts";
 export * from "./imageSize.ts";
 export * from "./formats.ts";
+export * from "./pictures.ts";
 export * from "./levels.ts";
 export * from "./assets.ts";
 export * from "./image.ts";

@@ -4,7 +4,7 @@ import {
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
-import { getClip, setClip, unstack } from "./clipboard.ts";
+import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
@@ -619,8 +619,9 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey && nudge(arrow[0], arrow[1], e.shiftKey)) { e.preventDefault(); return; }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
-        if (k === "c") { if (copySelection()) e.preventDefault(); return; }
-        if (k === "v") { if (pasteClip()) e.preventDefault(); return; }
+        // (Ctrl+C and Ctrl+V let the browser's copy and paste events happen: a picture copied after the map items is pasted as a reference instead, see clipboard.ts)
+        if (k === "c") { if (copySelection()) itemsCopied(); return; }
+        if (k === "v") { armItemsPaste("world", pasteClip); return; }
         if (k === "d") { e.preventDefault(); duplicateSelection(); return; } // (Ctrl+D is "bookmark this page" in a browser)
       }
       if ((e.key === "Delete" || e.key === "Backspace") && groupRef.current.length >= 2) {

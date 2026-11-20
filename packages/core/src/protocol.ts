@@ -32,6 +32,9 @@ export interface RefInfo {
   name: string;
   url: string;
   bytes: number;
+  /** Its size in pixels, when it could be read from the file's first bytes. */
+  w?: number;
+  h?: number;
 }
 
 export interface ChatImage {
@@ -97,6 +100,9 @@ export type ClientMsg =
   | { t: "chat_stop" }
   | { t: "chat_settings"; settings: Partial<ChatSettings> }
   | { t: "chat_reset" }
+  /** Reference pictures (they are added with POST /api/projects/<id>/refs): give one a new name (its file type stays), or take it off the list (it is moved to the map's backups folder). */
+  | { t: "ref_rename"; name: string; to: string }
+  | { t: "ref_remove"; name: string }
   | { t: "checkpoint_save"; name: string }
   | { t: "checkpoint_restore"; name: string }
   /** What the DM has selected on the map, and whether Claude's edits are held to it (an area or a climate region). */

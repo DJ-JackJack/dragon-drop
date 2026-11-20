@@ -34,7 +34,7 @@ The full guide covers prerequisites, the editor, Remote Control and the map page
 |---|---|---|
 | Where | Chat panel next to the map | The terminal panel in the app, a terminal on your PC, or the Claude app on your phone |
 | Billing | Claude API key, pay per use (cost shown live) | Your Claude subscription |
-| Images | Drag, drop or paste straight into the chat | Attach in Claude Code, or add to `projects/<map>/refs/` |
+| Images | **Add picture** in the References panel, or drop or paste a picture anywhere in the window (in the chat, it goes with your message) | The same: Claude finds it with its reference tools, and **Ask Claude…** on a picture points Claude Code at it |
 | Tools | Same map tools | Same map tools (via `.mcp.json`) |
 
 ## Docs

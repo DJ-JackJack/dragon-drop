@@ -2,7 +2,7 @@
  * Assist mode for the Claude Code panel: the Suggest button, and (when switched on) a nudge after the DM pauses editing.
  * The rules are in core's assist.ts. Claude Code only ever hears from us when its hooks say it is idle.
  */
-import { askMessage, assistDecision, assistMessage, userEditsSince } from "@mapmaker/core";
+import { askMessage, assistDecision, assistMessage, pictureAskMessage, userEditsSince } from "@mapmaker/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sendToClaude, typingAt } from "./assistBus.ts";
 import type { AppState } from "./store.ts";
@@ -21,6 +21,8 @@ export interface Assist {
   suggest(): Promise<string>;
   /** The "Ask Claude about this" box: type the DM's words, with a pointer to their selection, into Claude Code when it is idle. Resolves to a message to show. */
   ask(text: string, selection: string, locked: boolean): Promise<{ ok: boolean; message: string }>;
+  /** A reference picture's "Ask Claude" button: the same, pointing Claude at that picture. */
+  askPicture(name: string, text: string): Promise<{ ok: boolean; message: string }>;
   /** Why Assist is waiting, or what it just did. */
   status: string;
   /** A suggestion was asked for and Claude has finished answering: look at the panel. */
@@ -82,18 +84,20 @@ export function useAssist(s: AppState, desktop: boolean): Assist {
     return msg;
   }, [send]);
 
-  const ask = useCallback(async (text: string, selection: string, locked: boolean): Promise<{ ok: boolean; message: string }> => {
+  const askLine = useCallback(async (line: string): Promise<{ ok: boolean; message: string }> => {
     const bridge = window.dragonDrop;
-    if (!bridge) return { ok: false, message: "Asking from here needs the desktop app. Type it into Claude Code and say \"my selection\"." };
+    if (!bridge) return { ok: false, message: "Asking from here needs the desktop app. Type your question into Claude Code instead." };
     const st = sRef.current;
     const t = await bridge.termStatus();
     if (!t.alive) return { ok: false, message: "Claude Code isn't running. Start it in the Claude panel first." };
     if (st.claude === "blocked") return { ok: false, message: "Claude is waiting for your answer in the terminal. Answer it first." };
     if (st.claude === "busy" || t.looksBusy) return { ok: false, message: "Claude is busy or has a question open. Try again when it's done." };
-    if (!(await sendToClaude(askMessage({ text, selection, locked })))) return { ok: false, message: "Claude Code isn't running. Start it in the Claude panel first." };
+    if (!(await sendToClaude(line))) return { ok: false, message: "Claude Code isn't running. Start it in the Claude panel first." };
     waitingForAnswer.current = true;
     return { ok: true, message: "Asked Claude." };
   }, []);
+  const ask = useCallback((text: string, selection: string, locked: boolean) => askLine(askMessage({ text, selection, locked })), [askLine]);
+  const askPicture = useCallback((name: string, text: string) => askLine(pictureAskMessage({ name, text })), [askLine]);
 
   useEffect(() => {
     if (!enabled || !desktop) return;
@@ -116,5 +120,5 @@ export function useAssist(s: AppState, desktop: boolean): Assist {
     return () => { stopped = true; window.clearInterval(id); };
   }, [enabled, desktop, send]);
 
-  return { enabled, setEnabled, suggest, ask, status, ready, clearReady: () => setReady(false) };
+  return { enabled, setEnabled, suggest, ask, askPicture, status, ready, clearReady: () => setReady(false) };
 }
