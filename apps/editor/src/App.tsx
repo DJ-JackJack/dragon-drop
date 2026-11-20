@@ -435,7 +435,7 @@ export function App() {
             </div>
           </section>
 
-          {s.meta && <References refs={s.refs} worldMap={isWorld} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} tracing={s.features.trace?.ref} onTrace={(r) => void traceCtl.start(s.meta!, r)} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
+          {s.meta && <References refs={s.refs} worldMap={isWorld} addedAt={s.pictureNote && !s.pictureNote.busy ? s.pictureNote.at : 0} tracing={s.features.trace?.ref} onTrace={(r) => void traceCtl.start(s.meta!, r)} onStopTrace={() => { if (s.features.trace) traceCtl.stop(s.features.trace); }} onMakeTerrain={setSketchRef} onAskClaude={desktop ? onAskPicture : undefined} />}
 
           <section className="grow">
             <h3>History</h3>

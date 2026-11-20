@@ -14,11 +14,13 @@ const stem = (name: string) => name.replace(/\.(png|jpe?g|webp)$/i, "");
 /** What the Add picture button and the drop note say a picture can be. */
 export const PICTURE_RULE = `PNG, JPEG or WebP, up to ${REFERENCE_PICTURE_MAX_BYTES / 1048576} MB`;
 
-export function References({ refs, worldMap, addedAt, tracing, onTrace, onMakeTerrain, onAskClaude }: {
+export function References({ refs, worldMap, addedAt, tracing, onTrace, onStopTrace, onMakeTerrain, onAskClaude }: {
   refs: RefInfo[];
   /** The picture laid over the map (or this battlemap level) to trace, if any. */
   tracing?: string;
   onTrace: (r: RefInfo) => void;
+  /** Take the trace picture off the map (the card of the picture being traced shows Stop tracing). */
+  onStopTrace: () => void;
   /** World maps can turn a drawing into terrain; battlemaps can't. */
   worldMap: boolean;
   /** Changes when pictures have just been added (the panel scrolls into view). */
@@ -65,7 +67,9 @@ export function References({ refs, worldMap, addedAt, tracing, onTrace, onMakeTe
                 <div className="ref-name" title={r.name}>{r.name}</div>
                 <div className="ref-meta muted">{describe(r)}</div>
                 <div className="ref-actions">
-                  <button disabled={tracing === r.name} onClick={() => onTrace(r)} title={tracing === r.name ? "This picture is over the map: line it up with the trace bar under the map" : "Lay this picture over the map, see-through, to redraw the map on top of it"} data-testid="ref-trace">{tracing === r.name ? "Tracing" : "Trace over map"}</button>
+                  {tracing === r.name
+                    ? <button className="on" onClick={() => onStopTrace()} title="Take this picture off the map (it stays here; Undo brings it back). Line it up with the trace bar under the map." data-testid="ref-trace-stop">Stop tracing</button>
+                    : <button onClick={() => onTrace(r)} title="Lay this picture over the map, see-through, to redraw the map on top of it" data-testid="ref-trace">Trace over map</button>}
                   {worldMap && <button onClick={() => onMakeTerrain(r)} title="Turn this drawing into terrain" data-testid="sketch-open">Make terrain…</button>}
                   {onAskClaude && <button onClick={() => onAskClaude(r)} title="Ask Claude Code, in the terminal panel, about this picture" data-testid="ref-ask">Ask Claude…</button>}
                   <button onClick={() => rename(r)} data-testid="ref-rename">Rename</button>

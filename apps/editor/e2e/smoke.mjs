@@ -454,6 +454,12 @@ try {
     await page.screenshot({ path: path.join(shots, "e2e-4b-trace.png") });
     await bar.getByTestId("trace-stop").click();
     await bar.waitFor({ state: "detached", timeout: 10000 });
+    // the picture's own card stops it too: its button reads Stop tracing while it is over the map
+    await sketchCard.getByTestId("ref-trace").click();
+    await bar.waitFor({ timeout: 10000 });
+    await sketchCard.getByTestId("ref-trace-stop").click();
+    await bar.waitFor({ state: "detached", timeout: 10000 });
+    await sketchCard.getByTestId("ref-trace").waitFor({ timeout: 5000 });
   }
 
   // roads and borders: a routed road over real terrain, then a closed border

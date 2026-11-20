@@ -26,6 +26,8 @@ export function TraceBar({ trace, meta, level }: { trace: TracePicture | undefin
     <div className="trace-bar" data-testid="trace-bar">
       <div className="trace-row">
         <span className="trace-name" title={trace.ref}>Tracing <b>{trace.ref}</b></span>
+        {/* first in the row, so it never wraps out of sight on a narrow map */}
+        <button className="trace-stop" onClick={() => traceCtl.stop(trace)} title="Take the picture off the map (it stays in References; Undo brings it back)" data-testid="trace-stop">✕ Stop tracing</button>
         <label className="trace-opacity" title="How solid the picture is drawn">
           <span>See-through</span>
           <input type="range" min={10} max={100} step={5} value={Math.round(s.opacity * 100)} onChange={(e) => traceCtl.setOpacity(Number(e.target.value) / 100)} data-testid="trace-opacity" />
@@ -36,7 +38,6 @@ export function TraceBar({ trace, meta, level }: { trace: TracePicture | undefin
         {battle && mode("grid", "Match grid", "Click two crossings of the picture's own grid: its squares become the map's squares")}
         <button disabled={locked} onClick={() => traceCtl.fit(trace, meta)} title="Fit the whole picture inside the map again" data-testid="trace-fit">Fit</button>
         <button className={locked ? "on" : ""} onClick={() => traceCtl.setLocked(trace, !locked)} title={locked ? "Unlock it so it can be moved again" : "Lock it in place, so neither you nor Claude moves it by accident"} data-testid="trace-lock">{locked ? "Locked" : "Lock"}</button>
-        <button onClick={() => traceCtl.stop(trace)} title="Take the picture off the map (it stays in References; Undo brings it back)" data-testid="trace-stop">Stop tracing</button>
       </div>
       {s.mode && (
         <div className="trace-row trace-help" data-testid="trace-help">
