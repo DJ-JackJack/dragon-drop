@@ -39,7 +39,7 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       1. [ ] The new repository exists and has the clean tree.
       2. [ ] v0.1.8 is published from the **old** repository (its updater now points at the new one), and again from the **new** one so the first update check there finds a release.
       3. [ ] Friends have updated (Settings shows 0.1.8 and "You're up to date").
-      4. [ ] Then, and only then: delete the old repository's releases (the v0.1.x installers carry the sample) and make it private.
+      4. [x] The old repository is private and renamed `AI-Mapmaker-Build-archive` (2026-11-20). Its old name now belongs to a **public signpost repository** with one README commit and one release, v0.1.9 (the same installer, blockmap and `latest.yml` as `dragon-drop`'s), so copies older than 0.1.8 still find an update, which then points them at `dragon-drop`. It needs no more releases. Never copy anything from the archive (its history and releases carry the sample map) into it, and never push the old checkout to the old name.
       5. [ ] Switch on the security settings below in the new repository: they don't carry over.
 - [ ] A short privacy policy: no analytics in the app; map data goes to the AI provider the user chooses, from their own account.
 - [x] Third-party licences: all permissive (MIT, ISC, BSD, Apache-2.0, OFL for the Cinzel font). `apps/desktop/scripts/notices.mjs` builds

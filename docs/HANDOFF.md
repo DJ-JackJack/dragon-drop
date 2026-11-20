@@ -25,7 +25,8 @@ Before v0.1.9: WebP decoder (libwebp 1.6.0 as WebAssembly, `tools/webp-wasm/`); 
 - **Timing-sensitive test:** `apps/server/test/autobackup.test.ts` ("keeps the newest few") failed once in a full `pnpm test` run and passed alone and in the next full run.
 - **Flaky end-to-end step:** the Hole step after Page Up (`apps/editor/e2e/smoke.mjs`) timed out once in two runs.
 - **Foundry not tried:** a player's (non-GM) view of a roof; a token above a ceiling (Foundry holds a token a token-height below it); what a hole does to a token.
-- **The person's own to do:** make the old `AI-Mapmaker-Build` repo private (settings; the tools here were read-only), the Dependabot PR #1, the repository security settings.
+- **The old repository name is a public signpost** (2026-11-20): the private old repo was renamed `AI-Mapmaker-Build-archive`, and `DJ-JackJack/AI-Mapmaker-Build` is now a new public repository with one README commit and one release (v0.1.9, the same files as `dragon-drop`'s). It exists only so copies older than 0.1.8, whose updater looks at that name, still get an update (then they look at `dragon-drop`). **Never push anything to it** (the old history holds the person's map); the old checkout in Documents has its `origin` pointed at the archive. It needs no more releases.
+- **The person's own to do:** the Dependabot PR #1, the repository security settings.
 
 ## Foundry facts that cost rounds (all in `docs/FOUNDRY.md`)
 
