@@ -6,7 +6,7 @@
 import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
-  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater,
+  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
 
@@ -219,9 +219,14 @@ class Store {
   }
 
   /** Carve valleys along the rivers (the server saves a checkpoint first; the answer is `carved`, or an error). */
-  carve(o: { strength: number; floodplains: boolean; deltas: boolean }) {
+  carve(o: { strength: number; floodplains: boolean; deltas: boolean; where: "map" | "selection" }) {
     this.set({ carving: true });
     this.send({ t: "carve_valleys", ...o });
+  }
+
+  /** A river drawn along a line (map px, from its source down): the server cuts a channel along it and starts a river at its upper end; the answer is `river_drawn`, or an error. */
+  drawRiver(points: [number, number][], size: RiverSize) {
+    this.send({ t: "draw_river", points, size });
   }
 
   /**
@@ -329,9 +334,17 @@ class Store {
       case "carved":
         this.set({
           carving: false,
-          pictureNote: { text: `Valleys carved: ${m.lowered.toLocaleString()} map pixels lowered, the deepest cut ${m.deepestM.toLocaleString()} m${m.deltaCells ? `, ${m.deltaCells.toLocaleString()} pixels of new delta land` : ""}. Undo takes it back; the checkpoint "${m.checkpoint}" has the map as it was.`, busy: false, at: Date.now(), ms: 12000 },
+          pictureNote: { text: `Valleys carved${!m.scope || m.scope === "the whole map" ? "" : m.scope === "the selected area" ? " in the selected area" : ` along ${m.scope}`}: ${m.lowered.toLocaleString()} map pixels lowered, the deepest cut ${m.deepestM.toLocaleString()} m${m.deltaCells ? `, ${m.deltaCells.toLocaleString()} pixels of new delta land` : ""}. Undo takes it back; the checkpoint "${m.checkpoint}" has the map as it was.`, busy: false, at: Date.now(), ms: 12000 },
         });
         break;
+      case "river_drawn": {
+        const mi = Math.round(m.lengthKm * 0.621371);
+        const ends = m.end === "sea" ? "to the sea" : m.end === "edge" ? "to the map's edge" : "ending on land, where it carries on downhill (or fills a hollow into a lake)";
+        const cut = m.deepestM >= 40 ? ` Through high ground it cut up to ${m.deepestM.toLocaleString()} m deep.` : "";
+        const turned = m.reversed ? " You drew it from the mouth up, so it runs the other way." : "";
+        this.set({ pictureNote: { text: `River drawn: about ${mi.toLocaleString()} mi, ${ends}.${turned}${cut} The rivers are worked out again in a moment. Undo takes it back.`, busy: false, at: Date.now(), ms: 9000 } });
+        break;
+      }
       case "map_deleted":
         this.set({ pictureNote: { text: `"${m.name}" was deleted. Its folder is kept in your maps folder, under "Deleted maps", if you ever want it back.`, busy: false, at: Date.now(), ms: 9000 } });
         break;

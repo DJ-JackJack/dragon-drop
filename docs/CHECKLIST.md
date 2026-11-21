@@ -50,4 +50,5 @@ From `SELLING.md`, where each has its details:
 ## Done
 
 - 2026-11-21: School and Whirlpool place kinds (from a playtester).
+- 2026-11-21: From the person's first try of 0.1.11: the Rivers tool opens on **Add a river** (a drag draws a river whose land is cut so the water follows it, a click starts one), and **Carve valleys** can be held to the selected area or the selected river.
 - 2026-11-21: Muse Code (Meta) in Settings → AI assistant, the map tools connected through `.mcp.json` (tried with Muse Code 1.4.25 against a running Dragon Drop); still to try in the app with a Meta sign-in.

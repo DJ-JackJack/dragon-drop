@@ -51,6 +51,30 @@ function insidePoint(l: LakeShape): [number, number] {
 
 export const WATER_TOOLS = [
   define({
+    name: "draw_river",
+    description:
+      "Make a river run along a course: give the line (map px) from where it starts to where it ends (the sea, a lake, or open land). The rivers are still worked out from the land and the rain, " +
+      "so this cuts a channel into the land along the line (its bed always falling, below the ground on both sides, so it also holds across a slope) and puts a river source at the upper end; " +
+      "the river then follows the line when the rivers are worked out again. A line drawn from the mouth up is turned round. Through high ground it cuts a gorge (deepest_cut_m says how deep). " +
+      "One edit that undo takes back. Only when the DM asks for a river along a course; to just start a river and let it find its own way, use add_river_source. Name it only with a name the DM gave.",
+    schema: z.object({
+      points: z.array(z.tuple([z.number(), z.number()])).min(2).max(2000).describe("The course, map px, from the source to the mouth: a point every few px, or the corners of the course"),
+      size: z.enum(["stream", "river", "major", "great"]).optional().describe("How big (default river): wider and deeper channel, more water at the source"),
+      name: z.string().min(1).max(80).optional().describe("The river's name, only if the DM gave one"),
+      notes: z.string().max(1000).optional(),
+    }),
+    async run(ctx, i) {
+      if (!ctx.drawRiver) return fail("Drawing rivers isn't available in this session.");
+      const r = ctx.drawRiver({ points: i.points as [number, number][], size: i.size, name: i.name, notes: i.notes });
+      return json({
+        change: r.change, source: r.source, start: r.start, ends: r.end === "sea" ? "in the sea" : r.end === "edge" ? "at the map's edge" : "on land (it carries on downhill from there, or fills a hollow into a lake)",
+        length_km: r.lengthKm, deepest_cut_m: r.deepestM, ...(r.reversed && { turned_round: "the line was drawn from the mouth up, so it was turned round" }),
+        note: "The rivers recompute in about a second: render_preview to see it, and name_water to name it if the DM gave a name.",
+      });
+    },
+  }),
+
+  define({
     name: "name_water",
     description:
       "Name a river or a lake, or rename one. Only a name the DM gave or confirmed (names are canon). The rivers are worked out from the land and the rain, so a river's name is pinned to a spot on it " +
@@ -125,19 +149,22 @@ export const WATER_TOOLS = [
     name: "carve_valleys",
     description:
       "Cut valleys into the land along the rivers as they are now: deeper and wider for bigger rivers, a narrow V where a river drops steeply, a broad flat floor where a big river crosses low flat ground (floodplains), " +
-      "and a fan of new low land where a big river meets the sea over flat ground (deltas). It lowers land along every river on the whole map (it never raises land except the deltas) and the river beds never climb downstream. " +
+      "and a fan of new low land where a big river meets the sea over flat ground (deltas). It never raises land except the deltas, and the river beds never climb downstream. " +
+      "Where: the whole map (default); where: \"selection\" only inside the DM's selected area (with a soft edge) or along the river they selected (get_selection shows it); river: only along that named river. " +
       "Only when the DM asks for it, and look first with preview: true (the relief now and carved, side by side, nothing changed). Applying saves a checkpoint first and is one edit that undo takes back.",
     schema: z.object({
       strength: z.number().min(0).max(1).optional().describe("How deep and wide (default 0.5)"),
       floodplains: z.boolean().optional().describe("Broad flat valley floors for big rivers on low flat ground (default true)"),
       deltas: z.boolean().optional().describe("Fans of new land where big rivers meet the sea over flat ground (default true)"),
+      where: z.enum(["map", "selection"]).optional().describe("map (default): every river; selection: only in the DM's selected area, or along the selected river"),
+      river: z.string().optional().describe("Only along this named river (its name or id from list_waters)"),
       preview: z.boolean().optional().describe("Only show what it would do (default false)"),
       region: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional().describe("Preview: crop to this area (map px)"),
     }),
     async run(ctx, i) {
       if (!ctx.carveValleys) return fail("Carving valleys isn't available in this session.");
-      const r = await ctx.carveValleys({ strength: i.strength, floodplains: i.floodplains, deltas: i.deltas, preview: !!i.preview });
-      const facts = { cells_lowered: r.lowered, deepest_cut_m: r.deepestM, delta_cells: r.deltaCells };
+      const r = await ctx.carveValleys({ strength: i.strength, floodplains: i.floodplains, deltas: i.deltas, preview: !!i.preview, where: i.where, river: i.river });
+      const facts = { where: r.scope, cells_lowered: r.lowered, deepest_cut_m: r.deepestM, delta_cells: r.deltaCells };
       if (!i.preview) return json({ ...facts, checkpoint: r.checkpoint, note: "Carved as one edit (undo takes it back; the checkpoint has the map as it was). The rivers recompute in a moment: render_preview and check_hydrology to look." });
       if (!r.heights) return fail("The preview couldn't be made.");
       // the relief now and carved, side by side, with the rivers as they are now

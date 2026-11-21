@@ -3,7 +3,7 @@
  * with the River tool, and the inspector's editors for a named river or lake and for a river source.
  */
 import { useEffect, useState } from "react";
-import { type Features, type MapMeta, type RiverSize, type RiverSource, type WaterName, newFeatureId } from "@mapmaker/core";
+import { type Features, type MapMeta, type RiverSize, type RiverSource, type Selection, type WaterName, newFeatureId } from "@mapmaker/core";
 import { confirmBox } from "./dialogs.tsx";
 import { type AppState, store } from "./store.ts";
 import { type WaterPick, describeWater } from "./waterUi.ts";
@@ -15,8 +15,8 @@ export const RIVER_SIZE_NAMES: { id: RiverSize; label: string }[] = [
 const sendName = (w: WaterName, label: string) => store.send({ t: "cmd", cmd: { op: "features", patch: { upsertWaterNames: [w] }, label } });
 
 /** The Map panel's section: the named rivers and lakes, lowland rivers, and carving valleys. */
-export function WaterSection({ meta, features, water, carving, selectedId, onPick }: {
-  meta: MapMeta; features: Features; water: AppState["water"]; carving: boolean; selectedId: string | null; onPick: (id: string) => void;
+export function WaterSection({ meta, features, water, carving, selectedId, selection, onPick }: {
+  meta: MapMeta; features: Features; water: AppState["water"]; carving: boolean; selectedId: string | null; selection: Selection | null; onPick: (id: string) => void;
 }) {
   const names = features.waterNames ?? [];
   const lowland = !!meta.climate?.lowlandRivers;
@@ -25,7 +25,7 @@ export function WaterSection({ meta, features, water, carving, selectedId, onPic
     <section data-testid="water-section">
       <h3>Rivers and lakes</h3>
       <div className="places" data-testid="water-names">
-        {names.length === 0 && <p className="muted">Name a river or lake with the River tool (I): point at it and click. Rivers come from the land and the rain, so a name follows its river when the land changes.</p>}
+        {names.length === 0 && <p className="muted">The Rivers tool (I) adds rivers (drag to draw one, or click to start one) and names them (Name and select: point at a river or lake and click). Rivers come from the land and the rain, so a name follows its river when the land changes.</p>}
         {[...names].sort((a, b) => a.name.localeCompare(b.name)).map((w) => {
           const n = water?.named.find((x) => x.id === w.id);
           const what = !n ? w.kind : !n.found ? `${w.kind}, not found` : w.kind === "river" ? `river · ${Math.round((n.lengthKm ?? 0) * 0.621371).toLocaleString()} mi` : `lake · ${Math.round((n.areaKm2 ?? 0) * 0.386102).toLocaleString()} sq mi`;
@@ -45,24 +45,49 @@ export function WaterSection({ meta, features, water, carving, selectedId, onPic
       <div className="row">
         <button onClick={() => setCarveOpen(true)} disabled={carving} data-testid="carve-valleys">{carving ? "Carving valleys…" : "Carve valleys…"}</button>
       </div>
-      {carveOpen && <CarveDialog onClose={() => setCarveOpen(false)} />}
+      {carveOpen && <CarveDialog onClose={() => setCarveOpen(false)} where={carveTarget(selection, features)} />}
     </section>
   );
 }
 
-function CarveDialog({ onClose }: { onClose: () => void }) {
+/** What the selection lets a carving be held to: an area (or a climate region), one river (a named river, or a river source's river), or nothing. */
+export function carveTarget(sel: Selection | null, f: Features): { kind: "area" } | { kind: "river"; name: string } | null {
+  if (!sel) return null;
+  if (sel.kind === "area" || (sel.kind === "feature" && sel.featureKind === "region")) return { kind: "area" };
+  if (sel.kind === "feature" && sel.featureKind === "water") {
+    const w = f.waterNames?.find((x) => x.id === sel.id);
+    return w?.kind === "river" ? { kind: "river", name: w.name } : null;
+  }
+  if (sel.kind === "feature" && sel.featureKind === "source") {
+    const s = f.sources?.find((x) => x.id === sel.id);
+    return s ? { kind: "river", name: s.name ?? "the river from the selected source" } : null;
+  }
+  return null;
+}
+
+function CarveDialog({ onClose, where: target }: { onClose: () => void; where: ReturnType<typeof carveTarget> }) {
   const [strength, setStrength] = useState(0.5);
   const [floodplains, setFloodplains] = useState(true);
   const [deltas, setDeltas] = useState(true);
-  const go = () => { store.carve({ strength, floodplains, deltas }); onClose(); };
+  const [where, setWhere] = useState<"map" | "selection">(target ? "selection" : "map");
+  const go = () => { store.carve({ strength, floodplains, deltas, where }); onClose(); };
   return (
     <div className="modal-back" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-modal="true" data-testid="carve-dialog" onMouseDown={(e) => e.stopPropagation()}>
         <h2>Carve valleys along the rivers</h2>
         <p className="muted">
-          Cuts the land along every river into a valley: deeper and wider for big rivers, a narrow V where a river drops steeply, a broad flat floor where a big river crosses low ground.
-          It changes the whole map's land, so a checkpoint is saved first, and Undo takes it back.
+          Cuts the land along the rivers into valleys: deeper and wider for big rivers, a narrow V where a river drops steeply, a broad flat floor where a big river crosses low ground.
+          A checkpoint is saved first, and Undo takes it back.
         </p>
+        <fieldset data-testid="carve-where">
+          <legend>Where</legend>
+          <label className="check"><input type="radio" name="carve-where" checked={where === "map"} onChange={() => setWhere("map")} data-testid="carve-where-map" /> The whole map</label>
+          <label className="check">
+            <input type="radio" name="carve-where" checked={where === "selection"} disabled={!target} onChange={() => setWhere("selection")} data-testid="carve-where-selection" />
+            {" "}{target?.kind === "river" ? `Only along ${target.name}` : "Only in the selected area (the edge fades out)"}
+          </label>
+          {!target && <p className="muted">To carve only part of the map, select an area with the Select area tool first, or a river with the Rivers tool (Name and select).</p>}
+        </fieldset>
         <label className="slider">
           <span>Depth and width <b>{Math.round(strength * 100)}%</b></span>
           <input type="range" min={10} max={100} value={Math.round(strength * 100)} onChange={(e) => setStrength(Number(e.target.value) / 100)} data-testid="carve-strength" />
@@ -115,7 +140,7 @@ export function WaterEditor({ w, water }: { w: WaterName; water: AppState["water
       <p className="muted" data-testid="water-inspector-facts">
         {!n ? "Working out the rivers…" : !n.found ? `No ${w.kind} is at its spot now (the land or the rain changed). Name it again with the River tool, or remove the name.` : describeWater({ ...n, end: n.end === "elsewhere" ? "edge" : n.end })}
       </p>
-      <p className="muted">Rivers and lakes come from the land and the rain: to change one, reshape the land, or start a river with the River tool.</p>
+      <p className="muted">Rivers and lakes come from the land and the rain: to change one, reshape the land, or draw a river with the Rivers tool (Add a river).</p>
     </>
   );
 }

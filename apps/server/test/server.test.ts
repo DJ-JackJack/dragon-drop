@@ -903,6 +903,69 @@ describe("named rivers and lakes, carving valleys", () => {
     await call("open_project", { id: "test-world" }); // (the tests after this one use the first map)
     await client.close();
   }, 60000);
+
+  it("carves along one river or inside the selection, and draws a river the water then follows", async () => {
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORT}/mcp`)));
+    const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = await raw(name, args);
+      expect(r.isError, `${name}: ${JSON.stringify(r.content).slice(0, 300)}`).toBeFalsy();
+      return JSON.parse((r.content as { text: string }[])[0].text);
+    };
+    await call("create_map", { name: "Test Drawn Rivers", width: 256, height: 256, km_per_px: 4 });
+    const doc = hub.session.doc, W = 256;
+    // land falling south into the sea, with a great river fed in at the top
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) doc.height.data[y * W + x] = y >= 200 ? -300 : 300 + (200 - y) * 3 + Math.sin(x / 11) * 6;
+    await call("add_river_source", { x: 128, y: 20, size: "great" });
+    let listed = await call("list_waters");
+    for (let i = 0; i < 40 && !listed.unnamed_rivers.some((r: { length_km: number }) => r.length_km > 400); i++) { await new Promise((r) => setTimeout(r, 250)); listed = await call("list_waters"); }
+    const big = listed.unnamed_rivers[0];
+    await call("name_water", { name: "Test River", x: big.point[0], y: big.point[1] });
+    const before = new Float32Array(doc.height.data);
+    const changed = () => { const out: number[] = []; for (let i = 0; i < before.length; i++) if (doc.height.data[i] !== before[i]) out.push(i); return out; };
+
+    // along one named river
+    const one = await call("carve_valleys", { river: "Test River", strength: 0.6 });
+    expect(one.where).toBe("Test River");
+    expect(one.cells_lowered).toBeGreaterThan(50);
+    expect(changed().every((i) => Math.abs((i % W) - 128) < 40)).toBe(true);
+    await raw("undo");
+    expect(doc.height.data).toEqual(before);
+    expect(await raw("carve_valleys", { river: "No Such River" })).toMatchObject({ isError: true });
+
+    // inside the selected area: nothing outside it changes; with nothing selected it says what to do
+    expect(await raw("carve_valleys", { where: "selection" })).toMatchObject({ isError: true });
+    hub.setSelection({ kind: "area", shape: { type: "rect", x: 100, y: 60, w: 56, h: 60 } }, false);
+    const part = await call("carve_valleys", { where: "selection", strength: 0.6 });
+    expect(part.where).toBe("the selected area");
+    expect(part.cells_lowered).toBeGreaterThan(10);
+    expect(changed().every((i) => { const x = i % W, y = Math.floor(i / W); return x >= 100 && x < 156 && y >= 60 && y < 120; })).toBe(true);
+    await raw("undo");
+    expect(doc.height.data).toEqual(before);
+    hub.setSelection(null, false);
+
+    // a river drawn east across the slope (where water runs south), then south to the sea
+    const sources = doc.features?.sources?.length ?? 0;
+    expect(await raw("name_water", { name: "Drawn River", x: 65, y: 60 })).toMatchObject({ isError: true }); // (no river there yet)
+    const drawn = await call("draw_river", { points: [[30, 60], [100, 60], [100, 215]], size: "river" });
+    expect(drawn.ends).toBe("in the sea");
+    expect(drawn.length_km).toBeGreaterThan(200);
+    expect(doc.features?.sources?.length).toBe(sources + 1);
+    let ok = false;
+    for (let i = 0; i < 40 && !ok; i++) { await new Promise((r) => setTimeout(r, 250)); ok = !(await raw("name_water", { name: "Drawn River", x: 65, y: 60 })).isError; }
+    expect(ok, "the drawn river runs along its line").toBe(true);
+    // one undo step takes the channel and its source away (after the one that takes the name off)
+    await raw("undo");
+    expect(doc.features?.waterNames?.some((w) => w.name === "Drawn River")).toBe(false);
+    expect(doc.features?.sources?.length).toBe(sources + 1);
+    await raw("undo");
+    expect(doc.features?.sources?.length).toBe(sources);
+    expect(doc.height.data).toEqual(before);
+    expect(await raw("draw_river", { points: [[10, 230], [40, 240]] })).toMatchObject({ isError: true }); // (all in the sea)
+    await call("open_project", { id: "test-world" });
+    await client.close();
+  }, 60000);
 });
 
 describe("selection and the edit lock", () => {

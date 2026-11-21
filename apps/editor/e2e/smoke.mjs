@@ -1455,7 +1455,8 @@ try {
     await page.keyboard.press("h");
   }
 
-  // the River tool: start a great river on land, name it by clicking it, see it in the inspector and the Rivers and lakes list; lowland rivers and the carve dialog
+  // the River tool: it opens on Add a river; a click starts a great river on land, name it by clicking it, see it in the inspector and the Rivers and lakes list;
+  // lowland rivers, the carve dialog (Where: along the selected river), and a river drawn with a drag
   {
     await page.keyboard.press("0");
     const cb = await page.getByTestId("map-canvas").boundingBox();
@@ -1470,8 +1471,8 @@ try {
     if (!land) fail("no land found on the first map for the River tool");
     await page.keyboard.press("i");
     await page.getByTestId("river-modes").waitFor({ timeout: 5000 });
-    await page.getByTestId("tool-hint").getByText(/Point at a river or a lake/).waitFor({ timeout: 5000 });
-    await page.getByTestId("river-mode-source").click();
+    await page.getByTestId("tool-hint").getByText(/Drag from where a river starts/).waitFor({ timeout: 5000 });
+    if (!(await page.getByTestId("river-mode-add").getAttribute("class"))?.includes("on")) fail("the Rivers tool doesn't open on Add a river");
     await page.getByTestId("river-size").selectOption("great");
     await page.mouse.click(land.x, land.y);
     await page.getByTestId("inspector").getByRole("heading", { name: "River source" }).waitFor({ timeout: 5000 });
@@ -1503,19 +1504,34 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-testid="lowland-rivers"]')?.checked === true, null, { timeout: 10000 });
     await page.getByTestId("lowland-rivers").click();
     await page.waitForFunction(() => document.querySelector('[data-testid="lowland-rivers"]')?.checked === false, null, { timeout: 10000 });
-    // the carve dialog opens and cancels (carving itself is tested on the server)
+    // the carve dialog opens with Where: along the selected river, and cancels (carving itself is tested on the server)
     await page.getByTestId("carve-valleys").click();
     await page.getByTestId("carve-dialog").waitFor({ timeout: 5000 });
+    await page.getByTestId("carve-where").getByText("Only along E2E River").waitFor({ timeout: 5000 });
+    if (!(await page.getByTestId("carve-where-selection").isChecked())) fail("the carve dialog doesn't offer the selected river first");
     await page.getByTestId("carve-dialog").getByRole("button", { name: "Cancel" }).click();
     await page.getByTestId("carve-dialog").waitFor({ state: "detached", timeout: 5000 });
     // remove the name (the river stays) and the source
     await page.getByTestId("water-remove").click();
     await page.getByTestId("water-names").getByText("E2E River").waitFor({ state: "detached", timeout: 10000 });
-    await page.getByTestId("river-mode-source").click();
+    await page.getByTestId("river-mode-add").click();
     await page.mouse.click(land.x, land.y);
     await page.getByTestId("inspector").getByRole("heading", { name: "River source" }).waitFor({ timeout: 5000 });
     await page.keyboard.press("Delete");
     await page.getByTestId("inspector").waitFor({ state: "detached", timeout: 5000 });
+    // (the server confirms the source is gone before the next press: a press on its dot would select it instead of drawing)
+    await page.getByTestId("history").getByText("Remove a river source").first().waitFor({ timeout: 10000 });
+    // a drag draws a river: the land is cut along the line and a note says how long it is; it is one step in the History, and Undo takes it back
+    const from = { x: land.x + 14, y: land.y - 10 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let k = 1; k <= 12; k++) await page.mouse.move(from.x + k * 9, from.y + k * 6);
+    await page.mouse.up();
+    await page.getByTestId("picture-note").getByText(/River drawn/).waitFor({ timeout: 10000 });
+    await page.getByTestId("history").getByText("Draw a great river").first().waitFor({ timeout: 10000 });
+    await page.screenshot({ path: path.join(shots, "river-drawn.png") });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("history").getByText("Undo: Draw a great river").waitFor({ timeout: 10000 });
     await page.keyboard.press("h");
   }
 

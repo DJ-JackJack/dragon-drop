@@ -29,12 +29,12 @@ export const TOOL_HINTS: Partial<Record<Tool, string>> = {
   river: "", // depends on the mode: see riverHint()
 };
 
-/** The River tool: what it does in each mode. */
-export type RiverMode = "name" | "source";
+/** The River tool: what it does in each mode ("add" first: adding rivers is what people expect of it). */
+export type RiverMode = "add" | "name";
 export function riverHint(mode: RiverMode): string {
   return mode === "name"
     ? "Point at a river or a lake: it lights up whole, from its source to where it ends. Click to name it, or to select it if it already has a name (Claude sees what you selected). A name follows its river when the land changes."
-    : "Click on land where a river should begin with more water than the land around it gives (a great spring, a waterfall fed from beyond the map). Click a source (blue) to change or remove it. The river runs downhill from there.";
+    : "Drag from where a river starts to where it ends (the sea, a lake, or open land): the land is cut along your line so the water runs there. Or click on land to start a river that finds its own way downhill. Click a source (blue) to change or remove it.";
 }
 
 export function lineHint(kind: LineKind, auto: boolean): string {
@@ -72,10 +72,10 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
       {tool === "river" && (
         <>
           <div className="seg" role="group" aria-label="River tool" data-testid="river-modes">
+            <button className={riverMode === "add" ? "on" : ""} onClick={() => onRiverMode("add")} data-testid="river-mode-add" title="Drag to draw a river's course, or click on land to start a river there">Add a river</button>
             <button className={riverMode === "name" ? "on" : ""} onClick={() => onRiverMode("name")} data-testid="river-mode-name" title="Point at a river or lake to see it; click to name or select it">Name and select</button>
-            <button className={riverMode === "source" ? "on" : ""} onClick={() => onRiverMode("source")} data-testid="river-mode-source" title="Click on land to start a river there">Start a river</button>
           </div>
-          {riverMode === "source" && (
+          {riverMode === "add" && (
             <label className="field">Size
               <select value={riverSize} onChange={(e) => onRiverSize(e.target.value as RiverSize)} data-testid="river-size">
                 {RIVER_SIZE_NAMES.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}

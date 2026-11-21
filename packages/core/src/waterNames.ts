@@ -141,6 +141,23 @@ export function riverCourse(net: RiverNet, head: number, lakes: readonly LakeSha
   return { parts, pts, length, end, ...(joins !== undefined && { joins }) };
 }
 
+/** A river's course as traced pieces, each cut to the stretch the course runs through (to carve one river's valley). */
+export function courseRivers(net: RiverNet, course: RiverCourse): RiverPath[] {
+  const out: RiverPath[] = [];
+  for (const { river, from, to } of course.parts) {
+    const r = net.rivers[river], last = r.pts.length / 2 - 1;
+    if (to <= from) continue;
+    out.push({ pts: r.pts.slice(from * 2, to * 2 + 2), widths: r.widths.slice(from, to + 1), ...(to === last && r.end && { end: r.end }) });
+  }
+  return out;
+}
+
+/** The river (its head piece) passing within `tol` px of a point, if one does: a river source's river, for instance. */
+export function riverHeadAt(net: RiverNet, x: number, y: number, tol: number): number | null {
+  const hit = waterAt(net.rivers, [], x, y, tol);
+  return hit && hit.kind === "river" ? riverOwner(net, hit.river, hit.at) : null;
+}
+
 /** Every river (by its head piece) with its course, longest first. */
 export function riverList(net: RiverNet, lakes: readonly LakeShape[] = []): { head: number; course: RiverCourse }[] {
   const out: { head: number; course: RiverCourse }[] = [];

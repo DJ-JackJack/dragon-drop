@@ -75,7 +75,7 @@ export function App() {
   const onRouting = useCallback((id: string) => setRoutingId(id), []);
   const [areaShape, setAreaShape] = useState<AreaShape>("rect");
   // the River tool: naming and selecting, or starting a river (and how big); a picked river or lake with no name waits in a box for one
-  const [riverMode, setRiverMode] = useState<RiverMode>("name");
+  const [riverMode, setRiverMode] = useState<RiverMode>("add");
   const [riverSize, setRiverSize] = useState<RiverSize>("river");
   const [waterPick, setWaterPick] = useState<WaterPick | null>(null);
   // what is selected lives in the store (the server shares it with Claude); an id that isn't on the map yet (just created) waits here until it arrives
@@ -402,7 +402,7 @@ export function App() {
             </div>
           </section>
 
-          {s.meta && <WaterSection meta={s.meta} features={s.features} water={s.water} carving={s.carving} selectedId={selectedId} onPick={(id) => { onSelect(id); setTool("river"); }} />}
+          {s.meta && <WaterSection meta={s.meta} features={s.features} water={s.water} carving={s.carving} selectedId={selectedId} selection={s.selection} onPick={(id) => { onSelect(id); setTool("river"); }} />}
 
           {(childMaps.length > 0 || s.meta?.parent) && (
             <section data-testid="regional">

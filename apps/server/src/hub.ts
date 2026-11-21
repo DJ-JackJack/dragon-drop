@@ -11,7 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
-  type RiverNet, resolveWaterNames, riverNet, seaNear,
+  type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -893,9 +893,10 @@ export class Hub {
 
   /**
    * Carve valleys along the rivers as they are now (core carve.ts, on the compute thread). Applied: a checkpoint is saved first, then one edit Undo takes back.
-   * `preview`: only worked out (the new heights are returned), the map is not changed.
+   * `preview`: only worked out (the new heights are returned), the map is not changed. Where: the whole map; with `where: "selection"` only inside the selected area
+   * (or climate region) or only along the selected river (a named river, or a river source's river); with `river` only along that named river.
    */
-  async carveValleys(o: { strength?: number; floodplains?: boolean; deltas?: boolean; preview?: boolean }, author: Author) {
+  async carveValleys(o: { strength?: number; floodplains?: boolean; deltas?: boolean; preview?: boolean; where?: "map" | "selection"; river?: string }, author: Author) {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     if (!isWorld(op.session.doc)) throw new Error("Valleys are carved on world maps.");
@@ -904,15 +905,75 @@ export class Hub {
     if (!d?.rivers.length) throw new Error("This map has no rivers yet, so there are no valleys to carve.");
     const doc = op.session.doc;
     const strength = Math.max(0, Math.min(1, o.strength ?? 0.5));
-    const r = await this.compute.carve(doc, d.rivers, { strength, floodplains: o.floodplains !== false, deltas: o.deltas !== false, kmPerPx: doc.meta.kmPerPx });
+    const part = this.carvePart(op, d, o);
+    const r = await this.compute.carve(doc, part.rivers, { strength, floodplains: o.floodplains !== false, deltas: o.deltas !== false, kmPerPx: doc.meta.kmPerPx, ...(part.within && { within: part.within }) });
     if (this.open !== op) throw new Error("Another map was opened meanwhile.");
-    const facts = { lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells };
+    const facts = { lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells, scope: part.scope };
     if (o.preview) return { ...facts, heights: r.heights };
-    if (!r.lowered && !r.deltaCells) throw new Error("Nothing to carve: the rivers already run in valleys this deep.");
+    if (!r.rect || (!r.lowered && !r.deltaCells)) throw new Error(`Nothing to carve${part.scope === "the whole map" ? "" : ` in ${part.scope}`}: the rivers already run in valleys this deep.`);
     const checkpoint = "Before carving valleys";
-    await this.saveCheckpoint(checkpoint, "Saved automatically before valleys were carved along the rivers");
-    op.session.execute({ op: "replace_heights", data: r.heights, label: `Carve valleys along the rivers (strength ${Math.round(strength * 100)}%)` }, author);
+    await this.saveCheckpoint(checkpoint, `Saved automatically before valleys were carved along the rivers (${part.scope})`);
+    const { rect } = r, W = doc.height.w, data = new Float32Array(rect.w * rect.h);
+    for (let y = 0; y < rect.h; y++) data.set(r.heights.subarray((rect.y + y) * W + rect.x, (rect.y + y) * W + rect.x + rect.w), y * rect.w);
+    const where = part.scope === "the whole map" ? "" : part.scope === "the selected area" ? " in the selected area" : ` along ${part.scope}`;
+    op.session.execute({ op: "patch_heights", rect, data, label: `Carve valleys along the rivers${where} (strength ${Math.round(strength * 100)}%)` }, author);
     return { ...facts, checkpoint };
+  }
+
+  /** Which rivers a carving takes, and where it may change the land (see carveValleys). `scope` says it in words: "the whole map", "the selected area", or a river's name. */
+  private carvePart(op: OpenProject, d: Derived, o: { where?: "map" | "selection"; river?: string }): { rivers: RiverPath[]; within?: { shape: SelectableShape; featherPx: number }; scope: string } {
+    const doc = op.session.doc, lakes = d.hydro?.shapes ?? [];
+    const view = this.waterView(op), net = view?.net ?? riverNet(d.rivers);
+    const course = (head: number, name: string) => {
+      const rivers = courseRivers(net, riverCourse(net, head, lakes));
+      if (!rivers.length) throw new Error(`There is no river to carve along at ${name}.`);
+      return { rivers, scope: name };
+    };
+    const named = (w: NamedWater | undefined, what: string) => {
+      if (!w) throw new Error(`No river ${what}. list_waters shows the named rivers and lakes.`);
+      if (w.kind === "lake") throw new Error(`${w.name} is a lake: carve along a river, or select an area round the lake.`);
+      if (!w.found || w.head === undefined) throw new Error(`${w.name} isn't at its spot any more (the land or the rain changed), so its river can't be found.`);
+      return course(w.head, w.name);
+    };
+    if (o.river) {
+      const q = o.river.trim().toLowerCase();
+      return named(view?.named.find((w) => w.kind === "river" && (w.id === o.river || w.name.toLowerCase() === q)), `named "${o.river}"`);
+    }
+    if (o.where !== "selection") return { rivers: d.rivers, scope: "the whole map" };
+    const sel = this.selection, shape = selectionShape(sel, doc.features);
+    if (shape) {
+      // (only the rivers that come near the area: the rest couldn't change anything inside it)
+      const b = shapeBounds(shape, doc.height.w, doc.height.h), m = 48;
+      const near = d.rivers.filter((r) => { for (let k = 0; k < r.pts.length; k += 2) if (r.pts[k] >= b.x - m && r.pts[k] <= b.x + b.w + m && r.pts[k + 1] >= b.y - m && r.pts[k + 1] <= b.y + b.h + m) return true; return false; });
+      return { rivers: near, within: { shape, featherPx: defaultFeather(shape) }, scope: "the selected area" };
+    }
+    if (sel?.kind === "feature" && sel.featureKind === "water") return named(view?.named.find((w) => w.id === sel.id), "is selected");
+    if (sel?.kind === "feature" && sel.featureKind === "source") {
+      const s = doc.features?.sources?.find((x) => x.id === sel.id), at = s && (s.placeId ? doc.features?.places.find((p) => p.id === s.placeId) : s.x !== undefined && s.y !== undefined ? { x: s.x, y: s.y } : undefined);
+      const head = at ? riverHeadAt(net, at.x, at.y, 4) : null;
+      if (head === null) throw new Error("The selected river source doesn't feed a river yet (wait a moment for the rivers to be worked out).");
+      return course(head, s?.name ?? "the selected source's river");
+    }
+    throw new Error("Nothing is selected to carve in: select an area (the Select area tool) or a river (the Rivers tool), or carve the whole map.");
+  }
+
+  /**
+   * Draw a river along a line (map px, from its source down; see core riverDraw.ts): a channel is cut along it and a river source put at its upper end, as one edit
+   * that Undo takes back. The rivers are then worked out again and follow it.
+   */
+  drawRiver(o: { points: [number, number][]; size?: RiverSize; name?: string; notes?: string }, author: Author) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    if (!isWorld(op.session.doc)) throw new Error("Rivers are drawn on world maps.");
+    if (!Array.isArray(o.points) || o.points.length > 5000 || !o.points.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v)))) throw new Error("A river is drawn as a line of points (map px).");
+    if (op.session.inTransaction) op.session.commit();
+    const doc = op.session.doc, hf = doc.height, size: RiverSize = o.size && o.size in RIVER_SIZE_SHARE ? o.size : "river";
+    const c = riverChannel(hf.data, hf.w, hf.h, doc.meta.seaLevel, o.points, { size, kmPerPx: doc.meta.kmPerPx });
+    if ("error" in c) throw new Error(c.error);
+    const src: RiverSource = { id: newFeatureId("s"), x: c.start[0], y: c.start[1], size, ...(o.name && { name: o.name }), ...(o.notes && { notes: o.notes }) };
+    const words = size === "major" ? "major river" : size === "great" ? "great river" : size;
+    const res = op.session.execute({ op: "patch_heights", rect: c.rect, data: c.data, features: { upsertSources: [src] }, label: `Draw a ${words}${o.name ? ` (${o.name})` : ""}` }, author);
+    return { change: res.seq, source: src.id, start: c.start, end: c.end, reversed: c.reversed, lengthKm: c.lengthKm, deepestM: c.deepestM, lowered: c.lowered };
   }
 
   private derivedFrame(op: OpenProject): ArrayBuffer {
@@ -1142,8 +1203,13 @@ export class Hub {
         case "regional_refresh":
           return await this.refreshRegionalClimate();
         case "carve_valleys": {
-          const r = await this.carveValleys({ strength: msg.strength, floodplains: msg.floodplains, deltas: msg.deltas }, "user");
-          this.send(ws, { t: "carved", lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells, checkpoint: "checkpoint" in r ? r.checkpoint : "" });
+          const r = await this.carveValleys({ strength: msg.strength, floodplains: msg.floodplains, deltas: msg.deltas, where: msg.where === "selection" ? "selection" : "map" }, "user");
+          this.send(ws, { t: "carved", lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells, checkpoint: "checkpoint" in r ? r.checkpoint : "", scope: r.scope });
+          return;
+        }
+        case "draw_river": {
+          const r = this.drawRiver({ points: msg.points, size: msg.size }, "user");
+          this.send(ws, { t: "river_drawn", source: r.source, lengthKm: r.lengthKm, end: r.end, deepestM: r.deepestM, reversed: r.reversed });
           return;
         }
         case "sketch_import": {
@@ -1394,7 +1460,12 @@ export class Hub {
       saveCheckpoint: (name, note) => self.saveCheckpoint(name, note),
       carveValleys: async (o) => {
         const r = await self.carveValleys(o, author);
-        if (via === "mcp" && !o.preview) self.open?.agent.note("Claude Code: carved valleys along the rivers");
+        if (via === "mcp" && !o.preview) self.open?.agent.note(`Claude Code: carved valleys along the rivers (${r.scope})`);
+        return r;
+      },
+      drawRiver: (o) => {
+        const r = self.drawRiver(o, author);
+        if (via === "mcp") self.open?.agent.note(`Claude Code: drew a river (${r.lengthKm} km)`);
         return r;
       },
       water: () => {

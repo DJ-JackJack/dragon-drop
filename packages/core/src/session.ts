@@ -35,7 +35,9 @@ export type Command =
   | { op: "set_meta"; patch: Pick<Partial<MapMeta>, "style" | "climate" | "name" | "notes" | "grid" | "furniture" | "battle" | "city">; label?: string }
   | { op: "restore"; data: Float32Array; meta: Pick<Partial<MapMeta>, "seaLevel" | "style" | "climate">; features?: Features; label: string }
   | { op: "features"; patch: FeaturesPatch; label?: string }
-  | { op: "replace_heights"; data: Float32Array; label?: string };
+  | { op: "replace_heights"; data: Float32Array; label?: string }
+  /** New heights for one box (`data` is rect.w * rect.h, row by row), with features changed in the same step if given: one undo step for both (a drawn river's channel and its source). */
+  | { op: "patch_heights"; rect: Rect; data: Float32Array; features?: FeaturesPatch; label?: string };
 
 export type Author = "user" | "claude" | "system";
 
@@ -95,12 +97,14 @@ export function describeCommand(cmd: Command): string {
       return cmd.label ?? describeFeaturesPatch(cmd.patch);
     case "replace_heights":
       return cmd.label ?? "Replace heightmap";
+    case "patch_heights":
+      return cmd.label ?? "Change the land";
   }
 }
 
 const MAX_HISTORY_BYTES = 384 * 1024 * 1024;
 /** The commands that change heights and so can be clipped to a lock. */
-const LOCK_CLIPS = new Set<Command["op"]>(["generate_terrain", "add_landmass", "add_mountain_range", "sculpt", "erode", "replace_heights"]);
+const LOCK_CLIPS = new Set<Command["op"]>(["generate_terrain", "add_landmass", "add_mountain_range", "sculpt", "erode", "replace_heights", "patch_heights"]);
 
 export class MapSession {
   doc: MapDoc;
@@ -191,6 +195,14 @@ export class MapSession {
         hf.data.set(cmd.data);
         rect = { x: 0, y: 0, w: hf.w, h: hf.h };
         break;
+      case "patch_heights": {
+        const r = cmd.rect;
+        if (r.x < 0 || r.y < 0 || r.w < 1 || r.h < 1 || r.x + r.w > hf.w || r.y + r.h > hf.h || cmd.data.length !== r.w * r.h) throw new Error("patch_heights: the box doesn't fit the map");
+        for (let y = 0; y < r.h; y++) hf.data.set(cmd.data.subarray(y * r.w, (y + 1) * r.w), (r.y + y) * hf.w + r.x);
+        rect = { ...r };
+        if (cmd.features) { this.doc.features = applyFeaturesPatch(featuresBefore, cmd.features); featuresChanged = true; }
+        break;
+      }
     }
     rect = rect ? clipRect(rect, hf.w, hf.h) : null;
     if (lock && lockPre && rect) rect = this.clipToLock(lockPre, rect, lock);
@@ -240,8 +252,11 @@ export class MapSession {
       case "set_meta":
         if (cmd.patch.climate) throw new LockedEditError("would change the climate settings for the whole map");
         return;
+      case "patch_heights":
       case "features": {
-        const out = featuresOutsideLock(cmd.patch, this.doc.features ?? emptyFeatures(), lock);
+        const patch = cmd.op === "features" ? cmd.patch : cmd.features;
+        if (!patch) return;
+        const out = featuresOutsideLock(patch, this.doc.features ?? emptyFeatures(), lock);
         if (out.length) throw new LockedEditError(`would change ${out.slice(0, 3).join(", ")}${out.length > 3 ? ` and ${out.length - 3} more` : ""}, outside the selection`);
         return;
       }

@@ -87,8 +87,13 @@ export interface ToolContext {
    * (core waterNames.ts). Null until the rivers are worked out.
    */
   water?(): { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[]; net: RiverNet } | null;
-  /** Optional (world maps): carve valleys along the rivers (core carve.ts). Applied: a checkpoint first, then one edit. `preview`: only worked out, the new heights returned. */
-  carveValleys?(o: { strength?: number; floodplains?: boolean; deltas?: boolean; preview?: boolean }): Promise<{ lowered: number; deepestM: number; deltaCells: number; checkpoint?: string; heights?: Float32Array }>;
+  /**
+   * Optional (world maps): carve valleys along the rivers (core carve.ts). Applied: a checkpoint first, then one edit. `preview`: only worked out, the new heights returned.
+   * `where: "selection"`: only inside the DM's selected area, or along the selected river; `river`: only along that named river. `scope` says where, in words.
+   */
+  carveValleys?(o: { strength?: number; floodplains?: boolean; deltas?: boolean; preview?: boolean; where?: "map" | "selection"; river?: string }): Promise<{ lowered: number; deepestM: number; deltaCells: number; scope: string; checkpoint?: string; heights?: Float32Array }>;
+  /** Optional (world maps): a river drawn along a line (core riverDraw.ts): a channel cut along it and a source at its upper end, one edit. */
+  drawRiver?(o: { points: [number, number][]; size?: RiverSize; name?: string; notes?: string }): { change: number; source: string; start: [number, number]; end: "sea" | "land" | "edge"; reversed: boolean; lengthKm: number; deepestM: number; lowered: number };
   readBrief(): Promise<string>;
   writeBrief(text: string): Promise<void>;
   listRefs(): Promise<RefInfo[]>;
@@ -1100,7 +1105,7 @@ export const TOOLS = [
     name: "add_river_source",
     description:
       "Mark where a river begins with more water than the land around it could supply: a great spring, or a great waterfall fed from far upstream beyond what the map shows. " +
-      "It adds flow at that point and the river then runs downhill to the sea like any other (rivers are worked out from the terrain and climate, never drawn by hand). " +
+      "It adds flow at that point and the river then runs downhill to the sea like any other, finding its own way (rivers are worked out from the terrain and climate; to make one follow a course the DM wants, use draw_river). " +
       `size: ${RIVER_SIZE_HELP}. Tie it to a place (the source then moves with the place) or give x, y in map px. ` +
       "Only when the user asked for it; name the river only if the user gave a name.",
     schema: z.object({

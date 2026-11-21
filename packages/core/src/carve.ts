@@ -6,8 +6,12 @@
  * where a big river crosses low, flat ground. The river's bed never climbs going downstream, so the water keeps to its valley when the rivers are worked out again. With
  * `deltas`, a big river that reaches the sea over flat ground builds a fan of new low land into it, which the painter shows as marsh. Nothing is ever raised except that
  * new delta land, and nothing on land is cut below the sea.
+ *
+ * It can be held to part of the map: only some rivers (one river's course, `courseRivers` in waterNames.ts), or only inside an area (`within`, with a soft edge).
  */
 import type { RiverPath } from "./hydrology.ts";
+import type { Rect } from "./geom.ts";
+import { type SelectableShape, selectionMask } from "./selection.ts";
 
 export interface CarveOptions {
   /** 0..1: how deep and wide (default 0.5). */
@@ -18,6 +22,8 @@ export interface CarveOptions {
   deltas?: boolean;
   /** km per map px (valleys are sized in kilometres, so a map at any scale gets valleys of a believable size). */
   kmPerPx: number;
+  /** Only inside this area (the DM's selection): the carving fades out across a soft edge `featherPx` wide inside it, and nothing outside changes. */
+  within?: { shape: SelectableShape; featherPx: number };
 }
 
 export interface CarveResult {
@@ -26,6 +32,8 @@ export interface CarveResult {
   lowered: number;
   deltaCells: number;
   deepestM: number;
+  /** The box that changed (null when nothing did). */
+  rect: Rect | null;
 }
 
 const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
@@ -34,7 +42,6 @@ const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 export function carveValleys(h: Float32Array, W: number, H: number, sea: number, rivers: readonly RiverPath[], o: CarveOptions): CarveResult {
   const s = Math.max(0, Math.min(1, o.strength ?? 0.5)), kmPx = Math.max(0.01, o.kmPerPx);
   const out = h.slice();
-  let deepest = 0;
   // the biggest rivers first: a tributary's valley then meets the main valley's floor
   const order = rivers.map((r, i) => ({ i, w: Math.max(...r.widths) })).sort((a, b) => b.w - a.w);
   for (const { i } of order) {
@@ -73,14 +80,11 @@ export function carveValleys(h: Float32Array, W: number, H: number, sea: number,
         // the profile: V-shaped when steep, U-shaped when slow; a floodplain keeps its floor flat for the inner part
         const prof = flat ? smooth(Math.max(0, (u - 0.45) / 0.55)) : steep > 0.5 ? u : smooth(u);
         const target = b + (h[i2] - b) * prof;
-        if (target < out[i2]) { deepest = Math.max(deepest, h[i2] - target); out[i2] = Math.max(sea + 0.5, target); }
+        if (target < out[i2]) out[i2] = Math.max(sea + 0.5, target);
       }
     }
   }
-  let lowered = 0;
-  for (let i = 0; i < out.length; i++) if (out[i] < h[i] - 0.01) lowered++;
   // deltas: a fan of low new land where a big river reaches the sea over flat ground
-  let deltaCells = 0;
   if (o.deltas !== false) {
     for (const r of rivers) {
       const p = r.pts, n = p.length / 2;
@@ -102,11 +106,30 @@ export function carveValleys(h: Float32Array, W: number, H: number, sea: number,
         const depth = sea - out[i2];
         if (depth > 40) continue; // (only the shallow sea fills in)
         out[i2] = sea + 0.5 + 2.5 * (1 - along / Math.max(1, len));
-        deltaCells++;
       }
     }
   }
-  return { heights: out, lowered, deltaCells, deepestM: Math.round(deepest) };
+  // only inside the area: everything outside back as it was, and a soft edge inside it
+  if (o.within) {
+    const m = selectionMask(o.within.shape, W, H, o.within.featherPx), r = m.rect;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (out[i] === h[i]) continue;
+      const w = x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h ? m.data[(y - r.y) * r.w + (x - r.x)] : 0;
+      out[i] = w >= 1 ? out[i] : w <= 0 ? h[i] : h[i] + (out[i] - h[i]) * w;
+    }
+  }
+  // what it did, and the box it changed
+  let lowered = 0, deltaCells = 0, deepest = 0, x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (out[i] === h[i]) continue;
+    if (out[i] < h[i] - 0.01) { lowered++; deepest = Math.max(deepest, h[i] - out[i]); }
+    if (h[i] <= sea && out[i] > sea) deltaCells++;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  const rect = x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  return { heights: out, lowered, deltaCells, deepestM: Math.round(deepest), rect };
 }
 
 function sample(h: Float32Array, W: number, H: number, x: number, y: number): number {

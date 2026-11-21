@@ -104,7 +104,7 @@ interface RiverChunk {
   w: number;
 }
 
-export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children, water = null, riverMode = "name", riverSize = "river", onWaterPick }: Props) {
+export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children, water = null, riverMode = "add", riverSize = "river", onWaterPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -115,7 +115,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{
-    mode: "pan" | "brush" | "move" | "draw" | "rect" | "area" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
+    mode: "pan" | "brush" | "move" | "draw" | "river" | "rect" | "area" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
     hit?: Hit;
     /** move: the places and labels moving together (when there are two or more), whether the pointer has really moved yet, and whether it went down on one of a group (a click without a drag then picks that one). marquee: whether it adds to the group, and what was in it before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[];
@@ -543,6 +543,21 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       ctx.fillText(text, x0 + 4, y0 + h + 5);
       ctx.restore();
     }
+    // a river's course being drawn: blue, with its first point (the source) marked
+    const rv = drag.current;
+    if (rv?.mode === "river" && rv.pts && rv.pts.length > 1) {
+      ctx.save();
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(10, 30, 60, 0.7)"; ctx.lineWidth = 5;
+      ctx.beginPath();
+      rv.pts.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + x * v.scale, v.oy + y * v.scale) : ctx.moveTo(v.ox + x * v.scale, v.oy + y * v.scale)));
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(110, 200, 255, 0.95)"; ctx.lineWidth = 2.5;
+      ctx.stroke();
+      const [sx, sy] = rv.pts[0];
+      ctx.fillStyle = "rgba(110, 200, 255, 0.95)"; ctx.beginPath(); ctx.arc(v.ox + sx * v.scale, v.oy + sy * v.scale, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
     // a label line being drawn
     const dl = drag.current;
     if (dl?.mode === "draw" && dl.pts && dl.pts.length > 1) {
@@ -778,15 +793,13 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       return;
     }
     if (tl === "river") {
-      const f = featuresRef.current, mt = metaRef.current!;
+      const f = featuresRef.current;
       // a river source under the pointer is selected (to change its size or remove it), in either mode
       const near = sourceSpots(f).find((s) => Math.hypot((s.x - m.x) * v.scale, (s.y - m.y) * v.scale) < 9);
       if (near) { onSelect(near.id); return; }
-      if (riverRef.current.mode === "source") {
-        if (store.heights.sample(m.x, m.y) <= mt.seaLevel) return; // (a river starts on land)
-        const src: RiverSource = { id: newFeatureId("s"), x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10, size: riverRef.current.size };
-        store.send({ t: "cmd", cmd: { op: "features", patch: { upsertSources: [src] }, label: `Start a ${riverRef.current.size === "major" ? "major river" : riverRef.current.size === "great" ? "great river" : riverRef.current.size} here` } });
-        onSelect(src.id);
+      if (riverRef.current.mode === "add") {
+        // a drag draws the river's course; a click that doesn't move starts a river at that spot (see endDrag)
+        drag.current = { mode: "river", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y, pts: [[m.x, m.y]], len: 0 };
         return;
       }
       const pick = waterHover.current ?? pickAt(m.x, m.y);
@@ -918,7 +931,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       d.far = Math.max(d.far ?? 0, Math.hypot(p.x - d.sx, p.y - d.sy));
       const [lx, ly] = d.pts[d.pts.length - 1];
       if (optsRef.current.areaShape === "free" && Math.hypot(m.x - lx, m.y - ly) * viewRef.current.scale > 3) d.pts.push([m.x, m.y]);
-    } else if (d?.mode === "draw" && d.pts) {
+    } else if ((d?.mode === "draw" || d?.mode === "river") && d.pts) {
       const [lx, ly] = d.pts[d.pts.length - 1];
       const ds = Math.hypot(m.x - lx, m.y - ly) * viewRef.current.scale;
       if (ds > 4) {
@@ -1006,6 +1019,22 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       const a = toMap(d.sx, d.sy), b = toMap(pp.x, pp.y);
       const rect = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
       if (rect.w * viewRef.current.scale > 6 && rect.h * viewRef.current.scale > 6) onDetailRef.current(rect);
+      return;
+    }
+    if (d?.mode === "river" && d.pts) {
+      drag.current = null;
+      requestDraw();
+      const size = riverRef.current.size;
+      if ((d.len ?? 0) < 8 || d.pts.length < 2) {
+        // a click: a river that starts here and finds its own way downhill
+        if (!store.heights || store.heights.sample(d.lastX, d.lastY) <= (metaRef.current?.seaLevel ?? 0)) return; // (a river starts on land)
+        const src: RiverSource = { id: newFeatureId("s"), x: Math.round(d.lastX * 10) / 10, y: Math.round(d.lastY * 10) / 10, size };
+        store.send({ t: "cmd", cmd: { op: "features", patch: { upsertSources: [src] }, label: `Start a ${size === "major" ? "major river" : size === "great" ? "great river" : size} here` } });
+        onSelect(src.id);
+        return;
+      }
+      // a drag: the land is cut along the line so the river runs there (the server answers with river_drawn)
+      store.drawRiver(d.pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10] as [number, number]), size);
       return;
     }
     if (d?.mode === "draw" && d.pts) {
