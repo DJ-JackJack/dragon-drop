@@ -5,7 +5,7 @@
  *
  * To add one: add it here, give it a picture in placeIcons.ts (a test fails until you do) and, if it is a new group, list the group in PLACE_GROUPS.
  */
-export const PLACE_GROUPS = ["Settlements", "Strongholds", "Faith and magic", "Learning", "Wild places", "Travel and trade", "Land and water", "Work", "Events and dangers", "General"] as const;
+export const PLACE_GROUPS = ["Settlements", "Strongholds", "Faith and magic", "Learning", "Wild places", "Travel and trade", "Shops and trades", "Land and water", "Work", "Events and dangers", "General"] as const;
 export type PlaceGroup = (typeof PLACE_GROUPS)[number];
 
 export interface PlaceKindInfo {
@@ -59,6 +59,37 @@ export const PLACE_KINDS = [
   k("bridge", "Bridge", "Travel and trade", 8, 7, true, "A bridge"),
   k("inn", "Inn", "Travel and trade", 8, 7, true, "An inn or tavern on the road"),
   k("crossroads", "Crossroads", "Travel and trade", 8, 7, true, "Where roads meet"),
+  // shops and trades (for town and city scale: a detail map of a town, or a world map drawn close)
+  k("market", "Market", "Shops and trades", 8, 7, true, "A market square, bazaar or stalls"),
+  k("general_store", "General store", "Shops and trades", 8, 7, true, "A general store, provisioner or outfitter"),
+  k("tavern", "Tavern", "Shops and trades", 8, 7, true, "A tavern, alehouse or bar in town"),
+  k("blacksmith", "Blacksmith", "Shops and trades", 8, 7, true, "A blacksmith's forge or smithy"),
+  k("weaponsmith", "Weaponsmith", "Shops and trades", 8, 7, true, "A weaponsmith or sword-maker"),
+  k("armorer", "Armorer", "Shops and trades", 8, 7, true, "An armorer or shield-maker"),
+  k("bowyer", "Bowyer", "Shops and trades", 8, 7, true, "A bowyer and fletcher: bows and arrows"),
+  k("jeweler", "Jeweler", "Shops and trades", 8, 7, true, "A jeweler, gem cutter or goldsmith"),
+  k("alchemist", "Alchemist", "Shops and trades", 8, 7, true, "An alchemist: potions and strange liquids"),
+  k("apothecary", "Apothecary", "Shops and trades", 8, 7, true, "An apothecary or herbalist: remedies and herbs"),
+  k("magic_shop", "Magic shop", "Shops and trades", 8, 7, true, "A magic shop, enchanter or scroll seller"),
+  k("bookshop", "Bookshop", "Shops and trades", 8, 7, true, "A bookshop, scribe or scriptorium"),
+  k("cartographer", "Cartographer", "Shops and trades", 8, 7, true, "A mapmaker or chart seller"),
+  k("bakery", "Bakery", "Shops and trades", 8, 7, true, "A bakery"),
+  k("butcher", "Butcher", "Shops and trades", 8, 7, true, "A butcher or smokehouse"),
+  k("fishmonger", "Fishmonger", "Shops and trades", 8, 7, true, "A fishmonger or fish market"),
+  k("brewery", "Brewery", "Shops and trades", 8, 7, true, "A brewery, winery or cooper's"),
+  k("tailor", "Tailor", "Shops and trades", 8, 7, true, "A tailor, weaver or clothier"),
+  k("cobbler", "Cobbler", "Shops and trades", 8, 7, true, "A cobbler, tanner or leatherworker"),
+  k("carpenter", "Carpenter", "Shops and trades", 8, 7, true, "A carpenter, joiner or woodworker"),
+  k("potter", "Potter", "Shops and trades", 8, 7, true, "A potter or glassblower"),
+  k("chandler", "Chandler", "Shops and trades", 8, 7, true, "A chandler: candles, lamps, oil and soap"),
+  k("tinker", "Tinker", "Shops and trades", 8, 7, true, "A tinker, clockmaker or inventor"),
+  k("stables", "Stables", "Shops and trades", 8, 7, true, "Stables, a farrier or a horse trader"),
+  k("shipwright", "Shipwright", "Shops and trades", 8, 7, true, "A shipwright or ship's chandler"),
+  k("trading_post", "Trading post", "Shops and trades", 8, 7, true, "A trading post, merchant or exchange"),
+  k("bank", "Bank", "Shops and trades", 8, 7, true, "A bank, moneylender or treasury"),
+  k("pawnshop", "Pawnshop", "Shops and trades", 8, 7, true, "A pawnshop or curio dealer"),
+  k("guildhall", "Guildhall", "Shops and trades", 8, 7, true, "A guildhall or trade hall"),
+  k("gambling_den", "Gambling den", "Shops and trades", 8, 7, true, "A gambling den or gaming house"),
   // land and water
   k("peak", "Peak", "Land and water", 8, 7, true, "A notable mountain"),
   k("volcano", "Volcano", "Land and water", 8, 7, true, "A volcano"),

@@ -58,6 +58,25 @@ const spiral = (turns: number, r0: number, r1: number): Shape => (c) => {
   for (let i = 0, n = 72; i <= n; i++) { const t = i / n, a = t * turns * Math.PI * 2, r = r0 + (r1 - r0) * t; if (i) c.lineTo(Math.cos(a) * r, Math.sin(a) * r); else c.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
 };
 
+/** A star with `n` points, outer radius r0 and inner r1, centred on (x, y), one point up. */
+const star = (x: number, y: number, n: number, r0: number, r1: number): Shape => (c) => {
+  c.beginPath();
+  for (let i = 0; i < n * 2; i++) { const a = -Math.PI / 2 + (i * Math.PI) / n, r = i % 2 ? r1 : r0; if (i) c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); else c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
+  c.closePath();
+};
+/** A cog with `n` square teeth between radius r1 (the rim) and r0 (the tips). */
+const cog = (n: number, r0: number, r1: number): Shape => (c) => {
+  c.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = (i * Math.PI * 2) / n, h = Math.PI / n / 2;
+    const pts: [number, number][] = [[r1, a - 2 * h], [r0, a - h], [r0, a + h], [r1, a + 2 * h]];
+    pts.forEach(([r, t], j) => (i === 0 && j === 0 ? c.moveTo(Math.cos(t) * r, Math.sin(t) * r) : c.lineTo(Math.cos(t) * r, Math.sin(t) * r)));
+  }
+  c.closePath();
+};
+/** Any path, closed. */
+const path = (draw: (c: IconCtx) => void): Shape => (c) => { c.beginPath(); draw(c); c.closePath(); };
+
 /** The shape of an arch cut into a wall: a half circle standing on the line y. */
 const arch = (cx: number, y: number, r: number): Shape => (c) => { c.beginPath(); c.moveTo(cx - r, y); c.arc(cx, y, r, Math.PI, Math.PI * 2); c.closePath(); };
 
@@ -129,6 +148,123 @@ export const PLACE_ICONS: Partial<Record<PlaceType, Part[]>> = {
     CL(open(-0.12, 0.45, -0.12, 0.78), 0.07), CL(open(0.12, 0.45, 0.12, 0.78), 0.07),
   ],
   mystery: [L((c) => { c.beginPath(); c.arc(0, -0.3, 0.42, Math.PI, Math.PI * 2.5); c.lineTo(0, 0.34); }, 0.26), F(disc(0, 0.72, 0.15))],
+
+  // shops and trades
+  // a stall under a striped awning
+  market: [
+    F(poly(-0.95, -0.3, -0.8, -0.85, 0.8, -0.85, 0.95, -0.3)), C(poly(-0.48, -0.85, -0.2, -0.85, -0.24, -0.3, -0.56, -0.3)), C(poly(0.2, -0.85, 0.48, -0.85, 0.56, -0.3, 0.24, -0.3)),
+    L(open(-0.82, -0.3, -0.82, 0.85), 0.16), L(open(0.82, -0.3, 0.82, 0.85), 0.16), F(rect(-0.82, 0.12, 1.64, 0.3)),
+  ],
+  // a tied sack of goods
+  general_store: [F(oval(0, 0.28, 0.72, 0.58)), F(poly(-0.32, -0.42, 0.32, -0.42, 0.5, -0.05, -0.5, -0.05)), F(poly(-0.45, -0.88, 0.45, -0.88, 0.22, -0.45, -0.22, -0.45)), C(rect(-0.34, -0.5, 0.68, 0.09))],
+  // a mug of ale with a head of foam
+  tavern: [
+    F(rect(-0.62, -0.45, 0.95, 1.3)), L((c) => { c.beginPath(); c.arc(0.36, 0.2, 0.33, -Math.PI / 2, Math.PI / 2); }, 0.18), T(rect(-0.47, -0.25, 0.65, 0.95), GOLD),
+    C(disc(-0.42, -0.5, 0.22)), C(disc(-0.12, -0.58, 0.24)), C(disc(0.18, -0.5, 0.2)),
+  ],
+  // an anvil
+  blacksmith: [F(poly(-0.95, -0.42, 0.9, -0.42, 0.9, -0.12, 0.35, -0.02, 0.3, 0.35, 0.62, 0.75, -0.62, 0.75, -0.3, 0.35, -0.35, -0.02, -0.62, -0.12)), CL(open(-0.6, -0.3, 0.75, -0.3), 0.06)],
+  // two crossed swords
+  weaponsmith: [
+    L(open(-0.72, 0.72, 0.8, -0.8), 0.16), L(open(0.72, 0.72, -0.8, -0.8), 0.16), L(open(-0.78, 0.36, -0.36, 0.78), 0.14), L(open(0.78, 0.36, 0.36, 0.78), 0.14),
+    F(disc(-0.84, 0.84, 0.11)), F(disc(0.84, 0.84, 0.11)),
+  ],
+  // a shield with a chevron
+  armorer: [F(poly(-0.72, -0.82, 0.72, -0.82, 0.72, 0.02, 0.42, 0.55, 0, 0.9, -0.42, 0.55, -0.72, 0.02)), C(poly(-0.5, -0.12, 0, 0.3, 0.5, -0.12, 0.5, 0.12, 0, 0.54, -0.5, 0.12))],
+  // a bow with an arrow nocked
+  bowyer: [
+    L((c) => { c.beginPath(); c.arc(-0.9, 0, 1.25, -0.75, 0.75); }, 0.16), L(open(0.014, -0.85, 0.014, 0.85), 0.06), L(open(-0.92, 0, 0.72, 0), 0.1),
+    F(poly(0.97, 0, 0.66, -0.2, 0.66, 0.2)), F(poly(-0.95, 0, -0.72, -0.22, -0.6, -0.22, -0.8, 0)), F(poly(-0.95, 0, -0.72, 0.22, -0.6, 0.22, -0.8, 0)),
+  ],
+  // a cut gem
+  jeweler: [
+    T(poly(-0.82, -0.25, -0.45, -0.72, 0.45, -0.72, 0.82, -0.25, 0, 0.88), "#3fb6d6"), M(poly(-0.82, -0.25, -0.45, -0.72, 0.45, -0.72, 0.82, -0.25, 0, 0.88), 0.1),
+    M(open(-0.82, -0.25, 0.82, -0.25), 0.07), M(open(-0.45, -0.72, -0.25, -0.25, 0, 0.88), 0.07), M(open(0.45, -0.72, 0.25, -0.25, 0, 0.88), 0.07), M(open(-0.25, -0.25, 0, -0.72, 0.25, -0.25), 0.07),
+  ],
+  // a round flask, half full
+  alchemist: [
+    F(rect(-0.18, -0.85, 0.36, 0.5)), F(rect(-0.3, -0.94, 0.6, 0.14)), F(disc(0, 0.3, 0.62)), T(disc(0, 0.3, 0.46), PAPER),
+    T(path((c) => c.arc(0, 0.3, 0.46, 0.12, Math.PI - 0.12)), "#4fbf6a"), C(disc(0.12, 0.5, 0.07)), C(disc(-0.14, 0.62, 0.05)),
+  ],
+  // a mortar and pestle
+  apothecary: [
+    F(path((c) => { c.moveTo(-0.88, -0.05); c.lineTo(0.88, -0.05); c.quadraticCurveTo(0.82, 0.78, 0, 0.78); c.quadraticCurveTo(-0.82, 0.78, -0.88, -0.05); })), F(rect(-0.42, 0.72, 0.84, 0.14)),
+    L(open(0.05, -0.12, 0.62, -0.9), 0.24),
+  ],
+  // a pointed hat with a star
+  magic_shop: [F(poly(-0.88, 0.62, -0.22, -0.2, 0.08, -0.92, 0.3, -0.22, 0.88, 0.62)), F(oval(0, 0.66, 0.95, 0.18)), C(star(0.02, 0.12, 5, 0.26, 0.11))],
+  // an open book
+  bookshop: [
+    F(poly(-0.95, -0.6, -0.05, -0.45, -0.05, 0.75, -0.95, 0.6)), F(poly(0.95, -0.6, 0.05, -0.45, 0.05, 0.75, 0.95, 0.6)),
+    CL(open(-0.8, -0.3, -0.22, -0.2), 0.07), CL(open(-0.8, 0.0, -0.22, 0.1), 0.07), CL(open(0.8, -0.3, 0.22, -0.2), 0.07), CL(open(0.8, 0.0, 0.22, 0.1), 0.07),
+  ],
+  // a rolled map with a route on it
+  cartographer: [
+    F(rect(-0.62, -0.55, 1.24, 1.1)), F(rect(-0.9, -0.72, 0.32, 1.44)), F(rect(0.58, -0.72, 0.32, 1.44)), C(rect(-0.5, -0.44, 1.0, 0.88)),
+    M(open(-0.4, 0.3, -0.12, 0.02, 0.12, 0.16, 0.36, -0.22), 0.07), M(open(0.26, -0.36, 0.44, -0.18), 0.06), M(open(0.44, -0.36, 0.26, -0.18), 0.06),
+  ],
+  // a loaf with scored crust
+  bakery: [
+    F(path((c) => { c.ellipse(0, 0.2, 0.92, 0.62, 0, Math.PI, 0); c.lineTo(0.92, 0.55); c.lineTo(-0.92, 0.55); })),
+    CL(open(-0.48, -0.22, -0.28, 0.18), 0.1), CL(open(-0.08, -0.34, 0.12, 0.1), 0.1), CL(open(0.32, -0.22, 0.5, 0.14), 0.1),
+  ],
+  // a joint of meat on the bone
+  butcher: [F(path((c) => c.ellipse(-0.18, -0.2, 0.64, 0.5, -0.6, 0, Math.PI * 2))), L(open(0.25, 0.2, 0.72, 0.68), 0.2), F(disc(0.84, 0.6, 0.14)), F(disc(0.64, 0.84, 0.14)), C(disc(-0.32, -0.3, 0.14))],
+  // a fish
+  fishmonger: [F(oval(-0.15, 0, 0.64, 0.38)), F(poly(0.38, 0, 0.94, -0.44, 0.94, 0.44)), C(disc(-0.52, -0.08, 0.08)), CL(open(-0.25, -0.3, -0.12, 0, -0.25, 0.3), 0.07)],
+  // a barrel with two hoops
+  brewery: [
+    F(path((c) => { c.moveTo(-0.55, -0.86); c.lineTo(0.55, -0.86); c.quadraticCurveTo(0.95, 0, 0.55, 0.86); c.lineTo(-0.55, 0.86); c.quadraticCurveTo(-0.95, 0, -0.55, -0.86); })),
+    CL(open(-0.72, -0.45, 0.72, -0.45), 0.1), CL(open(-0.72, 0.45, 0.72, 0.45), 0.1),
+  ],
+  // scissors
+  tailor: [
+    L(oval(-0.42, 0.58, 0.24, 0.24), 0.14), L(oval(0.42, 0.58, 0.24, 0.24), 0.14),
+    F(poly(-0.3, 0.4, -0.16, 0.3, 0.72, -0.9, 0.52, -0.86)), F(poly(0.3, 0.4, 0.16, 0.3, -0.72, -0.9, -0.52, -0.86)), C(disc(0, 0.02, 0.06)),
+  ],
+  // a boot
+  cobbler: [F(poly(-0.55, -0.9, 0.08, -0.9, 0.08, 0.18, 0.78, 0.34, 0.92, 0.58, 0.92, 0.82, -0.55, 0.82)), C(rect(-0.55, -0.62, 0.63, 0.1)), C(rect(-0.55, 0.62, 1.47, 0.06))],
+  // a hammer, held at a slant
+  carpenter: [L(open(0.2, -0.12, -0.62, 0.9), 0.24), F(poly(-0.06, -0.79, 0.91, -0.02, 0.66, 0.29, -0.31, -0.48)), C(poly(-0.06, -0.79, -0.08, -0.6, -0.2, -0.62))],
+  // a pot
+  potter: [
+    F(path((c) => { c.moveTo(-0.32, -0.86); c.lineTo(0.32, -0.86); c.lineTo(0.22, -0.6); c.quadraticCurveTo(0.98, -0.2, 0.52, 0.86); c.lineTo(-0.52, 0.86); c.quadraticCurveTo(-0.98, -0.2, -0.22, -0.6); })),
+    CL(open(-0.64, 0.04, 0.64, 0.04), 0.08),
+  ],
+  // a candle in a dish
+  chandler: [F(rect(-0.22, -0.3, 0.44, 1.08)), T(poly(0, -0.96, 0.17, -0.62, 0, -0.4, -0.17, -0.62), FIRE), F(oval(0, 0.8, 0.58, 0.13)), L(open(0, -0.42, 0, -0.3), 0.05)],
+  // a cog
+  tinker: [F(cog(8, 0.9, 0.66)), C(disc(0, 0, 0.26))],
+  // a horseshoe
+  stables: [L((c) => { c.beginPath(); c.arc(0, -0.08, 0.6, Math.PI * 0.78, Math.PI * 0.22); }, 0.3), C(disc(-0.56, -0.18, 0.05)), C(disc(0.56, -0.18, 0.05)), C(disc(-0.4, -0.55, 0.05)), C(disc(0.4, -0.55, 0.05))],
+  // an anchor
+  shipwright: [
+    L(disc(0, -0.72, 0.17), 0.12), L(open(0, -0.55, 0, 0.82), 0.16), L(open(-0.42, -0.36, 0.42, -0.36), 0.14),
+    L((c) => { c.beginPath(); c.arc(0, 0.15, 0.68, 0.18, Math.PI - 0.18); }, 0.16), F(poly(0.66, 0.27, 0.92, 0.05, 0.8, 0.45)), F(poly(-0.66, 0.27, -0.92, 0.05, -0.8, 0.45)),
+  ],
+  // a pair of scales
+  trading_post: [
+    L(open(0, -0.78, 0, 0.74), 0.12), F(rect(-0.45, 0.72, 0.9, 0.14)), L(open(-0.75, -0.6, 0.75, -0.6), 0.12),
+    L(open(-0.75, -0.6, -0.95, 0.0), 0.05), L(open(-0.75, -0.6, -0.55, 0.0), 0.05), L(open(0.75, -0.6, 0.55, 0.0), 0.05), L(open(0.75, -0.6, 0.95, 0.0), 0.05),
+    F(path((c) => c.arc(-0.75, 0, 0.27, 0, Math.PI))), F(path((c) => c.arc(0.75, 0, 0.27, 0, Math.PI))),
+  ],
+  // a stack of gold coins
+  bank: [
+    T(oval(0, 0.58, 0.72, 0.24), GOLD), M(oval(0, 0.58, 0.72, 0.24), 0.08), T(oval(0, 0.22, 0.72, 0.24), GOLD), M(oval(0, 0.22, 0.72, 0.24), 0.08),
+    T(oval(0, -0.14, 0.72, 0.24), GOLD), M(oval(0, -0.14, 0.72, 0.24), 0.08), T(oval(0.1, -0.52, 0.72, 0.24), GOLD), M(oval(0.1, -0.52, 0.72, 0.24), 0.08),
+  ],
+  // three gold balls hanging from a bar
+  pawnshop: [
+    L(open(-0.85, -0.86, 0.85, -0.86), 0.14), L(open(-0.48, -0.86, -0.48, -0.25), 0.06), L(open(0.48, -0.86, 0.48, -0.25), 0.06), L(open(0, -0.86, 0, 0.3), 0.06),
+    T(disc(-0.48, 0.0, 0.27), GOLD), M(disc(-0.48, 0.0, 0.27), 0.08), T(disc(0.48, 0.0, 0.27), GOLD), M(disc(0.48, 0.0, 0.27), 0.08), T(disc(0, 0.56, 0.27), GOLD), M(disc(0, 0.56, 0.27), 0.08),
+  ],
+  // a hall with columns and a banner
+  guildhall: [
+    F(poly(-0.86, 0.86, -0.86, -0.12, 0, -0.58, 0.86, -0.12, 0.86, 0.86)), C(rect(-0.14, 0.36, 0.28, 0.5)), C(rect(-0.62, 0.02, 0.14, 0.62)), C(rect(0.48, 0.02, 0.14, 0.62)),
+    L(open(0, -0.58, 0, -0.98), 0.07), T(poly(0.03, -0.98, 0.48, -0.88, 0.03, -0.78), FIRE),
+  ],
+  // a die showing five
+  gambling_den: [F(path((c) => { c.moveTo(-0.62, -0.82); c.lineTo(0.62, -0.82); c.quadraticCurveTo(0.82, -0.82, 0.82, -0.62); c.lineTo(0.82, 0.62); c.quadraticCurveTo(0.82, 0.82, 0.62, 0.82); c.lineTo(-0.62, 0.82); c.quadraticCurveTo(-0.82, 0.82, -0.82, 0.62); c.lineTo(-0.82, -0.62); c.quadraticCurveTo(-0.82, -0.82, -0.62, -0.82); })), C(disc(-0.42, -0.42, 0.15)), C(disc(0.42, -0.42, 0.15)), C(disc(0, 0, 0.15)), C(disc(-0.42, 0.42, 0.15)), C(disc(0.42, 0.42, 0.15))],
 };
 
 /** Does this kind have a picture (the original nine are drawn by the editor as plain symbols)? */
