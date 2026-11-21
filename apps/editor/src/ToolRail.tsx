@@ -10,9 +10,13 @@ export interface RailGroup { name: string; tools: RailTool[] }
 /** Names too long for the rail's width. */
 const SHORT: Record<string, string> = { "Select area": "Area", "Secret door": "Secret", "Invisible wall": "Invisible", "Detail map": "Detail", "Battlemap here": "Battlemap", "Paint ground": "Ground" };
 
-export function ToolRail({ groups, active, onPick, testId }: { groups: RailGroup[]; active: string; onPick: (id: string) => void; testId?: (id: string) => string }) {
+export function ToolRail({ groups, active, onPick, testId, names = true, onNames }: {
+  groups: RailGroup[]; active: string; onPick: (id: string) => void; testId?: (id: string) => string;
+  /** Show each tool's short name under its picture (else pictures only, in a narrower rail), and switch that. */
+  names?: boolean; onNames?: () => void;
+}) {
   return (
-    <nav className="rail" aria-label="Tools" data-testid="tool-rail">
+    <nav className={`rail${names ? "" : " compact"}`} aria-label="Tools" data-testid="tool-rail">
       {groups.map((g) => (
         <div key={g.name} className="rail-group" role="group" aria-label={g.name}>
           {g.tools.map((x) => (
@@ -27,6 +31,11 @@ export function ToolRail({ groups, active, onPick, testId }: { groups: RailGroup
           ))}
         </div>
       ))}
+      {onNames && (
+        <button className="rail-names" onClick={onNames} aria-label={names ? "Show the tools as pictures only" : "Show the tools' names"} title={names ? "Pictures only (a narrower rail)" : "Show the tools' names"} data-testid="rail-names">
+          {names ? "«" : "»"}
+        </button>
+      )}
     </nav>
   );
 }

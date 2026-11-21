@@ -1352,6 +1352,33 @@ try {
       if (png.subarray(1, 4).toString() !== "PNG" || png.readUInt32BE(16) !== 600 || png.readUInt32BE(20) !== 400) fail("the exported city PNG isn't 600 x 400");
     }
     await page.getByTestId("export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // the bottom bar: the map is saved a moment after an edit; zoom in changes the zoom shown; the Names switch hides the names
+    await page.getByTestId("save-state").getByText(/^Saved/).waitFor({ timeout: 15000 });
+    const zoomWas = await page.getByTestId("zoom-level").innerText();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await page.waitForFunction((z) => document.querySelector('[data-testid="zoom-level"]')?.textContent !== z, zoomWas, { timeout: 5000 });
+    await page.getByRole("button", { name: /Fit/ }).click();
+    await page.getByTestId("bar-names").click();
+    await page.waitForFunction(() => !document.querySelector('[data-testid="city-names"]')?.checked, null, { timeout: 5000 });
+    await page.getByTestId("bar-names").click();
+    // the Objects tab lists what is on the city by kind; the filter finds a street by its name, and a click selects it
+    await page.getByTestId("mp-tab-objects").click();
+    await page.getByTestId("objects-list").getByText("Buildings").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("objects-filter").fill("harbour");
+    await page.getByTestId("objects-list").getByText("Harbour Road").click();
+    await page.getByTestId("city-inspector").getByRole("heading", { name: "Street" }).waitFor({ timeout: 5000 });
+    await page.getByTestId("objects-filter").fill("");
+    await page.screenshot({ path: path.join(shots, "e2e-5h-city-objects.png") });
+    await page.getByTestId("mp-tab-map").click();
+    await page.keyboard.press("Escape");
+    // the tool rail as pictures only, and back; the choice is remembered
+    await page.getByTestId("rail-names").click();
+    await page.locator(".main.rail-icons").waitFor({ timeout: 5000 });
+    if ((await page.evaluate(() => localStorage.getItem("dd-rail-names"))) !== "0") fail("the pictures-only rail isn't remembered");
+    await page.getByTestId("rail-names").click();
+    await page.locator(".main.rail-icons").waitFor({ state: "detached", timeout: 5000 });
+    await page.getByRole("button", { name: /Fit/ }).click(); // (the Objects list moved the view onto the street: the clicks below expect the whole city)
+    await page.waitForTimeout(300);
     // the phone page shows the city (its picture drawn on the server's compute thread) with a Names switch instead of Places, and picks up an edit
     await phone.goto(`http://localhost:${port}/view`);
     await phone.getByText(/^Updated/).waitFor({ timeout: 20000 });

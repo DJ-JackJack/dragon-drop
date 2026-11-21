@@ -928,10 +928,12 @@ export class Hub {
         else await this.store.saveLevel(op.id, op.levels, r.id, r.session.doc);
       }
       if (levelsFile) await this.store.writeLevels(op.id, levelsFile);
+      if (this.open === op) this.broadcast({ t: "saved", auto: true }); // (the editors' bottom bar says so)
       this.broadcast({ t: "projects", projects: await this.store.list() });
       void this.maybeAutoBackup(op);
     } catch (e) {
       console.error("save failed:", e);
+      if (this.open === op) this.broadcast({ t: "saved", auto: true, failed: true });
       for (const r of pending) r.dirty = true;
       if (levelsFile) op.levelsDirty = true;
       op.dirty = true;

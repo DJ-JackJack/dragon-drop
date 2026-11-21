@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  ARROW_DIRECTION, BRIDGE_COLOURS, CITY_LABEL_KINDS, MATERIALS, cityBattleBoxAt, cityBattleSquares, type CityClip, cityClipBounds, copyCity, pasteCity, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  ARROW_DIRECTION, BRIDGE_COLOURS, CITY_LABEL_KINDS, KEY_ZOOM_STEP, MATERIALS, cityBattleBoxAt, cityBattleSquares, type CityClip, cityClipBounds, copyCity, pasteCity, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
   type WallPieces, cleanCityWall, cleanDistrict, districtColour, distToWall, hexToRgb, portcullisBars, wallPieces,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
@@ -24,6 +24,8 @@ import { drawCityNames } from "./drawCityNames.ts";
 import { type Hit, hitTest, loadLabelFonts } from "./drawFeatures.ts";
 import { ask, notice } from "./dialogs.tsx";
 import { CityExportDialog } from "./cityExport.tsx";
+import { StatusBar, zoomPercent } from "./StatusBar.tsx";
+import { focusBus, viewForBox } from "./focusBus.ts";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 
 type Pt = [number, number];
@@ -260,8 +262,12 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const local = (e: React.PointerEvent | React.WheelEvent) => { const r = canvasRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
   // ------------------------------------------------------------ drawing
+  /** The bottom bar's zoom: 100% is one screen pixel a metre (set only when it changes). */
+  const [zoomPct, setZoomPct] = useState<number | null>(null);
+  const zoomShown = useRef<number | null>(null);
   /** Draw the city on the screen, or (with a target) into a tile of a picture export. */
   function draw(target?: CityPaintTarget) {
+    if (!target) { const z = zoomPercent(viewRef.current.scale * 100); if (z !== zoomShown.current) { zoomShown.current = z; setZoomPct(z); } }
     const cv = canvasRef.current, wrap = wrapRef.current, m = metaRef.current;
     let ctx: CanvasRenderingContext2D, W: number, H: number, v: View;
     if (target) ({ ctx, W, H, v } = target);
@@ -1036,6 +1042,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   useEffect(() => store.onPatch((r) => paintGround(r)), [paintGround]);
   useEffect(() => { void loadRoofPools(); return roofAssetsStore.subscribe(requestDraw); }, [meta?.id, requestDraw]);
   useEffect(() => { void loadLabelFonts().then(requestDraw); }, [requestDraw]);
+  // the Objects list: bring a thing into view (metres)
+  useEffect(() => focusBus.listen((b) => { const w = wrapRef.current; if (!w) return; viewRef.current = viewForBox(viewRef.current, b, w.clientWidth, w.clientHeight, 4, MIN_ZOOM); requestDraw(); }), [requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
   useEffect(() => { requestDraw(); }, [features, ui, meta, requestDraw]);
   useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; districtDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
@@ -1272,6 +1280,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const spec = meta?.city;
   const counts = `${(features.buildings ?? []).length.toLocaleString()} buildings · ${(features.streets ?? []).length.toLocaleString()} streets`;
   return (
+    <div className="mapview-col">
     <div className="mapview" ref={wrapRef}>
       <canvas
         ref={canvasRef} style={{ cursor }} data-testid="city-canvas"
@@ -1279,17 +1288,25 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         onPointerLeave={() => { pointer.current = null; setHover(null); requestDraw(); }}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
-      <div className="mapview-status" data-testid="city-status">
-        {hover ? <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} m · {hover.ground}{hover.land && <> · {hover.land}</>}</> : spec ? <>{spec.widthM} × {spec.heightM} m · {counts}</> : null}
-        {hover && <> · {counts}</>}
-      </div>
-      <div className="map-buttons">
-        <button onClick={() => setExportOpen(true)} title="Export the city as a picture (PNG), or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
-        <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit the whole city in the window (0)">⤢ Fit</button>
-      </div>
       {exportOpen && meta?.city && <CityExportDialog meta={meta} names={ui.names} contours={ui.contours} prepare={prepareExport} paint={(t) => draw(t)} onClose={() => setExportOpen(false)} />}
       {meta && <TraceBar trace={features.trace} meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
+    </div>
+    <StatusBar
+      zoom={zoomPct} zoomTitle="100% shows one metre as one pixel of the screen" onZoom={(dir) => keyView({ kind: "zoom", factor: dir > 0 ? KEY_ZOOM_STEP : 1 / KEY_ZOOM_STEP })}
+      onFit={() => { fittedFor.current = null; fit(); requestDraw(); }}
+      switches={[
+        { label: "Names", on: ui.names, onToggle: () => onUi({ names: !ui.names }), title: "Show the names and labels", testId: "bar-names" },
+        { label: "Contours", on: ui.contours, onToggle: () => onUi({ contours: !ui.contours }), title: "Show the contour lines", testId: "bar-contours" },
+      ]}
+      infoTestId="city-status"
+      info={<>
+        {hover ? <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} m · {hover.ground}{hover.land && <> · {hover.land}</>}</> : spec ? <>{spec.widthM} × {spec.heightM} m · {counts}</> : null}
+        {hover && <> · {counts}</>}
+      </>}
+    >
+      <button onClick={() => setExportOpen(true)} title="Export the city as a picture (PNG), or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
+    </StatusBar>
     </div>
   );
 }

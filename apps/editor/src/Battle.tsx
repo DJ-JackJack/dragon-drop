@@ -10,7 +10,7 @@ import {
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
-import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
@@ -20,6 +20,8 @@ import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
+import { StatusBar, zoomPercent } from "./StatusBar.tsx";
+import { focusBus, viewForBox } from "./focusBus.ts";
 
 export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
@@ -478,9 +480,13 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const local = (e: React.PointerEvent | React.WheelEvent) => { const r = canvasRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
   // ------------------------------------------------------------ drawing
+  /** The bottom bar's zoom: 100% draws the map at its picture's own size (set only when it changes). */
+  const [zoomPct, setZoomPct] = useState<number | null>(null);
+  const zoomShown = useRef<number | null>(null);
   function draw() {
     const cv = canvasRef.current, wrap = wrapRef.current, m = metaRef.current;
     if (!cv || !wrap) return;
+    if (m?.battle) { const z = zoomPercent((viewRef.current.scale / m.battle.pxPerSquare) * 100); if (z !== zoomShown.current) { zoomShown.current = z; setZoomPct(z); } }
     const dpr = window.devicePixelRatio || 1;
     const W = wrap.clientWidth, H = wrap.clientHeight;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
@@ -658,6 +664,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
 
   // ------------------------------------------------------------ effects
   useEffect(() => store.onPatch((r) => repaint(r)), [repaint]);
+  // the Objects list: bring a thing into view (squares)
+  useEffect(() => focusBus.listen((bx) => { const w = wrapRef.current; if (!w) return; viewRef.current = viewForBox(viewRef.current, bx, w.clientWidth, w.clientHeight, 60, 3); requestDraw(); }), [requestDraw]);
   // the level below, as a picture from the server (fetched again each time a level is switched to, since the one below may have been changed meanwhile)
   const projectId = meta?.id ?? null, activeLevel = levels?.active ?? null;
   useEffect(() => {
@@ -1094,6 +1102,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab") : tool === "select" ? "default" : tool === "brush" ? "none" : "crosshair";
   const spec = meta?.battle;
   return (
+    <div className="mapview-col">
     <div className="mapview" ref={wrapRef}>
       <canvas
         ref={canvasRef} style={{ cursor }} data-testid="battle-canvas"
@@ -1101,23 +1110,25 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         onPointerLeave={() => { pointer.current = null; setHover(null); requestDraw(); }}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
-      <div className="mapview-status">
-        {hover && spec ? (
-          <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} squares · {Math.round(hover.x * spec.feetPerSquare)} ft, {Math.round(hover.y * spec.feetPerSquare)} ft · {materialLabel(meta, hover.m)}</>
-        ) : spec ? (
-          <>{spec.squaresX}×{spec.squaresY} squares · {spec.squaresX * spec.feetPerSquare}×{spec.squaresY * spec.feetPerSquare} ft</>
-        ) : null}
-      </div>
       {levels && <LevelBar levels={levels} />}
       {meta && <TraceBar trace={features.trace} meta={meta} level={levels?.active} />}
-      <div className="map-buttons">
-        <button onClick={() => setExportOpen(true)} title="Export for Foundry, Universal VTT or as an image" data-testid="battle-export-button">⤓ Export</button>
-        <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit map to window">⤢ Fit</button>
-      </div>
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
       {status && meta && loadedId === meta.id && <div className="mapview-busy">{status}</div>}
       {note && <div className="mapview-note" data-testid="battle-note">{note}</div>}
       {exportOpen && meta && <BattleExportDialog meta={meta} levels={levels} onClose={() => setExportOpen(false)} />}
+    </div>
+    <StatusBar
+      zoom={zoomPct} zoomTitle="100% draws the map at its picture's own size" onZoom={(dir) => keyView({ kind: "zoom", factor: dir > 0 ? KEY_ZOOM_STEP : 1 / KEY_ZOOM_STEP })}
+      onFit={() => { fittedFor.current = null; fit(); requestDraw(); }}
+      switches={[{ label: "Grid", on: ui.showGrid, onToggle: () => onUi({ showGrid: !ui.showGrid }), title: "Show the grid (G)", testId: "bar-grid" }]}
+      info={hover && spec ? (
+        <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} squares · {Math.round(hover.x * spec.feetPerSquare)} ft, {Math.round(hover.y * spec.feetPerSquare)} ft · {materialLabel(meta, hover.m)}</>
+      ) : spec ? (
+        <>{spec.squaresX}×{spec.squaresY} squares · {spec.squaresX * spec.feetPerSquare}×{spec.squaresY * spec.feetPerSquare} ft</>
+      ) : null}
+    >
+      <button onClick={() => setExportOpen(true)} title="Export for Foundry, Universal VTT or as an image" data-testid="battle-export-button">⤓ Export</button>
+    </StatusBar>
     </div>
   );
 }
@@ -1837,9 +1848,9 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <h3>Light level</h3>
       <LightLevel spec={spec} />
       <h3>Layers</h3>
-      <label className="check"><input type="checkbox" checked={ui.showGrid} onChange={(e) => onUi({ showGrid: e.target.checked })} /> Show the grid</label>
-      <label className="check"><input type="checkbox" checked={ui.showLights} onChange={(e) => onUi({ showLights: e.target.checked })} /> Light glows (and the light level)</label>
-      <label className="check"><input type="checkbox" checked={ui.showNotes} onChange={(e) => onUi({ showNotes: e.target.checked })} data-testid="show-notes" /> Room numbers</label>
+      <label className="check eye"><input type="checkbox" checked={ui.showGrid} onChange={(e) => onUi({ showGrid: e.target.checked })} /> The grid (G)</label>
+      <label className="check eye"><input type="checkbox" checked={ui.showLights} onChange={(e) => onUi({ showLights: e.target.checked })} /> Light glows (and the light level)</label>
+      <label className="check eye"><input type="checkbox" checked={ui.showNotes} onChange={(e) => onUi({ showNotes: e.target.checked })} data-testid="show-notes" /> Room numbers</label>
       <label className="field">Roofs
         <select value={ui.roofView} onChange={(e) => onUi({ roofView: e.target.value as BattleUi["roofView"] })} data-testid="roof-view">
           <option value="faint">Faint (see the rooms through them)</option><option value="solid">Solid (as the players see them)</option><option value="off">Hidden</option>

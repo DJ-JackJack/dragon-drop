@@ -28,7 +28,10 @@ const meets = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b
 
 /** Draw the names; returns the labels' hit boxes (streets and buildings are clicked as themselves). */
 export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: CityNameView, selected?: ReadonlySet<string> | null): Hit[] {
-  const taken: Box[] = [];
+  // the labels and districts' names first, so a street's or building's name never lands on one (it is left out where it would)
+  const districtNames: MapLabel[] = (f.districts ?? []).filter((d) => d.name).map((d) => { const [x, y] = districtCentre(d.points); return { id: d.id, text: d.name!, kind: "region", x, y }; });
+  const hits = drawFeatures(ctx, { places: [], labels: [...districtNames, ...(f.labels ?? [])], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false }, selected ?? null);
+  const taken: Box[] = hits.map(({ x0, y0, x1, y1 }) => ({ x0, y0, x1, y1 }));
   ctx.save();
   for (const s of f.streets ?? []) if (s.name) streetName(ctx, s, v, taken);
   for (const b of f.buildings ?? []) {
@@ -49,9 +52,8 @@ export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: Cit
     ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.fillStyle = INK; ctx.fillText(b.name, cx, cy);
   }
   ctx.restore();
-  // a district's name is a district label at its middle (clicking it picks the district: the label has the district's id)
-  const districtNames: MapLabel[] = (f.districts ?? []).filter((d) => d.name).map((d) => { const [x, y] = districtCentre(d.points); return { id: d.id, text: d.name!, kind: "region", x, y }; });
-  return drawFeatures(ctx, { places: [], labels: [...districtNames, ...(f.labels ?? [])], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false }, selected ?? null);
+  // (a district's name is a district label at its middle: clicking it picks the district, as the label has the district's id)
+  return hits;
 }
 
 /** A street's name along it: in the middle of the part in view, letter by letter along the line, read left to right; skipped when it doesn't fit. */

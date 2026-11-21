@@ -161,7 +161,8 @@ export type ServerMsg =
   | { t: "chat_settings"; settings: ChatSettings }
   | { t: "checkpoints"; list: CheckpointInfo[] }
   /** The map is on disk (the answer to "save_now"). */
-  | { t: "saved" }
+  /** The map is on disk: after Ctrl+S, or (`auto`) after an autosave; `failed`: an autosave didn't work (it will try again). */
+  | { t: "saved"; auto?: boolean; failed?: boolean }
   /** What the picture reader found (metres), or why it couldn't read. */
   | { t: "picture_read"; what?: "buildings" | "streets" | "water"; buildings?: { points: [number, number][]; look: RoofStyle }[]; streets?: { points: [number, number][]; width: number; kind: StreetKind }[]; water?: { runs: { material: number; runs: number[] }[]; cells: number }; skipped?: { small: number; large: number }; alreadyThere?: number; error?: string }
   /** A map was deleted: its name, and where its folder now is. */

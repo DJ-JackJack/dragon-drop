@@ -3,7 +3,7 @@ import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
 } from "@mapmaker/core";
-import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
@@ -18,6 +18,7 @@ import { drawRegions, regionAt } from "./drawRegions.ts";
 import { PaintClient } from "./paintClient.ts";
 import { store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
+import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
@@ -37,6 +38,8 @@ interface Props {
   tool: Tool;
   brush: Brush;
   showGrid: boolean;
+  /** Switch the coordinate numbers (the bottom bar's switch, as G). */
+  onShowGrid?: () => void;
   hillshade: boolean;
   /** Blend the terrain's pixels when zoomed in instead of drawing hard blocks. */
   smooth: boolean;
@@ -93,7 +96,7 @@ interface RiverChunk {
   w: number;
 }
 
-export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
+export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -356,9 +359,13 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     keeper.fitted();
   }
 
+  /** The bottom bar's zoom: screen pixels per map pixel, in percent (set only when it changes, so drawing doesn't re-render the view). */
+  const [zoomPct, setZoomPct] = useState<number | null>(null);
+  const zoomShown = useRef<number | null>(null);
   function draw() {
     const cv = canvasRef.current, wrap = wrapRef.current;
     if (!cv || !wrap) return;
+    { const z = zoomPercent(viewRef.current.scale * 100); if (z !== zoomShown.current) { zoomShown.current = z; setZoomPct(z); } }
     const dpr = window.devicePixelRatio || 1;
     const W = wrap.clientWidth, H = wrap.clientHeight;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
@@ -1044,6 +1051,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     : tool === "select" ? "default" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" || tool === "cityhere" ? "crosshair" : "none";
 
   return (
+    <div className="mapview-col">
     <div className="mapview" ref={wrapRef}>
       <canvas
         ref={canvasRef}
@@ -1059,19 +1067,6 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
         data-testid="map-canvas"
       />
       {group.length >= 2 && <div className="mapview-group" data-testid="world-group">{group.length} places and labels selected: drag to move, Delete to remove, Ctrl+D to duplicate</div>}
-      <div className="mapview-status">
-        {hover && meta ? (
-          <>x {hover.x} · y {hover.y} · {hover.e >= 0 ? `${hover.e} m` : `${-hover.e} m deep`}</>
-        ) : meta ? (
-          <>{meta.width}×{meta.height} px</>
-        ) : null}
-        {gridTooFine && <> · <b>Grid cells are too small to draw here: zoom in</b></>}
-        {meta && <> · {meta.kmPerPx} km/px · {Math.round((meta.width * meta.kmPerPx) / 1.609).toLocaleString()} mi across</>}
-      </div>
-      <div className="map-buttons">
-        <button onClick={() => setExportOpen(true)} title="Export the map as a PNG, or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
-        <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit map to window">⤢ Fit</button>
-      </div>
       {children}
       {meta && <TraceBar trace={features.trace} meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
@@ -1091,6 +1086,23 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
           )}
         </div>
       )}
+    </div>
+    <StatusBar
+      zoom={zoomPct} zoomTitle="100% shows one pixel of the map as one pixel of the screen" onZoom={(dir) => keyView({ kind: "zoom", factor: dir > 0 ? KEY_ZOOM_STEP : 1 / KEY_ZOOM_STEP })}
+      onFit={() => { fittedFor.current = null; fit(); requestDraw(); }}
+      switches={onShowGrid ? [{ label: "Coordinates", on: showGrid, onToggle: onShowGrid, title: "The coordinate numbers along the edges (G)", testId: "bar-grid" }] : []}
+      info={<>
+        {hover && meta ? (
+          <>x {hover.x} · y {hover.y} · {hover.e >= 0 ? `${hover.e} m` : `${-hover.e} m deep`}</>
+        ) : meta ? (
+          <>{meta.width}×{meta.height} px</>
+        ) : null}
+        {gridTooFine && <> · <b>Grid cells are too small to draw here: zoom in</b></>}
+        {meta && <> · {meta.kmPerPx} km/px · {Math.round((meta.width * meta.kmPerPx) / 1.609).toLocaleString()} mi across</>}
+      </>}
+    >
+      <button onClick={() => setExportOpen(true)} title="Export the map as a PNG, or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
+    </StatusBar>
     </div>
   );
 }

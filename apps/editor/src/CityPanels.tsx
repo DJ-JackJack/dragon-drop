@@ -213,8 +213,9 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
             onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v !== (c.elevation ?? 0)) setCity({ elevation: Math.max(-500, Math.min(9000, v)) }, `Height above the sea: ${v} m`); }} />
         </label>
         {row("Hills, valleys and slopes", String((features.land ?? []).length))}
-        <label className="check"><input type="checkbox" checked={ui.contours} onChange={(e) => onUi({ contours: e.target.checked })} data-testid="city-contours" /> Contour lines</label>
-        <label className="check"><input type="checkbox" checked={ui.names} onChange={(e) => onUi({ names: e.target.checked })} data-testid="city-names" /> Names and labels</label>
+        <h3>Layers</h3>
+        <label className="check eye"><input type="checkbox" checked={ui.contours} onChange={(e) => onUi({ contours: e.target.checked })} data-testid="city-contours" /> Contour lines</label>
+        <label className="check eye"><input type="checkbox" checked={ui.names} onChange={(e) => onUi({ names: e.target.checked })} data-testid="city-names" /> Names and labels</label>
       </section>
     </>
   );

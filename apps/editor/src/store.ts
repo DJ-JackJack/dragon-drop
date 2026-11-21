@@ -27,6 +27,10 @@ export interface AppState {
   error: string | null;
   /** When the server last confirmed the map is on disk after Ctrl+S (ms since 1970; 0 = never). */
   savedAt: number;
+  /** When the open map was last written to disk (Ctrl+S or an autosave), when it last changed, and whether the last autosave failed (the bottom bar's save state). */
+  storedAt: number;
+  changedAt: number;
+  saveFailed: boolean;
   checkpoints: CheckpointInfo[];
   features: Features;
   /** The levels of the open battlemap (null for a world map). The active one is the level the floor, walls and lights on screen belong to. */
@@ -51,7 +55,7 @@ function loadLockPref(): boolean {
 const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
-  apiKeyConfigured: false, error: null, savedAt: 0, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
+  apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null,
 };
 
@@ -277,6 +281,7 @@ class Store {
         this.derived = null;
         this.pendingDerived = null;
         this.set({
+          storedAt: 0, changedAt: 0, saveFailed: false,
           meta: m.meta, projects: m.projects, changes: m.changes, seq: m.seq, canUndo: m.canUndo, canRedo: m.canRedo,
           refs: m.refs, chat: m.chat, chatSettings: m.chatSettings, chatBusy: m.chatBusy, usage: m.usage,
           apiKeyConfigured: m.apiKeyConfigured, features: m.features, levels: m.levels ?? null, selection: null, selectionLock: false,
@@ -293,7 +298,7 @@ class Store {
         break;
       }
       case "change":
-        this.set({ changes: [...this.state.changes.slice(-199), m.change], seq: m.change.seq, canUndo: m.canUndo, canRedo: m.canRedo });
+        this.set({ changes: [...this.state.changes.slice(-199), m.change], seq: m.change.seq, canUndo: m.canUndo, canRedo: m.canRedo, changedAt: Date.now() });
         break;
       case "refs":
         this.set({ refs: m.refs });
@@ -302,7 +307,8 @@ class Store {
         this.set({ checkpoints: m.list });
         break;
       case "saved":
-        this.set({ savedAt: Date.now() });
+        if (m.failed) this.set({ saveFailed: true });
+        else this.set({ storedAt: Date.now(), saveFailed: false, ...(!m.auto && { savedAt: Date.now() }) });
         break;
       case "picture_read":
         for (const l of this.readListeners) l(m);

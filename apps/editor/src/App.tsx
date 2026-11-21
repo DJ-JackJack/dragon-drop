@@ -13,6 +13,7 @@ import { CityInspector, CitySummary, CityToolBar } from "./CityPanels.tsx";
 import { CITY_TOOL_DEFS, CITY_TOOL_GROUPS, type CityUi, defaultCityUi } from "./cityUi.ts";
 import { BATTLE_TOOLS, BATTLE_TOOL_GROUPS, BattleInspector, BattleKey, BattleSettings, BattleToolBar, BattleView, type BattleUi, defaultBattleUi } from "./Battle.tsx";
 import { ToolRail } from "./ToolRail.tsx";
+import { ObjectsList } from "./ObjectsList.tsx";
 import { WorldToolBar } from "./WorldToolBar.tsx";
 import { type AreaShape, type Brush, type Tool, MapView } from "./MapView.tsx";
 import { type ToolDef, TOOL_GROUPS } from "./toolDefs.ts";
@@ -163,8 +164,11 @@ export function App() {
   const [claudeOpen, setClaudeOpenState] = useState(() => flag("dd-claude-open"));
   const setMapOpen = useCallback((on: boolean) => { setMapOpenState(on); try { localStorage.setItem("dd-map-open", on ? "1" : "0"); } catch { /* private window */ } }, []);
   const setClaudeOpen = useCallback((on: boolean) => { setClaudeOpenState(on); try { localStorage.setItem("dd-claude-open", on ? "1" : "0"); } catch { /* private window */ } }, []);
-  const [mapTab, setMapTab] = useState<"map" | "history" | "assets">("map");
-  const tabNow = mapTab === "assets" && !isBattle ? "map" : mapTab;
+  const [mapTab, setMapTab] = useState<"map" | "objects" | "history" | "assets">("map");
+  const tabNow = mapTab === "assets" && !isBattle ? "map" : mapTab === "objects" && !isBattle && !isCity ? "map" : mapTab;
+  // the tool rail with names under the pictures (the default), or pictures only (narrower); remembered
+  const [railNames, setRailNames] = useState(() => flag("dd-rail-names"));
+  const toggleRailNames = useCallback(() => setRailNames((on) => { try { localStorage.setItem("dd-rail-names", on ? "0" : "1"); } catch { /* private window */ } return !on; }), []);
   // picking something on the map shows its editor (the Map tab), unless the person is browsing assets
   const selKey = isCity ? cui.selected.join(",") : isBattle ? `${bui.selected ?? ""}|${bui.multi.join(",")}` : selectedId ?? "";
   useEffect(() => { if (selKey.replace("|", "")) setMapTab((t) => (t === "history" ? "map" : t)); }, [selKey]);
@@ -287,13 +291,13 @@ export function App() {
           areaShape={areaShape} onAreaShape={setAreaShape} placeType={placeType} onPlaceType={setPlaceType} labelKind={labelKind} onLabelKind={setLabelKind}
         />
       )}
-      <div className={`main${desktop && wide ? " wide" : ""}${mapOpen ? "" : " no-map"}${claudeOpen ? "" : " no-claude"}${isBattle && tabNow === "assets" && mapOpen ? " assets-wide" : ""}`}>
+      <div className={`main${desktop && wide ? " wide" : ""}${mapOpen ? "" : " no-map"}${claudeOpen ? "" : " no-claude"}${railNames ? "" : " rail-icons"}${isBattle && tabNow === "assets" && mapOpen ? " assets-wide" : ""}`}>
         {isCity ? (
-          <ToolRail groups={CITY_TOOL_GROUPS} active={cui.tool} onPick={(id) => onCui({ tool: id as CityUi["tool"] })} testId={(id) => `ctool-${id}`} />
+          <ToolRail groups={CITY_TOOL_GROUPS} active={cui.tool} onPick={(id) => onCui({ tool: id as CityUi["tool"] })} testId={(id) => `ctool-${id}`} names={railNames} onNames={toggleRailNames} />
         ) : isBattle ? (
-          <ToolRail groups={BATTLE_TOOL_GROUPS} active={bui.tool} onPick={(id) => onBui({ tool: id as BattleUi["tool"] })} testId={(id) => `btool-${id}`} />
+          <ToolRail groups={BATTLE_TOOL_GROUPS} active={bui.tool} onPick={(id) => onBui({ tool: id as BattleUi["tool"] })} testId={(id) => `btool-${id}`} names={railNames} onNames={toggleRailNames} />
         ) : (
-          <ToolRail groups={TOOL_GROUPS} active={tool} onPick={(id) => setTool(id as Tool)} />
+          <ToolRail groups={TOOL_GROUPS} active={tool} onPick={(id) => setTool(id as Tool)} names={railNames} onNames={toggleRailNames} />
         )}
         {isCity ? (
           <CityView meta={s.meta} features={s.features} ui={cui} onUi={onCui} />
@@ -301,7 +305,7 @@ export function App() {
           <BattleView meta={s.meta} features={s.features} levels={s.levels} ui={bui} onUi={onBui} />
         ) : (
         <MapView
-          meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
+          meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} onShowGrid={() => setShowGrid((g) => !g)} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
           features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions} showLabels={showLabels} showMarkers={showMarkers}
           lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere} onCityHere={onCityHere}
           selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
@@ -317,6 +321,7 @@ export function App() {
             <>
               <div className="tabs" role="tablist" aria-label="Map panel">
                 <button role="tab" aria-selected={tabNow === "map"} className={tabNow === "map" ? "on" : ""} onClick={() => setMapTab("map")} data-testid="mp-tab-map">Map</button>
+                {(isBattle || isCity) && <button role="tab" aria-selected={tabNow === "objects"} className={tabNow === "objects" ? "on" : ""} onClick={() => setMapTab("objects")} data-testid="mp-tab-objects">Objects</button>}
                 <button role="tab" aria-selected={tabNow === "history"} className={tabNow === "history" ? "on" : ""} onClick={() => setMapTab("history")} data-testid="mp-tab-history">History</button>
                 {isBattle && <button role="tab" aria-selected={tabNow === "assets"} className={tabNow === "assets" ? "on" : ""} onClick={() => setMapTab("assets")} data-testid="tab-assets">Assets</button>}
               </div>
@@ -354,16 +359,16 @@ export function App() {
               ))}
             </div>
             <h3>Layers</h3>
-            <label className="check"><input type="checkbox" checked={showRivers} onChange={(e) => setShowRivers(e.target.checked)} /> Rivers</label>
-            <label className="check"><input type="checkbox" checked={showRegions} onChange={(e) => setShowRegions(e.target.checked)} /> Climate region outlines</label>
-            <label className="check" title="The map's labels and the names of places (hidden, they can't be clicked either)"><input type="checkbox" data-testid="show-labels" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} /> Labels and names</label>
-            <label className="check" title="The places' markers (towns, castles, temples...)"><input type="checkbox" data-testid="show-markers" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} /> Place markers</label>
+            <label className="check eye"><input type="checkbox" checked={showRivers} onChange={(e) => setShowRivers(e.target.checked)} /> Rivers</label>
+            <label className="check eye"><input type="checkbox" checked={showRegions} onChange={(e) => setShowRegions(e.target.checked)} /> Climate region outlines</label>
+            <label className="check eye" title="The map's labels and the names of places (hidden, they can't be clicked either)"><input type="checkbox" data-testid="show-labels" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} /> Labels and names</label>
+            <label className="check eye" title="The places' markers (towns, castles, temples...)"><input type="checkbox" data-testid="show-markers" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} /> Place markers</label>
             {style === "relief" && (
-              <label className="check"><input type="checkbox" checked={hillshade} onChange={(e) => setHillshade(e.target.checked)} /> Relief shading</label>
+              <label className="check eye"><input type="checkbox" checked={hillshade} onChange={(e) => setHillshade(e.target.checked)} /> Relief shading</label>
             )}
             <label className="check" title="When zoomed in, blend the terrain's pixels softly instead of drawing hard blocks"><input type="checkbox" data-testid="smooth-zoom" checked={smooth} onChange={(e) => setSmooth(e.target.checked)} /> Smooth zoom</label>
             <label className="check" title="How big place names, labels and markers are drawn. They already grow only a little when you zoom in."><span>Label size</span> <input type="range" data-testid="label-size" min={0.4} max={1.6} step={0.1} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} style={{ width: "100%" }} /></label>
-            <label className="check"><input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Coordinate numbers (G)</label>
+            <label className="check eye"><input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Coordinate numbers (G)</label>
             {s.meta && <GridPanel meta={s.meta} />}
             {s.meta && <ExtrasPanel meta={s.meta} />}
             {s.meta && <ClimatePanel meta={s.meta} />}
@@ -426,6 +431,14 @@ export function App() {
           </>}
           {s.meta && <DeleteMap meta={s.meta} />}
 
+                </div>
+                <div className={tabNow === "objects" ? "tab-on" : "tab-off"} data-testid="tab-body-objects">
+                  {(isBattle || isCity) && s.meta && (
+                    <ObjectsList
+                      kind={isCity ? "city" : "battle"} features={s.features} selected={isCity ? cui.selected : [bui.selected, ...bui.multi].filter((x): x is string => !!x)}
+                      onPick={(id) => (isCity ? onCui({ selected: [id], tool: "select" }) : onBui({ selected: id, multi: [], tool: "select" }))}
+                    />
+                  )}
                 </div>
                 <div className={tabNow === "history" ? "tab-on" : "tab-off"} data-testid="tab-body-history">
           <section>
