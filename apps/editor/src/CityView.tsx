@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  ARROW_DIRECTION, BRIDGE_COLOURS, CITY_LABEL_KINDS, MATERIALS, cityBattleSquares, type CityClip, cityClipBounds, copyCity, pasteCity, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
-  type WallPieces, cleanCityWall, distToWall, wallPieces,
+  ARROW_DIRECTION, BRIDGE_COLOURS, CITY_LABEL_KINDS, MATERIALS, cityBattleBoxAt, cityBattleSquares, type CityClip, cityClipBounds, copyCity, pasteCity, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  type WallPieces, cleanCityWall, cleanDistrict, districtColour, distToWall, hexToRgb, portcullisBars, wallPieces,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
   viewKeyAction,
@@ -92,10 +92,12 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   /** Points of a ridge, valley, plateau or hollow (the Land tool), or of a row or an area of trees (the Trees tool), being clicked out. */
   const landDraft = useRef<Pt[] | null>(null);
   const treeDraft = useRef<Pt[] | null>(null);
+  /** Corners of a district being clicked out (the District tool). */
+  const districtDraft = useRef<Pt[] | null>(null);
   /** Points of a city wall being clicked out (the Wall tool). */
   const wallDraft = useRef<Pt[] | null>(null);
   /** Each wall's towers and gates, worked out once for the wall and the streets as they are. */
-  const wallCache = useRef(new WeakMap<MapCityWall, { streets: readonly MapStreet[]; pieces: WallPieces }>());
+  const wallCache = useRef(new WeakMap<MapCityWall, { streets: readonly MapStreet[]; ground: number; pieces: WallPieces }>());
   /** Where the labels were drawn last (screen boxes), to click them. */
   const labelHits = useRef<Hit[]>([]);
   /** Each street's bridges, worked out once for what the street is and the ground as it is (`groundVer` counts the ground's changes). */
@@ -294,6 +296,10 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const sel = new Set(screen ? o.selected : []);
     const px = (x: number) => v.ox + x * v.scale, py = (y: number) => v.oy + y * v.scale;
 
+    // districts: a faint tint of their colour over the ground
+    const districtPath = (pts: readonly (readonly number[])[], ox: number, oy: number) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + ox), py(y + oy)) : ctx.moveTo(px(x + ox), py(y + oy)))); ctx.closePath(); };
+    for (const dst of f.districts ?? []) { const [r, g, bl] = hexToRgb(districtColour(dst)); districtPath(dst.points, dx(dst.id), dy(dst.id)); ctx.fillStyle = `rgba(${r},${g},${bl},0.14)`; ctx.fill(); }
+
     // streets: every edge first, then every surface, so crossings are one piece
     const streets = (f.streets ?? []).filter((s) => { const b = pointsBounds(s.points as Pt[]), w = s.width; return b.x1 + w >= vx0 - dx(s.id) && b.x0 - w <= vx1 - dx(s.id) && b.y1 + w >= vy0 - dy(s.id) && b.y0 - w <= vy1 - dy(s.id); });
     const stroke = (s: MapStreet, width: number, style: string) => {
@@ -360,11 +366,17 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     drawWalls(ctx, v, (f.cityWalls ?? []).map((w) => {
       const ox = dx(w.id), oy = dy(w.id), streetsMoved = (f.streets ?? []).some((s) => dx(s.id) || dy(s.id));
       if (!ox && !oy && !streetsMoved) return piecesOf(w, f.streets ?? []);
-      return wallPieces(ox || oy ? { ...w, points: w.points.map(([x, y]) => [x + ox, y + oy] as Pt) } : w, streetsMoved ? (f.streets ?? []).map((s) => (dx(s.id) || dy(s.id) ? { ...s, points: s.points.map(([x, y]) => [x + dx(s.id), y + dy(s.id)] as Pt) } : s)) : f.streets ?? []);
+      return wallPieces(ox || oy ? { ...w, points: w.points.map(([x, y]) => [x + ox, y + oy] as Pt) } : w, streetsMoved ? (f.streets ?? []).map((s) => (dx(s.id) || dy(s.id) ? { ...s, points: s.points.map(([x, y]) => [x + dx(s.id), y + dy(s.id)] as Pt) } : s)) : f.streets ?? [], wallGround());
     }), vx0, vy0, vx1, vy1);
 
+    // districts' borders, dashed in their colour, over everything but the names
+    ctx.save(); ctx.setLineDash([10, 6]); ctx.lineWidth = 2; ctx.lineJoin = "round";
+    for (const dst of f.districts ?? []) { const [r, g, bl] = hexToRgb(districtColour(dst)); districtPath(dst.points, dx(dst.id), dy(dst.id)); ctx.strokeStyle = `rgba(${Math.round(r * 0.7)},${Math.round(g * 0.7)},${Math.round(bl * 0.7)},0.85)`; ctx.stroke(); }
+    ctx.restore();
+
     // the names: streets' along them, buildings' over them, then the labels (districts, water, landmarks)
-    const moved = mv && (f.labels ?? []).some((l) => mvSet!.has(l.id)) ? { ...f, labels: f.labels.map((l) => (mvSet!.has(l.id) ? { ...l, x: l.x + mv.dx, y: l.y + mv.dy } : l)) } : f;
+    const moved = mv && ([...(f.labels ?? []), ...(f.districts ?? [])]).some((l) => mvSet!.has(l.id))
+      ? { ...f, labels: f.labels.map((l) => (mvSet!.has(l.id) ? { ...l, x: l.x + mv.dx, y: l.y + mv.dy } : l)), districts: (f.districts ?? []).map((d) => (mvSet!.has(d.id) ? { ...d, points: d.points.map(([x, y]) => [x + mv.dx, y + mv.dy] as Pt) } : d)) } : f;
     if (!screen) {
       // (a picture is sized as if it were the whole city fitted on the screen: names keep the size they have on the map as a whole)
       if (target!.names) drawCityNames(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H }, null);
@@ -380,6 +392,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       s.points.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + dx(s.id)), py(y + dy(s.id))) : ctx.moveTo(px(x + dx(s.id)), py(y + dy(s.id)))));
       ctx.stroke();
     }
+    for (const dst of f.districts ?? []) if (sel.has(dst.id)) { districtPath(dst.points, dx(dst.id), dy(dst.id)); ctx.stroke(); }
     for (const w of f.cityWalls ?? []) if (sel.has(w.id)) {
       ctx.beginPath();
       w.points.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + dx(w.id)), py(y + dy(w.id))) : ctx.moveTo(px(x + dx(w.id)), py(y + dy(w.id)))));
@@ -476,10 +489,15 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   /** A wall's towers and gates (cached until the wall or the streets change). */
   function piecesOf(w: MapCityWall, streets: readonly MapStreet[]): WallPieces {
     const hit = wallCache.current.get(w);
-    if (hit && hit.streets === streets) return hit.pieces;
-    const pieces = wallPieces(w, streets);
-    wallCache.current.set(w, { streets, pieces });
+    if (hit && hit.streets === streets && hit.ground === groundVer.current) return hit.pieces;
+    const pieces = wallPieces(w, streets, wallGround());
+    wallCache.current.set(w, { streets, ground: groundVer.current, pieces });
     return pieces;
+  }
+  /** The ground, to find where a wall crosses water. */
+  function wallGround() {
+    const spec = metaRef.current?.city, hf = store.heights;
+    return spec && hf ? { ground: hf, cellM: spec.cellM } : null;
   }
 
   /**
@@ -536,6 +554,12 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       }
       if (w.kind === "earth") stroke(Math.max(1, t * 0.28 * v.scale), rgb(C.earthCrest));
       if (w.kind === "palisade" && v.scale >= 4) stroke(Math.max(1, tw - 2 * edge), rgb(C.woodEdge, 0.55), 0, 0, [1, 0.3 * v.scale]);
+      // a water gate's portcullis across the water
+      if (w.gates.some((g) => g.water)) {
+        ctx.beginPath();
+        for (const g of w.gates) if (g.water) for (const [[ax, ay], [bx, by]] of portcullisBars(g, t)) { ctx.moveTo(X(ax), Y(ay)); ctx.lineTo(X(bx), Y(by)); }
+        ctx.lineWidth = Math.max(1, 0.22 * v.scale); ctx.strokeStyle = rgb(C.iron, 0.9); ctx.stroke();
+      }
       // the towers
       const body = w.kind === "palisade" ? C.woodTower : C.stoneTower, roof = w.kind === "palisade" ? C.woodEdge : C.stoneRoof;
       const shape = (q: WallPieces["towers"][number], grow: number, ox = 0, oy = 0) => {
@@ -649,6 +673,25 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ctx.lineWidth = 1.6; ctx.strokeStyle = "rgba(0, 240, 255, 0.95)"; ctx.fillStyle = "rgba(0, 240, 255, 0.12)";
       for (const b of s.found) { ctx.beginPath(); b.points.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     }
+    if (s.foundStreets) {
+      // each street as a band of its width, its middle line over it
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const st of s.foundStreets) {
+        ctx.beginPath(); st.points.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+        ctx.lineWidth = Math.max(3, st.width * v.scale); ctx.strokeStyle = "rgba(0, 240, 255, 0.28)"; ctx.stroke();
+        ctx.lineWidth = 1.6; ctx.strokeStyle = "rgba(0, 240, 255, 0.95)"; ctx.stroke();
+      }
+    }
+    if (s.foundWater) {
+      const spec = metaRef.current?.city, gw = store.heights?.w ?? 0;
+      if (spec && gw) {
+        ctx.fillStyle = "rgba(0, 240, 255, 0.35)";
+        for (const { runs } of s.foundWater.runs) for (let i = 0; i < runs.length; i += 2) {
+          const c = runs[i], cx = c % gw, cy = Math.floor(c / gw);
+          ctx.fillRect(X(cx * spec.cellM), Y(cy * spec.cellM), runs[i + 1] * spec.cellM * v.scale, spec.cellM * v.scale + 0.5);
+        }
+      }
+    }
     s.roofs.forEach((r, i) => {
       ctx.beginPath(); ctx.arc(X(r.x), Y(r.y), 8, 0, Math.PI * 2); ctx.fillStyle = `rgb(${r.rgb.join(",")})`; ctx.fill();
       ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.lineWidth = 1; ctx.strokeStyle = "#000"; ctx.stroke();
@@ -691,6 +734,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         ctx.beginPath(); [...streetDraft.current, [m.x, m.y] as Pt].forEach(([x, y], i) => (i ? ctx.lineTo(px(x), py(y)) : ctx.moveTo(px(x), py(y)))); ctx.stroke(); ctx.restore();
         line(streetDraft.current, false, GOLD, 1.2, [5, 4]);
         for (const [x, y] of streetDraft.current) { ctx.beginPath(); ctx.arc(px(x), py(y), 3.5, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill(); }
+      }
+      if (o.tool === "district" && districtDraft.current?.length) {
+        const pts = districtDraft.current;
+        line([...pts, [m.x, m.y]], false, GOLD, 1.8, [8, 5]);
+        if (pts.length >= 2) line([[m.x, m.y], pts[0]], false, "rgba(255,224,120,0.45)", 1.2, [3, 4]);
+        for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(px(x), py(y), 3.5, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill(); }
+        if (pts.length >= 3) { ctx.beginPath(); ctx.arc(px(pts[0][0]), py(pts[0][1]), 7, 0, Math.PI * 2); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5; ctx.stroke(); }
       }
       if (o.tool === "citywall" && wallDraft.current?.length) {
         const pts = wallDraft.current, k = WALL_KINDS.find((x) => x.id === o.wallKind) ?? WALL_KINDS[0], c = o.wallKind === "stone" ? WALL_COLOURS.stoneTop : o.wallKind === "palisade" ? WALL_COLOURS.woodTop : WALL_COLOURS.earthBank;
@@ -740,7 +790,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   }
 
   // ------------------------------------------------------------ what is under a point
-  function hitAt(mx: number, my: number): { kind: "building" | "street" | "wall" | "trees"; id: string } | null {
+  function hitAt(mx: number, my: number): { kind: "building" | "street" | "wall" | "trees" | "district"; id: string } | null {
     const f = featRef.current, v = viewRef.current;
     const bs = f.buildings ?? [];
     for (let i = bs.length - 1; i >= 0; i--) { const c = infoOf(bs[i]); if (mx >= c.x0 && mx <= c.x1 && my >= c.y0 && my <= c.y1 && pointInPolygon(mx, my, bs[i].points as Pt[])) return { kind: "building", id: bs[i].id }; }
@@ -751,6 +801,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       const s = ss[i];
       for (let k = 0; k + 1 < s.points.length; k++) if (distToSegment(mx, my, s.points[k][0], s.points[k][1], s.points[k + 1][0], s.points[k + 1][1]) <= s.width / 2 + tol) return { kind: "street", id: s.id };
     }
+    const ds = f.districts ?? [];
+    for (let i = ds.length - 1; i >= 0; i--) if (distToPolyline(mx, my, [...ds[i].points, ds[i].points[0]] as Pt[]) <= tol * 1.5) return { kind: "district", id: ds[i].id };
     const ts = f.trees ?? [];
     for (let i = ts.length - 1; i >= 0; i--) {
       const t = ts[i], pts = t.points as Pt[], half = (t.size ?? 7) / 2 + tol;
@@ -831,6 +883,20 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     sendCityFeatures(kind === "building" ? { upsertBuildings: [next as MapBuilding] } : kind === "street" ? { upsertStreets: [next as MapStreet] } : { upsertCityWalls: [next as MapCityWall] }, v ? `Name ${kind} ${v}` : `Clear ${kind} name`);
   }
 
+  /** A district from the corners clicked: its name asked for (it may have none yet). */
+  async function finishDistrict() {
+    const pts = districtDraft.current, spec = metaRef.current?.city;
+    districtDraft.current = null;
+    requestDraw();
+    if (!pts || pts.length < 3 || !spec) return;
+    const name = await ask("Name of this district (or leave it empty):", "", "Add district");
+    if (name === null) return;
+    const c = cleanDistrict({ id: newFeatureId("r"), points: pts, ...(name.trim() && { name: name.trim() }) }, spec);
+    if ("error" in c) return;
+    sendCityFeatures({ upsertDistricts: [c] }, c.name ? `Add district ${c.name}` : "Add district");
+    onUiRef.current({ selected: [c.id] });
+  }
+
   /** The Battlemap here tool's box let go of: say how big a battlemap it makes, ask its name, and have it made (the server opens it). */
   async function makeBattle(rect: { x: number; y: number; w: number; h: number }) {
     const m = metaRef.current, sq = cityBattleSquares(rect);
@@ -900,8 +966,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   function moveSelected(ids: string[], dx: number, dy: number, label: string) {
     const spec = metaRef.current?.city, f = featRef.current;
     if (!spec) return;
-    const { buildings, streets, trees, land, walls, labels } = selectedOf(f, ids);
-    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points), ...walls.flatMap((w) => w.points), ...labels.map((l) => [l.x, l.y])] as Pt[];
+    const { buildings, streets, trees, land, walls, labels, districts } = selectedOf(f, ids);
+    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points), ...walls.flatMap((w) => w.points), ...labels.map((l) => [l.x, l.y]), ...districts.flatMap((d) => d.points)] as Pt[];
     if (!all.length) return;
     const bb = pointsBounds(all);
     dx = Math.max(-bb.x0, Math.min(spec.widthM - bb.x1, dx)); dy = Math.max(-bb.y0, Math.min(spec.heightM - bb.y1, dy));
@@ -912,6 +978,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ...(trees.length && { upsertTrees: trees.map((t) => ({ ...t, points: t.points.map(mv) })) }), ...(land.length && { upsertLand: land.map((l) => ({ ...l, points: l.points.map(mv) })) }),
       ...(walls.length && { upsertCityWalls: walls.map((w) => ({ ...w, points: w.points.map(mv) })) }),
       ...(labels.length && { upsertLabels: labels.map((l) => { const [x, y] = mv([l.x, l.y]); return { ...l, x, y }; }) }),
+      ...(districts.length && { upsertDistricts: districts.map((d) => ({ ...d, points: d.points.map(mv) })) }),
     }, label);
   }
   function nudge(dx: number, dy: number, big: boolean): boolean {
@@ -971,7 +1038,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   useEffect(() => { void loadLabelFonts().then(requestDraw); }, [requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
   useEffect(() => { requestDraw(); }, [features, ui, meta, requestDraw]);
-  useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
+  useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; districtDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
   // the land or the climate changed: the ground's colours and shading with it
   const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}`;
   useEffect(() => { if (metaRef.current?.city && store.heights && offRef.current) paintGround(null); }, [groundKey, paintGround]);
@@ -988,9 +1055,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const keys = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const o = uiRef.current;
-      const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : o.tool === "hills" ? landDraft : o.tool === "trees" ? treeDraft : o.tool === "citywall" ? wallDraft : null;
+      const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : o.tool === "hills" ? landDraft : o.tool === "trees" ? treeDraft : o.tool === "citywall" ? wallDraft : o.tool === "district" ? districtDraft : null;
       if (draft?.current) {
-        if (e.key === "Enter") (o.tool === "outline" ? finishOutline : o.tool === "street" ? finishStreet : o.tool === "hills" ? finishLand : o.tool === "citywall" ? () => finishWall(false) : finishTrees)();
+        if (e.key === "Enter") (o.tool === "outline" ? finishOutline : o.tool === "street" ? finishStreet : o.tool === "hills" ? finishLand : o.tool === "citywall" ? () => finishWall(false) : o.tool === "district" ? () => void finishDistrict() : finishTrees)();
         else if (e.key === "Escape") draft.current = null;
         else if (e.key === "Backspace" || e.key === "Delete") { draft.current.pop(); if (!draft.current.length) draft.current = null; }
         else return;
@@ -1049,7 +1116,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       if (o.tool === "citylabel" && !hit) {
         // the Name tool: a street, building or wall is named; open ground gets a new label
         const thing = hitAt(q.x, q.y);
-        if (thing && thing.kind !== "trees") { void nameThing(thing.kind, thing.id); return; }
+        if (thing && thing.kind !== "trees" && thing.kind !== "district") { void nameThing(thing.kind, thing.id); return; }
         void addLabel(q.x, q.y);
         return;
       }
@@ -1079,6 +1146,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     if (o.tool === "street") {
       const pts = streetDraft.current ?? [];
       if (dbl && pts.length >= 2) finishStreet(); else streetDraft.current = dbl ? pts : [...pts, [q.x, q.y]];
+      requestDraw();
+      return;
+    }
+    if (o.tool === "district") {
+      const pts = districtDraft.current ?? [];
+      const nearFirst = pts.length >= 3 && Math.hypot((pts[0][0] - q.x) * v.scale, (pts[0][1] - q.y) * v.scale) < 10;
+      if (nearFirst || (dbl && pts.length >= 3)) void finishDistrict(); else districtDraft.current = dbl ? pts : [...pts, [q.x, q.y]];
       requestDraw();
       return;
     }
@@ -1160,6 +1234,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         for (const s of f.streets ?? []) if (s.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(s.id);
         for (const w of f.cityWalls ?? []) if (w.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(w.id);
         if (uiRef.current.names) for (const l of f.labels ?? []) if (l.x >= x0 && l.x <= x1 && l.y >= y0 && l.y <= y1) found.push(l.id);
+        for (const d of f.districts ?? []) if (d.points.every(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(d.id);
         for (const t of f.trees ?? []) { const [cx, cy] = t.points.length >= 3 ? polygonCentroid(t.points as Pt[]) : t.points[0]; if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(t.id); }
         onUiRef.current({ selected: d.add ? [...new Set([...(d.base ?? []), ...found])] : found });
       }
@@ -1171,7 +1246,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     if (d?.mode === "slope" && p && Math.hypot(p.x - d.sx, p.y - d.sy) >= 6) { const b = toM(p.x, p.y); addLand([[d.ax, d.ay], [b.x, b.y]], 0); }
     if (d?.mode === "battlebox" && p) {
       const b = toM(p.x, p.y), spec = metaRef.current?.city, rect = { x: Math.min(d.ax, b.x), y: Math.min(d.ay, b.y), w: Math.abs(b.x - d.ax), h: Math.abs(b.y - d.ay) };
-      if (spec && rect.w >= 6 && rect.h >= 6) void makeBattle(rect);
+      // a click, as on the world map: 30 x 20 squares round the spot; a drag: the box dragged
+      if (spec && Math.hypot(p.x - d.sx, p.y - d.sy) < 5) void makeBattle(cityBattleBoxAt(d.ax, d.ay, spec));
+      else if (spec && rect.w >= 6 && rect.h >= 6) void makeBattle(rect);
     }
     if (d?.mode === "rect" && p) {
       const o = uiRef.current, b = toM(p.x, p.y);

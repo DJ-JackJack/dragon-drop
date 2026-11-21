@@ -3,7 +3,7 @@
  * JSON text frames for control/chat; binary frames for heightmap snapshots and patches.
  */
 import type { ClaudeState } from "./assist.ts";
-import type { RoofStyle } from "./features.ts";
+import type { RoofStyle, StreetKind } from "./features.ts";
 import type { MapMeta } from "./doc.ts";
 import type { Rect } from "./geom.ts";
 import type { ChangeEntry, Command } from "./session.ts";
@@ -79,6 +79,10 @@ export type ClientMsg =
   | { t: "open_project"; id: string }
   /** The city picture reader: read buildings out of the city's trace picture (all in metres; the answer is `picture_read`, to this editor only; nothing is added until it accepts). */
   | { t: "read_picture"; area: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground: [number, number][]; tolerance: number }
+  /** The same reader for streets (`samples`: points on streets) or water (`samples` with the material each becomes: 7 shallow, 8 deep); the answer is `picture_read` with `what`. */
+  | { t: "read_picture_as"; what: "streets" | "water"; area: [number, number][]; samples: { x: number; y: number; material?: number }[]; ground: [number, number][]; tolerance: number }
+  /** Set ground cells of the open city map, as one edit: runs along the rows ([first cell, how many] in turn) by material (what the water reader found). */
+  | { t: "paint_cells"; runs: { material: number; runs: number[] }[]; label: string }
   /** Delete a map: its folder is moved into the maps folder's "Deleted maps" folder (never erased), and another map is opened if it was the open one. Only the DM does this (no tool of Claude's). */
   | { t: "delete_project"; id: string }
   | { t: "create_project"; name: string; width: number; height: number; kmPerPx: number; template: string; seed: number; lakes?: "none" | "few" | "some" | "many" }
@@ -159,7 +163,7 @@ export type ServerMsg =
   /** The map is on disk (the answer to "save_now"). */
   | { t: "saved" }
   /** What the picture reader found (metres), or why it couldn't read. */
-  | { t: "picture_read"; buildings?: { points: [number, number][]; look: RoofStyle }[]; skipped?: { small: number; large: number }; alreadyThere?: number; error?: string }
+  | { t: "picture_read"; what?: "buildings" | "streets" | "water"; buildings?: { points: [number, number][]; look: RoofStyle }[]; streets?: { points: [number, number][]; width: number; kind: StreetKind }[]; water?: { runs: { material: number; runs: number[] }[]; cells: number }; skipped?: { small: number; large: number }; alreadyThere?: number; error?: string }
   /** A map was deleted: its name, and where its folder now is. */
   | { t: "map_deleted"; name: string; folder: string }
   /** New derived layers are ready (sent to every client; "lite" clients get no binary frames). */

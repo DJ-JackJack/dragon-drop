@@ -1,7 +1,7 @@
 /** City walls: the towers and gates worked out from a wall and the streets, the stretches between, the checks, and the planner keeping houses off them. */
 import { describe, expect, it } from "vitest";
 import {
-  type MapCityWall, type MapStreet, CitySpace, applyFeaturesPatch, cityProblems, cleanCityWall, createCityDoc, distToWall, emptyFeatures, planFrontage, renderCity, wallPieces,
+  type MapCityWall, type MapStreet, CitySpace, applyFeaturesPatch, cityProblems, cleanCityWall, createCityDoc, distToWall, emptyFeatures, isWaterAt, planFrontage, renderCity, wallPieces,
 } from "../src/index.ts";
 
 const ring: MapCityWall = { id: "w1", points: [[100, 100], [300, 100], [300, 300], [100, 300]], closed: true };
@@ -62,6 +62,33 @@ describe("city walls", () => {
     const s = p.stretches[0].points;
     expect(Math.hypot(s[0][0] - 100, s[0][1] - 100)).toBeGreaterThan(3);
     expect(Math.hypot(s[s.length - 1][0] - 100, s[s.length - 1][1] - 100)).toBeGreaterThan(3);
+  });
+
+  it("has a water gate where it crosses a river: an opening from bank to bank, a tower on each bank, none in the water", () => {
+    const doc = createCityDoc({ id: "r", name: "R", widthM: 400, heightM: 400 });
+    const { w, h, data } = doc.height, cell = doc.meta.city!.cellM;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (Math.abs((x + 0.5) * cell - 200) < 10) data[y * w + x] = 8; // (a river 20 m wide down the middle)
+    const water = { ground: doc.height, cellM: cell };
+    const p = wallPieces(ring, [], water);
+    const wg = p.gates.filter((g) => g.water);
+    expect(wg).toHaveLength(2); // (the river crosses the top and the bottom of the ring)
+    for (const g of wg) {
+      expect(g.width).toBeGreaterThanOrEqual(19);
+      expect(g.width).toBeLessThan(24);
+      expect(Math.abs(g.x - 200)).toBeLessThan(1);
+      expect(g.streetId).toBeUndefined();
+    }
+    expect(p.towers.filter((t) => t.gate)).toHaveLength(4);
+    expect(p.towers.filter((t) => !t.gate).some((t) => isWaterAt(doc.height, cell, t.x, t.y))).toBe(false);
+    for (const s of p.stretches) for (const [x, y] of s.points) expect(isWaterAt(doc.height, cell, x, y)).toBe(false);
+    // without the ground there are no water gates; an earth rampart's has no towers
+    expect(wallPieces(ring, []).gates).toHaveLength(0);
+    expect(wallPieces({ ...ring, kind: "earth" }, [], water).towers).toHaveLength(0);
+    // drawn with its portcullis: dark iron across the water
+    doc.features = { ...doc.features!, cityWalls: [{ ...ring, towers: 0 }] };
+    const r = renderCity(doc, { maxSize: 400 });
+    const px = (x: number, y: number) => Array.from(r.img.data.slice((y * r.img.w + x) * 4, (y * r.img.w + x) * 4 + 3));
+    expect(Math.max(...px(200, 100))).toBeLessThan(90);
   });
 
   it("is checked when it comes from outside", () => {

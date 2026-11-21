@@ -112,7 +112,7 @@ export class CitySpace {
     this.woods = (doc.features?.trees ?? []).filter((t) => t.kind === "wood" || t.kind === "orchard");
     for (const s of doc.features?.streets ?? []) this.addStreet(s);
     for (const b of doc.features?.buildings ?? []) this.addBuilding(b.points as Pt[]);
-    this.walls = cityWallPieces(doc.features?.cityWalls, doc.features?.streets);
+    this.walls = cityWallPieces(doc.features?.cityWalls, doc.features?.streets, { ground: doc.height, cellM: this.spec.cellM });
     for (const w of this.walls) {
       const half = w.thickness / 2 + (w.kind === "earth" ? w.thickness * 0.7 : 0); // (an earth rampart's ditch is no place for a house either)
       for (const s of w.stretches) {

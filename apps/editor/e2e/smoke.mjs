@@ -1294,6 +1294,24 @@ try {
     await page.getByTestId("reader-accept").click();
     await page.getByTestId("history").getByText(`Read ${found} buildings from the picture`).first().waitFor({ timeout: 10000 });
     await status(new RegExp(`${2 + found} buildings`));
+    // the same reader for streets: the picture's sandy street, in a box on the right (away from the wall drawn below), read by a click on it and on the grass and the river beside it
+    await page.getByTestId("reader-what-streets").click();
+    await page.getByTestId("reader-roofs").getByText("2 Streets (0)").waitFor({ timeout: 5000 });
+    await page.getByTestId("reader-area").click();
+    await page.mouse.move(cx(460), cy(150));
+    await page.mouse.down();
+    await page.mouse.move(cx(598), cy(250), { steps: 5 });
+    await page.mouse.up();
+    await page.mouse.click(cx(560), cy(200));
+    await page.getByTestId("reader-ground").click();
+    await page.mouse.click(cx(480), cy(170));
+    await page.mouse.click(cx(510), cy(240));
+    await page.getByTestId("reader-find").click();
+    await page.getByTestId("reader-help").getByText(/^(Found \d+ streets?|No streets found)/).waitFor({ timeout: 20000 });
+    if (await page.getByTestId("reader-accept").isEnabled()) {
+      await page.getByTestId("reader-accept").click();
+      await page.getByTestId("history").getByText(/Read \d+ streets? from the picture/).first().waitFor({ timeout: 10000 });
+    }
     await page.getByTestId("reader-done").click();
     await page.getByTestId("reader-samples").waitFor({ state: "detached", timeout: 5000 });
     await page.getByTestId("trace-stop").click();

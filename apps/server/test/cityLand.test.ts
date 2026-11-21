@@ -339,3 +339,39 @@ describe("a battlemap from a part of a city", () => {
     await hub.close();
   });
 });
+
+describe("districts on a city through Claude's tools", () => {
+  it("outlines a district with a name and colour, counts what is in it, changes, shows and removes it", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Ward Town", width_m: 300, height_m: 200 });
+    await ok(hub, "add_buildings", { buildings: [{ x: 50, y: 50, w: 10, h: 8 }, { x: 70, y: 60, w: 10, h: 8 }, { x: 250, y: 150, w: 10, h: 8 }] });
+    const bare = await tool(hub, "render_city", { grid: false });
+    const added = await ok(hub, "add_city_districts", { districts: [{ points: [[20, 20], [120, 20], [120, 100], [20, 100]], name: "The Old Ward" }] });
+    expect(added.added[0]).toMatchObject({ name: "The Old Ward", buildings: 2, hectares: 0.8 });
+    const id = added.added[0].id;
+    const changed = await ok(hub, "update_city_districts", { changes: [{ id, colour: "#336699" }] });
+    expect(changed.changed[0]).toMatchObject({ colour: "#336699", name: "The Old Ward" });
+    const shown = await tool(hub, "render_city", { grid: false });
+    const img = (r: typeof shown) => (r.content as { type: string; data?: string }[]).find((c) => c.type === "image")!.data;
+    expect(img(shown)).not.toBe(img(bare));
+    expect((await ok(hub, "list_city_districts")).districts).toHaveLength(1);
+    await ok(hub, "remove_city_districts", { ids: [id] });
+    expect((await ok(hub, "list_city_districts")).total).toBe(0);
+    await hub.close();
+  });
+});
+
+describe("a battlemap from a spot of a city, as on the world map", () => {
+  it("makes 30 x 20 squares round the spot, held inside the city, or the size asked for", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Spot Town", width_m: 300, height_m: 200 });
+    await ok(hub, "create_battlemap_from_city", { x: 150, y: 100 });
+    expect(hub.session.doc.meta.battle).toMatchObject({ squaresX: 30, squaresY: 20 });
+    expect(hub.session.doc.meta.origin).toMatchObject({ x: 150, y: 100, unit: "m" });
+    await ok(hub, "open_project", { id: "spot-town" });
+    await ok(hub, "create_battlemap_from_city", { x: 5, y: 5, squares_x: 24, squares_y: 16, name: "Corner" });
+    expect(hub.session.doc.meta.battle).toMatchObject({ squaresX: 24, squaresY: 16 });
+    expect(hub.session.doc.meta.origin!.x).toBeCloseTo((24 * 1.524) / 2, 0); // (moved in so the box stays inside the city)
+    await hub.close();
+  });
+});

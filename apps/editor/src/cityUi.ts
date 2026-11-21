@@ -1,8 +1,8 @@
 /** The city map's tools, their keys and the editor's own settings for them (nothing here is saved with the map). One list: the toolbar, the key handler and the shortcut sheet read it. */
-import type { BuildingKind, CityLabelKind, CityWallKind, Features, FeaturesPatch, MapBuilding, MapCityWall, MapLabel, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
+import type { BuildingKind, CityLabelKind, CityWallKind, Features, FeaturesPatch, MapBuilding, MapCityWall, MapDistrict, MapLabel, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
 import { store } from "./store.ts";
 
-export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees" | "citylabel" | "citybattle";
+export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees" | "citylabel" | "district" | "citybattle";
 
 /** What the Land tool makes: a hill (a click, or a drag for its size), a ridge or valley (points along it), a plateau or hollow (an outline), a slope (a drag from low to high). */
 export type LandMode = "hill" | "ridge" | "valley" | "plateau" | "hollow" | "slope";
@@ -67,7 +67,8 @@ export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: str
   ] },
   { name: "More", tools: [
     { id: "citylabel", label: "Name", key: "N", tip: "Click a street, building or wall to name it; click open ground to write a name there (a district, water, a landmark)" },
-    { id: "citybattle", label: "Battlemap here", key: "M", tip: "Drag a box round the place of a fight or scene: a battlemap of it opens, with its buildings as walls, doors and roofs" },
+    { id: "district", label: "District", key: "D", tip: "Click the corners of a district (a quarter or ward); click the first corner, double-click or press Enter to finish, then name it" },
+    { id: "citybattle", label: "Battlemap here", key: "M", tip: "Click a spot for a battlemap of 30 x 20 squares round it (as on the world map), or drag a box round the place of a fight: a battlemap of it opens, with its buildings as walls, doors and roofs" },
   ] },
 ];
 export const CITY_TOOL_DEFS = CITY_TOOL_GROUPS.flatMap((g) => g.tools);
@@ -81,25 +82,25 @@ export function sendCityFeatures(patch: FeaturesPatch, label: string) {
 }
 
 /** The selected things, split by kind. */
-export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[]; walls: MapCityWall[]; labels: MapLabel[] } {
+export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[]; walls: MapCityWall[]; labels: MapLabel[]; districts: MapDistrict[] } {
   const want = new Set(ids);
   return {
     buildings: (f.buildings ?? []).filter((b) => want.has(b.id)), streets: (f.streets ?? []).filter((s) => want.has(s.id)),
     trees: (f.trees ?? []).filter((t) => want.has(t.id)), land: (f.land ?? []).filter((l) => want.has(l.id)), walls: (f.cityWalls ?? []).filter((w) => want.has(w.id)),
-    labels: (f.labels ?? []).filter((l) => want.has(l.id)),
+    labels: (f.labels ?? []).filter((l) => want.has(l.id)), districts: (f.districts ?? []).filter((d) => want.has(d.id)),
   };
 }
 
 /** Remove the selected things, as one edit. */
 export function removeSelected(f: Features, ids: string[]): boolean {
-  const { buildings, streets, trees, land, walls, labels } = selectedOf(f, ids);
-  const n = buildings.length + streets.length + trees.length + land.length + walls.length + labels.length;
+  const { buildings, streets, trees, land, walls, labels, districts } = selectedOf(f, ids);
+  const n = buildings.length + streets.length + trees.length + land.length + walls.length + labels.length + districts.length;
   if (!n) return false;
-  const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : walls.length ? "Delete wall" : labels.length ? `Delete name ${labels[0].text}` : `Delete ${landName(land[0]).toLowerCase()}`;
+  const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : walls.length ? "Delete wall" : labels.length ? `Delete name ${labels[0].text}` : districts.length ? `Delete district${districts[0].name ? ` ${districts[0].name}` : ""}` : `Delete ${landName(land[0]).toLowerCase()}`;
   sendCityFeatures({
     ...(buildings.length && { removeBuildings: buildings.map((b) => b.id) }), ...(streets.length && { removeStreets: streets.map((s) => s.id) }),
     ...(trees.length && { removeTrees: trees.map((t) => t.id) }), ...(land.length && { removeLand: land.map((l) => l.id) }), ...(walls.length && { removeCityWalls: walls.map((w) => w.id) }),
-    ...(labels.length && { removeLabels: labels.map((l) => l.id) }),
+    ...(labels.length && { removeLabels: labels.map((l) => l.id) }), ...(districts.length && { removeDistricts: districts.map((d) => d.id) }),
   }, what);
   return true;
 }

@@ -249,6 +249,14 @@ export interface MapStreet {
   bridge?: "stone" | "wood" | "none";
 }
 
+/** A district (quarter, ward) of a city map: an outline in metres, its name and its colour ("#rrggbb"; missing: one picked by its id, cityDistricts.ts). */
+export interface MapDistrict {
+  id: string;
+  name?: string;
+  points: [number, number][];
+  colour?: string;
+}
+
 /** What a city wall is built of (cityWalls.ts gives each its look, thickness and towers). */
 export type CityWallKind = "stone" | "palisade" | "earth";
 
@@ -396,6 +404,8 @@ export interface Features {
   trees?: MapTrees[];
   /** City maps: walls (towers and gates are worked out from them and the streets: cityWalls.ts). */
   cityWalls?: MapCityWall[];
+  /** City maps: districts (outlines with a name and a colour). */
+  districts?: MapDistrict[];
 }
 
 export interface FeaturesPatch {
@@ -435,6 +445,8 @@ export interface FeaturesPatch {
   removeTrees?: string[];
   upsertCityWalls?: MapCityWall[];
   removeCityWalls?: string[];
+  upsertDistricts?: MapDistrict[];
+  removeDistricts?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -545,6 +557,12 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertCityWalls ?? []) walls.set(x.id, x);
     out.cityWalls = [...walls.values()];
   } else if (f.cityWalls) out.cityWalls = f.cityWalls;
+  if (p.upsertDistricts || p.removeDistricts) {
+    const ds = new Map((f.districts ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeDistricts ?? []) ds.delete(id);
+    for (const x of p.upsertDistricts ?? []) ds.set(x.id, x);
+    out.districts = [...ds.values()];
+  } else if (f.districts) out.districts = f.districts;
   const trace = p.setTrace === undefined ? f.trace : p.setTrace;
   if (trace) out.trace = trace;
   return out;
@@ -588,6 +606,8 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.removeTrees?.length) parts.push(`remove ${p.removeTrees.length} group(s) of trees`);
   if (p.upsertCityWalls?.length) parts.push(p.upsertCityWalls.length === 1 ? (p.upsertCityWalls[0].name ?? "city wall") : `${p.upsertCityWalls.length} city walls`);
   if (p.removeCityWalls?.length) parts.push(`remove ${p.removeCityWalls.length} city wall(s)`);
+  if (p.upsertDistricts?.length) parts.push(p.upsertDistricts.length === 1 ? (p.upsertDistricts[0].name ?? "district") : `${p.upsertDistricts.length} districts`);
+  if (p.removeDistricts?.length) parts.push(`remove ${p.removeDistricts.length} district(s)`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 

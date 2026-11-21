@@ -7,7 +7,11 @@ import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
 } from "@mapmaker/core";
-import { type ReadResult, type ReaderOptions, type RGBAImage, readBuildings, renderCity } from "@mapmaker/core";
+import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
+
+/** What the picture reader is asked for: buildings, streets or water (core cityReader.ts). */
+export type ReadJob = { what: "buildings"; opts: ReaderOptions } | { what: "streets"; opts: StreetReadOptions } | { what: "water"; opts: WaterReadOptions };
+export type ReadAnswer = ReturnType<typeof readBuildings> | ReturnType<typeof readStreets> | ReturnType<typeof readWater>;
 import { decodeImage } from "@mapmaker/tools";
 import { NoiseStore } from "./noiseStore.ts";
 
@@ -26,6 +30,8 @@ export interface MapCompute {
   city(doc: MapDoc, opts: { maxSize: number; roofTiles?: Record<string, TileData> }): Promise<RGBAImage>;
   /** Read buildings out of a picture (the city picture reader, core cityReader.ts). `key` names the picture, so asking again about the same one doesn't decode it again. */
   readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult>;
+  /** The reader for streets or water (or buildings), the same way. */
+  readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer>;
   close(): Promise<void>;
 }
 
@@ -53,6 +59,7 @@ export type Job =
   | ({ op: "battle"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features } & BattleRenderOpts)
   | { op: "warm"; W: number; H: number; seed: number }
   | { op: "read"; key: string; bytes: Uint8Array; opts: ReaderOptions }
+  | { op: "read_as"; key: string; bytes: Uint8Array; job: ReadJob }
   | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
@@ -93,18 +100,20 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | RGBAImage | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | null {
     if (job.op === "city") {
       const tiles = job.roofTiles;
       return renderCity({ meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features }, { maxSize: job.maxSize, ...(tiles && { tileFor: (a: string) => tiles[a] ?? null }) }).img;
     }
-    if (job.op === "read") {
+    if (job.op === "read" || job.op === "read_as") {
       if (this.pic?.key !== job.key) {
         const img = decodeImage(job.bytes);
         if (!img) throw new Error("The trace picture couldn't be read as a picture.");
         this.pic = { key: job.key, img };
       }
-      return readBuildings(this.pic.img, job.opts);
+      if (job.op === "read") return readBuildings(this.pic.img, job.opts);
+      const j = job.job;
+      return j.what === "streets" ? readStreets(this.pic.img, j.opts) : j.what === "water" ? readWater(this.pic.img, j.opts) : readBuildings(this.pic.img, j.opts);
     }
     if (job.op === "warm") {
       this.fullNoise(job.W, job.H, job.seed);
@@ -163,6 +172,9 @@ export class InlineCompute implements MapCompute {
   }
   async readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions) {
     return this.runner.run({ op: "read", key, bytes, opts }) as ReadResult;
+  }
+  async readPictureAs(key: string, bytes: Uint8Array, job: ReadJob) {
+    return this.runner.run({ op: "read_as", key, bytes, job }) as ReadAnswer;
   }
   async close() {}
 }
@@ -261,6 +273,11 @@ export class WorkerCompute implements MapCompute {
   readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult> {
     if (this.painter.dead) return this.inline.readPicture(key, bytes, opts);
     return this.painter.call<ReadResult>({ op: "read", key, bytes, opts }, [bytes.buffer as ArrayBuffer]);
+  }
+
+  readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer> {
+    if (this.painter.dead) return this.inline.readPictureAs(key, bytes, job);
+    return this.painter.call<ReadAnswer>({ op: "read_as", key, bytes, job }, [bytes.buffer as ArrayBuffer]);
   }
 
   warm(doc: MapDoc) {

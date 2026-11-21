@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   BUILDING_KINDS, MATERIALS, type MapBuilding, type MapStreet, type Rect, type RoofChoice, type Shape, ROOF_STYLES, STREET_KINDS, chooseRoof, citySpec, cityGroundMaterial, cleanBuilding, cleanStreet,
-  drawCityNames, drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
+  cityBattleBoxAt, drawCityNames, drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
@@ -162,11 +162,13 @@ export const CITY_TOOLS = [
   define({
     name: "create_battlemap_from_city",
     description:
-      "Make a battlemap of a part of the open CITY map and open it (for a fight or a scene there): a box in metres (x, y its top-left corner, w, h its size; at 5 ft a square, 150 squares is about 228 m, the most). " +
+      "Make a battlemap of a part of the open CITY map and open it (for a fight or a scene there): either a spot (x, y in metres) and the battlemap's size in squares (squares_x, squares_y; default 30 x 20, as create_battlemap_here makes on a world map), " +
+      "or a box in metres (x, y its top-left corner, w, h its size; at 5 ft a square, 150 squares is about 228 m, the most). " +
       "The battlemap gets the city's ground there, the streets as cobbles or dirt (bridges as planks or flagstones), every building as walls with a door toward the nearest street, a floor by what it is and its roof, " +
       "and the city walls and towers as walls. Trees, names and furniture are not carried over: add them on the battlemap. The battlemap remembers the city (a way back).",
     schema: z.object({
-      x: z.number(), y: z.number(), w: z.number().min(6), h: z.number().min(6),
+      x: z.number(), y: z.number(), w: z.number().min(6).optional().describe("With h: a box from (x, y); without: (x, y) is the middle of the battlemap"), h: z.number().min(6).optional(),
+      squares_x: z.number().int().min(3).max(150).optional().describe("Without w and h; default 30"), squares_y: z.number().int().min(3).max(150).optional().describe("Without w and h; default 20"),
       name: z.string().min(1).max(80).optional().describe("The battlemap's name (default: the city's, with \"scene\")"),
       feet_per_square: z.number().min(1).max(30).optional().describe("Default 5"),
     }),
@@ -174,7 +176,8 @@ export const CITY_TOOLS = [
       const bad = needCity(ctx); if (bad) return bad;
       if (!ctx.createBattleFromCity) return fail("Battlemaps can't be made from a city here.");
       try {
-        const info = await ctx.createBattleFromCity({ name: i.name ?? "", rect: { x: i.x, y: i.y, w: i.w, h: i.h }, feetPerSquare: i.feet_per_square });
+        const rect = i.w !== undefined && i.h !== undefined ? { x: i.x, y: i.y, w: i.w, h: i.h } : cityBattleBoxAt(i.x, i.y, citySpec(ctx.session().doc), i.squares_x ?? 30, i.squares_y ?? 20, i.feet_per_square ?? 5);
+        const info = await ctx.createBattleFromCity({ name: i.name ?? "", rect, feetPerSquare: i.feet_per_square });
         return json({ created: info, note: "The battlemap is open now. render_battlemap looks at it; doors, furniture and lights are yours to add." });
       } catch (e) { return fail((e as Error).message); }
     },
@@ -231,6 +234,94 @@ export const CITY_TOOLS = [
       }
       const r = ctx.execute({ op: "features", patch: { upsertBuildings: added } }, `Read ${added.length} buildings from the picture`);
       return json({ change: r.seq, added: added.length, ...counts, note: "Read from the picture: some may need fixing by hand (merged neighbours, a yard read as a roof). check_city finds overlaps." });
+    },
+  }),
+
+  define({
+    name: "read_picture_streets",
+    description:
+      "Read the streets out of the city's trace picture (lined up with set_trace_picture), by their colour: give one or more points on streets (metres, from render_city with trace: true: a paved street, a dirt lane), " +
+      "points on things that are NOT streets nearby (roofs, gardens, squares, water: they tell them apart), and the area to read. Each street comes back as a line along its middle with the width it has in the picture " +
+      "(and the kind that width makes: avenue, street, lane, alley, path). Without add it shows the lines in cyan over the picture; with add: true they are added (one edit; bridges appear where they cross water). " +
+      "Streets already on the map are left out. Read the streets before the buildings: line_streets and the buildings reader keep off them.",
+    schema: z.object({
+      streets: z.array(Pt).min(1).max(12).describe("Points on streets, metres"),
+      others: z.array(Pt).max(24).optional().describe("Points on what is not a street (roofs, gardens, squares, water), metres"),
+      area: z.union([Metres, z.array(Pt).min(3).max(100)]).optional().describe("A rectangle or an outline (metres) to read; default the whole picture"),
+      tolerance: z.number().min(0).max(1).optional().describe("0 strict .. 1 loose (default 0.5)"),
+      add: z.boolean().optional(),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      if (!ctx.readCityStreets) return fail("The picture reader isn't available here.");
+      const area = !i.area ? undefined : Array.isArray(i.area) ? (i.area as [number, number][]) : ([[i.area.x, i.area.y], [i.area.x + i.area.w, i.area.y], [i.area.x + i.area.w, i.area.y + i.area.h], [i.area.x, i.area.y + i.area.h]] as [number, number][]);
+      let res;
+      try { res = await ctx.readCityStreets({ area, samples: i.streets as [number, number][], others: i.others as [number, number][] | undefined, tolerance: i.tolerance }); } catch (e) { return fail((e as Error).message); }
+      const len = (p: [number, number][]) => p.reduce((s, q, k) => (k ? s + Math.hypot(q[0] - p[k - 1][0], q[1] - p[k - 1][1]) : 0), 0);
+      const counts = { found: res.streets.length, already_on_the_map: res.alreadyThere, metres: Math.round(res.streets.reduce((s, x) => s + len(x.points), 0)), by_kind: Object.fromEntries(STREET_KINDS.map((k) => [k.id, res.streets.filter((s) => s.kind === k.id).length])) };
+      if (!i.add) {
+        const doc = ctx.session().doc, sp = citySpec(doc);
+        const bb = area ? pointsBounds(area) : { x0: 0, y0: 0, x1: sp.widthM, y1: sp.heightM };
+        const r = renderCity(doc, { region: { x: bb.x0, y: bb.y0, w: Math.max(10, bb.x1 - bb.x0), h: Math.max(10, bb.y1 - bb.y0) }, maxSize: 1200 });
+        await traceOverlay(ctx, r.img, { x: Math.round(r.region.x * r.px), y: Math.round(r.region.y * r.px) }, 1, r.px);
+        const d = r.img.data, Wp = r.img.w, Hp = r.img.h;
+        const dot = (x: number, y: number) => { for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const X = Math.round(x) + ox, Y = Math.round(y) + oy; if (X < 0 || Y < 0 || X >= Wp || Y >= Hp) continue; const o = (Y * Wp + X) * 4; d[o] = 0; d[o + 1] = 255; d[o + 2] = 255; } };
+        for (const s of res.streets) for (let k = 1; k < s.points.length; k++) {
+          const [ax, ay] = s.points[k - 1], [bx, by] = s.points[k];
+          const x0 = (ax - r.region.x) * r.px, y0 = (ay - r.region.y) * r.px, x1 = (bx - r.region.x) * r.px, y1 = (by - r.region.y) * r.px, n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+          for (let st = 0; st <= n; st++) dot(x0 + ((x1 - x0) * st) / n, y0 + ((y1 - y0) * st) / n);
+        }
+        const step = drawGrid(r.img, r.region, r.px);
+        const jpg = encodeJpeg(r.img);
+        const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
+        return { content: [{ type: "text", text: JSON.stringify({ ...counts, preview: `the found streets' middle lines in cyan over the trace picture; grid every ${step} m`, next: "add: true adds them (one edit)" }, null, 1) }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
+      }
+      if (!res.streets.length) return fail(`Nothing to add: ${JSON.stringify(counts)}. Check the street points (render_city with trace: true), add points on what isn't a street, or loosen the tolerance.`);
+      const sp = citySpec(ctx.session().doc), added: MapStreet[] = [];
+      for (const s of res.streets) { const c = cleanStreet({ id: newFeatureId("t"), points: s.points, width: s.width, kind: s.kind }, sp); if (!("error" in c)) added.push(c); }
+      const r = ctx.execute({ op: "features", patch: { upsertStreets: added } }, `Read ${added.length} street${added.length === 1 ? "" : "s"} from the picture`);
+      return json({ change: r.seq, added: added.length, ids: added.map((s) => s.id), ...counts, note: "Read from the picture: a street may come in pieces where something crossed it in the drawing; join or remove them by hand, and check_city for streets that end nowhere." });
+    },
+  }),
+
+  define({
+    name: "read_picture_water",
+    description:
+      "Read the water (a river, the harbour, a lake, the moat) out of the city's trace picture by its colour, and paint the city's ground there: give points on the water (metres), each with the depth it becomes " +
+      "(deep or shallow: a pale ford or a beach's edge is shallow), points on what is NOT water nearby (the shore, roofs, streets), and the area to read. Without add it shows the cells it would paint in cyan; " +
+      "with add: true it paints them (one edit). Bridges and water gates follow by themselves where streets and walls cross the new water.",
+    schema: z.object({
+      water: z.array(z.object({ x: z.number(), y: z.number(), depth: z.enum(["deep", "shallow"]).optional().describe("Default deep") })).min(1).max(12),
+      others: z.array(Pt).max(24).optional().describe("Points on what is not water, metres"),
+      area: z.union([Metres, z.array(Pt).min(3).max(100)]).optional(),
+      tolerance: z.number().min(0).max(1).optional(),
+      add: z.boolean().optional(),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      if (!ctx.readCityWater || !ctx.paintCityCells) return fail("The picture reader isn't available here.");
+      const area = !i.area ? undefined : Array.isArray(i.area) ? (i.area as [number, number][]) : ([[i.area.x, i.area.y], [i.area.x + i.area.w, i.area.y], [i.area.x + i.area.w, i.area.y + i.area.h], [i.area.x, i.area.y + i.area.h]] as [number, number][]);
+      let res;
+      try { res = await ctx.readCityWater({ area, samples: i.water.map((w) => ({ x: w.x, y: w.y, material: w.depth === "shallow" ? 7 : 8 })), others: i.others as [number, number][] | undefined, tolerance: i.tolerance }); } catch (e) { return fail((e as Error).message); }
+      const doc = ctx.session().doc, sp = citySpec(doc), cellArea = sp.cellM * sp.cellM;
+      const counts = { cells: res.cells, square_metres: Math.round(res.cells * cellArea), already_water: res.alreadyThere, by_depth: Object.fromEntries(res.runs.map((r) => [r.material === 7 ? "shallow" : "deep", r.runs.reduce((s, v, k) => (k % 2 ? s + v : s), 0)])) };
+      if (!i.add) {
+        const bb = area ? pointsBounds(area) : { x0: 0, y0: 0, x1: sp.widthM, y1: sp.heightM };
+        const r = renderCity(doc, { region: { x: bb.x0, y: bb.y0, w: Math.max(10, bb.x1 - bb.x0), h: Math.max(10, bb.y1 - bb.y0) }, maxSize: 1200 });
+        await traceOverlay(ctx, r.img, { x: Math.round(r.region.x * r.px), y: Math.round(r.region.y * r.px) }, 1, r.px);
+        const d = r.img.data, Wp = r.img.w, Hp = r.img.h, gw = doc.height.w;
+        for (const { runs } of res.runs) for (let k = 0; k < runs.length; k += 2) for (let c = runs[k]; c < runs[k] + runs[k + 1]; c++) {
+          const cx = c % gw, cy = Math.floor(c / gw), x0 = Math.floor((cx * sp.cellM - r.region.x) * r.px), y0 = Math.floor((cy * sp.cellM - r.region.y) * r.px), s = Math.max(1, Math.ceil(sp.cellM * r.px));
+          for (let y = Math.max(0, y0); y < Math.min(Hp, y0 + s); y++) for (let x = Math.max(0, x0); x < Math.min(Wp, x0 + s); x++) { const o = (y * Wp + x) * 4; d[o] = d[o] * 0.45; d[o + 1] = d[o + 1] * 0.45 + 140; d[o + 2] = d[o + 2] * 0.45 + 140; }
+        }
+        const step = drawGrid(r.img, r.region, r.px);
+        const jpg = encodeJpeg(r.img);
+        const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
+        return { content: [{ type: "text", text: JSON.stringify({ ...counts, preview: `the cells it would paint tinted cyan over the trace picture; grid every ${step} m`, next: "add: true paints them (one edit)" }, null, 1) }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
+      }
+      if (!res.cells) return fail(`No water found: ${JSON.stringify(counts)}. Check the water points, add points on the shore, or loosen the tolerance.`);
+      const changed = ctx.paintCityCells(res.runs, "Read water from the picture");
+      return json({ change: ctx.session().seq, painted: changed, ...counts });
     },
   }),
 

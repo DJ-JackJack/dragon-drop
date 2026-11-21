@@ -2,7 +2,7 @@
 import { useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
-  type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapLabel, cityLabelKind, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
+  type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
   cityWallPieces, wallPieces, wallSettings,
 } from "@mapmaker/core";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
@@ -18,7 +18,8 @@ const HINTS: Partial<Record<CityUi["tool"], string>> = {
   building: "Click to place a house, or drag a rectangle to size one. Q and E turn it. Pick its roof above.",
   outline: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish.",
   street: "Click the points a street passes through. Double-click or press Enter to finish.",
-  citybattle: "Drag a box round the place of a fight or scene: a battlemap of it opens (its ground, streets, buildings as walls with doors and roofs, and walls). At 5 ft a square the box can be up to about 228 m across.",
+  citybattle: "Click a spot for a battlemap of 30 × 20 squares round it, as on the world map, or drag a box round the place of a fight or scene (up to about 228 m across at 5 ft a square): a battlemap of it opens, with its ground, streets, buildings as walls with doors and roofs, and walls.",
+  district: "Click the corners of a district (a quarter, a ward, the docks); click the first corner, double-click or press Enter to finish, then name it. Its name is drawn over its middle.",
   citylabel: "Click a street, building or wall to name it. Click open ground to write a name there: pick what it names above. Names are yours: Claude only uses names you gave.",
   citywall: "Click the points of the wall. Click the first point to close it into a ring, or double-click or press Enter to end it. Where a street crosses it, a gate appears.",
   ground: "Drag to paint. [ and ] change the brush size.",
@@ -188,7 +189,8 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         {row("Buildings", (features.buildings ?? []).length.toLocaleString())}
         {row("Streets", (features.streets ?? []).length.toLocaleString())}
         {row("Trees", `${(features.trees ?? []).length.toLocaleString()} group${(features.trees ?? []).length === 1 ? "" : "s"}`)}
-        {(features.cityWalls ?? []).length > 0 && (() => { const p = cityWallPieces(features.cityWalls, features.streets), g = p.reduce((n, w) => n + w.gates.length, 0), t = p.reduce((n, w) => n + w.towers.length, 0); return row("Walls", `${p.length} · ${g} gate${g === 1 ? "" : "s"} · ${t} tower${t === 1 ? "" : "s"}`); })()}
+        {(features.districts ?? []).length > 0 && row("Districts", String((features.districts ?? []).length))}
+        {(features.cityWalls ?? []).length > 0 && (() => { const p = cityWallPieces(features.cityWalls, features.streets, store.heights ? { ground: store.heights, cellM: c.cellM } : null), g = p.reduce((n, w) => n + w.gates.length, 0), t = p.reduce((n, w) => n + w.towers.length, 0); return row("Walls", `${p.length} · ${g} gate${g === 1 ? "" : "s"} · ${t} tower${t === 1 ? "" : "s"}`); })()}
         <p className="muted">Click a building, street, wall or trees with the Select tool to edit it here; a hill or valley with the Land tool.</p>
         {meta!.origin && (
           <>
@@ -222,14 +224,15 @@ const hexOf = (c: [number, number, number]) => `#${c.map((v) => v.toString(16).p
 
 /** What is selected: one building or street to edit, or a group to change together. */
 export function CityInspector({ features, ui, onUi }: { features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {
-  const { buildings, streets, trees, land, walls, labels } = selectedOf(features, ui.selected);
-  if (!buildings.length && !streets.length && !trees.length && !land.length && !walls.length && !labels.length) return null;
+  const { buildings, streets, trees, land, walls, labels, districts } = selectedOf(features, ui.selected);
+  if (!buildings.length && !streets.length && !trees.length && !land.length && !walls.length && !labels.length && !districts.length) return null;
   const clear = () => onUi({ selected: [] });
-  const total = buildings.length + streets.length + trees.length + land.length + walls.length + labels.length;
+  const total = buildings.length + streets.length + trees.length + land.length + walls.length + labels.length + districts.length;
   const remove = () => { if (removeSelected(features, ui.selected)) onUi({ selected: [] }); };
   if (total === 1 && trees.length) return <TreesEditor t={trees[0]} onClear={clear} onRemove={remove} />;
+  if (total === 1 && districts.length) return <DistrictEditor d={districts[0]} features={features} onClear={clear} onRemove={remove} />;
   if (total === 1 && labels.length) return <LabelEditor l={labels[0]} onClear={clear} onRemove={remove} />;
-  if (total === 1 && walls.length) return <WallEditor w={walls[0]} streets={features.streets ?? []} onClear={clear} onRemove={remove} />;
+  if (total === 1 && walls.length) return <WallEditor w={walls[0]} streets={features.streets ?? []} cellM={store.getState().meta?.city?.cellM ?? 1} onClear={clear} onRemove={remove} />;
   if (total === 1 && land.length) return <LandEditor l={land[0]} onClear={clear} onRemove={remove} />;
   const change = (patch: Partial<MapBuilding>, label: string) => sendCityFeatures({ upsertBuildings: buildings.map((b) => ({ ...b, ...patch })) }, label);
   /** A new roof look for every selected building: each gets a picture of the packs that fits it (a different one each) unless roofs are set to be drawn. */
@@ -354,6 +357,28 @@ function StreetEditor({ s, onClear, onRemove }: { s: MapStreet; onClear: () => v
   );
 }
 
+/** One district: its name, its colour, and what is in it. */
+function DistrictEditor({ d, features, onClear, onRemove }: { d: MapDistrict; features: Features; onClear: () => void; onRemove: () => void }) {
+  const inside = (features.buildings ?? []).filter((b) => { const [x, y] = polygonCentroid(b.points as [number, number][]); return pointInPolygon(x, y, d.points); }).length;
+  return (
+    <section data-testid="city-inspector">
+      <h3>{d.name ?? "District"}</h3>
+      <p className="muted" data-testid="city-district-info">{Math.round(polygonArea(d.points) / 100) / 100} hectares · {inside} building{inside === 1 ? "" : "s"} in it</p>
+      <label className="field">Name (only a name you chose)
+        <input key={d.id + (d.name ?? "")} defaultValue={d.name ?? ""} maxLength={80} data-testid="city-name" onBlur={(e) => { const v = e.target.value.trim(); if (v !== (d.name ?? "")) { const { name: _n, ...rest } = d; sendCityFeatures({ upsertDistricts: [v ? { ...rest, name: v } : rest] }, v ? `Name district ${v}` : "Clear district name"); } }} />
+      </label>
+      <label className="field">Colour
+        <span className="row">
+          <input type="color" value={districtColour(d)} onChange={(e) => sendCityFeatures({ upsertDistricts: [{ ...d, colour: e.target.value }] }, "District colour")} data-testid="city-district-colour" />
+          {d.colour && <button onClick={() => { const { colour: _c, ...rest } = d; sendCityFeatures({ upsertDistricts: [rest] }, "District colour reset"); }}>Reset</button>}
+        </span>
+      </label>
+      <p className="muted">Drag its name (or its border) with the Select tool to move it.</p>
+      <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
+    </section>
+  );
+}
+
 /** One name on the city: its text, what it names, its size and turn. */
 function LabelEditor({ l, onClear, onRemove }: { l: MapLabel; onClear: () => void; onRemove: () => void }) {
   const set = (patch: Partial<MapLabel>, label: string) => sendCityFeatures({ upsertLabels: [{ ...l, ...patch }] }, label);
@@ -381,15 +406,15 @@ function LabelEditor({ l, onClear, onRemove }: { l: MapLabel; onClear: () => voi
 }
 
 /** One city wall: what it is built of, how thick, how far apart its towers are, ring or not, a name; and what stands on it (its towers and gates). */
-function WallEditor({ w, streets, onClear, onRemove }: { w: MapCityWall; streets: readonly MapStreet[]; onClear: () => void; onRemove: () => void }) {
+function WallEditor({ w, streets, cellM, onClear, onRemove }: { w: MapCityWall; streets: readonly MapStreet[]; cellM: number; onClear: () => void; onRemove: () => void }) {
   const set = (patch: Partial<MapCityWall>, label: string) => sendCityFeatures({ upsertCityWalls: [{ ...w, ...patch }] }, label);
-  const s = wallSettings(w), p = wallPieces(w, streets), kind = WALL_KINDS.find((k) => k.id === s.kind)!;
+  const s = wallSettings(w), p = wallPieces(w, streets, store.heights ? { ground: store.heights, cellM } : null), kind = WALL_KINDS.find((k) => k.id === s.kind)!;
   const streetName = (id: string) => { const st = streets.find((x) => x.id === id); return st?.name ?? STREET_KINDS.find((k) => k.id === st?.kind)?.name.toLowerCase() ?? "street"; };
   return (
     <section data-testid="city-inspector">
       <h3>{w.name ?? kind.name}</h3>
       <p className="muted" data-testid="city-wall-info">{Math.round(p.length)} m {p.closed ? "round" : "long"} · {p.towers.length} tower{p.towers.length === 1 ? "" : "s"} · {p.gates.length} gate{p.gates.length === 1 ? "" : "s"}</p>
-      {p.gates.length > 0 && <p className="muted">Gates: {p.gates.map((g) => `${streetName(g.streetId)}${g.gatehouse ? " (gatehouse)" : ""}`).join(", ")}.</p>}
+      {p.gates.length > 0 && <p className="muted">Gates: {p.gates.map((g) => (g.water ? "a water gate" : `${streetName(g.streetId ?? "")}${g.gatehouse ? " (gatehouse)" : ""}`)).join(", ")}.</p>}
       {p.closed && !p.gates.length && <p className="muted">No street crosses this ring yet, so it has no gate.</p>}
       <label className="field">Name (only a name you chose)
         <input key={w.id + (w.name ?? "")} defaultValue={w.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (w.name ?? "")) { const { name: _n, ...rest } = w; sendCityFeatures({ upsertCityWalls: [v ? { ...rest, name: v } : rest] }, v ? `Name wall ${v}` : "Clear wall name"); } }} data-testid="city-name" />
@@ -410,7 +435,7 @@ function WallEditor({ w, streets, onClear, onRemove }: { w: MapCityWall; streets
       {w.points.length >= 3 && (
         <label className="check" title="Join the last point back to the first"><input type="checkbox" checked={!!w.closed} onChange={(e) => { const { closed: _c, ...rest } = w; sendCityFeatures({ upsertCityWalls: [e.target.checked ? { ...rest, closed: true } : rest] }, e.target.checked ? "Close the wall" : "Open the wall"); }} data-testid="city-wall-ring" /> A ring (closed)</label>
       )}
-      <p className="muted">A gate appears wherever a street crosses the wall: a gatehouse for avenues and streets.</p>
+      <p className="muted">A gate appears wherever a street crosses the wall (a gatehouse for avenues and streets), and a water gate wherever it crosses water.</p>
       <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
     </section>
   );

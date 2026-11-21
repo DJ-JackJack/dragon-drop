@@ -11,7 +11,9 @@ import { type CitySpec, buildingToRoof, citySpec } from "./city.ts";
 import { type LandGrid, cityClimate, cityGroundColours, contourLines, landGrid, landShade, snowCover, treeColour, treeCrowns } from "./cityLand.ts";
 import { pointInPolygon } from "./geom.ts";
 import { BRIDGE_COLOURS, type BridgeSpan, cityBridges, deckDistance } from "./cityBridges.ts";
-import { WALL_COLOURS, type WallPieces, cityWallPieces } from "./cityWalls.ts";
+import { WALL_COLOURS, type WallPieces, cityWallPieces, portcullisBars } from "./cityWalls.ts";
+import { districtCentre, districtColour } from "./cityDistricts.ts";
+import { hexToRgb } from "./battle.ts";
 import { type Rect, distToSegment } from "./geom.ts";
 import { type RGBAImage, drawLabel } from "./render.ts";
 import { textWidth } from "./font.ts";
@@ -64,6 +66,7 @@ export function renderCity(doc: MapDoc, o: CityRenderOptions = {}): CityRender {
   const land = landGrid(doc);
   paintGround(doc, spec, img, OX, OY, px, land);
   if (land && o.contours !== false) paintContours(land, img, OX, OY, px);
+  paintDistricts(doc, img, OX, OY, px, false);
   paintStreets(doc, img, OX, OY, px);
   paintBridges(cityBridges(spec, doc.height, doc.features?.streets ?? []), img, OX, OY, px);
   if (o.trees !== false) paintTrees(doc, spec, img, OX, OY, px);
@@ -75,7 +78,8 @@ export function renderCity(doc: MapDoc, o: CityRenderOptions = {}): CityRender {
     const snow = snowCover(cityClimate(spec));
     if (snow > 0) for (const b of shown) fillPolygon(img, b.points, OX, OY, px, SNOW, snow * 0.55);
   }
-  paintWalls(cityWallPieces(doc.features?.cityWalls, doc.features?.streets), img, OX, OY, px);
+  paintWalls(cityWallPieces(doc.features?.cityWalls, doc.features?.streets, { ground: doc.height, cellM: spec.cellM }), img, OX, OY, px);
+  paintDistricts(doc, img, OX, OY, px, true);
   return { img, px, region: { x: OX / px, y: OY / px, w: W / px, h: H / px } };
 }
 
@@ -286,6 +290,18 @@ function paintWalls(walls: WallPieces[], img: LookImage, OX: number, OY: number,
       if (w.kind === "stone") { const c = cover(t * 0.2 - dd); if (c > 0) over(d, o, C.stoneWalk[0], C.stoneWalk[1], C.stoneWalk[2], c); }
       if (w.kind === "earth") { const c = cover(t * 0.14 - dd); if (c > 0) over(d, o, C.earthCrest[0], C.earthCrest[1], C.earthCrest[2], c); }
     }
+    // a water gate's portcullis across the water
+    for (const g of w.gates) {
+      if (!g.water) continue;
+      for (const [[ax, ay], [bx, by]] of portcullisBars(g, t)) {
+        const r = Math.max(0.12, 0.6 / px), bx0 = Math.max(0, Math.floor((Math.min(ax, bx) - r) * px - OX)), bx1 = Math.min(W - 1, Math.ceil((Math.max(ax, bx) + r) * px - OX));
+        const by0 = Math.max(0, Math.floor((Math.min(ay, by) - r) * px - OY)), by1 = Math.min(H - 1, Math.ceil((Math.max(ay, by) + r) * px - OY));
+        for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+          const a = cover(r - distToSegment((OX + x + 0.5) / px, (OY + y + 0.5) / px, ax, ay, bx, by));
+          if (a > 0) over(d, (y * W + x) * 4, C.iron[0], C.iron[1], C.iron[2], a * 0.9);
+        }
+      }
+    }
     // the towers
     for (const q of w.towers) {
       const cx = q.x * px - OX, cy = q.y * px - OY, R = q.r * px * (q.square ? 1.42 : 1) + 2;
@@ -318,6 +334,30 @@ function paintWalls(walls: WallPieces[], img: LookImage, OX: number, OY: number,
   }
 }
 
+/** Districts: a faint tint over the ground (`border` false: under the streets and buildings), then a dashed border in the district's colour (`border` true: over everything). */
+function paintDistricts(doc: MapDoc, img: LookImage, OX: number, OY: number, px: number, border: boolean) {
+  for (const dist of doc.features?.districts ?? []) {
+    const col = hexToRgb(districtColour(dist)), pts = dist.points;
+    if (!border) { fillPolygon(img, pts, OX, OY, px, col, 0.14); continue; }
+    const dark = col.map((c) => c * 0.7), dash = Math.max(3, 8 / px), w = Math.max(0.6 / px, 0.5) / 2;
+    let along = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length], len = Math.hypot(bx - ax, by - ay);
+      const n = Math.max(1, Math.ceil(len * px * 1.5));
+      for (let k = 0; k <= n; k++) {
+        const t = k / n, d = along + len * t;
+        if (Math.floor(d / dash) % 2) continue;
+        const mx = ax + (bx - ax) * t, my = ay + (by - ay) * t, sx = mx * px - OX, sy = my * px - OY, r = Math.max(0.8, w * px);
+        for (let y = Math.max(0, Math.floor(sy - r)); y <= Math.min(img.h - 1, Math.ceil(sy + r)); y++) for (let x = Math.max(0, Math.floor(sx - r)); x <= Math.min(img.w - 1, Math.ceil(sx + r)); x++) {
+          const a = clamp(r - Math.hypot(x + 0.5 - sx, y + 0.5 - sy) + 0.5, 0, 1);
+          if (a > 0) over(img.data, (y * img.w + x) * 4, dark[0], dark[1], dark[2], a * 0.8);
+        }
+      }
+      along += len;
+    }
+  }
+}
+
 /** The names on a city, where they are (metres): its labels, then the named streets (at their middle), buildings (at their centre) and walls. For Claude's previews. */
 export function cityNamesForPreview(doc: MapDoc): { text: string; x: number; y: number; big: boolean }[] {
   const f = doc.features, out: { text: string; x: number; y: number; big: boolean }[] = [];
@@ -332,6 +372,7 @@ export function cityNamesForPreview(doc: MapDoc): { text: string; x: number; y: 
     }
     return [pts[0][0], pts[0][1]];
   };
+  for (const d of f?.districts ?? []) if (d.name) { const [x, y] = districtCentre(d.points); out.push({ text: d.name, x, y, big: true }); }
   for (const l of f?.labels ?? []) out.push({ text: l.text, x: l.x, y: l.y, big: l.kind === "region" || l.kind === "sea" });
   for (const s of f?.streets ?? []) if (s.name) { const [x, y] = middle(s.points); out.push({ text: s.name, x, y, big: false }); }
   for (const b of f?.buildings ?? []) if (b.name) { const [x, y] = polygonCentroid(b.points); out.push({ text: b.name, x, y, big: false }); }

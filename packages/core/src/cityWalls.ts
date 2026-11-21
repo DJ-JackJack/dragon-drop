@@ -5,11 +5,14 @@
  *     stone wall or a palisade, and a plain opening for a lane, an alley, a path, or any street through an earth rampart;
  *   - TOWERS stand at the corners, at the ends of an open wall, and between them about every `towers` metres (round on stone, square on wood; none on an earth rampart
  *     unless asked), never in a gate's opening;
+ *   - wherever the wall crosses WATER (ground painted shallow or deep water: a river, a moat, the harbour mouth) there is a water gate: an opening with a portcullis
+ *     grille across it and a tower on each bank (none on an earth rampart), and no ordinary tower stands in the water;
  *   - the wall itself is the STRETCHES between the gates.
  * The editor (CityView) and the pictures (cityRender) draw the same pieces with the same colours (`WALL_COLOURS`).
  */
 import type { MapCityWall, MapStreet, CityWallKind } from "./features.ts";
 import type { CitySpec } from "./city.ts";
+import { type CityGround, isWaterAt } from "./cityBridges.ts";
 
 type Pt = [number, number];
 
@@ -23,6 +26,8 @@ export const WALL_COLOURS = {
   stoneTop: [192, 186, 172] as const, stoneWalk: [168, 161, 148] as const, stoneEdge: [88, 82, 74] as const, stoneTower: [182, 176, 162] as const, stoneRoof: [120, 112, 104] as const,
   woodTop: [134, 98, 60] as const, woodEdge: [66, 46, 28] as const, woodTower: [118, 84, 50] as const,
   earthBank: [126, 138, 88] as const, earthCrest: [156, 164, 110] as const, earthEdge: [84, 92, 60] as const, ditch: [68, 86, 72] as const,
+  /** A water gate's portcullis. */
+  iron: [46, 44, 42] as const,
 };
 
 export interface WallTower {
@@ -42,7 +47,10 @@ export interface WallGate {
   angle: number;
   /** The opening, metres along the wall. */
   width: number;
-  streetId: string;
+  /** The street that passes (missing for a water gate). */
+  streetId?: string;
+  /** A water gate: the wall crosses water here, and a portcullis closes the opening. */
+  water?: boolean;
   /** A gatehouse (a tower each side) rather than a plain opening. */
   gatehouse: boolean;
   /** Metres along the wall from its first point. */
@@ -104,8 +112,11 @@ function crossing(a: Pt, b: Pt, c: Pt, d: Pt): { t: number; u: number } | null {
 /** The streets that get a gatehouse rather than a plain opening (by kind, or by width when a street has none). */
 const isMainStreet = (s: MapStreet) => (s.kind ? s.kind === "avenue" || s.kind === "street" : s.width >= 5);
 
+/** The city's ground, to find where a wall crosses water (without it there are no water gates). */
+export interface WallGround { ground: CityGround; cellM: number }
+
 /** What stands on a wall: its stretches, towers and gates (see the top of this file). */
-export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallPieces {
+export function wallPieces(w: MapCityWall, streets: readonly MapStreet[], water?: WallGround | null): WallPieces {
   const { kind, thickness, towers: every } = wallSettings(w);
   const closed = !!w.closed && w.points.length >= 3;
   const line: Pt[] = closed ? [...(w.points as Pt[]), w.points[0] as Pt] : (w.points as Pt[]);
@@ -118,7 +129,7 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallP
   // the gates: wherever a street crosses the wall
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of line) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-  type Raw = { at: number; open: number; streetId: string; gatehouse: boolean };
+  type Raw = { at: number; open: number; streetId?: string; gatehouse: boolean; water?: boolean };
   const raw: Raw[] = [];
   for (const s of streets) {
     const sp = s.points as Pt[];
@@ -137,6 +148,23 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallP
       }
     }
   }
+  // the water gates: each stretch of the line over water at least a metre and a half long, opened from bank to bank
+  const wet = (d: number) => { if (!water) return false; const p = pointAlong(line, cum, Math.max(0, Math.min(total, d))); return isWaterAt(water.ground, water.cellM, p.x, p.y); };
+  if (water) {
+    const step = Math.max(0.25, Math.min(0.5, water.cellM / 3));
+    let start = -1;
+    for (let d = 0; d <= total + step / 2; d += step) {
+      const isWet = d <= total && wet(d);
+      if (isWet && start < 0) start = d;
+      if (!isWet && start >= 0) {
+        const end = Math.min(d, total);
+        // (the water's edge lies somewhere in the step before the first wet sample: the opening reaches past it, onto dry ground)
+        const from = Math.max(0, start - step);
+        if (end - start >= 1.5) raw.push({ at: (from + end) / 2, open: end - from + 0.6, gatehouse: kind !== "earth", water: true });
+        start = -1;
+      }
+    }
+  }
   raw.sort((a, b) => a.at - b.at);
   // gates whose openings meet are one (a street meeting the wall at a corner crosses two sides)
   const gates: Raw[] = [];
@@ -144,7 +172,7 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallP
     const last = gates[gates.length - 1];
     if (last && g.at - g.open / 2 <= last.at + last.open / 2) {
       const lo = Math.min(last.at - last.open / 2, g.at - g.open / 2), hi = Math.max(last.at + last.open / 2, g.at + g.open / 2);
-      last.at = (lo + hi) / 2; last.open = hi - lo; last.gatehouse ||= g.gatehouse;
+      last.at = (lo + hi) / 2; last.open = hi - lo; last.gatehouse ||= g.gatehouse; last.water ||= g.water; last.streetId ??= g.streetId;
     } else gates.push({ ...g });
   }
   if (closed && gates.length > 1) {
@@ -152,14 +180,14 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallP
     const first = gates[0], last = gates[gates.length - 1];
     if (last.at + last.open / 2 >= first.at - first.open / 2 + total) {
       const lo = last.at - last.open / 2, hi = first.at + first.open / 2 + total;
-      first.at = ((lo + hi) / 2) % total; first.open = hi - lo; first.gatehouse ||= last.gatehouse;
+      first.at = ((lo + hi) / 2) % total; first.open = hi - lo; first.gatehouse ||= last.gatehouse; first.water ||= last.water; first.streetId ??= last.streetId;
       gates.pop();
     }
   }
   const gate = { r: kind === "palisade" ? Math.max(1.8, thickness * 1.5) : Math.max(2.8, thickness * 1.1) };
   for (const g of gates) {
     const p = pointAlong(line, cum, ((g.at % total) + total) % total);
-    out.gates.push({ x: r2(p.x), y: r2(p.y), angle: p.angle, width: r2(g.open), streetId: g.streetId, gatehouse: g.gatehouse, at: r2(g.at) });
+    out.gates.push({ x: r2(p.x), y: r2(p.y), angle: p.angle, width: r2(g.open), ...(g.streetId && { streetId: g.streetId }), ...(g.water && { water: true }), gatehouse: g.gatehouse, at: r2(g.at) });
     if (g.gatehouse) {
       for (const side of [-1, 1]) {
         const d = g.at + side * (g.open / 2 + gate.r), q = pointAlong(line, cum, closed ? ((d % total) + total) % total : Math.max(0, Math.min(total, d)));
@@ -221,7 +249,7 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallP
     const placed: number[] = [];
     for (const d0 of at.sort((a, b) => a - b)) {
       const d = closed ? ((d0 % total) + total) % total : d0;
-      if (inGate(d)) continue;
+      if (inGate(d) || wet(d)) continue; // (no tower in a gate, or standing in the river)
       if (placed.some((q) => { const dd = Math.abs(q - d); return (closed ? Math.min(dd, total - dd) : dd) < t.r * 2.4; })) continue;
       placed.push(d);
       const p = pointAlong(line, cum, Math.min(d, total));
@@ -232,8 +260,17 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[]): WallP
 }
 
 /** Every wall's pieces. */
-export function cityWallPieces(walls: readonly MapCityWall[] | undefined, streets: readonly MapStreet[] | undefined): WallPieces[] {
-  return (walls ?? []).map((w) => wallPieces(w, streets ?? []));
+export function cityWallPieces(walls: readonly MapCityWall[] | undefined, streets: readonly MapStreet[] | undefined, water?: WallGround | null): WallPieces[] {
+  return (walls ?? []).map((w) => wallPieces(w, streets ?? [], water));
+}
+
+/** A water gate's portcullis: its bars across the opening (pairs of points, metres): one along the wall's line, and short ones across it every 0.7 m. */
+export function portcullisBars(g: WallGate, thickness: number): [Pt, Pt][] {
+  const ux = Math.cos(g.angle), uy = Math.sin(g.angle), nx = -uy, ny = ux, half = g.width / 2, across = Math.max(0.4, thickness * 0.35);
+  const bars: [Pt, Pt][] = [[[g.x - ux * half, g.y - uy * half], [g.x + ux * half, g.y + uy * half]]];
+  const n = Math.max(2, Math.round(g.width / 0.7));
+  for (let i = 1; i < n; i++) { const t = -half + (g.width * i) / n, cx = g.x + ux * t, cy = g.y + uy * t; bars.push([[cx - nx * across, cy - ny * across], [cx + nx * across, cy + ny * across]]); }
+  return bars;
 }
 
 const ID_OK = /^[A-Za-z0-9][A-Za-z0-9_-]{0,40}$/;

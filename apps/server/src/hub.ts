@@ -11,7 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
-  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
+  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -330,6 +330,77 @@ export class Hub {
       buildings.push({ points, look: b.look });
     }
     return { buildings, skipped: res.skipped, alreadyThere, colours: res.colours };
+  }
+
+  /** The open city and its trace picture, ready to read (or why not). */
+  private async tracedCity() {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    const doc = op.session.doc;
+    if (!isCity(doc)) throw new Error("The picture reader is for city maps.");
+    const t = doc.features?.trace;
+    if (!t) throw new Error("Lay the picture over the city first (References: Trace over map) and line it up, then read it.");
+    const bytes = await this.store.readRef(op.id, t.ref);
+    if (!bytes) throw new Error(`The trace picture "${t.ref}" is missing from References.`);
+    const toPic = ([x, y]: [number, number]) => traceToPicture(t, x, y);
+    return { op, doc, t, bytes, toPic, key: `${op.id}/${t.ref}/${t.w}x${t.h}` };
+  }
+
+  /** Read streets out of the city's trace picture by their colour (all in metres): lines with a width and a kind by it; streets already on the map are left out. */
+  async readCityStreets(o: { area?: [number, number][]; samples: [number, number][]; others?: [number, number][]; tolerance?: number }) {
+    if (!o.samples.length) throw new Error("Give at least one point on a street to read by.");
+    const { doc, t, bytes, toPic, key } = await this.tracedCity();
+    const area = o.area && o.area.length >= 3 ? o.area.map(toPic) : ([[0, 0], [t.w, 0], [t.w, t.h], [0, t.h]] as [number, number][]);
+    const res = await this.compute.readPictureAs(key, new Uint8Array(bytes), { what: "streets", opts: {
+      area, streets: o.samples.map((p) => { const [x, y] = toPic(p); return { x, y }; }), others: (o.others ?? []).map((p) => { const [x, y] = toPic(p); return { x, y }; }),
+      tolerance: o.tolerance, minWidth: 1.2 / t.scale, maxWidth: 40 / t.scale, minLength: 8 / t.scale,
+    } }) as ReturnType<typeof readStreets>;
+    const sp = citySpec(doc), have = doc.features?.streets ?? [], streets: { points: [number, number][]; width: number; kind: StreetKind }[] = [];
+    let alreadyThere = 0;
+    for (const s of res.streets) {
+      const points = s.points.map(([u, v]) => { const [x, y] = tracePoint(t, u, v); return [Math.round(Math.min(sp.widthM, Math.max(0, x)) * 100) / 100, Math.round(Math.min(sp.heightM, Math.max(0, y)) * 100) / 100] as [number, number]; });
+      const width = Math.max(1, Math.round(s.width * t.scale * 2) / 2);
+      // (a street mostly on one already there is that street)
+      const probe = points.flatMap((p, i) => (i ? Array.from({ length: 5 }, (_, k) => [points[i - 1][0] + ((p[0] - points[i - 1][0]) * k) / 5, points[i - 1][1] + ((p[1] - points[i - 1][1]) * k) / 5]) : []));
+      const onOld = probe.filter(([x, y]) => have.some((h) => distToPolyline(x, y, h.points as [number, number][]) <= h.width / 2 + 1.5)).length;
+      if (probe.length && onOld / probe.length >= 0.6) { alreadyThere++; continue; }
+      streets.push({ points, width, kind: width >= 10 ? "avenue" : width >= 5.5 ? "street" : width >= 3 ? "lane" : width >= 1.75 ? "alley" : "path" });
+    }
+    return { streets, alreadyThere };
+  }
+
+  /** Read water out of the city's trace picture by its colour (samples in metres, each with the material it becomes): the ground cells it covers, as runs by material. */
+  async readCityWater(o: { area?: [number, number][]; samples: { x: number; y: number; material: number }[]; others?: [number, number][]; tolerance?: number }) {
+    if (!o.samples.length) throw new Error("Give at least one point on the water to read by.");
+    const { doc, t, bytes, toPic, key } = await this.tracedCity();
+    const area = o.area && o.area.length >= 3 ? o.area.map(toPic) : ([[0, 0], [t.w, 0], [t.w, t.h], [0, t.h]] as [number, number][]);
+    const sp = citySpec(doc);
+    const res = await this.compute.readPictureAs(key, new Uint8Array(bytes), { what: "water", opts: {
+      area, water: o.samples.map((s) => { const [x, y] = toPic([s.x, s.y]); return { x, y, material: s.material === 7 ? 7 : 8 }; }), others: (o.others ?? []).map((p) => { const [x, y] = toPic(p); return { x, y }; }),
+      tolerance: o.tolerance, grid: { w: doc.height.w, h: doc.height.h, cellM: sp.cellM, trace: t },
+    } }) as ReturnType<typeof readWater>;
+    // (cells that are already that water change nothing)
+    let already = 0;
+    const data = doc.height.data;
+    for (const { material, runs } of res.runs) for (let i = 0; i < runs.length; i += 2) for (let k = 0; k < runs[i + 1]; k++) if (Math.round(data[runs[i] + k]) === material) already++;
+    return { runs: res.runs, cells: res.cells, alreadyThere: already };
+  }
+
+  /** Set ground cells of the open city map as one edit (runs along the rows by material). Returns how many changed. */
+  paintCityCells(runs: { material: number; runs: number[] }[], label: string, author: "user" | "claude" = "user"): number {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    const doc = op.session.doc;
+    if (!isCity(doc)) throw new Error("Ground cells are a city map's.");
+    const data = new Float32Array(doc.height.data), n = data.length;
+    let changed = 0;
+    for (const { material, runs: rs } of runs) {
+      const m = Math.round(material);
+      if (!(m >= 1 && m <= 15)) throw new Error(`There is no ground ${material}.`);
+      for (let i = 0; i + 1 < rs.length; i += 2) for (let k = 0; k < rs[i + 1]; k++) { const c = rs[i] + k; if (c >= 0 && c < n && data[c] !== m) { data[c] = m; changed++; } }
+    }
+    if (changed) op.session.execute({ op: "replace_heights", data, label }, author);
+    return changed;
   }
 
   /** Make a battlemap (a grid-based tabletop map) and open it. */
@@ -967,6 +1038,21 @@ export class Hub {
           } catch (e) { this.send(ws, { t: "picture_read", error: (e as Error).message }); }
           return;
         }
+        case "read_picture_as": {
+          try {
+            if (msg.what === "streets") {
+              const r = await this.readCityStreets({ area: msg.area, samples: msg.samples.map((s) => [s.x, s.y] as [number, number]), others: msg.ground, tolerance: msg.tolerance });
+              this.send(ws, { t: "picture_read", what: "streets", streets: r.streets, alreadyThere: r.alreadyThere });
+            } else {
+              const r = await this.readCityWater({ area: msg.area, samples: msg.samples.map((s) => ({ x: s.x, y: s.y, material: s.material ?? 8 })), others: msg.ground, tolerance: msg.tolerance });
+              this.send(ws, { t: "picture_read", what: "water", water: { runs: r.runs, cells: r.cells }, alreadyThere: r.alreadyThere });
+            }
+          } catch (e) { this.send(ws, { t: "picture_read", what: msg.what, error: (e as Error).message }); }
+          return;
+        }
+        case "paint_cells":
+          this.paintCityCells(msg.runs, String(msg.label).slice(0, 80) || "Paint ground");
+          return;
         case "delete_project": {
           const r = await this.deleteProject(msg.id);
           this.broadcast({ t: "map_deleted", name: r.name, folder: r.folder });
@@ -1178,6 +1264,9 @@ export class Hub {
         return info;
       },
       readCityPicture: (o) => self.readCityPicture(o),
+      readCityStreets: (o) => self.readCityStreets(o),
+      readCityWater: (o) => self.readCityWater(o),
+      paintCityCells: (runs, label) => self.paintCityCells(runs, label, "claude"),
       createBattleFromCity: async (o) => {
         const info = await self.createBattleFromCity(o);
         self.projectsCache = await self.store.list();

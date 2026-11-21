@@ -3,8 +3,8 @@
  * right, only once the street is wide enough on screen to hold it), a named building's name over it (once it is big enough on screen, never over another name), then the
  * city's labels (districts, water, landmarks: the world map's labels in metres, drawn by drawFeatures). Used by the city view, its picture export and the phone page.
  */
-import type { Features, MapStreet } from "@mapmaker/core";
-import { polygonCentroid } from "@mapmaker/core";
+import type { Features, MapLabel, MapStreet } from "@mapmaker/core";
+import { districtCentre, polygonCentroid } from "@mapmaker/core";
 import { type Hit, drawFeatures } from "./drawFeatures.ts";
 
 type Pt = [number, number];
@@ -49,7 +49,9 @@ export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: Cit
     ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.fillStyle = INK; ctx.fillText(b.name, cx, cy);
   }
   ctx.restore();
-  return drawFeatures(ctx, { places: [], labels: f.labels ?? [], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false }, selected ?? null);
+  // a district's name is a district label at its middle (clicking it picks the district: the label has the district's id)
+  const districtNames: MapLabel[] = (f.districts ?? []).filter((d) => d.name).map((d) => { const [x, y] = districtCentre(d.points); return { id: d.id, text: d.name!, kind: "region", x, y }; });
+  return drawFeatures(ctx, { places: [], labels: [...districtNames, ...(f.labels ?? [])], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false }, selected ?? null);
 }
 
 /** A street's name along it: in the middle of the part in view, letter by letter along the line, read left to right; skipped when it doesn't fit. */

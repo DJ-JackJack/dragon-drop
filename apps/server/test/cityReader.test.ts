@@ -71,3 +71,39 @@ describe("the city picture reader", () => {
     await hub.close();
   }, 60000);
 });
+
+describe("reading streets and water from the picture", () => {
+  it("paints the water and adds the streets (each in one edit), and doesn't add a street twice", async () => {
+    const dir = path.join(root, "b");
+    mkdirSync(dir, { recursive: true });
+    const hub = new Hub(new ProjectStore(dir), null);
+    // the picture: a town drawn by Dragon Drop with a river (20 m) across the bottom and two streets
+    const src = createCityDoc({ id: "src2", name: "Src2", widthM: 300, heightM: 200 });
+    const { w, h, data } = src.height, cell = src.meta.city!.cellM;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (Math.abs((y + 0.5) * cell - 170) < 10) data[y * w + x] = 8;
+    src.features = { ...src.features!, streets: [{ id: "s1", points: [[0, 80], [150, 70], [300, 85]], width: 7, kind: "street" }, { id: "s2", points: [[120, 0], [125, 150]], width: 4, kind: "lane" }] };
+    const pic = renderCity(src, { maxSize: 900, contours: false, trees: false });
+    await ok(hub, "create_city", { name: "Read Streets", width_m: 300, height_m: 200 });
+    await hub.addReference(hub.activeId!, "streets.png", encodePng(pic.img));
+    await ok(hub, "set_trace_picture", { name: "streets.png", x: 0, y: 0, scale: 300 / pic.img.w, rotation: 0 });
+    // water: a look, then painted
+    const wlook = await tool(hub, "read_picture_water", { water: [{ x: 50, y: 170 }], others: [[20, 30]] });
+    expect((wlook.content as { type: string }[]).some((c) => c.type === "image")).toBe(true);
+    const water = await ok(hub, "read_picture_water", { water: [{ x: 50, y: 170 }], others: [[20, 30]], add: true });
+    expect(water.painted).toBeGreaterThan(5000);
+    const d = hub.session.doc, cw = d.height.w;
+    expect(d.height.data[Math.floor(170 / d.meta.city!.cellM) * cw + 100]).toBe(8);
+    expect(d.height.data[Math.floor(40 / d.meta.city!.cellM) * cw + 100]).toBe(5);
+    // streets: added, with the kinds their widths make
+    const streets = await ok(hub, "read_picture_streets", { streets: [[50, 78.5]], others: [[20, 30], [50, 170]], add: true });
+    expect(streets.added).toBeGreaterThanOrEqual(2);
+    const kinds = hub.session.doc.features!.streets!.map((s) => s.kind);
+    expect(kinds).toContain("street");
+    expect(kinds).toContain("lane");
+    // read again: they are there already
+    const again = JSON.parse(textOf(await tool(hub, "read_picture_streets", { streets: [[50, 78.5]], others: [[20, 30], [50, 170]] })));
+    expect(again.found).toBe(0);
+    expect(again.already_on_the_map).toBeGreaterThanOrEqual(2);
+    await hub.close();
+  }, 60000);
+});

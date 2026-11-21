@@ -23,11 +23,11 @@ const Towers = z.number().min(0).max(500).describe("Metres between towers, 0 for
 
 /** A wall as Claude reads it: what it is, how long, and what stands on it (its towers, and its gates: which street passes, where, with a gatehouse or not). */
 export function describeWall(ctx: ToolContext, w: MapCityWall) {
-  const p = wallPieces(w, featuresOf(ctx).streets ?? []);
+  const doc = ctx.session().doc, p = wallPieces(w, featuresOf(ctx).streets ?? [], { ground: doc.height, cellM: citySpec(doc).cellM });
   return {
     id: w.id, ...(w.name && { name: w.name }), kind: p.kind, ...(p.closed && { ring: true }), length_m: Math.round(p.length), thickness_m: p.thickness, points: w.points.length,
     towers: p.towers.length,
-    gates: p.gates.map((g) => ({ street: g.streetId, at: [Math.round(g.x), Math.round(g.y)], ...(g.gatehouse ? { gatehouse: true } : {}), opening_m: Math.round(g.width * 10) / 10 })),
+    gates: p.gates.map((g) => ({ ...(g.streetId && { street: g.streetId }), ...(g.water && { water_gate: true }), at: [Math.round(g.x), Math.round(g.y)], ...(g.gatehouse ? { gatehouse: true } : {}), opening_m: Math.round(g.width * 10) / 10 })),
   };
 }
 
@@ -38,7 +38,7 @@ export const CITY_WALL_TOOLS: ToolDef<z.ZodType>[] = [
       "Add city walls (up to 20 per call, one edit): each a line through points (metres), or a ring (closed: true) round the town or a district. " +
       "Kinds: stone (the default: a curtain wall with round towers), palisade (logs with square wooden towers: a village, a camp, a frontier town), earth (a rampart with a ditch outside it: an old hill fort). " +
       "Towers stand at the corners, at the ends and about every `towers` metres. A GATE appears by itself wherever a street crosses the wall (a gatehouse with two towers for avenues and streets, a plain opening for lanes and paths), " +
-      "so draw the wall first and route the main roads through it where the gates should be, or draw the wall across the roads already there. " +
+      "so draw the wall first and route the main roads through it where the gates should be, or draw the wall across the roads already there. Where it crosses water (a river, the harbour) a water gate appears by itself (a portcullis, a tower on each bank). " +
       "A wall follows the high ground, a river or the coast, encloses the old centre with room to spare, and is crossed by every road into town. A name only if the DM gave one. The result lists each wall's towers and gates.",
     schema: z.object({
       walls: z.array(z.object({

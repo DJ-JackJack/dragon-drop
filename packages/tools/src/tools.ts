@@ -7,7 +7,7 @@ import {
   type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
   MI_PER_KM, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
   clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, renderFull,
-  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle,
+  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle, type StreetKind,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
@@ -53,6 +53,10 @@ export interface ToolContext {
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
   createBattleHere?(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
+  /** The picture reader for streets and water (Hub.readCityStreets / readCityWater), and setting ground cells as one edit (by Claude). */
+  readCityStreets?(o: { area?: [number, number][]; samples: [number, number][]; others?: [number, number][]; tolerance?: number }): Promise<{ streets: { points: [number, number][]; width: number; kind: StreetKind }[]; alreadyThere: number }>;
+  readCityWater?(o: { area?: [number, number][]; samples: { x: number; y: number; material: number }[]; others?: [number, number][]; tolerance?: number }): Promise<{ runs: { material: number; runs: number[] }[]; cells: number; alreadyThere: number }>;
+  paintCityCells?(runs: { material: number; runs: number[] }[], label: string): number;
   /** A battlemap of a box (metres) of the open city map, opened. */
   createBattleFromCity?(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
   /**

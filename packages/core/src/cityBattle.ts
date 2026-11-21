@@ -25,6 +25,12 @@ export function cityBattleSquares(rect: Pick<Rect, "w" | "h">, feetPerSquare = 5
   return { squaresX: Math.max(4, Math.round(rect.w / m)), squaresY: Math.max(4, Math.round(rect.h / m)), metresPerSquare: m };
 }
 
+/** The box (metres) of a battlemap `squaresX` x `squaresY` squares centred on a spot of the city, as the world map's Battlemap here makes (30 x 20 by default), held inside the city. */
+export function cityBattleBoxAt(x: number, y: number, spec: { widthM: number; heightM: number }, squaresX = 30, squaresY = 20, feetPerSquare = 5): Rect {
+  const m = feetPerSquare * METRES_PER_FOOT, w = Math.min(spec.widthM, squaresX * m), h = Math.min(spec.heightM, squaresY * m);
+  return { x: Math.max(0, Math.min(spec.widthM - w, x - w / 2)), y: Math.max(0, Math.min(spec.heightM - h, y - h / 2)), w, h };
+}
+
 /** A building's floor by what it is. */
 function floorFor(kind: BuildingKind | undefined): number {
   return kind === "temple" || kind === "hall" || kind === "tower" || kind === "gatehouse" || kind === "arena" ? 1 : kind === "barn" ? 4 : 3;
@@ -138,7 +144,7 @@ export function battleFromCity(city: MapDoc, rect: Rect, battle: MapDoc): { buil
     const k = Math.min(3, 1 / Math.max(0.33, mx * n1[0] + my * n1[1]));
     return [p[0] + mx * d * k, p[1] + my * d * k];
   });
-  for (const wp of cityWallPieces(f.cityWalls, f.streets)) {
+  for (const wp of cityWallPieces(f.cityWalls, f.streets, { ground, cellM: spec.cellM })) {
     let any = false;
     const half = wp.thickness / 2, thick = wp.kind !== "palisade" && wp.thickness >= 1.5, top = wp.kind === "earth" ? 4 : 1;
     for (const s of wp.stretches) {
@@ -151,6 +157,12 @@ export function battleFromCity(city: MapDoc, rect: Rect, battle: MapDoc): { buil
       const bb = near(s.points, half);
       const n = s.points.length, k = s.closed ? n : n - 1;
       paint(bb.x0, bb.y0, bb.x1, bb.y1, (mx, my) => { for (let i = 0; i < k; i++) { const a = s.points[i], c = s.points[(i + 1) % n]; if (distToSegment(mx, my, a[0], a[1], c[0], c[1]) <= half) return true; } return false; }, top);
+    }
+    // a water gate's portcullis: a window (it stops anyone passing, not their sight), across the opening
+    for (const g of wp.gates) {
+      if (!g.water) continue;
+      const ux = Math.cos(g.angle), uy = Math.sin(g.angle), cut = clipSegment(toSq([g.x - (ux * g.width) / 2, g.y - (uy * g.width) / 2]), toSq([g.x + (ux * g.width) / 2, g.y + (uy * g.width) / 2]), W, H);
+      if (cut) { walls.push({ id: newFeatureId("w"), kind: "window", points: cut.map(([x, y]) => [r3(x), r3(y)] as Pt) }); any = true; }
     }
     for (const t of wp.towers) {
       const corners: Pt[] = t.square

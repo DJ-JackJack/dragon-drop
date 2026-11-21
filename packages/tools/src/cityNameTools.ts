@@ -1,9 +1,10 @@
 /**
- * Claude's tools for the names on a city map: free labels (a district, a stretch of water, a landmark), which are the world map's labels placed in metres. Streets, buildings
- * and walls carry their own names (update_streets, update_buildings, update_city_walls). Names are the DM's canon: only names the DM gave or confirmed.
+ * Claude's tools for the names on a city map: free labels (a district, a stretch of water, a landmark), which are the world map's labels placed in metres, and districts
+ * (outlines with a name and a colour). Streets, buildings and walls carry their own names (update_streets, update_buildings, update_city_walls). Names are the DM's canon:
+ * only names the DM gave or confirmed.
  */
 import { z } from "zod";
-import { CITY_LABEL_KINDS, type MapLabel, citySpec, cityLabelKind, isCity, newFeatureId } from "@mapmaker/core";
+import { CITY_LABEL_KINDS, type MapDistrict, type MapLabel, citySpec, cityLabelKind, cleanDistrict, districtColour, isCity, newFeatureId, pointInPolygon, polygonArea, polygonCentroid } from "@mapmaker/core";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
 
 function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
@@ -104,5 +105,74 @@ export const CITY_NAME_TOOLS: ToolDef<z.ZodType>[] = [
     },
   }),
 ];
+
+const describeDistrict = (ctx: ToolContext, d: MapDistrict) => ({
+  id: d.id, ...(d.name && { name: d.name }), colour: districtColour(d), points: d.points.length, hectares: Math.round(polygonArea(d.points) / 100) / 100,
+  buildings: (featuresOf(ctx).buildings ?? []).filter((b) => { const [x, y] = polygonCentroid(b.points as [number, number][]); return pointInPolygon(x, y, d.points); }).length,
+});
+const Pt = z.tuple([z.number(), z.number()]);
+const Colour = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe("#rrggbb; default one picked for it");
+
+CITY_NAME_TOOLS.push(
+  define({
+    name: "add_city_districts",
+    description:
+      "Mark districts (quarters, wards) on a city map (up to 30 per call, one edit): each an outline (metres, its corners in order) with a name and, if wanted, a colour. They are drawn as a faint tint " +
+      "with a dashed border, the name in big spaced capitals at the middle. Follow streets, walls, rivers or the land for their borders. Names are canon: only the DM's; a district may have no name yet.",
+    schema: z.object({
+      districts: z.array(z.object({ points: z.array(Pt).min(3).max(400), name: z.string().min(1).max(80).optional(), colour: Colour.optional() })).min(1).max(30),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      const sp = citySpec(ctx.session().doc), added: MapDistrict[] = [], errors: string[] = [];
+      i.districts.forEach((d, n) => { const c = cleanDistrict({ id: newFeatureId("r"), ...d }, sp); if ("error" in c) errors.push(`#${n + 1}: ${c.error}`); else added.push(c); });
+      if (!added.length) return fail(`Nothing was added. ${errors.join("; ")}`);
+      const r = ctx.execute({ op: "features", patch: { upsertDistricts: added } }, added.length === 1 ? `Add district${added[0].name ? ` ${added[0].name}` : ""}` : `Add ${added.length} districts`);
+      return json({ change: r.seq, added: added.map((d) => describeDistrict(ctx, d)), ...(errors.length && { skipped: errors }) });
+    },
+  }),
+  define({
+    name: "update_city_districts",
+    description: "Change districts by id (from list_city_districts): the outline, the name (only the DM's; empty removes it) or the colour. One edit.",
+    schema: z.object({ changes: z.array(z.object({ id: z.string(), points: z.array(Pt).min(3).max(400).optional(), name: z.string().max(80).optional(), colour: Colour.optional() })).min(1).max(50) }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      const sp = citySpec(ctx.session().doc), by = new Map((featuresOf(ctx).districts ?? []).map((d) => [d.id, d]));
+      const out: MapDistrict[] = [], skipped: string[] = [];
+      for (const ch of i.changes) {
+        const cur = by.get(ch.id);
+        if (!cur) { skipped.push(`${ch.id}: no such district`); continue; }
+        const { name: _n, ...rest } = cur, name = ch.name === undefined ? cur.name : ch.name || undefined;
+        const c = cleanDistrict({ ...rest, ...(ch.points && { points: ch.points }), ...(ch.colour && { colour: ch.colour }), ...(name && { name }) }, sp);
+        if ("error" in c) skipped.push(c.error); else out.push(c);
+      }
+      if (!out.length) return fail(`Nothing changed. ${skipped.join("; ")}`);
+      const r = ctx.execute({ op: "features", patch: { upsertDistricts: out } }, out.length === 1 ? `Change district${out[0].name ? ` ${out[0].name}` : ""}` : `Change ${out.length} districts`);
+      return json({ change: r.seq, changed: out.map((d) => describeDistrict(ctx, d)), ...(skipped.length && { skipped }) });
+    },
+  }),
+  define({
+    name: "list_city_districts",
+    description: "List the districts: id, name, colour, size (hectares) and how many buildings stand in each.",
+    schema: z.object({}),
+    async run(ctx) {
+      const bad = needCity(ctx); if (bad) return bad;
+      const ds = featuresOf(ctx).districts ?? [];
+      return json({ total: ds.length, districts: ds.map((d) => describeDistrict(ctx, d)) });
+    },
+  }),
+  define({
+    name: "remove_city_districts",
+    description: "Remove districts by id. One edit; Undo brings them back. Only when the DM asks.",
+    schema: z.object({ ids: z.array(z.string()).min(1).max(100) }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      const have = new Set((featuresOf(ctx).districts ?? []).map((d) => d.id)), ids = i.ids.filter((id) => have.has(id));
+      if (!ids.length) return text("No district matched; nothing was removed.");
+      const r = ctx.execute({ op: "features", patch: { removeDistricts: ids } }, `Remove ${ids.length} district${ids.length === 1 ? "" : "s"}`);
+      return json({ change: r.seq, removed: ids.length });
+    },
+  }),
+);
 
 export const CITY_NAME_TOOL_NAMES: string[] = CITY_NAME_TOOLS.map((t) => t.name);
