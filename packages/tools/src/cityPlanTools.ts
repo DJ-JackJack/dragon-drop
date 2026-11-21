@@ -7,14 +7,9 @@ import {
   BUILDING_KINDS, type MapBuilding, type MapStreet, ROOF_STYLES, STREET_CHARACTERS, STREET_KINDS, type StreetCharacterId, chooseRoof, citySpec, cityProblems, cleanBuilding, cleanStreet,
   isCity, newFeatureId, planFrontage, routeStreet, streetBridges, streetWidthFor,
 } from "@mapmaker/core";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
+import type { ToolContext, ToolResult } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 const Pt = z.tuple([z.number(), z.number()]);
 const Range = z.tuple([z.number().min(0), z.number().min(0)]);
 function needCity(ctx: ToolContext): ToolResult | null {

@@ -4,14 +4,8 @@
  */
 import { z } from "zod";
 import { type MapConnector, battleSpec, connectorTo, newFeatureId } from "@mapmaker/core";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
+import type { ToolContext } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 
 const KIND = z.enum(["stairs", "ladder", "hole"]);
 const connectorsOf = (ctx: ToolContext) => ctx.session().doc.features?.connectors ?? [];

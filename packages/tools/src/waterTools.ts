@@ -7,15 +7,10 @@ import {
   type LakeShape, type MapLabel, type NamedWater, type RiverNet, type WaterName, HeightField, WATER_NAME_REACH, cropScale, drawRivers, newFeatureId, pointInPolygon, renderFull,
   riverList, waterAt, namedWaterAt,
 } from "@mapmaker/core";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
+import type { ToolContext } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 import { encodeJpeg, toBase64 } from "./images.ts";
 
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
 type Water = { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[]; net: RiverNet };

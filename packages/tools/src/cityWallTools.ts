@@ -5,13 +5,8 @@
 import { z } from "zod";
 import { type MapCityWall, WALL_KINDS, citySpec, cleanCityWall, isCity, newFeatureId, wallPieces } from "@mapmaker/core";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
+import { define, fail, json, text } from "./toolKit.ts";
 
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 const Pt = z.tuple([z.number(), z.number()]);
 
 function needCity(ctx: ToolContext): ToolResult | null {

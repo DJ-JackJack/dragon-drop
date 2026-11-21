@@ -10,7 +10,6 @@
  * Works in the picture's own pixels; the caller turns the outlines into map units (trace.ts `tracePoint`). Pure, so it runs on the server's compute thread.
  */
 import type { RoofStyle } from "./features.ts";
-import { pointInPolygon } from "./geom.ts";
 import { type TracePicture, tracePoint, traceToPicture } from "./trace.ts";
 
 type Pt = [number, number];
@@ -479,9 +478,4 @@ export function readWater(img: ReaderPicture, o: WaterReadOptions): { runs: { ma
     close(gx1 + 1);
   }
   return { runs: [...byMat].map(([material, runs]) => ({ material, runs })), cells, colours };
-}
-
-/** Is a point inside the area (picture pixels)? (for callers checking a sample) */
-export function inReaderArea(area: Pt[], x: number, y: number): boolean {
-  return pointInPolygon(x, y, area);
 }

@@ -23,6 +23,7 @@ import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
+import { define, fail, json, text } from "./toolKit.ts";
 
 export interface ToolContext {
   /** The open project's session (throws if no project is open). */
@@ -296,14 +297,6 @@ export interface ToolDef<S extends z.ZodType = z.ZodType> {
   schema: S;
   run(ctx: ToolContext, input: z.infer<S>): Promise<ToolResult>;
 }
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 
 // ---------- shared schemas ----------
 const XY = z.array(z.number()).length(2).describe("[x, y] in map pixels");

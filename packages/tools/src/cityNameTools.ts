@@ -6,13 +6,7 @@
 import { z } from "zod";
 import { CITY_LABEL_KINDS, type MapDistrict, type MapLabel, citySpec, cityLabelKind, cleanDistrict, districtColour, isCity, newFeatureId, pointInPolygon, polygonArea, polygonCentroid } from "@mapmaker/core";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
+import { define, fail, json, text } from "./toolKit.ts";
 
 function needCity(ctx: ToolContext): ToolResult | null {
   return isCity(ctx.session().doc) ? null : fail("This tool is for city maps, and the open project isn't one. On a world map, add_label names things.");

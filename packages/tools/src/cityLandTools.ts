@@ -7,14 +7,9 @@ import {
   CITY_CLIMATES, type MapLandform, type MapTrees, STEEP_PERCENT, TREE_GROUPS, TREE_SPECIES, citySpec, cityClimate, cleanClimate, cleanLandform, cleanTrees, climatePreset,
   climateTrees, isCity, landAt, landGrid, newFeatureId, pointsBounds, snowCover,
 } from "@mapmaker/core";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
+import type { ToolContext, ToolResult } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 const Pt = z.tuple([z.number(), z.number()]);
 const round = (n: number) => Math.round(n * 10) / 10;
 

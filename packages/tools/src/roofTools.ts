@@ -4,14 +4,8 @@
  */
 import { z } from "zod";
 import { type MapRoof, ROOF_STYLES, battleSpec, newFeatureId, roofColour } from "@mapmaker/core";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
+import type { ToolContext } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 
 const Style = z.enum(ROOF_STYLES as [string, ...string[]]);
 const Colour = z.string().regex(/^#?[0-9a-fA-F]{6}$/, "A colour like #4a7a8c");

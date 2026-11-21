@@ -198,11 +198,6 @@ export const toCells = (squares: number, spec: BattleSpec) => squares * spec.sub
 
 // ---------------------------------------------------------------- walls and lights
 
-/** Corner points of a rectangular room (squares), clockwise from the top-left. */
-export function roomCorners(x: number, y: number, w: number, h: number): [number, number][] {
-  return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-}
-
 /**
  * Walls for a room with doors: the outline is split so each door sits in a gap of the wall.
  * side: which edge; offset: squares from the edge's start (top/bottom: from the left; left/right: from the top).

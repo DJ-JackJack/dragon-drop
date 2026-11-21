@@ -5,14 +5,8 @@
 import { z } from "zod";
 import { type PaletteEntry, type RGBAImage, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "@mapmaker/core";
 import { decodeImage, encodeJpeg, toBase64 } from "./images.ts";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
+import type { ToolContext } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 
 const NO_ASSETS = "No asset folder is set up. The user can choose their assets folder in Dragon Drop's Settings.";
 const squaresOf = (px: number | undefined) => (px ? Math.round((px / PROP_PX_PER_SQUARE) * 100) / 100 : undefined);

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -1288,13 +1288,6 @@ function drawLightMarkers(ctx: CanvasRenderingContext2D, lights: MapLight[], v: 
   ctx.restore();
 }
 
-function pointInPolygon(x: number, y: number, pts: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    if ((pts[i][1] > y) !== (pts[j][1] > y) && x < ((pts[j][0] - pts[i][0]) * (y - pts[i][1])) / (pts[j][1] - pts[i][1]) + pts[i][0]) inside = !inside;
-  }
-  return inside;
-}
 const polygonArea = (pts: [number, number][]) => Math.abs(pts.reduce((a, [x, y], i) => a + (x * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * y), 0)) / 2;
 
 /** Dashed outlines of light zones (all of them while the Shade tool is active; the selected one otherwise). */

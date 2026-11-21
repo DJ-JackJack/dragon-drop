@@ -53,8 +53,6 @@ export const CITY_MAX_M = 6000;
 export const CITY_MAX_CELLS = 4_000_000;
 /** The ground material a new city starts with (grass). */
 export const CITY_GROUND = 5;
-/** The most buildings or streets one edit may add, so one request can't swamp the server. */
-export const CITY_MAX_PER_EDIT = 2000;
 
 /** A ground cell size that keeps the longest side at 1500 cells or fewer: 1, 2, 4, 8 or 16 metres. */
 export function defaultCellM(widthM: number, heightM: number): number {

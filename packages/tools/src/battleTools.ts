@@ -9,17 +9,11 @@ import {
   materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
+import type { ToolContext } from "./tools.ts";
+import { define, fail, json } from "./toolKit.ts";
 import { LEVEL_TOOLS } from "./levelTools.ts";
 import { ROOF_TOOLS } from "./roofTools.ts";
 import { traceOverlay } from "./traceTools.ts";
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
 
 const XY = z.array(z.number()).length(2).describe("[x, y] in grid squares");
 const MaterialNames = MATERIALS.map((m) => m.name) as [string, ...string[]];

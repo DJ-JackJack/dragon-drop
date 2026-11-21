@@ -23,18 +23,6 @@ export function useClaudeLauncher() {
   return { open, busy, started, help };
 }
 
-export function ClaudeTopButton() {
-  const c = useClaudeLauncher();
-  return (
-    <>
-      <button className="claude-btn" onClick={() => void c.open()} disabled={c.busy} title="Open Claude Code with the map tools connected (uses your Claude subscription)" data-testid="claude-button">
-        {c.started ? "Opening…" : "Open Claude Code"}
-      </button>
-      {c.help}
-    </>
-  );
-}
-
 /** Shown in the chat panel when there's no API key: the subscription route. */
 export function ClaudeCard() {
   const c = useClaudeLauncher();

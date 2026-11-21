@@ -11,7 +11,6 @@ type Pt = [number, number];
 
 /** What a street's bridge setting can be (stored as `MapStreet.bridge`; missing means automatic). */
 export const BRIDGE_SETTINGS = ["auto", "stone", "wood", "none"] as const;
-export type BridgeSetting = (typeof BRIDGE_SETTINGS)[number];
 export type BridgeKind = "stone" | "wood" | "ford";
 
 /** The ground materials that are water (shallow water, deep water). */

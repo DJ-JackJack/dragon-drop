@@ -312,7 +312,6 @@ export interface MapTrees {
 }
 
 export type ConnectorKind = "stairs" | "ladder" | "hole";
-export const CONNECTOR_KINDS: readonly ConnectorKind[] = ["stairs", "ladder", "hole"];
 
 /**
  * A way between the levels of a battlemap, as a rectangle on the level it starts on (grid squares). Stairs and ladders lead to the level above or below (by

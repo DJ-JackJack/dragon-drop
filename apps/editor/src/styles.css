@@ -400,9 +400,6 @@ html.platform-win32 .top { padding-right: 150px; }
 html.platform-darwin .top { padding-left: 84px; }
 
 /* Claude Code launcher */
-.claude-btn { border-color: rgba(212, 175, 55, 0.55); color: var(--gold-hi); background: linear-gradient(180deg, #1d1a10, #15130b); font-weight: 600; letter-spacing: 0.02em; }
-.claude-btn:hover:not(:disabled) { background: linear-gradient(180deg, #2a2412, #1c180c); border-color: var(--gold-hi); }
-html.desktop .top .claude-btn { -webkit-app-region: no-drag; }
 .claude-card { margin: 10px; padding: 12px; background: linear-gradient(180deg, #1c180d, #14120a); border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
 .claude-card b { color: var(--gold-hi); font-family: Cinzel, Georgia, serif; letter-spacing: 0.04em; }
 .claude-card p { margin: 0; }

@@ -11,14 +11,8 @@ import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
 import { landSummary } from "./cityLandTools.ts";
 import { describeWall } from "./cityWallTools.ts";
-import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
-
-function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
-  return t;
-}
-const text = (t: string): ToolResult => ({ content: [{ type: "text", text: t }] });
-const json = (o: unknown): ToolResult => text(JSON.stringify(o, null, 1));
-const fail = (t: string): ToolResult => ({ ...text(t), isError: true });
+import type { ToolContext, ToolResult } from "./tools.ts";
+import { define, fail, json, text } from "./toolKit.ts";
 
 const Pt = z.tuple([z.number(), z.number()]);
 const Roof = z.enum(ROOF_STYLES as unknown as [string, ...string[]]);
