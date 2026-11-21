@@ -2,11 +2,7 @@
 import { useEffect, useState } from "react";
 import { type AssetStatus, fetchAssetStatus } from "./assetsApi.ts";
 import { useClaudeLauncher } from "./ClaudeButton.tsx";
-
-const PRESETS: [label: string, command: string][] = [
-  ["Claude Code", ""], ["Codex", "codex"], ["Antigravity CLI", "agy"], ["Gemini CLI (API key)", "gemini"], ["OpenCode", "opencode"], ["Muse Code", "muse"],
-  ["Claude Code via Ollama", "ollama launch claude"], ["Codex via Ollama", "ollama launch codex"], ["OpenCode via Ollama", "ollama launch opencode"],
-];
+import { ASSISTANT_NEEDS_CHECKED, ASSISTANT_PRESETS as PRESETS } from "./assistantPresets.ts";
 
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
@@ -119,6 +115,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               <option value="custom">Custom</option>
             </select>
           </label>
+          {preset && <p className="muted" data-testid="assistant-needs"><b>What it needs:</b> {preset[2]} <i>(Checked {ASSISTANT_NEEDS_CHECKED}; plans change, so the company's own pricing page has the last word.)</i></p>}
           <label className="field">Start command
             <input type="text" value={shownCmd} placeholder="claude" spellCheck={false} onChange={(e) => setTermCmd(e.target.value)} data-testid="terminal-command" />
           </label>

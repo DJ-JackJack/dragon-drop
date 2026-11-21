@@ -56,7 +56,7 @@ function CopyLine({ text }: { text: string }) {
 export function ClaudeInstallSteps({ onInstall }: { onInstall?: () => void }) {
   return (
     <div className="setup-guide" data-testid="claude-setup-guide">
-      <p><b>What you need.</b> A paid Claude plan (Pro, Max, Team or Enterprise) or an Anthropic Console account: the free claude.ai plan doesn't include Claude Code. Also Windows 10 or later and an internet connection. No administrator rights and no other programs are needed. (No plan? The <b>API chat</b> tab works with an Anthropic API key instead; add it under Settings.)</p>
+      <p><b>What you need.</b> A paid Claude plan (Pro, Max, Ultra, Team or Enterprise) or an Anthropic Console account: the free claude.ai plan doesn't include Claude Code. Also Windows 10 or later and an internet connection. No administrator rights and no other programs are needed. (No plan? The <b>API chat</b> tab works with an Anthropic API key instead; add it under Settings.)</p>
       <h4>Step 1: install Claude Code (about a minute)</h4>
       {onInstall ? (
         <>

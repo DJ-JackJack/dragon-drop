@@ -6,7 +6,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { KEY_ENV, profileFor, syncAssistantConfigs } = require("../assistants.cjs");
+const { ASSISTANTS, KEY_ENV, describe: describeAssistant, profileFor, syncAssistantConfigs } = require("../assistants.cjs");
 
 const KEY = "k".repeat(64);
 const URL4747 = "http://127.0.0.1:4747/mcp";
@@ -36,6 +36,18 @@ describe("which assistant a start command runs", () => {
     expect(profileFor("ollama launch claude")).toBe("claude");
     expect(profileFor("ollama launch codex")).toBe("codex");
     expect(profileFor("ollama launch opencode")).toBe("opencode");
+  });
+
+  it("the Settings choices (with what each assistant needs) and the assistants connected here are the same list", async () => {
+    const { ASSISTANT_PRESETS } = await import("../../editor/src/assistantPresets.ts");
+    const covered = new Set();
+    for (const [label, command, needs] of ASSISTANT_PRESETS) {
+      const p = profileFor(command);
+      expect(p === "default" || (p !== null && describeAssistant(p).auto),`${label}: "${command}" isn't an assistant Dragon Drop connects`).toBe(true);
+      expect(needs.length, `${label} says what it needs`).toBeGreaterThan(40);
+      covered.add(p === "default" ? "claude" : p);
+    }
+    for (const id of Object.keys(ASSISTANTS)) expect(covered.has(id), `${id} has a choice in Settings`).toBe(true);
   });
 
   it("says null for anything else, so nothing is written and the person adds the map tools themselves", () => {
