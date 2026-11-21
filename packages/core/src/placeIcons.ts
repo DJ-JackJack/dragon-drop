@@ -52,6 +52,12 @@ const C = (d: Shape): Part => ({ d, k: "cut" });
 const CL = (d: Shape, w = 0.1): Part => ({ d, k: "cutline", w });
 const M = (d: Shape, w = 0.1): Part => ({ d, k: "mark", w });
 
+/** A spiral from radius r0 inward to r1, `turns` times round (a whirlpool's swirl). */
+const spiral = (turns: number, r0: number, r1: number): Shape => (c) => {
+  c.beginPath();
+  for (let i = 0, n = 72; i <= n; i++) { const t = i / n, a = t * turns * Math.PI * 2, r = r0 + (r1 - r0) * t; if (i) c.lineTo(Math.cos(a) * r, Math.sin(a) * r); else c.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+};
+
 /** The shape of an arch cut into a wall: a half circle standing on the line y. */
 const arch = (cx: number, y: number, r: number): Shape => (c) => { c.beginPath(); c.moveTo(cx - r, y); c.arc(cx, y, r, Math.PI, Math.PI * 2); c.closePath(); };
 
@@ -99,6 +105,13 @@ export const PLACE_ICONS: Partial<Record<PlaceType, Part[]>> = {
   crossroads: [L(open(0, -0.92, 0, 0.92), 0.2), F(poly(0, -0.78, 0.75, -0.78, 0.95, -0.57, 0.75, -0.36, 0, -0.36)), F(poly(0, -0.2, -0.75, -0.2, -0.95, 0.01, -0.75, 0.22, 0, 0.22))],
   peak: [F(poly(-0.95, 0.75, -0.3, -0.58, 0.12, 0.02, 0.48, -0.4, 0.95, 0.75)), C(poly(-0.3, -0.58, -0.03, -0.2, -0.14, -0.08, -0.25, -0.22, -0.37, -0.08, -0.49, -0.2))],
   volcano: [F(poly(-0.95, 0.8, -0.32, -0.38, 0.32, -0.38, 0.95, 0.8)), T(poly(-0.32, -0.38, 0.32, -0.38, 0.2, -0.12, -0.2, -0.12), FIRE), T(poly(-0.13, -0.38, 0, -0.9, 0.13, -0.38), FIRE)],
+  // a scholar's cap: the square board seen at a slant, the cap under it, and its tassel
+  school: [
+    F(poly(-0.95, -0.3, 0, -0.75, 0.95, -0.3, 0, 0.15)), F(poly(-0.55, -0.08, 0.55, -0.08, 0.55, 0.42, 0, 0.6, -0.55, 0.42)), CL(open(-0.55, -0.08, 0, 0.15, 0.55, -0.08), 0.09),
+    CL(open(0, -0.3, 0.72, -0.34), 0.08), L(open(0.74, -0.34, 0.8, 0.42), 0.09), T(poly(0.68, 0.38, 0.92, 0.38, 0.98, 0.82, 0.62, 0.82), GOLD),
+  ],
+  // swirling water, round and in
+  whirlpool: [T(oval(0, 0, 0.92, 0.88), WATER), CL(spiral(2.3, 0.78, 0.06), 0.12), F(disc(0, 0, 0.11))],
   waterfall: [F(rect(-0.95, -0.85, 1.9, 0.42)), T(rect(-0.3, -0.43, 0.6, 0.95), WATER), T(oval(0, 0.68, 0.65, 0.2), WATER), CL(open(-0.1, -0.35, -0.1, 0.45), 0.08), CL(open(0.12, -0.3, 0.12, 0.5), 0.08)],
   grove: [F(disc(-0.4, -0.1, 0.46)), F(disc(0.4, -0.1, 0.46)), F(disc(0, -0.42, 0.5)), L(open(0, 0.15, 0, 0.9), 0.3)],
   oasis: [

@@ -584,7 +584,7 @@ Tell me if the lock ever lets a change through outside the box, or gets in your 
 
 ### Place icons (release after 0.1.7)
 
-1. Choose the **Place** tool. **Expect** a grid of small pictures under "New place", in groups (Settlements, Strongholds, Faith and magic, Wild places, Travel and trade, Land, Work, Events and dangers, General), with the chosen one outlined in gold and its name beside "New place". Hover one for its name and a short description.
+1. Choose the **Place** tool. **Expect** a grid of small pictures under "New place", in groups (Settlements, Strongholds, Faith and magic, Learning, Wild places, Travel and trade, Land and water, Work, Events and dangers, General), with the chosen one outlined in gold and its name beside "New place". Hover one for its name and a short description.
 2. Pick a castle, click the map, name it. **Expect** a small castle picture with its name beside it, on forest, sand and sea alike (white outline), and "Castle" in the Places list.
 3. Select a place, open **Type** in the inspector and choose another kind. **Expect** the picture to change at once, and the history to say "Make <name> a <kind>"; Undo puts it back.
 4. Zoom right in and right out. **Expect** the pictures to stay sharp, neither huge nor unreadable, and the **Label size** slider to scale them with the names.

@@ -5,7 +5,7 @@
  *
  * To add one: add it here, give it a picture in placeIcons.ts (a test fails until you do) and, if it is a new group, list the group in PLACE_GROUPS.
  */
-export const PLACE_GROUPS = ["Settlements", "Strongholds", "Faith and magic", "Wild places", "Travel and trade", "Land", "Work", "Events and dangers", "General"] as const;
+export const PLACE_GROUPS = ["Settlements", "Strongholds", "Faith and magic", "Learning", "Wild places", "Travel and trade", "Land and water", "Work", "Events and dangers", "General"] as const;
 export type PlaceGroup = (typeof PLACE_GROUPS)[number];
 
 export interface PlaceKindInfo {
@@ -44,6 +44,8 @@ export const PLACE_KINDS = [
   k("graveyard", "Graveyard", "Faith and magic", 8, 7, true, "A graveyard or tomb"),
   k("portal", "Portal", "Faith and magic", 8, 7, true, "A gate between places or worlds"),
   k("standing_stones", "Standing stones", "Faith and magic", 8, 7, true, "A circle or row of ancient stones"),
+  // learning
+  k("school", "School", "Learning", 8, 6, true, "A school, college, academy or university"),
   // wild places
   k("cave", "Cave", "Wild places", 8, 7, true, "A cave mouth"),
   k("dungeon", "Dungeon", "Wild places", 8, 7, true, "A way down into a dungeon or undercroft"),
@@ -57,12 +59,13 @@ export const PLACE_KINDS = [
   k("bridge", "Bridge", "Travel and trade", 8, 7, true, "A bridge"),
   k("inn", "Inn", "Travel and trade", 8, 7, true, "An inn or tavern on the road"),
   k("crossroads", "Crossroads", "Travel and trade", 8, 7, true, "Where roads meet"),
-  // land
-  k("peak", "Peak", "Land", 8, 7, true, "A notable mountain"),
-  k("volcano", "Volcano", "Land", 8, 7, true, "A volcano"),
-  k("waterfall", "Waterfall", "Land", 8, 7, true, "A waterfall"),
-  k("grove", "Grove", "Land", 8, 7, true, "A notable tree or grove"),
-  k("oasis", "Oasis", "Land", 8, 7, true, "Water and shade in dry country"),
+  // land and water
+  k("peak", "Peak", "Land and water", 8, 7, true, "A notable mountain"),
+  k("volcano", "Volcano", "Land and water", 8, 7, true, "A volcano"),
+  k("waterfall", "Waterfall", "Land and water", 8, 7, true, "A waterfall"),
+  k("whirlpool", "Whirlpool", "Land and water", 8, 7, true, "A whirlpool, maelstrom or other notable water: a strange spring, a sacred pool"),
+  k("grove", "Grove", "Land and water", 8, 7, true, "A notable tree or grove"),
+  k("oasis", "Oasis", "Land and water", 8, 7, true, "Water and shade in dry country"),
   k("mill", "Mill", "Work", 8, 7, true, "A mill"),
   // events and dangers
   k("shipwreck", "Shipwreck", "Events and dangers", 8, 7, true, "A wreck"),
