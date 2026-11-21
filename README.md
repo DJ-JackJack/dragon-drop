@@ -12,7 +12,7 @@
 
 ![Battlemap: a tavern at dusk with torches, stone walls with soft shadows, a dimmer indoors area and the numbered key of room notes on the left](docs/images/editor-battlemap.png)
 
-**Status:** the installer, in-app updates, the embedded Claude Code terminal, world and regional maps and the battlemap editor all work and are tested automatically on Windows. Not yet checked by a person on a real PC: Foundry / Universal VTT imports, real asset packs, the update flow. [docs/TESTING.md](docs/TESTING.md) says what to try and what to report back.
+**Status:** the installer, in-app updates, the embedded Claude Code terminal, world and regional maps and the battlemap editor all work and are tested automatically on Windows. Not yet checked by a person on a real PC: Foundry / Universal VTT imports, real asset packs, the update flow.
 
 ## Run it from the code (Windows)
 
@@ -39,10 +39,8 @@ The full guide covers prerequisites, the editor, Remote Control and the map page
 
 ## Docs
 
-- [docs/TESTING.md](docs/TESTING.md): step-by-step test plan for trying everything on your PC, with expected results
 - [docs/PLAN.md](docs/PLAN.md): architecture, Claude's tool set, roadmap
 - [docs/RESEARCH.md](docs/RESEARCH.md): research and sources behind the plan
 - [docs/CONTROLS.md](docs/CONTROLS.md): keyboard and mouse controls, and how they compare with other map programs
 - [docs/FORMATS.md](docs/FORMATS.md): the file types Dragon Drop reads and writes, and what doesn't work
 - [docs/MAP-FILES.md](docs/MAP-FILES.md): what is in a map folder, how maps are kept safe (versioned files, automatic backups) and how to back one up
-- [spikes/painted-relief](spikes/painted-relief/): prototype of the target "Painted Relief" world-map style

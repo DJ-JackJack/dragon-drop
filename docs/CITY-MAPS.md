@@ -57,7 +57,7 @@ From the DM's first try of stage 1 in the desktop app: building works, but Claud
 
 ## The picture reader: what the spike showed
 
-`spikes/city-reader/` (README there). On the DM's own city picture:
+An early prototype, since removed (what it taught is built into `packages/core/src/cityReader.ts`). On the DM's own city picture:
 
 - red and grey roofs are found very well (tight rotated rectangles, even rows of small houses 2 px apart);
 - yellow roofs, mostly outside the walls on parchment-coloured ground, are poor with colour alone: use contrast with the ground (the dark outline and shadow);

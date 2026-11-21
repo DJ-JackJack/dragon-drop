@@ -1,6 +1,6 @@
 # Build Plan: Dragon Drop (formerly "AI Mapmaker")
 
-*Draft 2, 2026-11-15. Background and sources are in [RESEARCH.md](RESEARCH.md). The style prototype is in [spikes/painted-relief](../spikes/painted-relief/).*
+*Draft 2, 2026-11-15. Background and sources are in [RESEARCH.md](RESEARCH.md).*
 
 ## 0. Decisions so far
 
@@ -164,7 +164,7 @@ Every pipeline ends in a **render → compare → adjust** loop.
 
 ## 7. Target style: Painted Relief
 
-Analysed from your reference #2 and confirmed achievable by the [prototype](../spikes/painted-relief/):
+Analysed from your reference #2 and confirmed achievable by an early prototype (since replaced by the painter itself, `packages/core/src/painted.ts`):
 
 | Element | In the reference | How we render it |
 |---|---|---|

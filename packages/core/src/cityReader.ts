@@ -1,7 +1,7 @@
 /**
  * The city picture reader (city stage 2): buildings read out of a picture of a city, by roof colour. The DM (or Claude) gives an area of the picture to read, one sample of
  * each kind of roof and, ideally, one of the ground between them; every patch of picture the colour of a roof sample (and not nearer the ground's colour) becomes a building:
- * a rotated rectangle when it is one, else its outline. Learned from `spikes/city-reader/`: red and grey roofs read well from colour; roofs nearly the colour of the ground
+ * a rotated rectangle when it is one, else its outline. Learned from an early prototype: red and grey roofs read well from colour; roofs nearly the colour of the ground
  * need the ground sample; frames, lettering and the sea are kept out by the area and by sizes worked out from the picture's scale. The colours always come from the samples.
  *
  * The same colour matching reads STREETS (`readStreets`: the street-coloured patches thinned down to their middle lines, each a line with the width the patch has round it)
