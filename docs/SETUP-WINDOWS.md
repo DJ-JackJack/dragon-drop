@@ -176,7 +176,7 @@ Claude Code can use the same map tools through the `.mcp.json` file in this fold
 - Claude sees each map preview it renders. Whether the image also shows on your phone depends on the app. To watch the map itself change, open the phone map page alongside the chat (next section).
 - Everything Claude does from your phone appears in the editor's History and chat as **Claude Code: …**, and can be undone.
 
-## 6b. Using another AI assistant (Codex, Gemini CLI, OpenCode, Antigravity)
+## 6b. Using another AI assistant (Codex, Gemini CLI, OpenCode, Antigravity, Muse Code)
 
 The terminal on the right runs Claude Code by default. In **Settings → AI assistant** you can pick another command-line assistant, or type any start command. For the assistants Dragon Drop knows, it connects the map tools for you: there is nothing to copy and paste. You still sign into the assistant yourself the first time it starts (its own sign-in, and its own cost).
 
@@ -188,13 +188,14 @@ The terminal on the right runs Claude Code by default. In **Settings → AI assi
 | **Gemini CLI** | `.gemini/settings.json` | It asks once to trust the folder. It also needs your own API key |
 | **OpenCode** | `opencode.json` | |
 | **Antigravity CLI** | `.agents/mcp_config.json` | Needs the access key written into its file (see below) |
+| **Muse Code** (Meta) | `.mcp.json`, the same file as Claude Code's | Muse asks once whether to trust the folder: say yes, or it ignores the map tools. Install it from Meta first; it needs a Meta sign-in or API key |
 | **Anything else** | Nothing | Add the address and header shown in Settings in that assistant's own settings |
 
 The files go in the Claude workspace folder (`Documents\Dragon Drop\Claude`). Choosing another assistant takes Dragon Drop's entry out of the others' files, and everything else you put in them stays. A file Dragon Drop can't read as valid is left alone.
 
 Your access key is handed to the assistant in the environment (a variable called `DRAGON_DROP_KEY`) and kept out of those files, because Documents is often synced to the cloud. The exception is Antigravity, which can't read it from the environment: while it is chosen, its file holds the key, and the file is removed when you choose something else.
 
-Dragon Drop does not turn off the assistant's own questions: Codex, Gemini CLI and the others still ask before using a tool, as they normally do.
+Dragon Drop does not turn off the assistant's own questions: Codex, Gemini CLI, Muse Code and the others still ask before using a tool, as they normally do.
 
 ## 7. The map on your phone (Tailscale)
 

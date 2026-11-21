@@ -4,6 +4,8 @@
 // The Claude workspace folder (Documents\Dragon Drop\Claude) is where the assistant starts. Each assistant reads MCP servers from its own project file there,
 // so for the one that is chosen this module writes the entry that points at this app's map tools, and it takes our entry out of every other assistant's file.
 // Whatever else the person put in those files stays; a file that isn't valid is left alone; the entry is recognised as ours by its address (127.0.0.1, /mcp).
+// Two assistants can read the same file: Muse Code reads Claude Code's .mcp.json (tried with Muse Code 1.4.25: in a folder it trusts, outside a git
+// repository too, with the key from the environment), so that file's `users` are both.
 //
 // The access key is not written into those files where the assistant can read it from the environment instead: the terminal is started with it in
 // DRAGON_DROP_KEY and the files name the variable. (Documents often syncs to the cloud, and the key should not travel with it.) Antigravity can't do that,
@@ -25,6 +27,7 @@ const ASSISTANTS = {
   gemini: { name: "Gemini CLI" },
   antigravity: { name: "Antigravity CLI", hint: "Antigravity can't read the key from the environment, so its config file in your workspace folder holds the key while it is chosen." },
   opencode: { name: "OpenCode" },
+  muse: { name: "Muse Code", hint: "Muse Code asks once whether to trust the folder it starts in. Say yes, so it can read the map tools." },
 };
 
 /** The program a command starts, lower case without its folder or extension: `"C:\Tools\codex.cmd" --x` is "codex". */
@@ -41,7 +44,7 @@ function words(command) {
   return out;
 }
 
-const BY_PROGRAM = { claude: "claude", codex: "codex", gemini: "gemini", agy: "antigravity", antigravity: "antigravity", opencode: "opencode" };
+const BY_PROGRAM = { claude: "claude", codex: "codex", gemini: "gemini", agy: "antigravity", antigravity: "antigravity", opencode: "opencode", muse: "muse" };
 
 /**
  * Which assistant a start command runs: "default" for an empty command (Claude Code, started by Dragon Drop with the map tools given on its command line),
@@ -60,10 +63,10 @@ function profileFor(command) {
 
 const bearerVar = (open, close) => `Bearer ${open}${KEY_ENV}${close}`;
 
-/** The JSON project files: where each assistant looks, the object our entry lives in, and what the entry says. */
+/** The JSON project files: where each assistant looks, the object our entry lives in, and what the entry says. `users` are the assistants that read it (its own key when missing). */
 const JSON_TARGETS = {
   claude: {
-    file: ".mcp.json", under: ["mcpServers"],
+    file: ".mcp.json", under: ["mcpServers"], users: ["claude", "muse"],
     entry: (url) => ({ type: "http", url, headers: { Authorization: bearerVar("${", "}") } }),
   },
   gemini: {
@@ -141,11 +144,14 @@ function syncCodex(file, url) {
 }
 
 const known = (profile) => Object.prototype.hasOwnProperty.call(ASSISTANTS, profile);
+/** Does the JSON target `id` belong to `profile`? */
+const readsTarget = (id, profile) => (JSON_TARGETS[id].users || [id]).includes(profile);
 
 /** What is known about `profile` (see profileFor), for Settings: { assistant, name, auto, file, hint }. `auto` means its project file is written for it. */
 function describe(profile) {
   const a = known(profile) ? ASSISTANTS[profile] : null;
-  const file = profile === "codex" ? path.join(".codex", "config.toml") : known(profile) && JSON_TARGETS[profile] ? JSON_TARGETS[profile].file : null;
+  const json = known(profile) ? Object.keys(JSON_TARGETS).find((id) => readsTarget(id, profile)) : undefined;
+  const file = profile === "codex" ? path.join(".codex", "config.toml") : json ? JSON_TARGETS[json].file : null;
   return { assistant: profile, name: a ? a.name : null, auto: !!a, file, hint: a && a.hint ? a.hint : "" };
 }
 
@@ -155,7 +161,7 @@ function describe(profile) {
  */
 function syncAssistantConfigs(dir, { profile, port, key }) {
   const url = `http://127.0.0.1:${port}/mcp`;
-  for (const [id, t] of Object.entries(JSON_TARGETS)) syncJson(path.join(dir, t.file), t.under, id === profile ? t.entry(url, key) : null, t.secret);
+  for (const [id, t] of Object.entries(JSON_TARGETS)) syncJson(path.join(dir, t.file), t.under, readsTarget(id, profile) ? t.entry(url, key) : null, t.secret);
   syncCodex(path.join(dir, ".codex", "config.toml"), profile === "codex" ? url : null);
   return describe(profile);
 }

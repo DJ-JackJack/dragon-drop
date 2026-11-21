@@ -31,6 +31,8 @@ describe("which assistant a start command runs", () => {
     expect(profileFor("antigravity")).toBe("antigravity");
     expect(profileFor("opencode")).toBe("opencode");
     expect(profileFor("OpenCode.exe")).toBe("opencode");
+    expect(profileFor("muse")).toBe("muse");
+    expect(profileFor('"C:\\Users\\me\\AppData\\Local\\Programs\\muse\\muse.cmd" --effort high')).toBe("muse");
     expect(profileFor("ollama launch claude")).toBe("claude");
     expect(profileFor("ollama launch codex")).toBe("codex");
     expect(profileFor("ollama launch opencode")).toBe("opencode");
@@ -72,6 +74,15 @@ describe("the files written for each assistant", () => {
     expect(json(dir, "opencode.json").mcp.mapmaker).toEqual({ type: "remote", url: URL4747, oauth: false, headers: { Authorization: "Bearer {env:" + KEY_ENV + "}" } });
   });
 
+  it("Muse Code: Claude Code's .mcp.json (Muse reads it), the same entry, and a note about trusting the folder", () => {
+    const dir = folder();
+    const r = sync(dir, "muse");
+    expect(r).toMatchObject({ assistant: "muse", name: "Muse Code", auto: true, file: ".mcp.json" });
+    expect(r.hint).toMatch(/trust/);
+    expect(files(dir)).toEqual([".mcp.json"]);
+    expect(json(dir, ".mcp.json").mcpServers.mapmaker).toEqual({ type: "http", url: URL4747, headers: { Authorization: "Bearer ${" + KEY_ENV + "}" } });
+  });
+
   it("Antigravity: .agents/mcp_config.json with serverUrl, holding the key itself (it can't read the environment)", () => {
     const dir = folder();
     const r = sync(dir, "antigravity");
@@ -80,7 +91,7 @@ describe("the files written for each assistant", () => {
   });
 
   it("the key is in no file for any assistant but Antigravity", () => {
-    for (const p of ["default", "claude", "codex", "gemini", "opencode"]) {
+    for (const p of ["default", "claude", "codex", "gemini", "opencode", "muse"]) {
       const dir = folder();
       sync(dir, p);
       for (const f of files(dir)) expect(read(dir, f), `${p}: ${f}`).not.toContain(KEY);
@@ -107,7 +118,7 @@ describe("the files written for each assistant", () => {
 describe("switching assistants", () => {
   it("takes our entry out of every other assistant's file, and the files and folders that then hold nothing", () => {
     const dir = folder();
-    for (const p of ["claude", "codex", "gemini", "opencode", "antigravity"]) {
+    for (const p of ["claude", "codex", "muse", "gemini", "opencode", "antigravity"]) {
       sync(dir, p);
       const here = files(dir);
       // only the chosen assistant's file is there
@@ -118,6 +129,19 @@ describe("switching assistants", () => {
     expect(existsSync(path.join(dir, ".agents"))).toBe(false);
     expect(existsSync(path.join(dir, ".gemini"))).toBe(false);
     expect(existsSync(path.join(dir, ".codex"))).toBe(false);
+  });
+
+  it("Claude Code and Muse Code share .mcp.json: going from one to the other keeps the entry, going elsewhere takes it out", () => {
+    const dir = folder();
+    sync(dir, "claude");
+    sync(dir, "muse");
+    expect(files(dir)).toEqual([".mcp.json"]);
+    expect(json(dir, ".mcp.json").mcpServers.mapmaker.url).toBe(URL4747);
+    sync(dir, "claude", 4800);
+    expect(json(dir, ".mcp.json").mcpServers.mapmaker.url).toBe("http://127.0.0.1:4800/mcp");
+    sync(dir, "muse");
+    sync(dir, "codex");
+    expect(files(dir)).toEqual([".codex/config.toml"]);
   });
 });
 
