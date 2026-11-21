@@ -5,12 +5,13 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  ARROW_DIRECTION, BRIDGE_COLOURS, MATERIALS, STREET_EDGE, STREET_SURFACE, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  ARROW_DIRECTION, BRIDGE_COLOURS, MATERIALS, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  type WallPieces, cleanCityWall, distToWall, wallPieces,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
   viewKeyAction,
 } from "@mapmaker/core";
-import { type CityUi, DEFAULT_HOUSE, landName, selectedOf, sendCityFeatures } from "./cityUi.ts";
+import { type CityUi, DEFAULT_HOUSE, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { loadRoofPools, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
@@ -83,6 +84,10 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   /** Points of a ridge, valley, plateau or hollow (the Land tool), or of a row or an area of trees (the Trees tool), being clicked out. */
   const landDraft = useRef<Pt[] | null>(null);
   const treeDraft = useRef<Pt[] | null>(null);
+  /** Points of a city wall being clicked out (the Wall tool). */
+  const wallDraft = useRef<Pt[] | null>(null);
+  /** Each wall's towers and gates, worked out once for the wall and the streets as they are. */
+  const wallCache = useRef(new WeakMap<MapCityWall, { streets: readonly MapStreet[]; pieces: WallPieces }>());
   /** Each street's bridges, worked out once for what the street is and the ground as it is (`groundVer` counts the ground's changes). */
   const groundVer = useRef(0);
   const bridgeCache = useRef(new Map<string, BridgeSpan[]>());
@@ -326,12 +331,25 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       }
     }
 
+    // the city walls, over the roofs (their towers stand above the houses built against them)
+    drawWalls(ctx, v, (f.cityWalls ?? []).map((w) => {
+      const ox = dx(w.id), oy = dy(w.id), streetsMoved = (f.streets ?? []).some((s) => dx(s.id) || dy(s.id));
+      if (!ox && !oy && !streetsMoved) return piecesOf(w, f.streets ?? []);
+      return wallPieces(ox || oy ? { ...w, points: w.points.map(([x, y]) => [x + ox, y + oy] as Pt) } : w, streetsMoved ? (f.streets ?? []).map((s) => (dx(s.id) || dy(s.id) ? { ...s, points: s.points.map(([x, y]) => [x + dx(s.id), y + dy(s.id)] as Pt) } : s)) : f.streets ?? []);
+    }), vx0, vy0, vx1, vy1);
+
     // what is selected
     ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = GOLD; ctx.lineJoin = "round";
     for (const b of f.buildings ?? []) if (sel.has(b.id)) { path(b.points, dx(b.id), dy(b.id)); ctx.stroke(); }
     for (const s of f.streets ?? []) if (sel.has(s.id)) {
       ctx.beginPath();
       s.points.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + dx(s.id)), py(y + dy(s.id))) : ctx.moveTo(px(x + dx(s.id)), py(y + dy(s.id)))));
+      ctx.stroke();
+    }
+    for (const w of f.cityWalls ?? []) if (sel.has(w.id)) {
+      ctx.beginPath();
+      w.points.forEach(([x, y], i) => (i ? ctx.lineTo(px(x + dx(w.id)), py(y + dy(w.id))) : ctx.moveTo(px(x + dx(w.id)), py(y + dy(w.id)))));
+      if (w.closed) ctx.closePath();
       ctx.stroke();
     }
     for (const t of f.trees ?? []) if (sel.has(t.id)) {
@@ -416,6 +434,95 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         ctx.fillStyle = rgb(C.woodRail);
         const r = Math.max(1, 0.32 * v.scale);
         for (const [x, y] of b.posts) ctx.fillRect(X(x) - r, Y(y) - r, r * 2, r * 2);
+      }
+    }
+    ctx.restore();
+  }
+
+  /** A wall's towers and gates (cached until the wall or the streets change). */
+  function piecesOf(w: MapCityWall, streets: readonly MapStreet[]): WallPieces {
+    const hit = wallCache.current.get(w);
+    if (hit && hit.streets === streets) return hit.pieces;
+    const pieces = wallPieces(w, streets);
+    wallCache.current.set(w, { streets, pieces });
+    return pieces;
+  }
+
+  /**
+   * City walls, as the pictures draw them: an earth rampart's ditch outside a ring, the shadow, the wall's edge and top (close up, a stone wall's battlements along both
+   * sides of its wall-walk, a palisade's logs), then the towers (round with a roof lit from the top left, or square). The gates are the gaps the streets pass through.
+   */
+  function drawWalls(ctx: CanvasRenderingContext2D, v: View, walls: WallPieces[], vx0: number, vy0: number, vx1: number, vy1: number) {
+    if (!walls.length) return;
+    const X = (x: number) => v.ox + x * v.scale, Y = (y: number) => v.oy + y * v.scale, C = WALL_COLOURS, rgb = (c: readonly number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    const path = (s: { points: Pt[]; closed: boolean }, ox = 0, oy = 0) => { ctx.beginPath(); s.points.forEach(([x, y], i) => (i ? ctx.lineTo(X(x) + ox, Y(y) + oy) : ctx.moveTo(X(x) + ox, Y(y) + oy))); if (s.closed) ctx.closePath(); };
+    ctx.save(); ctx.lineCap = "butt"; ctx.lineJoin = "round";
+    for (const w of walls) {
+      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+      for (const s of w.stretches) for (const [x, y] of s.points) { if (x < a) a = x; if (x > c) c = x; if (y < b) b = y; if (y > d) d = y; }
+      for (const q of w.towers) { a = Math.min(a, q.x); c = Math.max(c, q.x); b = Math.min(b, q.y); d = Math.max(d, q.y); }
+      const pad = w.thickness * 2 + 10;
+      if (c + pad < vx0 || a - pad > vx1 || d + pad < vy0 || b - pad > vy1) continue;
+      const t = w.thickness, tw = Math.max(1.5, t * v.scale), edge = Math.min(tw * 0.25, Math.max(1, 0.35 * v.scale)), sh = Math.max(1, t * 0.3 * v.scale);
+      const top = w.kind === "stone" ? C.stoneTop : w.kind === "palisade" ? C.woodTop : C.earthBank, rim = w.kind === "stone" ? C.stoneEdge : w.kind === "palisade" ? C.woodEdge : C.earthEdge;
+      const stroke = (width: number, style: string, ox = 0, oy = 0, dash: number[] = []) => { ctx.setLineDash(dash); ctx.lineWidth = width; ctx.strokeStyle = style; for (const s of w.stretches) { path(s, ox, oy); ctx.stroke(); } ctx.setLineDash([]); };
+      // an earth rampart's ditch, outside a ring
+      if (w.kind === "earth" && w.ring) {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(X(a) - pad * v.scale, Y(b) - pad * v.scale, (c - a + 2 * pad) * v.scale, (d - b + 2 * pad) * v.scale);
+        w.ring.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.closePath();
+        ctx.clip("evenodd");
+        stroke(tw + 2 * t * 0.7 * v.scale, rgb(C.ditch, 0.75));
+        ctx.restore();
+      }
+      stroke(tw, "rgba(0,0,0,0.28)", sh, sh);
+      stroke(tw, rgb(rim));
+      stroke(Math.max(1, tw - 2 * edge), rgb(top));
+      if (w.kind === "stone") {
+        if (v.scale >= 2.5) {
+          // the battlements: the wall-walk between two rows of merlons (blocks of stone with gaps between), one along each side
+          stroke(Math.max(1, tw - 2 * edge), rgb(C.stoneWalk));
+          const mw = t * 0.2, off = t / 2 - edge / v.scale - mw;
+          ctx.beginPath();
+          for (const s of w.stretches) {
+            const n = s.points.length, sides = s.closed ? n : n - 1;
+            for (let i = 0; i < sides; i++) {
+              const [ax, ay] = s.points[i], [bx, by] = s.points[(i + 1) % n], L = Math.hypot(bx - ax, by - ay);
+              if (L < 0.5) continue;
+              const ux = (bx - ax) / L, uy = (by - ay) / L;
+              for (let k = 0.3; k + 0.8 <= L; k += 1.6) for (const side of [off, -off - mw]) {
+                // (a block 0.8 m along the wall and mw across, its corners turned with the wall)
+                const cx = ax + ux * k - uy * side, cy = ay + uy * k + ux * side;
+                ctx.moveTo(X(cx), Y(cy)); ctx.lineTo(X(cx + ux * 0.8), Y(cy + uy * 0.8)); ctx.lineTo(X(cx + ux * 0.8 - uy * mw), Y(cy + uy * 0.8 + ux * mw)); ctx.lineTo(X(cx - uy * mw), Y(cy + ux * mw)); ctx.closePath();
+              }
+            }
+          }
+          ctx.fillStyle = rgb(top); ctx.fill();
+        } else stroke(Math.max(1, t * 0.4 * v.scale), rgb(C.stoneWalk));
+      }
+      if (w.kind === "earth") stroke(Math.max(1, t * 0.28 * v.scale), rgb(C.earthCrest));
+      if (w.kind === "palisade" && v.scale >= 4) stroke(Math.max(1, tw - 2 * edge), rgb(C.woodEdge, 0.55), 0, 0, [1, 0.3 * v.scale]);
+      // the towers
+      const body = w.kind === "palisade" ? C.woodTower : C.stoneTower, roof = w.kind === "palisade" ? C.woodEdge : C.stoneRoof;
+      const shape = (q: WallPieces["towers"][number], grow: number, ox = 0, oy = 0) => {
+        const r = q.r * v.scale + grow;
+        ctx.beginPath();
+        if (q.square) { ctx.save(); ctx.translate(X(q.x) + ox, Y(q.y) + oy); ctx.rotate(q.angle); ctx.rect(-r, -r, 2 * r, 2 * r); ctx.restore(); }
+        else ctx.arc(X(q.x) + ox, Y(q.y) + oy, Math.max(0.5, r), 0, Math.PI * 2);
+      };
+      for (const q of w.towers) { shape(q, 0, sh, sh); ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.fill(); }
+      for (const q of w.towers) {
+        shape(q, 0); ctx.fillStyle = rgb(rim); ctx.fill();
+        shape(q, -edge); ctx.fillStyle = rgb(body); ctx.fill();
+        if (q.r * v.scale >= 3) {
+          shape(q, -(q.r * 0.3 * v.scale));
+          if (q.square) { ctx.fillStyle = rgb(roof, 0.35); ctx.fill(); }
+          else {
+            const r = q.r * 0.7 * v.scale, g = ctx.createRadialGradient(X(q.x) - r * 0.4, Y(q.y) - r * 0.4, r * 0.1, X(q.x), Y(q.y), r);
+            g.addColorStop(0, rgb(roof.map((k) => Math.min(255, k * 1.25)))); g.addColorStop(1, rgb(roof.map((k) => k * 0.8)));
+            ctx.fillStyle = g; ctx.fill();
+          }
+        }
       }
     }
     ctx.restore();
@@ -551,6 +658,15 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         line(streetDraft.current, false, GOLD, 1.2, [5, 4]);
         for (const [x, y] of streetDraft.current) { ctx.beginPath(); ctx.arc(px(x), py(y), 3.5, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill(); }
       }
+      if (o.tool === "citywall" && wallDraft.current?.length) {
+        const pts = wallDraft.current, k = WALL_KINDS.find((x) => x.id === o.wallKind) ?? WALL_KINDS[0], c = o.wallKind === "stone" ? WALL_COLOURS.stoneTop : o.wallKind === "palisade" ? WALL_COLOURS.woodTop : WALL_COLOURS.earthBank;
+        ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.globalAlpha = 0.6; ctx.strokeStyle = `rgb(${c.join(",")})`; ctx.lineWidth = Math.max(2, k.thickness * v.scale);
+        ctx.beginPath(); [...pts, [m.x, m.y] as Pt].forEach(([x, y], i) => (i ? ctx.lineTo(px(x), py(y)) : ctx.moveTo(px(x), py(y)))); ctx.stroke(); ctx.restore();
+        line([...pts, [m.x, m.y]], false, GOLD, 1.4, [6, 4]);
+        if (pts.length >= 2) line([[m.x, m.y], pts[0]], false, "rgba(255,224,120,0.4)", 1.2, [3, 4]);
+        for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(px(x), py(y), 3.5, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill(); }
+        if (pts.length >= 3) { ctx.beginPath(); ctx.arc(px(pts[0][0]), py(pts[0][1]), 7, 0, Math.PI * 2); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
       if ((o.tool === "hills" && landDraft.current?.length) || (o.tool === "trees" && treeDraft.current?.length)) {
         const pts = (o.tool === "hills" ? landDraft.current : treeDraft.current)!;
         const closed = o.tool === "hills" ? o.landMode === "plateau" || o.landMode === "hollow" : o.treeKind !== "row";
@@ -583,11 +699,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   }
 
   // ------------------------------------------------------------ what is under a point
-  function hitAt(mx: number, my: number): { kind: "building" | "street" | "trees"; id: string } | null {
+  function hitAt(mx: number, my: number): { kind: "building" | "street" | "wall" | "trees"; id: string } | null {
     const f = featRef.current, v = viewRef.current;
     const bs = f.buildings ?? [];
     for (let i = bs.length - 1; i >= 0; i--) { const c = infoOf(bs[i]); if (mx >= c.x0 && mx <= c.x1 && my >= c.y0 && my <= c.y1 && pointInPolygon(mx, my, bs[i].points as Pt[])) return { kind: "building", id: bs[i].id }; }
-    const tol = 4 / v.scale, ss = f.streets ?? [];
+    const tol = 4 / v.scale, ws = f.cityWalls ?? [];
+    for (let i = ws.length - 1; i >= 0; i--) { const w = ws[i]; if (distToWall(mx, my, w) <= (w.thickness ?? (WALL_KINDS.find((k) => k.id === (w.kind ?? "stone"))?.thickness ?? 3)) / 2 + tol) return { kind: "wall", id: w.id }; }
+    const ss = f.streets ?? [];
     for (let i = ss.length - 1; i >= 0; i--) {
       const s = ss[i];
       for (let k = 0; k + 1 < s.points.length; k++) if (distToSegment(mx, my, s.points[k][0], s.points[k][1], s.points[k + 1][0], s.points[k + 1][1]) <= s.width / 2 + tol) return { kind: "street", id: s.id };
@@ -651,6 +769,19 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     onUiRef.current({ selected: [id] });
   }
 
+  /** A city wall from the Wall tool's settings, open or a ring. */
+  function finishWall(closed: boolean) {
+    const pts = wallDraft.current, spec = metaRef.current?.city, o = uiRef.current;
+    wallDraft.current = null;
+    requestDraw();
+    if (!pts || !spec || pts.length < (closed ? 3 : 2)) return;
+    const k = WALL_KINDS.find((x) => x.id === o.wallKind) ?? WALL_KINDS[0];
+    const c = cleanCityWall({ id: newFeatureId("w"), points: inside(pts), ...(closed && { closed: true }), kind: o.wallKind, ...(o.wallTowers !== k.towers && { towers: o.wallTowers }) }, spec);
+    if ("error" in c) return;
+    sendCityFeatures({ upsertCityWalls: [c] }, `Add ${k.name.toLowerCase()}`);
+    onUiRef.current({ selected: [c.id] });
+  }
+
   /** A landform from the Land tool's settings (a valley is a ridge sunk, a hollow a plateau sunk). */
   function addLand(points: Pt[], radius: number) {
     const spec = metaRef.current?.city, o = uiRef.current, pts = inside(points);
@@ -697,8 +828,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   function moveSelected(ids: string[], dx: number, dy: number, label: string) {
     const spec = metaRef.current?.city, f = featRef.current;
     if (!spec) return;
-    const { buildings, streets, trees, land } = selectedOf(f, ids);
-    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points)] as Pt[];
+    const { buildings, streets, trees, land, walls } = selectedOf(f, ids);
+    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points), ...walls.flatMap((w) => w.points)] as Pt[];
     if (!all.length) return;
     const bb = pointsBounds(all);
     dx = Math.max(-bb.x0, Math.min(spec.widthM - bb.x1, dx)); dy = Math.max(-bb.y0, Math.min(spec.heightM - bb.y1, dy));
@@ -707,6 +838,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     sendCityFeatures({
       ...(buildings.length && { upsertBuildings: buildings.map((b) => ({ ...b, points: b.points.map(mv) })) }), ...(streets.length && { upsertStreets: streets.map((s) => ({ ...s, points: s.points.map(mv) })) }),
       ...(trees.length && { upsertTrees: trees.map((t) => ({ ...t, points: t.points.map(mv) })) }), ...(land.length && { upsertLand: land.map((l) => ({ ...l, points: l.points.map(mv) })) }),
+      ...(walls.length && { upsertCityWalls: walls.map((w) => ({ ...w, points: w.points.map(mv) })) }),
     }, label);
   }
   function nudge(dx: number, dy: number, big: boolean): boolean {
@@ -738,15 +870,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     return true;
   }
   function deleteSelected() {
-    const { buildings, streets, trees, land } = selectedOf(featRef.current, uiRef.current.selected);
-    const n = buildings.length + streets.length + trees.length + land.length;
-    if (!n) return;
-    const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : `Delete ${landName(land[0]).toLowerCase()}`;
-    sendCityFeatures({
-      ...(buildings.length && { removeBuildings: buildings.map((b) => b.id) }), ...(streets.length && { removeStreets: streets.map((s) => s.id) }),
-      ...(trees.length && { removeTrees: trees.map((t) => t.id) }), ...(land.length && { removeLand: land.map((l) => l.id) }),
-    }, what);
-    onUiRef.current({ selected: [] });
+    if (removeSelected(featRef.current, uiRef.current.selected)) onUiRef.current({ selected: [] });
   }
 
   // ------------------------------------------------------------ effects
@@ -754,7 +878,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   useEffect(() => { void loadRoofPools(); return roofAssetsStore.subscribe(requestDraw); }, [meta?.id, requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
   useEffect(() => { requestDraw(); }, [features, ui, meta, requestDraw]);
-  useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
+  useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
   // the land or the climate changed: the ground's colours and shading with it
   const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}`;
   useEffect(() => { if (metaRef.current?.city && store.heights && offRef.current) paintGround(null); }, [groundKey, paintGround]);
@@ -771,9 +895,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const keys = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const o = uiRef.current;
-      const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : o.tool === "hills" ? landDraft : o.tool === "trees" ? treeDraft : null;
+      const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : o.tool === "hills" ? landDraft : o.tool === "trees" ? treeDraft : o.tool === "citywall" ? wallDraft : null;
       if (draft?.current) {
-        if (e.key === "Enter") (o.tool === "outline" ? finishOutline : o.tool === "street" ? finishStreet : o.tool === "hills" ? finishLand : finishTrees)();
+        if (e.key === "Enter") (o.tool === "outline" ? finishOutline : o.tool === "street" ? finishStreet : o.tool === "hills" ? finishLand : o.tool === "citywall" ? () => finishWall(false) : finishTrees)();
         else if (e.key === "Escape") draft.current = null;
         else if (e.key === "Backspace" || e.key === "Delete") { draft.current.pop(); if (!draft.current.length) draft.current = null; }
         else return;
@@ -849,6 +973,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       requestDraw();
       return;
     }
+    if (o.tool === "citywall") {
+      const pts = wallDraft.current ?? [];
+      const nearFirst = pts.length >= 3 && Math.hypot((pts[0][0] - q.x) * v.scale, (pts[0][1] - q.y) * v.scale) < 10;
+      if (nearFirst) finishWall(true); else if (dbl && pts.length >= 2) finishWall(false); else wallDraft.current = dbl ? pts : [...pts, [q.x, q.y]];
+      requestDraw();
+      return;
+    }
     if (o.tool === "hills") {
       // a landform's mark selects it (and dragging moves it); anywhere else makes a new one
       const hit = landDraft.current ? null : hitLand(q.x, q.y);
@@ -918,6 +1049,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         const f = featRef.current, found: string[] = [];
         for (const bl of f.buildings ?? []) { const [cx, cy] = polygonCentroid(bl.points as Pt[]); if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(bl.id); }
         for (const s of f.streets ?? []) if (s.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(s.id);
+        for (const w of f.cityWalls ?? []) if (w.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(w.id);
         for (const t of f.trees ?? []) { const [cx, cy] = t.points.length >= 3 ? polygonCentroid(t.points as Pt[]) : t.points[0]; if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(t.id); }
         onUiRef.current({ selected: d.add ? [...new Set([...(d.base ?? []), ...found])] : found });
       }

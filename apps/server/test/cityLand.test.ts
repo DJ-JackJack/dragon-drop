@@ -231,3 +231,39 @@ describe("a city started from a world map", () => {
     await hub.close();
   });
 });
+
+describe("city walls through Claude's tools", () => {
+  it("adds a ring with towers, gets gates where the streets cross, changes, lists, checks, draws, undoes and removes it", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Wall Town", width_m: 400, height_m: 300 });
+    const road = await ok(hub, "add_streets", { streets: [{ points: [[0, 150], [400, 150]], kind: "street" }] });
+    const added = await ok(hub, "add_city_walls", { walls: [{ points: [[100, 60], [300, 60], [300, 240], [100, 240]], closed: true }] });
+    expect(added.walls[0]).toMatchObject({ kind: "stone", ring: true, length_m: 760 });
+    expect(added.walls[0].towers).toBeGreaterThan(10);
+    expect(added.walls[0].gates).toHaveLength(2);
+    expect(added.walls[0].gates.every((g: { street: string; gatehouse?: boolean }) => g.street === road.ids[0] && g.gatehouse)).toBe(true);
+    const id = added.walls[0].id;
+    // an earth rampart has no towers and plain openings
+    const changed = await ok(hub, "update_city_walls", { changes: [{ id, kind: "earth", name: "The Old Dyke" }] });
+    expect(changed.walls[0]).toMatchObject({ kind: "earth", name: "The Old Dyke", towers: 0 });
+    expect(changed.walls[0].gates.some((g: { gatehouse?: boolean }) => g.gatehouse)).toBe(false);
+    expect((await ok(hub, "list_city_walls")).total).toBe(1);
+    expect((await ok(hub, "get_map_summary")).walls[0]).toMatchObject({ id, gates: 2 });
+    // a second ring no street crosses: the check says so
+    await ok(hub, "add_city_walls", { walls: [{ points: [[20, 20], [60, 20], [60, 60]], closed: true, kind: "palisade" }] });
+    const check = await ok(hub, "check_city");
+    expect(check.walls.rings_without_gate).toHaveLength(1);
+    expect(check.advice.join(" ")).toMatch(/no gate/);
+    // drawn for Claude
+    const look = await tool(hub, "render_city", {});
+    expect(look.isError).toBeFalsy();
+    // undo and remove
+    hub.session.undo("user");
+    expect((await ok(hub, "list_city_walls")).total).toBe(1);
+    await ok(hub, "remove_city_walls", { ids: [id] });
+    expect((await ok(hub, "list_city_walls")).total).toBe(0);
+    // bad input is refused with a reason
+    expect(textOf(await tool(hub, "add_city_walls", { walls: [{ points: [[0, 0], [900, 0]] }] }))).toMatch(/outside the map/);
+    await hub.close();
+  });
+});

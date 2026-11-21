@@ -118,6 +118,8 @@ export const CITY_PLAN_TOOLS = [
       const advice: string[] = [];
       if (r.in_water.count) advice.push("Remove or move the buildings in water (remove_buildings).");
       if (r.on_streets.count) advice.push("Buildings stand on streets: move or remove them, or move the street.");
+      if (r.on_walls.count) advice.push("Buildings stand on the city wall, its towers or its ditch: move or remove them.");
+      if (r.walls.rings_without_gate.length) advice.push("A walled ring has no gate: no street crosses it. Route a street through it (a gate appears where it crosses).");
       if (r.overlapping.count) advice.push("Some buildings overlap: remove one of each pair.");
       if (r.on_steep_ground.count) advice.push("Buildings on steep ground: fine for a few terraced houses, odd for many.");
       if (r.dead_end_main_streets.count) advice.push("Main streets that end nowhere: join them to another street or make them lanes.");

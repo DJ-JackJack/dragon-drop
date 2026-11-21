@@ -1,10 +1,11 @@
 /** The city map's tool bar (the options of the chosen tool), the inspector for what is selected, and the city's own settings (its land and climate) for the Map panel. */
 import { useSyncExternalStore } from "react";
 import {
-  BUILDING_KINDS, CITY_CLIMATES, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
-  type CityClimate, type Features, type MapBuilding, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
+  BUILDING_KINDS, CITY_CLIMATES, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
+  type CityClimate, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
+  cityWallPieces, wallPieces, wallSettings,
 } from "@mapmaker/core";
-import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, selectedOf, sendCityFeatures } from "./cityUi.ts";
+import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { store } from "./store.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
@@ -17,8 +18,9 @@ const HINTS: Partial<Record<CityUi["tool"], string>> = {
   building: "Click to place a house, or drag a rectangle to size one. Q and E turn it. Pick its roof above.",
   outline: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish.",
   street: "Click the points a street passes through. Double-click or press Enter to finish.",
+  citywall: "Click the points of the wall. Click the first point to close it into a ring, or double-click or press Enter to end it. Where a street crosses it, a gate appears.",
   ground: "Drag to paint. [ and ] change the brush size.",
-  select: "Click a building, street or trees. Drag to move them, or drag on bare ground to select several. Delete removes; Q and E turn buildings.",
+  select: "Click a building, street, wall or trees. Drag to move them, or drag on bare ground to select several. Delete removes; Q and E turn buildings.",
 };
 const LAND_MODES: { id: LandMode; name: string; hint: string }[] = [
   { id: "hill", name: "Hill", hint: "Click for a hill of the size set here, or drag out from its top to size it. Click a hill's top or edge to select it." },
@@ -92,6 +94,17 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
           </label>
         </>
       )}
+      {ui.tool === "citywall" && (
+        <>
+          <div className="seg" role="group" aria-label="What the wall is built of" data-testid="city-wall-kinds">
+            {WALL_KINDS.map((k) => <button key={k.id} className={ui.wallKind === k.id ? "on" : ""} onClick={() => onUi({ wallKind: k.id, wallTowers: k.towers })} title={`A ${k.hint}`} data-testid={`city-wall-${k.id}`}>{k.name}</button>)}
+          </div>
+          <label className="slider">
+            <span>Towers {ui.wallTowers ? <>every <b>{ui.wallTowers}</b> m</> : <b>none</b>}</span>
+            <input type="range" min={0} max={120} step={5} value={ui.wallTowers} onChange={(e) => { const v = Number(e.target.value); onUi({ wallTowers: v > 0 && v < 10 ? 10 : v }); }} data-testid="city-wall-towers" />
+          </label>
+        </>
+      )}
       {ui.tool === "ground" && (
         <>
           <Popover label={<><span className="swatch now" style={{ background: rgb(ground?.colour ?? [60, 60, 60]) }} /> <b>{ground?.name}</b></>} title="Choose the ground to paint" testId="city-ground-menu">
@@ -162,7 +175,8 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         {row("Buildings", (features.buildings ?? []).length.toLocaleString())}
         {row("Streets", (features.streets ?? []).length.toLocaleString())}
         {row("Trees", `${(features.trees ?? []).length.toLocaleString()} group${(features.trees ?? []).length === 1 ? "" : "s"}`)}
-        <p className="muted">Click a building, street or trees with the Select tool to edit it here; a hill or valley with the Land tool.</p>
+        {(features.cityWalls ?? []).length > 0 && (() => { const p = cityWallPieces(features.cityWalls, features.streets), g = p.reduce((n, w) => n + w.gates.length, 0), t = p.reduce((n, w) => n + w.towers.length, 0); return row("Walls", `${p.length} · ${g} gate${g === 1 ? "" : "s"} · ${t} tower${t === 1 ? "" : "s"}`); })()}
+        <p className="muted">Click a building, street, wall or trees with the Select tool to edit it here; a hill or valley with the Land tool.</p>
         {meta!.origin && (
           <>
             <p className="muted" data-testid="city-origin">Started from <b>{meta!.origin.name}</b> at map px ({meta!.origin.x}, {meta!.origin.y}).</p>
@@ -194,18 +208,13 @@ const hexOf = (c: [number, number, number]) => `#${c.map((v) => v.toString(16).p
 
 /** What is selected: one building or street to edit, or a group to change together. */
 export function CityInspector({ features, ui, onUi }: { features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {
-  const { buildings, streets, trees, land } = selectedOf(features, ui.selected);
-  if (!buildings.length && !streets.length && !trees.length && !land.length) return null;
+  const { buildings, streets, trees, land, walls } = selectedOf(features, ui.selected);
+  if (!buildings.length && !streets.length && !trees.length && !land.length && !walls.length) return null;
   const clear = () => onUi({ selected: [] });
-  const total = buildings.length + streets.length + trees.length + land.length;
-  const remove = () => {
-    sendCityFeatures({
-      ...(buildings.length && { removeBuildings: buildings.map((b) => b.id) }), ...(streets.length && { removeStreets: streets.map((s) => s.id) }),
-      ...(trees.length && { removeTrees: trees.map((t) => t.id) }), ...(land.length && { removeLand: land.map((l) => l.id) }),
-    }, total > 1 ? `Delete ${total} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : `Delete ${landName(land[0]).toLowerCase()}`);
-    onUi({ selected: [] });
-  };
+  const total = buildings.length + streets.length + trees.length + land.length + walls.length;
+  const remove = () => { if (removeSelected(features, ui.selected)) onUi({ selected: [] }); };
   if (total === 1 && trees.length) return <TreesEditor t={trees[0]} onClear={clear} onRemove={remove} />;
+  if (total === 1 && walls.length) return <WallEditor w={walls[0]} streets={features.streets ?? []} onClear={clear} onRemove={remove} />;
   if (total === 1 && land.length) return <LandEditor l={land[0]} onClear={clear} onRemove={remove} />;
   const change = (patch: Partial<MapBuilding>, label: string) => sendCityFeatures({ upsertBuildings: buildings.map((b) => ({ ...b, ...patch })) }, label);
   /** A new roof look for every selected building: each gets a picture of the packs that fits it (a different one each) unless roofs are set to be drawn. */
@@ -221,7 +230,7 @@ export function CityInspector({ features, ui, onUi }: { features: Features; ui: 
   return (
     <section data-testid="city-inspector">
       <h3>{total} selected</h3>
-      <p className="muted">{buildings.length} building{buildings.length === 1 ? "" : "s"}, {streets.length} street{streets.length === 1 ? "" : "s"}{trees.length ? `, ${trees.length} group${trees.length === 1 ? "" : "s"} of trees` : ""}. Drag to move them together.</p>
+      <p className="muted">{buildings.length} building{buildings.length === 1 ? "" : "s"}, {streets.length} street{streets.length === 1 ? "" : "s"}{walls.length ? `, ${walls.length} wall${walls.length === 1 ? "" : "s"}` : ""}{trees.length ? `, ${trees.length} group${trees.length === 1 ? "" : "s"} of trees` : ""}. Drag to move them together.</p>
       {buildings.length > 0 && (
         <>
           <label className="field">Roof for all the buildings
@@ -325,6 +334,42 @@ function StreetEditor({ s, onClear, onRemove }: { s: MapStreet; onClear: () => v
           {BRIDGE_CHOICES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       </label>
+      <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
+    </section>
+  );
+}
+
+/** One city wall: what it is built of, how thick, how far apart its towers are, ring or not, a name; and what stands on it (its towers and gates). */
+function WallEditor({ w, streets, onClear, onRemove }: { w: MapCityWall; streets: readonly MapStreet[]; onClear: () => void; onRemove: () => void }) {
+  const set = (patch: Partial<MapCityWall>, label: string) => sendCityFeatures({ upsertCityWalls: [{ ...w, ...patch }] }, label);
+  const s = wallSettings(w), p = wallPieces(w, streets), kind = WALL_KINDS.find((k) => k.id === s.kind)!;
+  const streetName = (id: string) => { const st = streets.find((x) => x.id === id); return st?.name ?? STREET_KINDS.find((k) => k.id === st?.kind)?.name.toLowerCase() ?? "street"; };
+  return (
+    <section data-testid="city-inspector">
+      <h3>{w.name ?? kind.name}</h3>
+      <p className="muted" data-testid="city-wall-info">{Math.round(p.length)} m {p.closed ? "round" : "long"} · {p.towers.length} tower{p.towers.length === 1 ? "" : "s"} · {p.gates.length} gate{p.gates.length === 1 ? "" : "s"}</p>
+      {p.gates.length > 0 && <p className="muted">Gates: {p.gates.map((g) => `${streetName(g.streetId)}${g.gatehouse ? " (gatehouse)" : ""}`).join(", ")}.</p>}
+      {p.closed && !p.gates.length && <p className="muted">No street crosses this ring yet, so it has no gate.</p>}
+      <label className="field">Name (only a name you chose)
+        <input key={w.id + (w.name ?? "")} defaultValue={w.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (w.name ?? "")) { const { name: _n, ...rest } = w; sendCityFeatures({ upsertCityWalls: [v ? { ...rest, name: v } : rest] }, v ? `Name wall ${v}` : "Clear wall name"); } }} data-testid="city-name" />
+      </label>
+      <label className="field">Built of
+        <select value={s.kind} onChange={(e) => { const { thickness: _t, towers: _w, ...rest } = w; sendCityFeatures({ upsertCityWalls: [{ ...rest, kind: e.target.value as CityWallKind }] }, `Wall: ${WALL_KINDS.find((k) => k.id === e.target.value)!.name}`); }} data-testid="city-wall-edit-kind">
+          {WALL_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+        </select>
+      </label>
+      <label className="field">Thickness (m)
+        <input key={`${w.id}-t-${s.thickness}`} type="number" min={0.3} max={30} step={0.1} defaultValue={s.thickness} data-testid="city-wall-thickness"
+          onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0.3 && v <= 30 && v !== s.thickness) set({ thickness: v }, `Wall: ${v} m thick`); }} />
+      </label>
+      <label className="field">Towers every (m, 0 for none)
+        <input key={`${w.id}-w-${s.towers}`} type="number" min={0} max={500} step={5} defaultValue={s.towers} data-testid="city-wall-edit-towers"
+          onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && (v === 0 || (v >= 8 && v <= 500)) && v !== s.towers) set({ towers: v }, v ? `Towers every ${v} m` : "No towers"); }} />
+      </label>
+      {w.points.length >= 3 && (
+        <label className="check" title="Join the last point back to the first"><input type="checkbox" checked={!!w.closed} onChange={(e) => { const { closed: _c, ...rest } = w; sendCityFeatures({ upsertCityWalls: [e.target.checked ? { ...rest, closed: true } : rest] }, e.target.checked ? "Close the wall" : "Open the wall"); }} data-testid="city-wall-ring" /> A ring (closed)</label>
+      )}
+      <p className="muted">A gate appears wherever a street crosses the wall: a gatehouse for avenues and streets.</p>
       <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
     </section>
   );

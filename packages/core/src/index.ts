@@ -41,6 +41,7 @@ export * from "./trace.ts";
 export * from "./city.ts";
 export * from "./cityLand.ts";
 export * from "./cityBridges.ts";
+export * from "./cityWalls.ts";
 export * from "./cityPlan.ts";
 export * from "./cityWorld.ts";
 export * from "./terrainDrain.ts";

@@ -15,6 +15,7 @@ import type { MapDoc } from "./doc.ts";
 import { type CitySpec, citySpec } from "./city.ts";
 import { STEEP_PERCENT, type LandGrid, gridHeightAt, landGrid } from "./cityLand.ts";
 import { isWaterAt, streetBridges } from "./cityBridges.ts";
+import { type WallPieces, cityWallPieces } from "./cityWalls.ts";
 import type { BuildingKind, MapBuilding, MapStreet, MapTrees, RoofStyle } from "./features.ts";
 import { distToSegment, pointInPolygon } from "./geom.ts";
 
@@ -99,6 +100,11 @@ export class CitySpace {
   private readonly polys: Pt[][][] = [];
   private readonly land: LandGrid | null;
   private readonly woods: MapTrees[];
+  /** The walls' stretches (with how far either side of the line they reach) and towers, by cell. */
+  private readonly wallSegs: { ax: number; ay: number; bx: number; by: number; half: number }[][] = [];
+  private readonly towers: { x: number; y: number; r: number }[][] = [];
+  /** What stands on each wall (its towers and gates). */
+  readonly walls: WallPieces[];
   constructor(private readonly doc: MapDoc) {
     this.spec = citySpec(doc);
     this.cw = Math.ceil(this.spec.widthM / this.C) + 1;
@@ -106,6 +112,18 @@ export class CitySpace {
     this.woods = (doc.features?.trees ?? []).filter((t) => t.kind === "wood" || t.kind === "orchard");
     for (const s of doc.features?.streets ?? []) this.addStreet(s);
     for (const b of doc.features?.buildings ?? []) this.addBuilding(b.points as Pt[]);
+    this.walls = cityWallPieces(doc.features?.cityWalls, doc.features?.streets);
+    for (const w of this.walls) {
+      const half = w.thickness / 2 + (w.kind === "earth" ? w.thickness * 0.7 : 0); // (an earth rampart's ditch is no place for a house either)
+      for (const s of w.stretches) {
+        const n = s.points.length, sides = s.closed ? n : n - 1;
+        for (let i = 0; i < sides; i++) {
+          const [ax, ay] = s.points[i], [bx, by] = s.points[(i + 1) % n], seg = { ax, ay, bx, by, half };
+          for (const c of this.cells(Math.min(ax, bx) - half - 2, Math.min(ay, by) - half - 2, Math.max(ax, bx) + half + 2, Math.max(ay, by) + half + 2)) (this.wallSegs[c] ??= []).push(seg);
+        }
+      }
+      for (const t of w.towers) { const r = t.r * 1.42; for (const c of this.cells(t.x - r - 2, t.y - r - 2, t.x + r + 2, t.y + r + 2)) (this.towers[c] ??= []).push({ x: t.x, y: t.y, r }); }
+    }
   }
   private cells(x0: number, y0: number, x1: number, y1: number): number[] {
     const out: number[] = [], C = this.C;
@@ -143,6 +161,16 @@ export class CitySpace {
       const qb = bounds(q);
       if (qb.x1 <= b.x0 || qb.x0 >= b.x1 || qb.y1 <= b.y0 || qb.y0 >= b.y1) continue;
       if (overlaps(mine, q)) return true;
+    }
+    return false;
+  }
+  /** Does any point of the shape lie on a city wall, its ditch or a tower (closer than `margin` metres)? */
+  onWall(p: readonly Pt[], margin = 0.3): boolean {
+    if (!this.walls.length) return false;
+    for (const [x, y] of probes(p)) {
+      const c = Math.floor(y / this.C) * this.cw + Math.floor(x / this.C);
+      for (const s of this.wallSegs[c] ?? []) if (distToSegment(x, y, s.ax, s.ay, s.bx, s.by) < s.half + margin) return true;
+      for (const t of this.towers[c] ?? []) if (Math.hypot(x - t.x, y - t.y) < t.r + margin) return true;
     }
     return false;
   }
@@ -203,20 +231,21 @@ export interface FrontageOptions {
 }
 
 export interface PlannedBuilding { points: Pt[]; kind: BuildingKind; roof: RoofStyle; street: string }
-export type SkipReason = "water" | "steep" | "street" | "building" | "edge" | "wood";
+export type SkipReason = "water" | "steep" | "street" | "wall" | "building" | "edge" | "wood";
 
 /** Buildings along the given streets, as a street fills up (see STREET_CHARACTERS); what couldn't be placed is counted by why. */
 export function planFrontage(doc: MapDoc, streets: readonly MapStreet[], o: FrontageOptions = {}): { buildings: PlannedBuilding[]; byStreet: Record<string, number>; skipped: Record<SkipReason, number> } {
   const base = STREET_CHARACTERS[o.character ?? "town"];
   const ch: StreetCharacter = { ...base, ...(o.width && { width: o.width }), ...(o.depth && { depth: o.depth }), ...(o.gap && { gap: o.gap }), ...(o.setback && { setback: o.setback }), ...(o.roofs && { roofs: o.roofs }), ...(o.kinds && { kinds: o.kinds }), ...(o.backRow !== undefined && { backRow: o.backRow }) };
   const space = new CitySpace(doc), maxSlope = o.maxSlope ?? STEEP_PERCENT, limit = o.limit ?? 1500;
-  const out: PlannedBuilding[] = [], byStreet: Record<string, number> = {}, skipped: Record<SkipReason, number> = { water: 0, steep: 0, street: 0, building: 0, edge: 0, wood: 0 };
+  const out: PlannedBuilding[] = [], byStreet: Record<string, number> = {}, skipped: Record<SkipReason, number> = { water: 0, steep: 0, street: 0, wall: 0, building: 0, edge: 0, wood: 0 };
   const why = (p: Pt[]): SkipReason | null => {
     if (!space.inside(p)) return "edge";
     if (space.onWater(p)) return "water";
     const c = p.reduce((s, q) => [s[0] + q[0] / p.length, s[1] + q[1] / p.length], [0, 0]);
     if (space.slope(c[0], c[1]) > maxSlope) return "steep";
     if (space.onStreet(p)) return "street";
+    if (space.onWall(p)) return "wall";
     if (space.onBuilding(p, 0)) return "building";
     if (o.keepWoods !== false && space.inWood(p)) return "wood";
     return null;
@@ -471,11 +500,14 @@ export interface CityReport {
   streets: number;
   in_water: { count: number; examples: CityProblem[] };
   on_streets: { count: number; examples: CityProblem[] };
+  on_walls: { count: number; examples: CityProblem[] };
   overlapping: { count: number; examples: CityProblem[] };
   on_steep_ground: { count: number; examples: CityProblem[] };
   dead_end_main_streets: { count: number; examples: CityProblem[] };
   long_bridges: { count: number; examples: (CityProblem & { length_m: number })[] };
   fords_on_main_streets: { count: number; examples: CityProblem[] };
+  /** The city walls: how many, their gates and towers, and rings no street passes through (a town with no way in). */
+  walls: { count: number; gates: number; towers: number; rings_without_gate: CityProblem[] };
   /** The share of buildings at the most common angle and size: high for both reads as a grid of stamps. */
   regularity: { same_angle_percent: number; same_size_percent: number; looks_stamped: boolean };
 }
@@ -486,7 +518,8 @@ export function cityProblems(doc: MapDoc): CityReport {
   const buildings = (f.buildings ?? []) as MapBuilding[], streets = (f.streets ?? []) as MapStreet[];
   const bucket = () => ({ count: 0, examples: [] as CityProblem[] });
   const report: CityReport = {
-    buildings: buildings.length, streets: streets.length, in_water: bucket(), on_streets: bucket(), overlapping: bucket(), on_steep_ground: bucket(),
+    buildings: buildings.length, streets: streets.length, in_water: bucket(), on_streets: bucket(), on_walls: bucket(), overlapping: bucket(), on_steep_ground: bucket(),
+    walls: { count: space.walls.length, gates: space.walls.reduce((n, w) => n + w.gates.length, 0), towers: space.walls.reduce((n, w) => n + w.towers.length, 0), rings_without_gate: space.walls.filter((w) => w.closed && !w.gates.length).map((w) => ({ id: w.wallId, at: [Math.round(w.ring![0][0]), Math.round(w.ring![0][1])] as [number, number] })) },
     dead_end_main_streets: bucket(), long_bridges: { count: 0, examples: [] }, fords_on_main_streets: bucket(), regularity: { same_angle_percent: 0, same_size_percent: 0, looks_stamped: false },
   };
   const note = (b: { count: number; examples: CityProblem[] }, id: string, at: [number, number]) => { b.count++; if (b.examples.length < 8) b.examples.push({ id, at: [Math.round(at[0]), Math.round(at[1])] }); };
@@ -497,6 +530,7 @@ export function cityProblems(doc: MapDoc): CityReport {
     const p = b.points as Pt[], c: [number, number] = [p.reduce((s, q) => s + q[0], 0) / p.length, p.reduce((s, q) => s + q[1], 0) / p.length];
     if (space.onWater(shrink(p, 0.3))) note(report.in_water, b.id, c);
     if (seen.onStreet(shrink(p, 0.3), -0.2)) note(report.on_streets, b.id, c);
+    if (space.onWall(shrink(p, 0.3), -0.2)) note(report.on_walls, b.id, c);
     if (seen.onBuilding(p)) note(report.overlapping, b.id, c);
     if (space.slope(c[0], c[1]) > STEEP_PERCENT) note(report.on_steep_ground, b.id, c);
     seen.addBuilding(p);

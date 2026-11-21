@@ -15,7 +15,7 @@ When a panel is shown or hidden, a view that still shows the whole map is fitted
 
 ## City maps
 
-A city map has its own tools (the sheet from `?` lists them): `H` Pan, `V` Select, `B` Building, `O` Outline, `S` Street, `P` Paint ground, `L` Land (hills, ridges, valleys, plateaus, slopes), `T` Trees. The view keys (`0`, `+`, `-`, arrows, `Space`) are the same as everywhere. On a city map, with something selected, `Q` and `E` turn the buildings 15° (with the Building tool and nothing selected they set the angle of the next one), the arrow keys nudge the selection half a metre (`Shift`: 5 m; quick presses are one undo step), `Delete` removes it, dragging on bare ground with Select draws a box that selects, and `Shift`-click adds to the selection. Copy, paste and duplicate are not there yet.
+A city map has its own tools (the sheet from `?` lists them): `H` Pan, `V` Select, `B` Building, `O` Outline, `S` Street, `W` Wall (click the first point to close a ring; double-click or `Enter` ends an open wall), `P` Paint ground, `L` Land (hills, ridges, valleys, plateaus, slopes), `T` Trees. The view keys (`0`, `+`, `-`, arrows, `Space`) are the same as everywhere. On a city map, with something selected, `Q` and `E` turn the buildings 15° (with the Building tool and nothing selected they set the angle of the next one), the arrow keys nudge the selection half a metre (`Shift`: 5 m; quick presses are one undo step), `Delete` removes it, dragging on bare ground with Select draws a box that selects, and `Shift`-click adds to the selection. Copy, paste and duplicate are not there yet.
 
 ## Moving around
 

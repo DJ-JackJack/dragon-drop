@@ -10,6 +10,7 @@ import {
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
 import { landSummary } from "./cityLandTools.ts";
+import { describeWall } from "./cityWallTools.ts";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
 
 function define<S extends z.ZodType>(t: ToolDef<S>): ToolDef<S> {
@@ -51,10 +52,11 @@ export function citySummary(ctx: ToolContext) {
     project: doc.meta.id, name: doc.meta.name, kind: "city map", size_metres: [sp.widthM, sp.heightM], ground_cell_metres: sp.cellM,
     ground: Object.entries(counts).map(([m, n]) => ({ material: MATERIALS[Number(m)]?.name ?? "?", share_percent: Math.round((n / sampled) * 100) })).filter((g) => g.share_percent > 0),
     buildings: (f.buildings ?? []).length, buildings_by_kind: kinds, streets: (f.streets ?? []).length, bridges: bridgesOf(ctx, f.streets ?? []).length,
+    ...((f.cityWalls ?? []).length && { walls: (f.cityWalls ?? []).map((w) => describeWall(ctx, w)).map(({ id, kind, ring, length_m, towers, gates }) => ({ id, kind, ...(ring && { ring }), length_m, towers, gates: gates.length })) }),
     roofs_from_asset_packs: (f.buildings ?? []).filter((b) => b.asset).length, roof_textures_available: ctx.roofPools?.() ? Object.fromEntries(ROOF_STYLES.map((s) => [s, ctx.roofPools!()![s].length])) : "no asset library is set up",
     trace_picture: f.trace?.ref ?? null, latest_change: ctx.session().seq,
     land: landSummary(ctx),
-    note: "Coordinates are metres from the top-left corner. render_city looks at it; shape_land, set_city_climate, paint_ground, add_streets, add_buildings and add_trees build it.",
+    note: "Coordinates are metres from the top-left corner. render_city looks at it; shape_land, set_city_climate, paint_ground, add_streets, add_city_walls, add_buildings and add_trees build it.",
   };
 }
 

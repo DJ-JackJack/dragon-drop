@@ -249,6 +249,26 @@ export interface MapStreet {
   bridge?: "stone" | "wood" | "none";
 }
 
+/** What a city wall is built of (cityWalls.ts gives each its look, thickness and towers). */
+export type CityWallKind = "stone" | "palisade" | "earth";
+
+/**
+ * A city wall on a city map: a line through points in metres, or a ring (`closed`: the last point joins the first). Towers and gates are worked out from it and the streets
+ * each time it is drawn (cityWalls.ts): a gate wherever a street crosses it.
+ */
+export interface MapCityWall {
+  id: string;
+  name?: string;
+  points: [number, number][];
+  closed?: boolean;
+  /** Default stone. */
+  kind?: CityWallKind;
+  /** Metres across the top (default by kind: stone 3, palisade 1.2, earth 7). */
+  thickness?: number;
+  /** Metres between towers, 0 for none (default by kind: stone 40, palisade 30, earth 0). */
+  towers?: number;
+}
+
 /**
  * The lie of the land on a city map, as shapes (cityLand.ts adds them up into heights, the shading and the contour lines). A hill is its top (one point); a ridge is a line along its
  * crest, and with a negative height it is a valley; a plateau is an outline raised (or, negative, sunk) evenly with a soft edge; a slope is two points, the ground rising by `height` from
@@ -374,6 +394,8 @@ export interface Features {
   land?: MapLandform[];
   /** City maps: woods, orchards, rows and single trees. */
   trees?: MapTrees[];
+  /** City maps: walls (towers and gates are worked out from them and the streets: cityWalls.ts). */
+  cityWalls?: MapCityWall[];
 }
 
 export interface FeaturesPatch {
@@ -411,6 +433,8 @@ export interface FeaturesPatch {
   removeLand?: string[];
   upsertTrees?: MapTrees[];
   removeTrees?: string[];
+  upsertCityWalls?: MapCityWall[];
+  removeCityWalls?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -515,6 +539,12 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertTrees ?? []) trees.set(x.id, x);
     out.trees = [...trees.values()];
   } else if (f.trees) out.trees = f.trees;
+  if (p.upsertCityWalls || p.removeCityWalls) {
+    const walls = new Map((f.cityWalls ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeCityWalls ?? []) walls.delete(id);
+    for (const x of p.upsertCityWalls ?? []) walls.set(x.id, x);
+    out.cityWalls = [...walls.values()];
+  } else if (f.cityWalls) out.cityWalls = f.cityWalls;
   const trace = p.setTrace === undefined ? f.trace : p.setTrace;
   if (trace) out.trace = trace;
   return out;
@@ -556,6 +586,8 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.removeLand?.length) parts.push(`remove ${p.removeLand.length} landform(s)`);
   if (p.upsertTrees?.length) parts.push(p.upsertTrees.length === 1 ? (p.upsertTrees[0].name ?? p.upsertTrees[0].kind) : `${p.upsertTrees.length} groups of trees`);
   if (p.removeTrees?.length) parts.push(`remove ${p.removeTrees.length} group(s) of trees`);
+  if (p.upsertCityWalls?.length) parts.push(p.upsertCityWalls.length === 1 ? (p.upsertCityWalls[0].name ?? "city wall") : `${p.upsertCityWalls.length} city walls`);
+  if (p.removeCityWalls?.length) parts.push(`remove ${p.removeCityWalls.length} city wall(s)`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 

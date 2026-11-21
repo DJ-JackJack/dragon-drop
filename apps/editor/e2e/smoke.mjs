@@ -1298,6 +1298,17 @@ try {
     await page.getByTestId("reader-samples").waitFor({ state: "detached", timeout: 5000 });
     await page.getByTestId("trace-stop").click();
     await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
+    // a city wall: a ring clicked out with the Wall tool and closed on its first point; the street crossing it twice makes two gates (gatehouses); an earth rampart instead has no towers
+    await page.getByTestId("ctool-citywall").click();
+    for (const [x, y] of [[100, 100], [250, 90], [260, 270], [95, 265], [100, 100]]) await page.mouse.click(cx(x), cy(y));
+    await page.getByTestId("history").getByText("Add stone wall").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-wall-info").getByText(/· 2 gates/).waitFor({ timeout: 5000 });
+    await page.getByTestId("city-wall-edit-kind").selectOption("earth");
+    await page.getByTestId("history").getByText("Wall: Earth rampart").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-wall-info").getByText(/0 towers · 2 gates/).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-5d-city-wall.png") });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("city-summary").getByText(/1 · 2 gates · \d+ towers/).waitFor({ timeout: 5000 });
     await page.screenshot({ path: path.join(shots, "e2e-5-city.png") });
     // a city map is its own kind of project, listed as such, and the other kinds' tools are not on screen
     if (!(await page.locator("select.project").evaluate((s) => s.selectedOptions[0].textContent)).includes("(city)")) fail("a city map is not listed as a city");

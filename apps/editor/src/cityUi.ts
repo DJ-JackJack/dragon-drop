@@ -1,8 +1,8 @@
 /** The city map's tools, their keys and the editor's own settings for them (nothing here is saved with the map). One list: the toolbar, the key handler and the shortcut sheet read it. */
-import type { BuildingKind, Features, FeaturesPatch, MapBuilding, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
+import type { BuildingKind, CityWallKind, Features, FeaturesPatch, MapBuilding, MapCityWall, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
 import { store } from "./store.ts";
 
-export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "ground" | "hills" | "trees";
+export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees";
 
 /** What the Land tool makes: a hill (a click, or a drag for its size), a ridge or valley (points along it), a plateau or hollow (an outline), a slope (a drag from low to high). */
 export type LandMode = "hill" | "ridge" | "valley" | "plateau" | "hollow" | "slope";
@@ -32,13 +32,16 @@ export interface CityUi {
   treeKind: TreeGroup;
   treeSize: number;
   treeSpecies: TreeSpecies | "";
+  /** The Wall tool: what the next wall is built of, and metres between its towers (0: none). */
+  wallKind: CityWallKind;
+  wallTowers: number;
   /** Draw the contour lines. */
   contours: boolean;
 }
 
 export const defaultCityUi: CityUi = {
   tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", streetBridge: "auto", material: 4, brush: 6,
-  landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", contours: true,
+  landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", wallKind: "stone", wallTowers: 40, contours: true,
 };
 
 export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: string; key: string; tip: string }[] }[] = [
@@ -50,6 +53,7 @@ export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: str
     { id: "building", label: "Building", key: "B", tip: "Click to place a house; drag a rectangle to size one. Q and E turn it (15° at a time)" },
     { id: "outline", label: "Outline", key: "O", tip: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish; Backspace drops a corner, Esc cancels" },
     { id: "street", label: "Street", key: "S", tip: "Click the points a street passes through; double-click or press Enter to finish. Backspace drops a point, Esc cancels" },
+    { id: "citywall", label: "Wall", key: "W", tip: "Click the points of a city wall: click the first point to close it into a ring, or double-click or press Enter to end it. A gate appears wherever a street crosses it" },
   ] },
   { name: "Land", tools: [
     { id: "ground", label: "Paint ground", key: "P", tip: "Paint water, grass, cobbles and the like. [ and ] change the brush size" },
@@ -68,12 +72,25 @@ export function sendCityFeatures(patch: FeaturesPatch, label: string) {
 }
 
 /** The selected things, split by kind. */
-export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[] } {
+export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[]; walls: MapCityWall[] } {
   const want = new Set(ids);
   return {
     buildings: (f.buildings ?? []).filter((b) => want.has(b.id)), streets: (f.streets ?? []).filter((s) => want.has(s.id)),
-    trees: (f.trees ?? []).filter((t) => want.has(t.id)), land: (f.land ?? []).filter((l) => want.has(l.id)),
+    trees: (f.trees ?? []).filter((t) => want.has(t.id)), land: (f.land ?? []).filter((l) => want.has(l.id)), walls: (f.cityWalls ?? []).filter((w) => want.has(w.id)),
   };
+}
+
+/** Remove the selected things, as one edit. */
+export function removeSelected(f: Features, ids: string[]): boolean {
+  const { buildings, streets, trees, land, walls } = selectedOf(f, ids);
+  const n = buildings.length + streets.length + trees.length + land.length + walls.length;
+  if (!n) return false;
+  const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : walls.length ? "Delete wall" : `Delete ${landName(land[0]).toLowerCase()}`;
+  sendCityFeatures({
+    ...(buildings.length && { removeBuildings: buildings.map((b) => b.id) }), ...(streets.length && { removeStreets: streets.map((s) => s.id) }),
+    ...(trees.length && { removeTrees: trees.map((t) => t.id) }), ...(land.length && { removeLand: land.map((l) => l.id) }), ...(walls.length && { removeCityWalls: walls.map((w) => w.id) }),
+  }, what);
+  return true;
 }
 
 /** A landform as the DM thinks of it: a ridge sunk is a valley, a plateau sunk a hollow. */

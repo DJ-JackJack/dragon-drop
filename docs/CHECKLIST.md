@@ -20,7 +20,7 @@ hiding labels and markers; deleting maps; the startup fix; School and Whirlpool 
 ## Bigger work
 
 - [x] **Too many lakes on new maps** (a new continent or island is about 20% lake): drain the generated land so water runs to the sea, and a "how many lakes" setting for new maps (`PLAN.md`, Water model). *(2026-11-21: a mountainous continent 19% lake before, 1.3% now; Lakes: none, few, some, many)*
-- [x] **City picture reader** (city stage 2): read a city picture's buildings onto a city map, the DM clicking one example of each kind of roof (`CITY-MAPS.md`, `spikes/city-reader/`). *(done 2026-11-20: the trace bar's Read buildings… on a city map, and Claude's `read_picture_buildings`; still to try on the DM's own city pictures)*
+- [x] **City picture reader** (city stage 2): read a city picture's buildings onto a city map, the DM clicking one example of each kind of roof (`CITY-MAPS.md`, `spikes/city-reader/`). *(done 2026-11-21: the trace bar's Read buildings… on a city map, and Claude's `read_picture_buildings`; still to try on the DM's own city pictures)*
 - [ ] **More for cities**: walls with towers and gates; names and labels; picture export and the phone page; copy and paste; a battlemap from a spot in the city with a Foundry export (`CITY-MAPS.md` stages 3 to 5).
 - [ ] **Screen leftovers**: a bottom bar (save status, grid, zoom, Fit); Layers as eye-icon switches; an icons-only tool rail; an Objects list for cities and battlemaps.
 - [ ] **Water, later stages**: rivers and lakes as named, selectable things with a River tool; valleys carved by rivers; meanders, oxbows and deltas (`PLAN.md`, Water model).

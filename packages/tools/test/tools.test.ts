@@ -44,6 +44,11 @@ function memoryContext(): ToolContext & { brief: string } {
 }
 
 describe("tools", () => {
+  it("no two tools share a name (the second would never be reached)", () => {
+    const seen = new Set<string>(), twice = TOOLS.map((t) => t.name).filter((n) => (seen.has(n) ? true : (seen.add(n), false)));
+    expect(twice).toEqual([]);
+  });
+
   it("every tool has a JSON schema with type object", () => {
     const schemas = toolJsonSchemas();
     expect(schemas.length).toBe(TOOLS.length);

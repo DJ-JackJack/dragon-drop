@@ -1,6 +1,6 @@
 /**
  * A city map as a picture (for Claude's previews and for exports): the ground (in the climate's colours, shaded by the land), the contour lines, the streets, the trees, then the
- * buildings drawn as roofs (with snow on them in the cold). The editor draws the same things as vectors on its canvas (CityView), with the same colours (`buildingColour`,
+ * buildings drawn as roofs (with snow on them in the cold), then the city walls with their towers and gates. The editor draws the same things as vectors on its canvas (CityView), with the same colours (`buildingColour`,
  * `cityGroundColours`, `treeColour`).
  */
 import { type MapDoc } from "./doc.ts";
@@ -11,6 +11,7 @@ import { type CitySpec, buildingToRoof, citySpec } from "./city.ts";
 import { type LandGrid, cityClimate, cityGroundColours, contourLines, landGrid, landShade, snowCover, treeColour, treeCrowns } from "./cityLand.ts";
 import { pointInPolygon } from "./geom.ts";
 import { BRIDGE_COLOURS, type BridgeSpan, cityBridges, deckDistance } from "./cityBridges.ts";
+import { WALL_COLOURS, type WallPieces, cityWallPieces } from "./cityWalls.ts";
 import { type Rect, distToSegment } from "./geom.ts";
 import type { RGBAImage } from "./render.ts";
 
@@ -72,6 +73,7 @@ export function renderCity(doc: MapDoc, o: CityRenderOptions = {}): CityRender {
     const snow = snowCover(cityClimate(spec));
     if (snow > 0) for (const b of shown) fillPolygon(img, b.points, OX, OY, px, SNOW, snow * 0.55);
   }
+  paintWalls(cityWallPieces(doc.features?.cityWalls, doc.features?.streets), img, OX, OY, px);
   return { img, px, region: { x: OX / px, y: OY / px, w: W / px, h: H / px } };
 }
 
@@ -215,6 +217,101 @@ function paintBridges(spans: BridgeSpan[], img: LookImage, OX: number, OY: numbe
     for (const [x, y] of b.posts) {
       const sx = x * px - OX, sy = y * px - OY, r = Math.max(0.6, 0.3 * px);
       for (let yy = Math.max(0, Math.floor(sy - r)); yy <= Math.min(img.h - 1, Math.ceil(sy + r)); yy++) for (let xx = Math.max(0, Math.floor(sx - r)); xx <= Math.min(img.w - 1, Math.ceil(sx + r)); xx++) over(d, (yy * img.w + xx) * 4, C.woodRail[0], C.woodRail[1], C.woodRail[2], 1);
+    }
+  }
+}
+
+/**
+ * City walls: an earth rampart's ditch (outside a ring), the shadow, the wall (its edge, its top, a stone wall's wall-walk or a rampart's crest), then the towers (round with a
+ * roof, or square). The gates are the gaps the streets pass through, flanked by a gatehouse's towers.
+ */
+function paintWalls(walls: WallPieces[], img: LookImage, OX: number, OY: number, px: number) {
+  const C = WALL_COLOURS, d = img.data, W = img.w, H = img.h;
+  for (const w of walls) {
+    if (!w.stretches.length && !w.towers.length) continue;
+    const t = w.thickness, half = t / 2, edgeM = Math.max(0.35, 0.8 / px), sh = Math.max(0.6, t * 0.3), ditch = w.kind === "earth" ? t * 0.7 : 0;
+    const top = w.kind === "stone" ? C.stoneTop : w.kind === "palisade" ? C.woodTop : C.earthBank, edge = w.kind === "stone" ? C.stoneEdge : w.kind === "palisade" ? C.woodEdge : C.earthEdge;
+    // the distance of every pixel near the wall to its middle line (metres)
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const s of w.stretches) for (const [x, y] of s.points) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    for (const q of w.towers) { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+    const reach = half + ditch + sh + 2 + Math.max(0, ...w.towers.map((q) => q.r * 1.5));
+    const X0 = Math.max(0, Math.floor((x0 - reach) * px - OX)), X1 = Math.min(W - 1, Math.ceil((x1 + reach) * px - OX));
+    const Y0 = Math.max(0, Math.floor((y0 - reach) * px - OY)), Y1 = Math.min(H - 1, Math.ceil((y1 + reach) * px - OY));
+    if (X0 > X1 || Y0 > Y1) continue;
+    const bw = X1 - X0 + 1, bh = Y1 - Y0 + 1, dist = new Float32Array(bw * bh).fill(Infinity);
+    for (const s of w.stretches) {
+      const pts = s.points, n = pts.length, sides = s.closed ? n : n - 1;
+      for (let i = 0; i < sides; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % n], r = half + ditch + 1 / px;
+        const sx0 = Math.max(X0, Math.floor((Math.min(ax, bx) - r) * px - OX)), sx1 = Math.min(X1, Math.ceil((Math.max(ax, bx) + r) * px - OX));
+        const sy0 = Math.max(Y0, Math.floor((Math.min(ay, by) - r) * px - OY)), sy1 = Math.min(Y1, Math.ceil((Math.max(ay, by) + r) * px - OY));
+        // (an open stretch ends square at a gate or at the wall's end: past its first or last point nothing is drawn)
+        const cutStart = !s.closed && i === 0, cutEnd = !s.closed && i === sides - 1, ex = bx - ax, ey = by - ay, l2 = ex * ex + ey * ey || 1e-9;
+        for (let y = sy0; y <= sy1; y++) for (let x = sx0; x <= sx1; x++) {
+          const mx = (OX + x + 0.5) / px, my = (OY + y + 0.5) / px;
+          if (cutStart || cutEnd) { const f = ((mx - ax) * ex + (my - ay) * ey) / l2; if ((cutStart && f < 0) || (cutEnd && f > 1)) continue; }
+          const k = (y - Y0) * bw + (x - X0), dd = distToSegment(mx, my, ax, ay, bx, by);
+          if (dd < dist[k]) dist[k] = dd;
+        }
+      }
+    }
+    const cover = (inside: number) => clamp(inside * px + 0.5, 0, 1);
+    // an earth rampart's ditch, outside a ring
+    if (ditch > 0 && w.ring) {
+      for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+        const dd = dist[(y - Y0) * bw + (x - X0)];
+        if (dd <= half - 0.5 || dd >= half + ditch + 1) continue;
+        if (pointInPolygon((OX + x + 0.5) / px, (OY + y + 0.5) / px, w.ring)) continue;
+        over(d, (y * W + x) * 4, C.ditch[0], C.ditch[1], C.ditch[2], 0.75 * cover(half + ditch - dd));
+      }
+    }
+    // the shadow, down and to the right
+    const shp = Math.round(sh * px);
+    if (shp >= 1) for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+      const sx = x - shp, sy = y - shp;
+      if (sx < X0 || sy < Y0) continue;
+      const a = cover(half - dist[(sy - Y0) * bw + (sx - X0)]);
+      if (a > 0) over(d, (y * W + x) * 4, 0, 0, 0, a * 0.28);
+    }
+    // the wall: its edge, its top, and down the middle the wall-walk (stone) or the crest (earth)
+    for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+      const dd = dist[(y - Y0) * bw + (x - X0)], o = (y * W + x) * 4, a = cover(half - dd);
+      if (a <= 0) continue;
+      over(d, o, edge[0], edge[1], edge[2], a);
+      const b = cover(half - edgeM - dd);
+      if (b > 0) over(d, o, top[0], top[1], top[2], b);
+      if (w.kind === "stone") { const c = cover(t * 0.2 - dd); if (c > 0) over(d, o, C.stoneWalk[0], C.stoneWalk[1], C.stoneWalk[2], c); }
+      if (w.kind === "earth") { const c = cover(t * 0.14 - dd); if (c > 0) over(d, o, C.earthCrest[0], C.earthCrest[1], C.earthCrest[2], c); }
+    }
+    // the towers
+    for (const q of w.towers) {
+      const cx = q.x * px - OX, cy = q.y * px - OY, R = q.r * px * (q.square ? 1.42 : 1) + 2;
+      const tx0 = Math.max(0, Math.floor(cx - R)), tx1 = Math.min(W - 1, Math.ceil(cx + R + sh * px)), ty0 = Math.max(0, Math.floor(cy - R)), ty1 = Math.min(H - 1, Math.ceil(cy + R + sh * px));
+      const ca = Math.cos(q.angle), sa = Math.sin(q.angle);
+      /** How far inside the tower a point is (metres; negative outside). */
+      const inside = (mx: number, my: number) => {
+        const ux = mx - q.x, uy = my - q.y;
+        if (!q.square) return q.r - Math.hypot(ux, uy);
+        return q.r - Math.max(Math.abs(ux * ca + uy * sa), Math.abs(-ux * sa + uy * ca));
+      };
+      const body = w.kind === "palisade" ? C.woodTower : C.stoneTower, roof = w.kind === "palisade" ? C.woodEdge : C.stoneRoof;
+      for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
+        const mx = (OX + x + 0.5) / px, my = (OY + y + 0.5) / px, o = (y * W + x) * 4;
+        const s = cover(inside(mx - sh, my - sh));
+        if (s > 0) over(d, o, 0, 0, 0, s * 0.28);
+        const k = inside(mx, my), a = cover(k);
+        if (a <= 0) continue;
+        over(d, o, edge[0], edge[1], edge[2], a);
+        const b = cover(k - edgeM);
+        if (b > 0) over(d, o, body[0], body[1], body[2], b);
+        // a round tower's roof (lit from the top left), a square one's flat top inside its parapet
+        const rr = cover(k - q.r * 0.3);
+        if (rr > 0) {
+          const lit = q.square ? 1 : 1 + 0.25 * clamp(-((mx - q.x) + (my - q.y)) / (q.r * 1.2), -1, 1);
+          over(d, o, clamp(roof[0] * lit, 0, 255), clamp(roof[1] * lit, 0, 255), clamp(roof[2] * lit, 0, 255), rr * (q.square ? 0.35 : 0.9));
+        }
+      }
     }
   }
 }
