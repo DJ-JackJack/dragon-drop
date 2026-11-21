@@ -20,6 +20,7 @@ const P: Record<string, ReactNode> = {
   region: <path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11-1 4.5 4.5 0 0 0 1 9z" />,
   detail: <><rect x="3" y="3" width="12" height="12" /><circle cx="16" cy="16" r="4" /><path d="M19 19l3 3" /></>,
   battlehere: <><rect x="4" y="4" width="16" height="16" /><path d="M4 12h16M12 4v16" /></>,
+  cityhere: <><path d="M3 20V11l4-3 4 3v9M11 20v-6l5-4 5 4v6M3 20h18" /><path d="M6 15h2M15 16h2" /></>,
   // battlemaps
   brush: <path d="M4 20c0-3 2-4 4-4l9-9a2.5 2.5 0 0 1 3 3l-9 9c0 2-2 4-7 4z" />,
   room: <><rect x="4" y="5" width="16" height="14" /><path d="M9 10h6v4H9z" /></>,

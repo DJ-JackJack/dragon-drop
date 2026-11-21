@@ -1291,6 +1291,16 @@ try {
     if ((await page.evaluate(() => [localStorage.getItem("dd.showLabels"), localStorage.getItem("dd.showMarkers")].join())) !== "0,0") fail("the label and marker switches are not remembered");
     await page.getByTestId("show-labels").check();
     await page.getByTestId("show-markers").check();
+    // City here: a click on the world map asks for a city map's name and size (Cancel makes nothing; the making itself is tested on the server, where a spot on land is known)
+    await page.getByRole("button", { name: "City here" }).click();
+    await page.getByTestId("tool-hint").getByText(/town's marker or any spot on land/).waitFor({ timeout: 5000 });
+    const wb = await page.getByTestId("map-canvas").boundingBox();
+    await page.mouse.click(wb.x + wb.width / 2, wb.y + wb.height / 2);
+    await page.getByTestId("city-here-dialog").waitFor({ timeout: 5000 });
+    if ((await page.getByTestId("city-here-w").inputValue()) === "") fail("the City here box has no width");
+    await page.getByTestId("city-here-dialog").getByRole("button", { name: "Cancel" }).click();
+    await page.getByTestId("city-here-dialog").waitFor({ state: "detached", timeout: 5000 });
+    await page.keyboard.press("h");
   }
 
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);

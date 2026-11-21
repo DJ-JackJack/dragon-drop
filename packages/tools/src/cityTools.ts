@@ -127,6 +127,37 @@ export const CITY_TOOLS = [
   }),
 
   define({
+    name: "create_city_here",
+    description:
+      "Start a city map from a spot on the open WORLD map and open it: a place (its name, as on the map) or a point (x, y in map pixels). The city takes the world map's climate and height above the sea there, " +
+      "the lie of the land (a slope as the ground rises), and where the world map has them the sea and a beach on the coast's side, a winding river in its valley, woods in wooded country and a hill in hilly country. " +
+      "Its size follows the kind of place (a capital 3000 x 2000 m, a city 2000 x 1400, a town 1000 x 700, a village 450 x 320) unless given. It remembers the spot (a way back to the world map). " +
+      "A world-map pixel is a kilometre or more, so this is a rough start: say what it took from the world map, then shape it (shape_land, paint_ground) with the DM. Refused at sea.",
+    schema: z.object({
+      place: z.string().min(1).max(80).optional().describe("A place on the open world map, by its name"),
+      x: z.number().optional(), y: z.number().optional(),
+      name: z.string().min(1).max(80).optional().describe("The city map's name (default: the place's)"),
+      width_m: z.number().min(50).max(6000).optional(), height_m: z.number().min(50).max(6000).optional(),
+    }),
+    async run(ctx, i) {
+      if (!ctx.createCityHere) return fail("Cities can't be started from a world map here.");
+      let doc;
+      try { doc = ctx.session().doc; } catch { return fail("Open a world map first."); }
+      let x = i.x, y = i.y, place: string | undefined;
+      if (i.place) {
+        const q = i.place.trim().toLowerCase(), p = doc.features?.places.find((pl) => pl.name.toLowerCase() === q);
+        if (!p) return fail(`No place called "${i.place}" on this map. list_places lists them.`);
+        x = p.x; y = p.y; place = p.name;
+      }
+      if (x === undefined || y === undefined) return fail("Give a place (its name) or a point (x and y in map pixels).");
+      try {
+        const info = await ctx.createCityHere({ name: i.name ?? place ?? "", x, y, widthM: i.width_m, heightM: i.height_m, place });
+        return json({ created: info, summary: citySummary(ctx) });
+      } catch (e) { return fail((e as Error).message); }
+    },
+  }),
+
+  define({
     name: "render_city",
     description:
       "Render the city (or a part of it, in metres) to an image so you can see it, with a labelled grid in metres. Use after edits, and a region with a larger max_size to inspect detail. " +

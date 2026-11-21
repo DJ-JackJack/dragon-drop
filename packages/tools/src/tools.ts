@@ -43,6 +43,8 @@ export interface ToolContext {
   cityTiles?(): Promise<Record<string, { data: Uint8ClampedArray; size: number }>>;
   /** Optional: make a city map (sized in metres) and open it. */
   createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number }): Promise<ProjectInfo>;
+  /** Start a city from a spot on the open world map (cityWorld.ts); returns what it took from the world map, in words. */
+  createCityHere?(o: { name: string; x: number; y: number; widthM?: number; heightM?: number; place?: string }): Promise<ProjectInfo & { from_world: string[] }>;
   /** Optional: make a battlemap and open it. */
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
@@ -1569,7 +1571,7 @@ const WORLD_ONLY = new Set([
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
   "get_selection", "select_area", "clear_selection",
 ]);
-const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES]);
+const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);
 
 /** Validate input against the tool's schema and run it; errors become is_error results. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
+import { citySizeForPlace, placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
 import { PICTURE_RULE, References } from "./References.tsx";
 import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipboard.ts";
@@ -122,6 +122,9 @@ export function App() {
       store.send({ t: "create_battle_here", name, x, y });
     });
   }, []);
+  // "City here": the spot (or the town clicked) waits in a small box for a name and a size
+  const [cityHere, setCityHere] = useState<{ x: number; y: number; place: { name: string; type: string } | null } | null>(null);
+  const onCityHere = useCallback((x: number, y: number, place: { name: string; type: string } | null) => setCityHere({ x, y, place }), []);
   const onDetailArea = useCallback((rect: Rect) => {
     const m = store.getState().meta;
     if (!m) return;
@@ -300,7 +303,7 @@ export function App() {
         <MapView
           meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
           features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions} showLabels={showLabels} showMarkers={showMarkers}
-          lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere}
+          lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere} onCityHere={onCityHere}
           selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
         >
           <SelectionBar
@@ -470,6 +473,7 @@ export function App() {
         )}
       </div>
       {newOpen && <NewMapDialog onClose={() => setNewOpen(false)} />}
+      {cityHere && <CityHereDialog spot={cityHere} onClose={() => setCityHere(null)} onMake={(name) => { setMaking(name); setCityHere(null); }} />}
       {settingsOpen && desktop && <DesktopSettings onClose={() => setSettingsOpen(false)} />}
       {helpOpen && <ShortcutHelp battle={isBattle} city={isCity} onClose={() => setHelpOpen(false)} />}
       {sketchRef && <SketchDialog refInfo={sketchRef} mapHasLand={mapHasLand()} onClose={() => setSketchRef(null)} />}
@@ -643,5 +647,30 @@ function DeleteMap({ meta }: { meta: MapMeta }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** "City here": a name and a size (suggested by the kind of place clicked) for a city map started from a spot on the world map. */
+function CityHereDialog({ spot, onClose, onMake }: { spot: { x: number; y: number; place: { name: string; type: string } | null }; onClose: () => void; onMake: (name: string) => void }) {
+  const size = citySizeForPlace(spot.place?.type);
+  const [name, setName] = useState(spot.place?.name ?? "");
+  const [w, setW] = useState(size.widthM), [h, setH] = useState(size.heightM);
+  const make = () => { const n = name.trim() || "City"; store.send({ t: "create_city_here", name: n, x: spot.x, y: spot.y, widthM: w, heightM: h }); onMake(n); };
+  return (
+    <div className="modal-back" onMouseDown={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" data-testid="city-here-dialog" onMouseDown={(e) => e.stopPropagation()}>
+        <h2>A city map {spot.place ? <>of {spot.place.name}</> : "here"}</h2>
+        <p className="muted">Its climate, height above the sea, slope, coast, river and woods come from this spot on the world map. A world-map pixel is a kilometre or more, so it is a rough start to shape.</p>
+        <label>Name<input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && make()} data-testid="city-here-name" /></label>
+        <div className="row">
+          <label>Width (m)<input type="number" min={50} max={6000} step={50} value={w} onChange={(e) => setW(Number(e.target.value))} data-testid="city-here-w" /></label>
+          <label>Height (m)<input type="number" min={50} max={6000} step={50} value={h} onChange={(e) => setH(Number(e.target.value))} data-testid="city-here-h" /></label>
+        </div>
+        <div className="row end">
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={make} data-testid="city-here-make">Make city map</button>
+        </div>
+      </div>
+    </div>
   );
 }

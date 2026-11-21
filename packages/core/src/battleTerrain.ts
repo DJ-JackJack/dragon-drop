@@ -17,6 +17,8 @@ export interface WorldSample {
   underwater: boolean;
   /** Rise over run of the ground. */
   slope: number;
+  /** Which way the ground rises (a unit direction on the map; y runs down), when it isn't flat. */
+  uphill?: { dx: number; dy: number };
   /** 0..1 */
   temp: number;
   moist: number;
@@ -42,6 +44,7 @@ export function sampleWorld(parent: MapDoc, d: Derived | null, x: number, y: num
     temp: d && d.W === hf.w ? d.temp[i] / 255 : 0.5, moist: d && d.W === hf.w ? d.moist[i] / 255 : 0.5, snow: d && d.W === hf.w ? d.snow[i] / 255 : 0,
     lake: !!d && d.W === hf.w && d.lakes[i] > 0,
   };
+  if (Math.hypot(gx, gy) > 1e-6) { const l = Math.hypot(gx, gy); out.uphill = { dx: gx / l, dy: gy / l }; }
   if (!out.underwater) {
     let sx = 0, sy = 0, n = 0;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && hf.get(px + dx, py + dy) <= sea) { sx += dx; sy += dy; n++; }

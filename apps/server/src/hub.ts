@@ -11,7 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
-  citySizeError, createCityDoc, defaultCellM, isCity, isWorld, renderCity, type RoofPools, groupRoofAssets,
+  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, defaultCellM, isCity, isWorld, renderCity, type RoofPools, groupRoofAssets,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -261,6 +261,41 @@ export class Hub {
     await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A city map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres. Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
     await this.openProject(id);
     return (await this.store.list()).find((p) => p.id === id)!;
+  }
+
+  /**
+   * Start a city from a spot on the open world map (the "City here" tool, Claude's create_city_here): its climate, height above the sea, slope, coast, river and woods come from
+   * what the world map says is there (core cityWorld.ts), and it remembers the spot (`meta.origin`) for the way back. Refused at sea.
+   */
+  async createCityFromWorld(o: { name: string; x: number; y: number; widthM?: number; heightM?: number; cellM?: number; place?: string }) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    const parent = op.session.doc;
+    if (!isWorld(parent)) throw new Error("Open a world map first: this starts a city from a spot on one.");
+    if (op.session.inTransaction) op.session.commit();
+    if (!(o.x >= 0 && o.y >= 0 && o.x < parent.height.w && o.y < parent.height.h)) throw new Error(`That point is off the map (${parent.height.w} x ${parent.height.h} px).`);
+    const d = await this.refreshDerived(op, true);
+    const sample = sampleWorld(parent, d, o.x, o.y);
+    if (sample.underwater) throw new Error("That spot is sea on the world map. Pick a point on land (on the coast, for a harbour town).");
+    const kind = parent.features?.places.find((p) => p.name === o.place)?.type;
+    const size = citySizeForPlace(kind);
+    const widthM = o.widthM ?? size.widthM, heightM = o.heightM ?? size.heightM, cell = o.cellM ?? defaultCellM(widthM, heightM);
+    const err = citySizeError(widthM, heightM, cell);
+    if (err) throw new Error(err);
+    const name = (o.name ?? "").trim() || o.place || `${parent.meta.name} town`;
+    const id = await this.store.uniqueId(name);
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const doc = createCityDoc({ id, name, widthM, heightM, cellM: cell, seed });
+    const said = cityFromWorld(doc, sample, { kmPerPx: parent.meta.kmPerPx, seed });
+    const at = { x: Math.round(o.x), y: Math.round(o.y) };
+    doc.meta.origin = { id: parent.meta.id, name: parent.meta.name, ...at };
+    doc.meta.notes = `Started from ${parent.meta.name} at (${at.x}, ${at.y}): ${said.join("; ")}.`;
+    await this.store.createFrom(doc, `# ${name}: Design Brief
+
+*A city map, ${widthM} x ${heightM} metres, started from map px (${at.x}, ${at.y}) of **${parent.meta.name}** (project \`${parent.meta.id}\`)${o.place ? `, the place "${o.place}"` : ""}. From the world map (a rough start: a world-map pixel is ${parent.meta.kmPerPx} km): ${said.join("; ")}. Record what the city is, how it is laid out and what the DM has decided. Names are the DM's.*\n`);
+    await this.openProject(id);
+    const info = (await this.store.list()).find((p) => p.id === id)!;
+    return { ...info, from_world: said };
   }
 
   /** Make a battlemap (a grid-based tabletop map) and open it. */
@@ -871,6 +906,11 @@ export class Hub {
           return await this.createBattle(msg);
         case "create_city":
           return await this.createCity(msg);
+        case "create_city_here": {
+          const place = this.open?.session.doc.features?.places.find((p) => Math.hypot(p.x - msg.x, p.y - msg.y) < 1.5)?.name;
+          await this.createCityFromWorld({ name: msg.name, x: msg.x, y: msg.y, widthM: msg.widthM, heightM: msg.heightM, place });
+          return;
+        }
         case "create_battle_here":
           return await this.createBattleFromWorld({ name: msg.name, x: msg.x, y: msg.y, squaresX: msg.squaresX, squaresY: msg.squaresY });
         case "create_regional":
@@ -1054,6 +1094,11 @@ export class Hub {
       },
       createBattleHere: async (o) => {
         const info = await self.createBattleFromWorld(o);
+        self.projectsCache = await self.store.list();
+        return info;
+      },
+      createCityHere: async (o) => {
+        const info = await self.createCityFromWorld(o);
         self.projectsCache = await self.store.list();
         return info;
       },

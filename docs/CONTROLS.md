@@ -42,7 +42,7 @@ A city map has its own tools (the sheet from `?` lists them): `H` Pan, `V` Selec
 | Delete what is selected | `Delete` or `Backspace` |
 | Turn or flip an object (battlemaps) | `Q` and `E` turn it 15°, `X` flips it; hold `Shift` or `Alt` while placing or moving to skip the snap (with `Shift`, once the drag has started: pressed at the click it adds to the selection) |
 
-World-map tools: `H` Pan, `V` Select, `E` Select area, `R` Raise, `L` Lower, `S` Smooth, `F` Flatten, `A` Land, `W` Water, `P` Place, `T` Label, `O` Roads, `C` Climate, `D` Detail map, `M` Battlemap here. Battlemap tools: `H` Pan, `V` Select, `B` Brush, `A` Area, `R` Room, `W` Wall, `D` Door, `S` Secret door, `N` Window, `I` Invisible wall, `L` Light, `Z` Shade, `K` Note, `P` Object, `F` Roof, `T` Stairs, `J` Ladder, `O` Hole. A tool's tooltip shows its key.
+World-map tools: `H` Pan, `V` Select, `E` Select area, `R` Raise, `L` Lower, `S` Smooth, `F` Flatten, `A` Land, `W` Water, `P` Place, `T` Label, `O` Roads, `C` Climate, `D` Detail map, `M` Battlemap here, `Y` City here. Battlemap tools: `H` Pan, `V` Select, `B` Brush, `A` Area, `R` Room, `W` Wall, `D` Door, `S` Secret door, `N` Window, `I` Invisible wall, `L` Light, `Z` Shade, `K` Note, `P` Object, `F` Roof, `T` Stairs, `J` Ladder, `O` Hole. A tool's tooltip shows its key.
 
 ## How this compares (checked 2026-11-18)
 

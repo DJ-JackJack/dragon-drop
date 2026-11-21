@@ -197,3 +197,37 @@ describe("planning tools", () => {
     await hub.close();
   });
 });
+
+describe("a city started from a world map", () => {
+  it("takes the spot's climate, height, coast and the way back; refuses the sea; names itself after a place clicked", async () => {
+    const { hub } = fresh();
+    await hub.createProject({ name: "World", width: 256, height: 256, kmPerPx: 2 });
+    hub.session.execute({ op: "generate_terrain", params: { template: "archipelago", seed: 7, landFraction: 0.35, mountains: 0.4 } }, "system");
+    const w = hub.session.doc, sea = w.meta.seaLevel;
+    // a land pixel beside the sea, and a sea pixel
+    let coast: [number, number] | null = null, water: [number, number] | null = null;
+    for (let y = 2; y < 254 && !coast; y++) for (let x = 2; x < 254; x++) {
+      const land = w.height.get(x, y) > sea + 20;
+      if (!water && w.height.get(x, y) < sea - 50) water = [x, y];
+      if (land && (w.height.get(x + 1, y) <= sea || w.height.get(x - 1, y) <= sea || w.height.get(x, y + 1) <= sea || w.height.get(x, y - 1) <= sea)) { coast = [x, y]; break; }
+    }
+    expect(coast && water).toBeTruthy();
+    const atSea = await tool(hub, "create_city_here", { x: water![0], y: water![1] });
+    expect(atSea.isError).toBe(true);
+    expect(textOf(atSea)).toMatch(/sea/);
+    await ok(hub, "add_place", { name: "Test Port", type: "port", x: coast![0], y: coast![1] });
+    const r = await ok(hub, "create_city_here", { place: "Test Port" });
+    expect(r.created.name).toBe("Test Port");
+    expect(r.created.from_world.join(" ")).toMatch(/coast/);
+    const city = hub.session.doc, sp = citySpec(city);
+    expect([sp.widthM, sp.heightM]).toEqual([1000, 700]);
+    expect(sp.climate?.temperature).toBeGreaterThan(0);
+    expect(city.meta.origin).toMatchObject({ id: "world", name: "World", x: coast![0], y: coast![1] });
+    let wet = 0;
+    for (const v of city.height.data) if (v === 7 || v === 8) wet++;
+    expect(wet).toBeGreaterThan(city.height.data.length * 0.1); // (the sea along one side)
+    // from a city map it is refused: it needs a world map
+    expect(textOf(await tool(hub, "create_city_here", { x: 10, y: 10 }))).toMatch(/world map/i);
+    await hub.close();
+  });
+});

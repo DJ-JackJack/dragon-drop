@@ -42,6 +42,7 @@ export * from "./city.ts";
 export * from "./cityLand.ts";
 export * from "./cityBridges.ts";
 export * from "./cityPlan.ts";
+export * from "./cityWorld.ts";
 export * from "./roofAssets.ts";
 export * from "./cityRender.ts";
 export * from "./lighting.ts";

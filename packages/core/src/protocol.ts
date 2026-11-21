@@ -104,6 +104,8 @@ export type ClientMsg =
   | { t: "chat_reset" }
   /** Make a city map (a city seen from above, made of buildings and streets, sized in metres) and open it. */
   | { t: "create_city"; name: string; widthM: number; heightM: number; cellM?: number }
+  /** A city started from a spot on the open world map: its climate, height, slope, coast and river come from there (cityWorld.ts). */
+  | { t: "create_city_here"; name: string; x: number; y: number; widthM: number; heightM: number }
   /** Reference pictures (they are added with POST /api/projects/<id>/refs): give one a new name (its file type stays), or take it off the list (it is moved to the map's backups folder). */
   | { t: "ref_rename"; name: string; to: string }
   | { t: "ref_remove"; name: string }

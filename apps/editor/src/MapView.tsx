@@ -22,7 +22,7 @@ import { makeResizeKeeper } from "./viewResize.ts";
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
 const MAX_ZOOM = 80;
-export type Tool = "pan" | "select" | "area" | "place" | "label" | "region" | "detail" | "line" | "battlehere" | BrushTool;
+export type Tool = "pan" | "select" | "area" | "place" | "label" | "region" | "detail" | "line" | "battlehere" | "cityhere" | BrushTool;
 /** The shape the Select area tool drags out. */
 export type AreaShape = "rect" | "circle" | "free" | "poly";
 const isBrush = (t: Tool): t is BrushTool => ["raise", "lower", "smooth", "flatten", "land", "water"].includes(t);
@@ -63,6 +63,8 @@ interface Props {
   onDetailArea: (r: Rect) => void;
   /** The Battlemap here tool was clicked at a point (map px). */
   onBattleHere: (x: number, y: number) => void;
+  /** "City here": a spot, or the place whose marker was clicked. */
+  onCityHere?: (x: number, y: number, place: { name: string; type: string } | null) => void;
   /** What the DM has selected (drawn as a gold outline; a thicker, solid outline while Claude's edits are locked to it). */
   selection: Selection | null;
   selectionLock: boolean;
@@ -91,7 +93,7 @@ interface RiverChunk {
   w: number;
 }
 
-export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
+export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -160,6 +162,8 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
   onDetailRef.current = onDetailArea;
   const onBattleRef = useRef(onBattleHere);
   onBattleRef.current = onBattleHere;
+  const onCityRef = useRef(onCityHere);
+  onCityRef.current = onCityHere;
   const clientRef = useRef<PaintClient | null>(null);
   /** The heights (and map key) the paint worker was last opened with. */
   const openedRef = useRef<{ hf: unknown; key: string } | null>(null);
@@ -520,7 +524,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
       ctx.restore();
     }
     // where a "Battlemap here" scene would be made
-    if (optsRef.current.tool === "battlehere" && pointer.current) {
+    if ((optsRef.current.tool === "battlehere" || optsRef.current.tool === "cityhere") && pointer.current) {
       const q = pointer.current;
       ctx.save();
       ctx.strokeStyle = "rgba(255, 224, 120, 0.95)";
@@ -714,6 +718,12 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
     const tl = optsRef.current.tool;
     if (tl === "battlehere") {
       onBattleRef.current(m.x, m.y);
+      return;
+    }
+    if (tl === "cityhere") {
+      // a town's marker gives its own spot and kind (the size follows it); anywhere else is just a spot
+      const hit = hitTest(hitsRef.current, p.x, p.y), pl = hit?.kind === "place" ? featuresRef.current?.places.find((q) => q.id === hit.id) : undefined;
+      onCityRef.current?.(pl ? pl.x : m.x, pl ? pl.y : m.y, pl ? { name: pl.name, type: pl.type } : null);
       return;
     }
     if (tl === "detail") {
@@ -1031,7 +1041,7 @@ export function MapView({ meta, tool, brush, showGrid, hillshade, smooth, labelS
 
   const cursor = traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
     : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab")
-    : tool === "select" ? "default" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" ? "crosshair" : "none";
+    : tool === "select" ? "default" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" || tool === "cityhere" ? "crosshair" : "none";
 
   return (
     <div className="mapview" ref={wrapRef}>

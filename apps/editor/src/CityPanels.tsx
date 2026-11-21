@@ -163,6 +163,12 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         {row("Streets", (features.streets ?? []).length.toLocaleString())}
         {row("Trees", `${(features.trees ?? []).length.toLocaleString()} group${(features.trees ?? []).length === 1 ? "" : "s"}`)}
         <p className="muted">Click a building, street or trees with the Select tool to edit it here; a hill or valley with the Land tool.</p>
+        {meta!.origin && (
+          <>
+            <p className="muted" data-testid="city-origin">Started from <b>{meta!.origin.name}</b> at map px ({meta!.origin.x}, {meta!.origin.y}).</p>
+            <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta!.origin!.id })} title="Open the world map this city was started from" data-testid="city-back">↑ Back to {meta!.origin.name}</button></div>
+          </>
+        )}
       </section>
       <section data-testid="city-land">
         <h3>Land and climate</h3>
