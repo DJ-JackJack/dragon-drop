@@ -13,6 +13,12 @@ rivers; drawn rivers and carving part of the map; Muse Code.
 - [x] Quick fixes and the lake problem, a test copy with its own settings and maps folder (`RELEASING.md`), release notes, the person's try of it (rounds 1 to 3 good, with the Rivers tool and carving changed after round 1), and the release. *(2026-11-21: https://github.com/DJ-JackJack/dragon-drop/releases/tag/v0.1.11)*
 - [ ] The person: update the installed Dragon Drop (Settings → Updates → Check now) and check it reads 0.1.11; then the Desktop test build folders can be deleted.
 
+## Next release (0.1.12)
+
+On `main` already: Settings says what each AI assistant needs (and whether it is paid for separately).
+
+- [ ] **Maps that know about each other** (asked 2026-11-21). (1) **Copy a map** to make a changed version of it (a farmhouse before and after a fire, a town before and after a siege): everything is copied (land or floors, every level of a battlemap, features, the brief, reference pictures; not checkpoints or history), the copy remembers its original and links back to it; a Map panel button for the DM and a tool for Claude. (2) **Look at another map without switching to it**: Claude's look-only tools (previews, summaries, point queries, lists, the water's account) take another map's name, read it in the background and leave the open map and the editor alone; edits stay on the open map. (3) **Compare two maps**: a side-by-side picture of the same area and a list of the differences in words (land, coast, rivers and lakes, places, labels and roads; walls, doors, floors, lights and objects on battlemaps; buildings and streets in cities), and distances and positions across maps that are linked (a detail map and its world map, a battlemap or city made from a spot). Open: whether the DM also gets a compare view in the editor (side by side, or a fade over the open map).
+
 ## Quick fixes
 
 - [x] The open-source licences can't be reached on Windows (the Help menu is hidden by the custom title bar): a button in Settings. *(2026-11-21: Settings → Licences)*
