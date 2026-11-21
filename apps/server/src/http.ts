@@ -112,6 +112,18 @@ export function createAppServer(cfg: Config, hub: Hub) {
         res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" }).end(bytes);
         return;
       }
+      // any map as a picture in its style (the editor's compare view): the open map, or another one read only
+      const pj = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/picture\.jpg$/);
+      if (pj) {
+        const max = Math.min(4096, Math.max(256, Number(url.searchParams.get("max") ?? 2048)));
+        try {
+          const bytes = await hub.mapPicture(pj[1], max, (img) => encodeJpeg(img, 88, 16_000_000));
+          res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" }).end(bytes);
+        } catch (e) {
+          res.writeHead(404, { "content-type": "text/plain" }).end((e as Error).message);
+        }
+        return;
+      }
       // one level of the open battlemap as a picture (the editor shows the level below faintly under the one being worked on)
       const lv = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/levels\/([a-z0-9-]+)\/picture\.png$/);
       if (lv) {

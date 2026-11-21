@@ -11,7 +11,7 @@ import {
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
-  type LakeShape, type NamedWater, type RiverNet,
+  type LakeShape, type NamedWater, type RiverNet, type LinkedMap,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -22,6 +22,7 @@ import { CITY_WALL_TOOLS, CITY_WALL_TOOL_NAMES } from "./cityWallTools.ts";
 import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
+import { MAP_TOOLS } from "./mapTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
 import { define, fail, json, text } from "./toolKit.ts";
 
@@ -109,6 +110,12 @@ export interface ToolContext {
   selection?(): { selection: Selection | null; lock: boolean; view: ViewInfo | null };
   /** Optional: highlight an area (or clear the selection) in the editor. Refused while the DM's lock is on. */
   setSelection?(sel: Selection | null): void;
+  /** Optional: copy a map (the open one unless `from` names another) under a new name, to change the copy; the copy is opened unless `open` is false. */
+  duplicateMap?(o: { name: string; from?: string; open?: boolean }): Promise<ProjectInfo & { from: string }>;
+  /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. */
+  peek?(map: string): Promise<ToolContext>;
+  /** Optional: how every map is linked to the others (core mapLinks.ts). */
+  linkedMaps?(): Promise<Map<string, LinkedMap>>;
 }
 
 /** Places and labels on a preview (bitmap font: placement check, not the final lettering). */
@@ -1575,6 +1582,7 @@ export const TOOLS = [
   ...CITY_WALL_TOOLS,
   ...CITY_NAME_TOOLS,
   ...WATER_TOOLS,
+  ...MAP_TOOLS,
 ] as const;
 
 function normShape(s: z.infer<typeof Shape>) {
@@ -1600,10 +1608,36 @@ const WORLD_ONLY = new Set([
 const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES, ...CITY_NAME_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);
 
+/**
+ * The tools that only look: each also takes `map` (another map's id or name) to look at that map instead of the open one, without opening it (ToolContext.peek). The open
+ * map, its selection and the DM's editor stay as they are.
+ */
+export const LOOK_ONLY_TOOLS = new Set([
+  "get_map_summary", "get_brief", "render_preview", "query_points", "list_places", "list_labels", "list_lines", "list_climate_regions", "list_river_sources", "check_hydrology",
+  "list_waters", "find_straits", "list_references", "view_reference", "list_checkpoints", "get_trace_picture",
+  "list_battle", "render_battlemap", "list_connectors", "list_roofs",
+  "render_city", "list_buildings", "list_streets", "list_land", "list_trees", "list_city_walls", "list_city_districts", "list_city_labels", "check_city",
+]);
+const MAP_OPTION = { type: "string", description: "Look at another map instead of the open one (its id or name, see list_projects), without opening it: the open map and the DM's editor stay as they are" };
+
 /** Validate input against the tool's schema and run it; errors become is_error results. */
 export async function runTool(ctx: ToolContext, name: string, input: unknown): Promise<ToolResult> {
   const tool = findTool(name);
   if (!tool) return { ...text(`Unknown tool: ${name}`), isError: true };
+  // another map, only to look at it: the tool runs on that map's own (read-only) context. A tool that changes things never takes `map` (it would act on the open map).
+  if (!LOOK_ONLY_TOOLS.has(name) && input && typeof input === "object" && "map" in input && !(tool.schema as z.ZodObject<z.ZodRawShape>).shape?.map) {
+    return { ...text(`${name} changes the open map only, so it takes no \`map\`: to change another map, open it with open_project first. (Only the tools that look take \`map\`.)`), isError: true };
+  }
+  if (LOOK_ONLY_TOOLS.has(name) && input && typeof input === "object" && "map" in input) {
+    const { map, ...rest } = input as Record<string, unknown>;
+    if (typeof map === "string" && map.trim()) {
+      if (!ctx.peek) return { ...text("Looking at another map isn't available here."), isError: true };
+      let other: ToolContext;
+      try { other = await ctx.peek(map); } catch (e) { return { ...text(`${name}: ${(e as Error).message}`), isError: true }; }
+      return runTool(other, name, rest);
+    }
+    input = rest;
+  }
   let battle: boolean | null = null, city = false;
   try { const d = ctx.session().doc; battle = isBattle(d); city = isCity(d); } catch { /* no project open */ }
   if (city && (WORLD_ONLY.has(name) || BATTLE_ONLY.has(name))) {
@@ -1634,6 +1668,7 @@ export function toolJsonSchemas() {
   return TOOLS.map((t) => {
     const schema = z.toJSONSchema(t.schema, { target: "draft-2020-12" }) as Record<string, unknown>;
     delete schema.$schema;
+    if (LOOK_ONLY_TOOLS.has(t.name)) schema.properties = { ...((schema.properties as Record<string, unknown>) ?? {}), map: MAP_OPTION };
     return { name: t.name, description: t.description, inputSchema: schema };
   });
 }

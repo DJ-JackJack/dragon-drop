@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MapSession, createDoc, type Command, type ProjectInfo } from "@mapmaker/core";
 import jpeg from "jpeg-js";
-import { type ToolContext, TOOLS, runTool, toolJsonSchemas } from "../src/index.ts";
+import { type ToolContext, LOOK_ONLY_TOOLS, TOOLS, runTool, toolJsonSchemas } from "../src/index.ts";
 
 function memoryContext(): ToolContext & { brief: string } {
   const sessions = new Map<string, MapSession>();
@@ -47,6 +47,21 @@ describe("tools", () => {
   it("no two tools share a name (the second would never be reached)", () => {
     const seen = new Set<string>(), twice = TOOLS.map((t) => t.name).filter((n) => (seen.has(n) ? true : (seen.add(n), false)));
     expect(twice).toEqual([]);
+  });
+
+  it("the tools that only look take `map` (another map), and every one of them exists; a tool that changes things refuses it", async () => {
+    const names = new Set(TOOLS.map((t) => t.name));
+    for (const n of LOOK_ONLY_TOOLS) expect(names.has(n), `${n} is a tool`).toBe(true);
+    const schemas = toolJsonSchemas();
+    expect((schemas.find((s) => s.name === "list_places")!.inputSchema.properties as Record<string, unknown>).map).toBeTruthy();
+    expect((schemas.find((s) => s.name === "add_place")!.inputSchema.properties as Record<string, unknown>).map).toBeUndefined();
+    const ctx = memoryContext();
+    await ctx.createProject({ name: "One", width: 64, height: 64, kmPerPx: 2 });
+    const r = await runTool(ctx, "add_place", { map: "Other", name: "X", type: "village", x: 5, y: 5 });
+    expect(r.isError).toBe(true);
+    expect(ctx.session().doc.features?.places ?? []).toHaveLength(0);
+    // and with no way to look at other maps here, it says so
+    expect((await runTool(ctx, "list_places", { map: "Other" })).isError).toBe(true);
   });
 
   it("every tool has a JSON schema with type object", () => {

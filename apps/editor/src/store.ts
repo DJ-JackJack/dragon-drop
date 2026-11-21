@@ -113,6 +113,12 @@ class Store {
     this.readListeners.add(cb);
     return () => { this.readListeners.delete(cb); };
   }
+  /** Who wants the answer to `compare_with` (compare.ts). */
+  private compareListeners = new Set<(m: Extract<ServerMsg, { t: "compare" }>) => void>();
+  onCompare(cb: (m: Extract<ServerMsg, { t: "compare" }>) => void) {
+    this.compareListeners.add(cb);
+    return () => { this.compareListeners.delete(cb); };
+  }
   private derivedListeners = new Set<(frame: DerivedFrame) => void>();
   /** A climate frame that arrived while nobody was listening (the map view mounts a moment after the first frames). */
   private pendingDerived: DerivedFrame | null = null;
@@ -336,6 +342,12 @@ class Store {
           carving: false,
           pictureNote: { text: `Valleys carved${!m.scope || m.scope === "the whole map" ? "" : m.scope === "the selected area" ? " in the selected area" : ` along ${m.scope}`}: ${m.lowered.toLocaleString()} map pixels lowered, the deepest cut ${m.deepestM.toLocaleString()} m${m.deltaCells ? `, ${m.deltaCells.toLocaleString()} pixels of new delta land` : ""}. Undo takes it back; the checkpoint "${m.checkpoint}" has the map as it was.`, busy: false, at: Date.now(), ms: 12000 },
         });
+        break;
+      case "compare":
+        for (const cb of this.compareListeners) cb(m);
+        break;
+      case "duplicated":
+        this.set({ pictureNote: { text: `"${m.name}" is a copy of "${m.from}", now open: change it, and compare it with the original from the Map panel. The original is left as it was.`, busy: false, at: Date.now(), ms: 9000 } });
         break;
       case "river_drawn": {
         const mi = Math.round(m.lengthKm * 0.621371);

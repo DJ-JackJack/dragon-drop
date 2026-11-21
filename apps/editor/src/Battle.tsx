@@ -14,6 +14,8 @@ import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, a
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
+import { CompareBar } from "./CompareMaps.tsx";
+import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
@@ -228,8 +230,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   // the trace picture redraws this view when it loads, while it is dragged and when its settings change
   useEffect(() => {
     traceCtl.redraw = requestDraw;
+    compareCtl.redraw = requestDraw;
     const off = traceCtl.subscribe(requestDraw);
-    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; };
+    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; if (compareCtl.redraw === requestDraw) compareCtl.redraw = () => {}; };
   }, [requestDraw]);
   const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
 
@@ -566,6 +569,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       for (const z of f.zones ?? []) if (mgSet.has(z.id)) ghost(z.points, true);
       ctx.restore();
     }
+    // another map being compared with this one, over it (compare.ts)
+    compareCtl.draw(ctx, m.id, v, W, H);
     const mq = drag.current;
     if (mq?.mode === "marquee" && pointer.current) {
       const x = Math.min(mq.sx, pointer.current.x), y = Math.min(mq.sy, pointer.current.y), w = Math.abs(pointer.current.x - mq.sx), h = Math.abs(pointer.current.y - mq.sy);
@@ -1112,6 +1117,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       />
       {levels && <LevelBar levels={levels} />}
       {meta && <TraceBar trace={features.trace} meta={meta} level={levels?.active} />}
+      {meta && <CompareBar meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
       {status && meta && loadedId === meta.id && <div className="mapview-busy">{status}</div>}
       {note && <div className="mapview-note" data-testid="battle-note">{note}</div>}

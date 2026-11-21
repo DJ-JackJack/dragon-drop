@@ -6,6 +6,7 @@ import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipbo
 import { traceCtl } from "./trace.ts";
 import { Brand } from "./Brand.tsx";
 import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
+import { OtherMaps } from "./CompareMaps.tsx";
 import { DesktopSettings } from "./DesktopSettings.tsx";
 import { AssetPanel } from "./AssetPanel.tsx";
 import { CityView } from "./CityView.tsx";
@@ -449,6 +450,7 @@ export function App() {
           )}
 
           </>}
+          {s.meta && <OtherMaps meta={s.meta} projects={s.projects} />}
           {s.meta && <DeleteMap meta={s.meta} />}
 
                 </div>

@@ -8,6 +8,8 @@ import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, a
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
+import { CompareBar } from "./CompareMaps.tsx";
+import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import type { LineKind } from "@mapmaker/core";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
@@ -196,11 +198,12 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     });
   }, []);
 
-  // the trace picture redraws this view when it loads, while it is dragged and when its settings change
+  // the trace picture redraws this view when it loads, while it is dragged and when its settings change; so does a map being compared with this one
   useEffect(() => {
     traceCtl.redraw = requestDraw;
+    compareCtl.redraw = requestDraw;
     const off = traceCtl.subscribe(requestDraw);
-    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; };
+    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; if (compareCtl.redraw === requestDraw) compareCtl.redraw = () => {}; };
   }, [requestDraw]);
   const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
 
@@ -570,6 +573,8 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       ctx.stroke();
       ctx.restore();
     }
+    // another map being compared with this one, over it (compare.ts)
+    compareCtl.draw(ctx, m.id, v, W, H);
     // what the River tool points at: its name, or that a click names it
     const wh = waterHover.current;
     if (optsRef.current.tool === "river" && riverRef.current.mode === "name" && wh && pointer.current) {
@@ -1165,6 +1170,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       {group.length >= 2 && <div className="mapview-group" data-testid="world-group">{group.length} places and labels selected: drag to move, Delete to remove, Ctrl+D to duplicate</div>}
       {children}
       {meta && <TraceBar trace={features.trace} meta={meta} />}
+      {meta && <CompareBar meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
       {status && meta && loadedId === meta.id && <div className="mapview-busy">{status}</div>}
       {exportOpen && meta && (

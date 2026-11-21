@@ -1535,6 +1535,29 @@ try {
     await page.keyboard.press("h");
   }
 
+  // other maps: copy the open map (the copy opens and says what it is a copy of), compare it with its original (Fade, Swipe, Side by side, Stop), and go back
+  {
+    const originalName = await page.locator("select.project option:checked").innerText();
+    await page.getByTestId("duplicate-map").click();
+    await page.getByTestId("dialog-input").fill("E2E Copy");
+    await page.getByTestId("dialog-ok").click();
+    await page.getByTestId("copied-from").getByText(originalName.trim()).waitFor({ timeout: 20000 });
+    await page.getByTestId("picture-note").getByText(/is a copy of/).waitFor({ timeout: 10000 });
+    if ((await page.locator("select.project option:checked").innerText()).trim() !== "E2E Copy") fail("the copy isn't the open map");
+    await page.getByTestId("compare-original").click();
+    await page.getByTestId("compare-bar").getByText(/a copy of/).waitFor({ timeout: 30000 });
+    await page.getByTestId("compare-swipe").click();
+    await page.getByTestId("compare-amount").fill("30");
+    await page.screenshot({ path: path.join(shots, "compare-swipe.png") });
+    await page.getByTestId("compare-side").click();
+    await page.waitForFunction(() => { const i = document.querySelector('[data-testid="compare-side-other"]'); return !!i && i.complete && i.naturalWidth > 0; }, null, { timeout: 30000 });
+    await page.getByTestId("compare-side-window").getByRole("button", { name: "Close" }).click();
+    await page.getByTestId("compare-stop").click();
+    await page.getByTestId("compare-bar").waitFor({ state: "detached", timeout: 5000 });
+    await page.locator("select.project").selectOption(await page.locator("select.project option").filter({ hasText: new RegExp(`^${originalName.trim()}$`) }).first().getAttribute("value"));
+    await page.getByTestId("copied-from").waitFor({ state: "detached", timeout: 20000 });
+  }
+
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);
   console.log(`E2E OK (screenshots in ${shots})`);
   await browser.close();

@@ -19,6 +19,8 @@ import { store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
+import { CompareBar } from "./CompareMaps.tsx";
+import { compareCtl } from "./compare.ts";
 import { readerCtl } from "./reader.ts";
 import { drawCityNames } from "./drawCityNames.ts";
 import { type Hit, hitTest, loadLabelFonts } from "./drawFeatures.ts";
@@ -134,8 +136,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   // the trace picture redraws this view when it loads, while it is dragged and when its settings change
   useEffect(() => {
     traceCtl.redraw = requestDraw;
+    compareCtl.redraw = requestDraw;
     const off = traceCtl.subscribe(requestDraw);
-    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; };
+    return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; if (compareCtl.redraw === requestDraw) compareCtl.redraw = () => {}; };
   }, [requestDraw]);
   const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
   // the picture reader's marks redraw the view as they change
@@ -388,6 +391,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       if (target!.names) drawCityNames(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H }, null);
       return;
     }
+    // another map being compared with this one, over it (compare.ts)
+    compareCtl.draw(ctx, m.id, v, W, H);
     labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H }, sel) : [];
 
     // what is selected
@@ -1290,6 +1295,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       />
       {exportOpen && meta?.city && <CityExportDialog meta={meta} names={ui.names} contours={ui.contours} prepare={prepareExport} paint={(t) => draw(t)} onClose={() => setExportOpen(false)} />}
       {meta && <TraceBar trace={features.trace} meta={meta} />}
+      {meta && <CompareBar meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
     </div>
     <StatusBar

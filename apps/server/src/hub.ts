@@ -12,6 +12,7 @@ import {
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
+  type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -986,22 +987,122 @@ export class Hub {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     if (op.session.inTransaction) op.session.commit();
-    if (isBattle(op.session.doc)) {
-      const doc = op.session.doc;
+    return this.renderDoc(op.session.doc, () => this.refreshDerived(op, true), o);
+  }
+
+  /** Render a map in its style: the open one (renderMap), or another map read only to look at (`derived` works out its climate and rivers when it is a world map). */
+  async renderDoc(doc: MapDoc, derived: () => Promise<Derived | null>, o: { roofs?: boolean } = {}): Promise<{ img: RGBAImage; rivers: RiverPath[] }> {
+    if (isBattle(doc)) {
       const { w, h } = battleImageSize(battleSpec(doc));
       return { img: { w, h, data: await this.compute.battle(doc, { notes: true, ...(o.roofs && { roofs: 0.8 }), ...(await this.battleAssets(doc)).opts }) }, rivers: [] };
     }
-    if (isCity(op.session.doc)) {
+    if (isCity(doc)) {
       // (drawn on the compute thread: a big city takes half a second or more, and the phone page asks again after every edit)
-      const tiles = await this.cityRoofTiles(op.session.doc);
-      return { img: await this.compute.city(op.session.doc, { maxSize: 2048, roofTiles: tiles }), rivers: [] };
+      const tiles = await this.cityRoofTiles(doc);
+      return { img: await this.compute.city(doc, { maxSize: 2048, roofTiles: tiles }), rivers: [] };
     }
-    const d = await this.refreshDerived(op, true);
+    const d = await derived();
     if (!d) throw new Error("The map's climate and rivers couldn't be computed.");
-    const doc = op.session.doc;
     if ((doc.meta.style ?? "painted") === "relief") return { img: renderFull(doc), rivers: d.rivers };
     const data = await this.compute.paint(doc, d);
     return { img: { w: doc.height.w, h: doc.height.h, data }, rivers: [] }; // (the painted style has its rivers in the picture)
+  }
+
+  // ---------------------------------------------------------------- other maps: copying one, looking at one, comparing
+
+  /** A map by its id or its name (case doesn't matter). */
+  async findMap(ref: string): Promise<ProjectInfo> {
+    const list = await this.store.list(), t = String(ref ?? "").trim(), q = t.toLowerCase();
+    const p = list.find((x) => x.id === t) ?? list.find((x) => x.name.toLowerCase() === q);
+    if (!p) throw new Error(`There is no map "${ref}". list_projects lists them.`);
+    return p;
+  }
+
+  private peeks = new Map<string, { key: string; doc: MapDoc; derived?: Promise<Derived | null> }>();
+
+  /**
+   * Another map read from its saved files without opening it: the open map, the editors and Claude's edits stay where they are. The open map itself is its live state.
+   * The last two looked at are kept, with their climate and rivers once worked out (on the compute thread).
+   */
+  async peekMap(ref: string): Promise<{ id: string; name: string; doc: MapDoc; derived: () => Promise<Derived | null>; live: boolean }> {
+    const info = await this.findMap(ref);
+    const op = this.open;
+    if (op && op.id === info.id) return { id: op.id, name: op.session.doc.meta.name, doc: op.session.doc, derived: () => this.refreshDerived(op, true), live: true };
+    const key = `${info.id}:${info.updatedAt}`;
+    let p = this.peeks.get(info.id);
+    if (!p || p.key !== key) {
+      p = { key, doc: await this.store.peek(info.id) };
+      this.peeks.delete(info.id);
+      this.peeks.set(info.id, p);
+      while (this.peeks.size > 2) this.peeks.delete(this.peeks.keys().next().value!);
+    }
+    const entry = p, doc = p.doc;
+    return {
+      id: info.id, name: doc.meta.name, doc, live: false,
+      derived: () => (isWorld(doc) ? (entry.derived ??= this.compute.derive(doc, 0).catch((e) => { entry.derived = undefined; throw e; })) : Promise.resolve(null)),
+    };
+  }
+
+  /** How every map is linked to the others (what each was made from: mapLinks.ts), the open one as it is now. */
+  async linkedMaps(): Promise<Map<string, LinkedMap>> {
+    const out = new Map<string, LinkedMap>();
+    for (const m of await this.store.metas()) out.set(m.id, m);
+    if (this.open) out.set(this.open.id, this.open.session.doc.meta);
+    return out;
+  }
+
+  /**
+   * Copy a map (the open one unless `from` names another) under a new name, to change the copy: the same place before and after. Everything is copied but the original's
+   * history (checkpoints, chat, previews, exports); the copy remembers its original (`meta.copiedFrom`). The copy is opened unless `open` is false.
+   */
+  async duplicateProject(o: { name: string; from?: string; open?: boolean }): Promise<ProjectInfo & { from: string }> {
+    const op = this.open;
+    const src = o.from ? await this.findMap(o.from) : op ? await this.findMap(op.id) : null;
+    if (!src) throw new Error("No map is open: say which map to copy.");
+    if (op && op.id === src.id) {
+      if (op.session.inTransaction) op.session.commit();
+      await this.flush();
+      if (op.dirty) throw new Error("The map couldn't be saved just now, so it can't be copied yet. Try again in a moment.");
+    }
+    const name = o.name.trim() || `${src.name} (copy)`;
+    const at = new Date().toISOString();
+    const id = await this.store.duplicate(src.id, name, { copiedFrom: { id: src.id, name: src.name, at } },
+      `---\n\n*A copy of **${src.name}** (project \`${src.id}\`), made ${at.slice(0, 10)} to change it: the brief above is the original's. Record here what is different in this version.*`);
+    this.broadcast({ t: "projects", projects: await this.store.list() });
+    if (o.open !== false) await this.openProject(id);
+    const info = (await this.store.list()).find((p) => p.id === id)!;
+    return { ...info, from: src.name };
+  }
+
+  private pictureCache = new Map<string, Uint8Array>();
+
+  /** Any map as a picture (its style, no labels), for comparing: the open map's own, or another map's read only. */
+  async mapPicture(id: string, maxPx: number, encode: (img: RGBAImage) => Uint8Array): Promise<Uint8Array> {
+    const p = await this.peekMap(id);
+    const key = p.live ? `${p.id}:live:${this.open?.contentVersion}:${maxPx}` : `${p.id}:${p.doc.meta.updatedAt}:${maxPx}`;
+    const hit = this.pictureCache.get(key);
+    if (hit) return hit;
+    const { img, rivers } = await this.renderDoc(p.doc, p.derived);
+    const region = { x: 0, y: 0, w: img.w, h: img.h };
+    const { img: out, scale } = cropScale(img, region, maxPx);
+    drawRivers(out, region, scale, rivers);
+    const bytes = encode(out);
+    this.pictureCache.set(key, bytes);
+    while (this.pictureCache.size > 4) this.pictureCache.delete(this.pictureCache.keys().next().value!);
+    return bytes;
+  }
+
+  /** Where another map lies over the open one (in the open map's units), for the editor's compare view; `rect` is null when the two aren't linked. */
+  async comparePlacement(ref: string): Promise<{ id: string; name: string; kind: string; rect: Rect | null; how: string[] }> {
+    const op = this.open;
+    if (!op) throw new Error("No map is open.");
+    const other = await this.findMap(ref);
+    if (other.id === op.id) throw new Error("That is the map you have open: pick another one to compare with.");
+    const maps = await this.linkedMaps();
+    const a = maps.get(other.id), b = maps.get(op.id);
+    if (!a || !b) throw new Error("That map can't be read.");
+    const on = mapRectOn(a, b, maps);
+    return { id: other.id, name: other.name, kind: mapKindOf(a), rect: on?.rect ?? null, how: on?.how ?? [] };
   }
 
   private jpegCache: { key: string; bytes: Uint8Array } | null = null;
@@ -1212,6 +1313,16 @@ export class Hub {
           this.send(ws, { t: "river_drawn", source: r.source, lengthKm: r.lengthKm, end: r.end, deepestM: r.deepestM, reversed: r.reversed });
           return;
         }
+        case "duplicate_project": {
+          const r = await this.duplicateProject({ name: String(msg.name ?? "").slice(0, 80) });
+          this.send(ws, { t: "duplicated", id: r.id, name: r.name, from: r.from });
+          return;
+        }
+        case "compare_with": {
+          const r = await this.comparePlacement(String(msg.id ?? ""));
+          this.send(ws, { t: "compare", ...r });
+          return;
+        }
         case "sketch_import": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
@@ -1344,7 +1455,7 @@ export class Hub {
       if (!self.open) throw new Error("No project is open. Use list_projects / open_project or create_map.");
       return self.open.id;
     };
-    return {
+    const ctx: ToolContext = {
       session: () => self.session,
       projectId: () => self.activeId,
       execute: (cmd, label) => {
@@ -1482,6 +1593,55 @@ export class Hub {
         if (via === "mcp") self.open?.agent.note(`Claude Code: ${r.label}`);
         return r;
       },
+      duplicateMap: async (o) => {
+        const info = await self.duplicateProject(o);
+        self.projectsCache = await self.store.list();
+        if (via === "mcp") self.open?.agent.note(`Claude Code: copied ${info.from} as ${info.name}`);
+        return info;
+      },
+      linkedMaps: () => self.linkedMaps(),
+      peek: async (map) => {
+        const p = await self.peekMap(map);
+        return p.live ? ctx : self.peekContext(ctx, p);
+      },
+    };
+    return ctx;
+  }
+
+  /**
+   * A tool context for another map, only to look at it (Claude's look-only tools with `map`): its own document, climate and rivers, brief, references and pictures; anything
+   * that would change something is refused, and the open map, its selection and the editors are left alone.
+   */
+  private peekContext(base: ToolContext, p: { id: string; name: string; doc: MapDoc; derived: () => Promise<Derived | null> }): ToolContext {
+    const refuse = (): never => { throw new Error(`${p.name} is only being looked at here: to change it, open it with open_project (or ask the DM).`); };
+    const session = new MapSession(p.doc);
+    session.execute = refuse;
+    let last: Derived | null = null;
+    const derived = async () => (last = await p.derived());
+    return {
+      ...base,
+      session: () => session,
+      projectId: () => p.id,
+      execute: refuse, undo: refuse, redo: refuse,
+      readBrief: () => this.store.readBrief(p.id),
+      writeBrief: async () => refuse(),
+      listRefs: () => this.store.listRefs(p.id),
+      readRef: (name) => this.store.readRef(p.id, name),
+      derived,
+      water: () => {
+        const d = last, doc = p.doc, hf = doc.height;
+        if (!d?.hydro || !isWorld(doc)) return null;
+        const net = riverNet(d.rivers);
+        const v = resolveWaterNames(doc.features?.waterNames, net, d.hydro.shapes, { mapWidth: doc.meta.width, kmPerPx: doc.meta.kmPerPx, isSea: seaNear(hf.data, hf.w, hf.h, doc.meta.seaLevel) });
+        return { labels: v.labels, named: v.named, lakes: d.hydro.shapes, net };
+      },
+      render: (o) => this.renderDoc(p.doc, derived, o),
+      cityTiles: () => this.cityRoofTiles(p.doc),
+      listCheckpoints: () => this.store.listCheckpoints(p.id),
+      selection: () => ({ selection: null, lock: false, view: null }),
+      setSelection: refuse,
+      saveCheckpoint: undefined, restoreCheckpoint: undefined, carveValleys: undefined, drawRiver: undefined, createRegional: undefined, levels: undefined, exportBattle: undefined,
+      readCityPicture: undefined, readCityStreets: undefined, readCityWater: undefined, paintCityCells: undefined, createBattleHere: undefined, createCityHere: undefined, createBattleFromCity: undefined,
     };
   }
 

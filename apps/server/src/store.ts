@@ -179,7 +179,10 @@ export class ProjectStore {
       if (!existsSync(pj)) continue;
       try {
         const m = JSON.parse(await readFile(pj, "utf8")) as MapMeta;
-        out.push({ id: name, name: m.name, width: m.width, height: m.height, kmPerPx: m.kmPerPx, updatedAt: m.updatedAt, ...(m.parent && { parent: m.parent }), ...((m.kind === "battle" || m.kind === "city") && { kind: m.kind }) });
+        out.push({
+          id: name, name: m.name, width: m.width, height: m.height, kmPerPx: m.kmPerPx, updatedAt: m.updatedAt, ...(m.parent && { parent: m.parent }), ...((m.kind === "battle" || m.kind === "city") && { kind: m.kind }),
+          ...(m.copiedFrom && { copiedFrom: m.copiedFrom }), ...(m.origin && { origin: m.origin }),
+        });
       } catch {
         /* skip unreadable */
       }
@@ -200,6 +203,23 @@ export class ProjectStore {
 
   async load(id: string): Promise<MapDoc> {
     return this.loadAt(this.dir(id), id, true);
+  }
+
+  /** A map read only to look at (another map than the open one): an older one is brought up to date in memory only, and nothing on disk is touched. */
+  async peek(id: string): Promise<MapDoc> {
+    if (!(await this.exists(id))) throw new Error(`There is no map "${id}".`);
+    return this.loadAt(this.dir(id), id, false);
+  }
+
+  /** Every map's project.json (for how maps are linked: mapLinks.ts). Unreadable ones are left out. */
+  async metas(): Promise<MapMeta[]> {
+    if (!existsSync(this.root)) return [];
+    const out: MapMeta[] = [];
+    for (const name of await readdir(this.root)) {
+      if (!ID_RE.test(name)) continue;
+      try { out.push({ ...(JSON.parse(await readFile(path.join(this.root, name, "project.json"), "utf8")) as MapMeta), id: name }); } catch { /* not a map, or unreadable */ }
+    }
+    return out;
   }
 
   /** The folder that holds a level's files: the project's own for the first level, levels/<id>/ for the others. */
@@ -345,6 +365,42 @@ export class ProjectStore {
   async saveBaseClimate(id: string, b: BaseClimate): Promise<void> {
     await mkdir(path.join(this.dir(id), "map"), { recursive: true });
     await atomicWrite(path.join(this.dir(id), "map", "base-climate.bin.gz"), await gzipAsync(packBaseClimate(b), { level: 6 }));
+  }
+
+  /**
+   * Copy a map under a new name, to change the copy (the same place before and after): every file of it (land or floors, every level, features, the brief, reference
+   * pictures) but its checkpoints, chat, previews, exports and backups, which belong to the original's history. `meta` is merged into the copy's project.json (its name and
+   * where it was copied from). Returns the new map's id.
+   */
+  async duplicate(fromId: string, name: string, meta: Partial<MapMeta>, briefNote: string): Promise<string> {
+    if (!(await this.exists(fromId))) throw new Error(`There is no map "${fromId}".`);
+    const id = await this.uniqueId(name);
+    const src = this.dir(fromId), dst = this.dir(id);
+    const skip = new Set(["backups", "exports", "chat.json", "map/checkpoints", "map/previews"]);
+    const copyTree = async (rel: string): Promise<void> => {
+      const from = path.join(src, rel), to = path.join(dst, rel);
+      await mkdir(to, { recursive: true });
+      for (const e of await readdir(from, { withFileTypes: true })) {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (skip.has(r) || e.name.endsWith(".tmp")) continue;
+        if (e.isDirectory()) await copyTree(r);
+        else if (e.isFile()) await copyFile(path.join(from, e.name), path.join(to, e.name));
+      }
+    };
+    try {
+      await copyTree("");
+      const pj = path.join(dst, "project.json");
+      const now = new Date().toISOString();
+      const m = JSON.parse(await readFile(pj, "utf8")) as MapMeta;
+      await atomicWrite(pj, JSON.stringify({ ...m, ...meta, id, name, createdAt: now, updatedAt: now }, null, 2));
+      const bf = path.join(dst, "brief.md");
+      const brief = existsSync(bf) ? await readFile(bf, "utf8") : `# ${name}: Design Brief\n`;
+      await writeFile(bf, `${brief.replace(/\s*$/, "")}\n\n${briefNote}\n`);
+    } catch (e) {
+      await rm(dst, { recursive: true, force: true }).catch(() => {}); // (no half copy is left behind)
+      throw e;
+    }
+    return id;
   }
 
   /** Write a ready-made document as a new project (used for regional maps). */

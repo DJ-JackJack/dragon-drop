@@ -100,6 +100,8 @@ export interface MapMeta {
   city?: CitySpec;
   /** Battlemaps made from a spot on a world map: which map and where. */
   origin?: { id: string; name: string; x: number; y: number; /** "m": a city map, x and y in metres (else map px of a world map). */ unit?: "m" };
+  /** A copy of another map (made to change it: the same place before and after): which one, and when (ISO). It lies exactly over its original (mapLinks.ts). */
+  copiedFrom?: { id: string; name: string; at: string };
 }
 
 export interface MapDoc {

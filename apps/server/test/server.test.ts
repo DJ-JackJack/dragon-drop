@@ -968,6 +968,92 @@ describe("named rivers and lakes, carving valleys", () => {
   }, 60000);
 });
 
+describe("maps that know about each other", () => {
+  it("copies a map, looks at another without opening it, compares them, and says where things are across linked maps", async () => {
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORT}/mcp`)));
+    const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = await raw(name, args);
+      expect(r.isError, `${name}: ${JSON.stringify(r.content).slice(0, 400)}`).toBeFalsy();
+      return JSON.parse((r.content as { text: string }[])[0].text);
+    };
+    const made = await call("create_map", { name: "Test Before", width: 256, height: 256, km_per_px: 4, template: "ocean" });
+    const before = made.created.id as string;
+    await call("add_landmass", { shape: { type: "circle", x: 128, y: 128, r: 70 }, height_m: 400, seed: 3 });
+    await call("add_place", { name: "Mill", type: "village", x: 120, y: 120 });
+    await hub.flush();
+
+    // a copy: everything but the history, opened, and it remembers its original
+    const copy = await call("duplicate_map", { name: "Test After" });
+    expect(copy.copied).toBe("Test Before");
+    expect(hub.activeId).toBe(copy.as.id);
+    expect(hub.session.doc.meta.copiedFrom).toMatchObject({ id: before, name: "Test Before" });
+    expect(hub.session.doc.features?.places.map((p) => p.name)).toEqual(["Mill"]);
+    expect(await hub.store.readBrief(copy.as.id)).toMatch(/A copy of \*\*Test Before\*\*/);
+    expect(Array.from(hub.session.doc.height.data.slice(128 * 256, 128 * 256 + 256))).toEqual(Array.from((await hub.store.peek(before)).height.data.slice(128 * 256, 128 * 256 + 256)));
+
+    // change the copy: the mill moves, a new place, the land raised
+    const mill = hub.session.doc.features!.places[0];
+    await call("update_place", { place: mill.id, x: 130, y: 118 });
+    await call("add_place", { name: "Ashfield", type: "ruin", x: 100, y: 150 });
+    await call("sculpt", { mode: "raise", shape: { type: "circle", x: 150, y: 100, r: 10 }, amount_m: 300 });
+
+    // looking at the original without opening it: the copy stays open
+    const theirs = await call("list_places", { map: "Test Before" });
+    expect(JSON.stringify(theirs)).toMatch(/Mill/);
+    expect(JSON.stringify(theirs)).not.toMatch(/Ashfield/);
+    expect(hub.activeId).toBe(copy.as.id);
+    const summary = await call("get_map_summary", { map: before });
+    expect(JSON.stringify(summary)).toMatch(/Test Before/);
+    const pv = await raw("render_preview", { map: "Test Before", max_size: 300 });
+    expect((pv.content as { type: string }[]).some((b) => b.type === "image")).toBe(true);
+    // a tool that changes things never takes another map
+    expect(await raw("add_place", { map: "Test Before", name: "Nope", type: "village", x: 10, y: 10 })).toMatchObject({ isError: true });
+    expect(hub.session.doc.features?.places.some((p) => p.name === "Nope")).toBe(false);
+
+    // comparing: a picture and the differences in words
+    const cmp = await raw("compare_maps", { map: "Test Before" });
+    expect(cmp.isError).toBeFalsy();
+    const words = JSON.parse((cmp.content as { text: string }[])[0].text);
+    expect((cmp.content as { type: string }[]).some((b) => b.type === "image")).toBe(true);
+    const said = words.differences.join(" ");
+    expect(said).toMatch(/map pixels? raised/);
+    expect(said).toMatch(/Places: 1 added, 1 moved/);
+    expect(words.linked.join(" ")).toMatch(/copy of Test Before/);
+
+    // across maps: a battlemap made from a spot of the copy, where it is, how far from the original's mill
+    await call("create_battlemap_here", { name: "Test Scene", x: 100, y: 150, squares_x: 20, squares_y: 20 });
+    const where = await call("where_on_map", { from: {}, to: { map: "Test After", place: "Ashfield" } });
+    expect(where.on.x).toBeCloseTo(100, 3);
+    expect(where.on.y).toBeCloseTo(150, 3);
+    expect(where.distance_m).toBeLessThan(5);
+    const far = await call("where_on_map", { from: {}, to: { map: "Test Before", place: "Mill" } });
+    expect(far.distance_m).toBeCloseTo(Math.hypot(20, 30) * 4000, -2);
+    expect(far.linked.join(" ")).toMatch(/battlemap made at \(100, 150\) of Test After/);
+    // a battlemap with two levels copies with both
+    await call("add_level", { where: "above" });
+    await hub.flush();
+    const scene2 = await call("duplicate_map", { name: "Test Scene burnt", open: false });
+    const lv = await hub.store.readLevels(scene2.as.id);
+    expect(lv.levels).toHaveLength(2);
+
+    // the editor's compare view: where the original lies over the copy, and its picture
+    await call("open_project", { id: copy.as.id });
+    expect(await hub.comparePlacement("Test Before")).toMatchObject({ rect: { x: 0, y: 0, w: 256, h: 256 }, kind: "world" });
+    const jpeg = await new Promise<Buffer>((resolve, reject) => {
+      http.get({ host: "127.0.0.1", port: PORT, path: `/api/projects/${before}/picture.jpg?max=512` }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c) => chunks.push(c)).on("end", () => (res.statusCode === 200 ? resolve(Buffer.concat(chunks)) : reject(new Error(`status ${res.statusCode}`))));
+      }).on("error", reject);
+    });
+    expect(jpeg[0]).toBe(0xff);
+    expect(jpeg[1]).toBe(0xd8);
+    await call("open_project", { id: "test-world" });
+    await client.close();
+  }, 90000);
+});
+
 describe("selection and the edit lock", () => {
   it("shares the DM's selection with Claude, locks Claude's edits to it, and lets only the DM change a locked selection", async () => {
     const client = new Client({ name: "test", version: "1.0.0" });

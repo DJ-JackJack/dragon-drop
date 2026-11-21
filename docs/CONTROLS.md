@@ -37,7 +37,7 @@ A city map has its own tools (the sheet from `?` lists them): `H` Pan, `V` Selec
 | Save now | `Ctrl+S` (the map also saves itself a moment after every change; you get a "Saved" note when it is on disk) |
 | Brush size | `[` and `]` (and the slider) |
 | Grid on or off | `G` |
-| Cancel, clear the selection | `Esc` |
+| Cancel, clear the selection (and stop comparing with another map) | `Esc` |
 | Finish a wall, line or outline | `Enter` or double-click; `Backspace` takes back the last point |
 | Delete what is selected | `Delete` or `Backspace` |
 | Turn or flip an object (battlemaps) | `Q` and `E` turn it 15°, `X` flips it; hold `Shift` or `Alt` while placing or moving to skip the snap (with `Shift`, once the drag has started: pressed at the click it adds to the selection) |

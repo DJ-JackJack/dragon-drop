@@ -29,6 +29,10 @@ export interface ProjectInfo {
   parent?: ParentLink;
   /** "battle" for battlemaps (width/height are then floor cells; see meta.battle), "city" for city maps (width/height are ground cells; see meta.city). Missing means a world map. */
   kind?: "world" | "battle" | "city";
+  /** A copy of another map (made to change it): which one. */
+  copiedFrom?: { id: string; name: string; at: string };
+  /** A battlemap or city made from a spot of another map: which map and where. */
+  origin?: { id: string; name: string; x: number; y: number; unit?: "m" };
 }
 
 export interface RefInfo {
@@ -105,6 +109,10 @@ export type ClientMsg =
   | { t: "carve_valleys"; strength: number; floodplains: boolean; deltas: boolean; where?: "map" | "selection" }
   /** World maps: a river drawn along a line (map px, riverDraw.ts): a channel cut along it and a source at its upper end, one edit. Answered with `river_drawn`. */
   | { t: "draw_river"; points: [number, number][]; size: RiverSize }
+  /** Copy the open map under a new name (to change the copy: the same place before and after); the copy is opened. Answered with `duplicated`. */
+  | { t: "duplicate_project"; name: string }
+  /** Where another map lies over the open one, to compare them in the editor (its picture is GET /api/projects/<id>/picture.jpg). Answered with `compare`. */
+  | { t: "compare_with"; id: string }
   /** Lay a road or trail through waypoints (map px), found over the terrain. */
   | { t: "route_line"; kind: "road" | "trail"; points: [number, number][]; name?: string; id?: string }
   /** Turn a reference image into terrain (replaces the whole map; a checkpoint is saved first). */
@@ -184,6 +192,13 @@ export type ServerMsg =
   | { t: "water"; projectId: string; labels: MapLabel[]; named: NamedWater[]; lakes?: LakeShape[] }
   /** Valleys were carved (the answer to `carve_valleys`): how many cells were lowered, how deep the deepest cut is (m), and how much delta land was made. */
   | { t: "carved"; lowered: number; deepestM: number; deltaCells: number; checkpoint: string; scope?: string }
+  /** The open map was copied (the answer to `duplicate_project`; the copy is opened). */
+  | { t: "duplicated"; id: string; name: string; from: string }
+  /**
+   * The answer to `compare_with`: where the other map lies over the open one, in the open map's units (world px, squares, metres), or null when the two aren't linked
+   * (they can then only be shown side by side), and how they are linked, in words.
+   */
+  | { t: "compare"; id: string; name: string; kind: string; rect: Rect | null; how: string[] }
   /** A river was drawn (the answer to `draw_river`): its new source, how long it is, how it ends, the deepest cut through high ground (m), and whether the line was turned round. */
   | { t: "river_drawn"; source: string; lengthKm: number; end: "sea" | "land" | "edge"; deepestM: number; reversed: boolean }
   /** What Claude Code last said (through its hooks): lets Assist mode wait until it is idle. */
