@@ -13,7 +13,9 @@ import { pointInPolygon } from "./geom.ts";
 import { BRIDGE_COLOURS, type BridgeSpan, cityBridges, deckDistance } from "./cityBridges.ts";
 import { WALL_COLOURS, type WallPieces, cityWallPieces } from "./cityWalls.ts";
 import { type Rect, distToSegment } from "./geom.ts";
-import type { RGBAImage } from "./render.ts";
+import { type RGBAImage, drawLabel } from "./render.ts";
+import { textWidth } from "./font.ts";
+import { polygonCentroid } from "./regions.ts";
 
 const { clamp, vnoise, over } = lookKit;
 
@@ -313,6 +315,36 @@ function paintWalls(walls: WallPieces[], img: LookImage, OX: number, OY: number,
         }
       }
     }
+  }
+}
+
+/** The names on a city, where they are (metres): its labels, then the named streets (at their middle), buildings (at their centre) and walls. For Claude's previews. */
+export function cityNamesForPreview(doc: MapDoc): { text: string; x: number; y: number; big: boolean }[] {
+  const f = doc.features, out: { text: string; x: number; y: number; big: boolean }[] = [];
+  const middle = (pts: readonly (readonly number[])[]) => {
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    let d = total / 2;
+    for (let i = 1; i < pts.length; i++) {
+      const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      if (d <= l && l > 0) return [pts[i - 1][0] + ((pts[i][0] - pts[i - 1][0]) * d) / l, pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * d) / l];
+      d -= l;
+    }
+    return [pts[0][0], pts[0][1]];
+  };
+  for (const l of f?.labels ?? []) out.push({ text: l.text, x: l.x, y: l.y, big: l.kind === "region" || l.kind === "sea" });
+  for (const s of f?.streets ?? []) if (s.name) { const [x, y] = middle(s.points); out.push({ text: s.name, x, y, big: false }); }
+  for (const b of f?.buildings ?? []) if (b.name) { const [x, y] = polygonCentroid(b.points); out.push({ text: b.name, x, y, big: false }); }
+  for (const w of f?.cityWalls ?? []) if (w.name) { const [x, y] = middle(w.points); out.push({ text: w.name, x, y, big: false }); }
+  return out;
+}
+
+/** The city's names written over a picture of it (Claude's previews: small capitals with a dark halo, centred on where each name is). */
+export function drawCityNames(img: RGBAImage, doc: MapDoc, region: Rect, px: number) {
+  for (const n of cityNamesForPreview(doc)) {
+    const sx = (n.x - region.x) * px, sy = (n.y - region.y) * px, k = n.big ? 2 : 1;
+    if (sx < -200 || sy < -20 || sx > img.w + 200 || sy > img.h + 20) continue;
+    drawLabel(img, n.text, Math.round(sx - textWidth(n.text, k) / 2), Math.round(sy - 3.5 * k), k);
   }
 }
 

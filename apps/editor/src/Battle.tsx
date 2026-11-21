@@ -1848,8 +1848,8 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       {meta.origin && (
         <>
           <h3>Where it's from</h3>
-          <p className="muted" data-testid="battle-origin">Made from <b>{meta.origin.name}</b> at map px ({meta.origin.x}, {meta.origin.y}).</p>
-          <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta.origin!.id })} title="Open the world map this scene came from">↑ Back to {meta.origin.name}</button></div>
+          <p className="muted" data-testid="battle-origin">Made from <b>{meta.origin.name}</b> {meta.origin.unit === "m" ? <>around ({meta.origin.x}, {meta.origin.y}) m</> : <>at map px ({meta.origin.x}, {meta.origin.y})</>}.</p>
+          <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta.origin!.id })} title={meta.origin.unit === "m" ? "Open the city map this scene came from" : "Open the world map this scene came from"}>↑ Back to {meta.origin.name}</button></div>
         </>
       )}
       <h3>This map</h3>

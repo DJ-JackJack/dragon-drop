@@ -41,10 +41,10 @@ export function ShortcutHelp({ battle, city = false, onClose }: { battle: boolea
           <Row keys={["Shift + click"]} what="Select several: add something to the selection, or take it out" />
           <Row keys={battle || city ? ["Drag a box"] : ["Shift + drag a box"]} what={battle || city ? "With the Select tool, on bare ground: select everything inside the box (Shift adds to what is selected)" : "With the Select tool, on bare ground: select the places and labels inside the box"} />
           <Row keys={["Drag"]} what="Move everything that is selected together" />
-          {!city && <Row keys={["Ctrl+C", "Ctrl+V"]} what={battle ? "Copy and paste the selected objects, lights, walls and light zones (it lands under the pointer)" : "Copy and paste the selected place or label (it lands under the pointer; a place is named \"... (copy)\")"} />}
+          <Row keys={["Ctrl+C", "Ctrl+V"]} what={city ? "Copy and paste the selected buildings, streets, walls, trees and names (it lands under the pointer; a copied building, street or wall has no name)" : battle ? "Copy and paste the selected objects, lights, walls and light zones (it lands under the pointer)" : "Copy and paste the selected place or label (it lands under the pointer; a place is named \"... (copy)\")"} />
           <Row keys={["Ctrl+V"]} what="With a picture copied (after any map things): add it to References. Dropping a picture anywhere in the window does the same" />
           <Row keys={["U"]} what="Show or hide the trace picture (a reference picture laid over the map: Trace over map in References)" />
-          {!city && <Row keys={["Ctrl+D"]} what="Duplicate the selection, a little along and down" />}
+          <Row keys={["Ctrl+D"]} what={city ? "Duplicate the selection, 5 m along and down" : "Duplicate the selection, a little along and down"} />
           {city && <Row keys={["Q", "E"]} what="Turn the selected buildings (or the one you are about to place) 15° left / right. Arrow keys nudge the selection half a metre (Shift: 5 m)" />}
           <Row keys={["Ctrl+S"]} what="Save now (the map also saves itself a moment after every change)" />
           <Row keys={["[", "]"]} what="Smaller / larger brush" />

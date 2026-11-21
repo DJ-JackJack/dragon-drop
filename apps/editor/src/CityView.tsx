@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  ARROW_DIRECTION, BRIDGE_COLOURS, MATERIALS, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
+  ARROW_DIRECTION, BRIDGE_COLOURS, CITY_LABEL_KINDS, MATERIALS, cityBattleSquares, type CityClip, cityClipBounds, copyCity, pasteCity, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
   type WallPieces, cleanCityWall, distToWall, wallPieces,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
@@ -20,6 +20,11 @@ import { makeResizeKeeper } from "./viewResize.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
 import { readerCtl } from "./reader.ts";
+import { drawCityNames } from "./drawCityNames.ts";
+import { type Hit, hitTest, loadLabelFonts } from "./drawFeatures.ts";
+import { ask, notice } from "./dialogs.tsx";
+import { CityExportDialog } from "./cityExport.tsx";
+import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 
 type Pt = [number, number];
 interface View { scale: number; ox: number; oy: number } // scale: screen px per metre
@@ -28,8 +33,11 @@ const GOLD = "rgba(255, 224, 120, 0.95)";
 
 interface Props { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }
 
+/** Somewhere else to draw the city: a tile of a picture export, at its own scale, with only the map on it (no selection, tools, trace picture or scale bar). */
+export interface CityPaintTarget { ctx: CanvasRenderingContext2D; v: View; W: number; H: number; names: boolean; contours: boolean }
+
 type Drag = {
-  mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope" | "reader";
+  mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope" | "reader" | "battlebox";
   sx: number; sy: number; ox: number; oy: number;
   /** Where it started, in metres. */
   ax: number; ay: number;
@@ -88,6 +96,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const wallDraft = useRef<Pt[] | null>(null);
   /** Each wall's towers and gates, worked out once for the wall and the streets as they are. */
   const wallCache = useRef(new WeakMap<MapCityWall, { streets: readonly MapStreet[]; pieces: WallPieces }>());
+  /** Where the labels were drawn last (screen boxes), to click them. */
+  const labelHits = useRef<Hit[]>([]);
   /** Each street's bridges, worked out once for what the street is and the ground as it is (`groundVer` counts the ground's changes). */
   const groundVer = useRef(0);
   const bridgeCache = useRef(new Map<string, BridgeSpan[]>());
@@ -105,6 +115,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const spaceRef = useRef(false); spaceRef.current = spaceDown;
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number; ground: string; land: string } | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   /** Per building: its box, colour and ridge, worked out once (a building's points never change in place: an edit makes a new object). */
   const cache = useRef(new WeakMap<object, { x0: number; y0: number; x1: number; y1: number; fill: string; ridge: [number, number, number, number]; slope: [number, number, number, number, number]; turn: number }>());
   /** Roof pictures of the asset packs, loaded as they are first drawn: the picture, its average colour (for when it is too small to see) and a tiling pattern. */
@@ -215,6 +226,15 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     requestDraw();
   }, [requestDraw]);
 
+  /** Before a picture export: every roof picture the buildings use loaded (or given up on after a while), and the fonts. */
+  async function prepareExport() {
+    const assets = new Set((featRef.current.buildings ?? []).flatMap((b) => (b.asset ? [b.asset] : [])));
+    for (const a of assets) roofPicture(a);
+    const t0 = performance.now();
+    while ([...assets].some((a) => roofImgs.current.get(a) === "loading") && performance.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 100));
+    await loadLabelFonts();
+  }
+
   // ------------------------------------------------------------ view
   function fit() {
     const wrap = wrapRef.current, m = metaRef.current;
@@ -238,19 +258,25 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const local = (e: React.PointerEvent | React.WheelEvent) => { const r = canvasRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
   // ------------------------------------------------------------ drawing
-  function draw() {
+  /** Draw the city on the screen, or (with a target) into a tile of a picture export. */
+  function draw(target?: CityPaintTarget) {
     const cv = canvasRef.current, wrap = wrapRef.current, m = metaRef.current;
-    if (!cv || !wrap) return;
-    const dpr = window.devicePixelRatio || 1;
-    const W = wrap.clientWidth, H = wrap.clientHeight;
-    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
-    const ctx = cv.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    let ctx: CanvasRenderingContext2D, W: number, H: number, v: View;
+    if (target) ({ ctx, W, H, v } = target);
+    else {
+      if (!cv || !wrap) return;
+      const dpr = window.devicePixelRatio || 1;
+      W = wrap.clientWidth; H = wrap.clientHeight;
+      if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      ctx = cv.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      v = viewRef.current;
+    }
     ctx.fillStyle = "#0d0d10";
     ctx.fillRect(0, 0, W, H);
     const off = offRef.current;
     if (!off || !m?.city) return;
-    const spec = m.city, v = viewRef.current, o = uiRef.current, f = featRef.current;
+    const spec = m.city, o = uiRef.current, f = featRef.current, screen = !target;
     const MW = spec.widthM * v.scale, MH = spec.heightM * v.scale;
     // the ground (the cells may run a little past the city's edge: clipped to it)
     ctx.save();
@@ -258,15 +284,14 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(off, v.ox, v.oy, off.width * spec.cellM * v.scale, off.height * spec.cellM * v.scale);
     ctx.restore();
-    ctx.strokeStyle = "rgba(255,255,255,0.18)";
-    ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1);
-    if (o.contours) drawContours(ctx, v, W, H);
-    traceCtl.draw(ctx, f.trace, m.id, v); // (over the ground, under the streets and buildings: you see through to what you are redrawing)
+    if (screen) { ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1); }
+    if (target ? target.contours : o.contours) drawContours(ctx, v, W, H);
+    if (screen) traceCtl.draw(ctx, f.trace, m.id, v); // (over the ground, under the streets and buildings: you see through to what you are redrawing)
 
-    const mv = moving.current, mvSet = mv ? new Set(mv.ids) : null;
+    const mv = screen ? moving.current : null, mvSet = mv ? new Set(mv.ids) : null;
     const dx = (id: string) => (mvSet?.has(id) ? mv!.dx : 0), dy = (id: string) => (mvSet?.has(id) ? mv!.dy : 0);
     const vx0 = -v.ox / v.scale - 5, vy0 = -v.oy / v.scale - 5, vx1 = (W - v.ox) / v.scale + 5, vy1 = (H - v.oy) / v.scale + 5;
-    const sel = new Set(o.selected);
+    const sel = new Set(screen ? o.selected : []);
     const px = (x: number) => v.ox + x * v.scale, py = (y: number) => v.oy + y * v.scale;
 
     // streets: every edge first, then every surface, so crossings are one piece
@@ -337,6 +362,15 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       if (!ox && !oy && !streetsMoved) return piecesOf(w, f.streets ?? []);
       return wallPieces(ox || oy ? { ...w, points: w.points.map(([x, y]) => [x + ox, y + oy] as Pt) } : w, streetsMoved ? (f.streets ?? []).map((s) => (dx(s.id) || dy(s.id) ? { ...s, points: s.points.map(([x, y]) => [x + dx(s.id), y + dy(s.id)] as Pt) } : s)) : f.streets ?? []);
     }), vx0, vy0, vx1, vy1);
+
+    // the names: streets' along them, buildings' over them, then the labels (districts, water, landmarks)
+    const moved = mv && (f.labels ?? []).some((l) => mvSet!.has(l.id)) ? { ...f, labels: f.labels.map((l) => (mvSet!.has(l.id) ? { ...l, x: l.x + mv.dx, y: l.y + mv.dy } : l)) } : f;
+    if (!screen) {
+      // (a picture is sized as if it were the whole city fitted on the screen: names keep the size they have on the map as a whole)
+      if (target!.names) drawCityNames(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H }, null);
+      return;
+    }
+    labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H }, sel) : [];
 
     // what is selected
     ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = GOLD; ctx.lineJoin = "round";
@@ -692,6 +726,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         ctx.beginPath(); ctx.arc(p.x, p.y, r + 1.5, 0, Math.PI * 2); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
       }
     }
+    if (d?.mode === "battlebox" && p) {
+      const b = toM(p.x, p.y), w = Math.abs(b.x - d.ax), h = Math.abs(b.y - d.ay), sq = cityBattleSquares({ w, h }), big = sq.squaresX > 150 || sq.squaresY > 150;
+      const x = Math.min(d.sx, p.x), y = Math.min(d.sy, p.y);
+      ctx.save(); ctx.fillStyle = big ? "rgba(220, 60, 50, 0.15)" : "rgba(255, 224, 120, 0.12)"; ctx.fillRect(x, y, Math.abs(p.x - d.sx), Math.abs(p.y - d.sy));
+      ctx.setLineDash([7, 5]); ctx.lineWidth = 2; ctx.strokeStyle = big ? "rgba(240, 90, 80, 0.95)" : GOLD; ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(p.x - d.sx), Math.abs(p.y - d.sy)); ctx.restore();
+      label(`${Math.round(w)} × ${Math.round(h)} m · ${sq.squaresX} × ${sq.squaresY} squares${big ? " (too big: 150 at most)" : ""}`, p.x + 12, p.y - 10);
+    }
     if (d?.mode === "marquee" && p) {
       const x = Math.min(d.sx, p.x), y = Math.min(d.sy, p.y), w = Math.abs(p.x - d.sx), h = Math.abs(p.y - d.sy);
       ctx.save(); ctx.fillStyle = "rgba(255, 224, 120, 0.12)"; ctx.fillRect(x, y, w, h); ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = GOLD; ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
@@ -769,6 +810,37 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     onUiRef.current({ selected: [id] });
   }
 
+  /** A new label where the Name tool was clicked: its text asked for, its kind and size from the tool bar. */
+  async function addLabel(x: number, y: number) {
+    const o = uiRef.current, kind = CITY_LABEL_KINDS.find((k) => k.id === o.labelKind) ?? CITY_LABEL_KINDS[0];
+    const text = (await ask(`${kind.name} name:`))?.trim();
+    if (!text) return;
+    const id = newFeatureId("l");
+    sendCityFeatures({ upsertLabels: [{ id, text: text.slice(0, 80), kind: kind.kind, x: r2(x), y: r2(y), ...(o.labelSize !== 1 && { size: o.labelSize }) }] }, `Name ${text}`);
+    onUiRef.current({ selected: [id] });
+  }
+  /** Name (or rename) a street, building or wall clicked with the Name tool. */
+  async function nameThing(kind: "building" | "street" | "wall", id: string) {
+    const f = featRef.current;
+    const cur = kind === "building" ? f.buildings?.find((b) => b.id === id) : kind === "street" ? f.streets?.find((s) => s.id === id) : f.cityWalls?.find((w) => w.id === id);
+    if (!cur) return;
+    const text = await ask(`Name of this ${kind} (empty for none):`, cur.name ?? "");
+    if (text === null) return;
+    const v = text.trim().slice(0, 80), { name: _n, ...rest } = cur, next = v ? { ...rest, name: v } : rest;
+    if (v === (cur.name ?? "")) return;
+    sendCityFeatures(kind === "building" ? { upsertBuildings: [next as MapBuilding] } : kind === "street" ? { upsertStreets: [next as MapStreet] } : { upsertCityWalls: [next as MapCityWall] }, v ? `Name ${kind} ${v}` : `Clear ${kind} name`);
+  }
+
+  /** The Battlemap here tool's box let go of: say how big a battlemap it makes, ask its name, and have it made (the server opens it). */
+  async function makeBattle(rect: { x: number; y: number; w: number; h: number }) {
+    const m = metaRef.current, sq = cityBattleSquares(rect);
+    if (!m) return;
+    if (sq.squaresX > 150 || sq.squaresY > 150) { await notice(`That box is ${Math.round(rect.w)} × ${Math.round(rect.h)} m: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, and a battlemap can be at most 150 squares a side (about 228 m). Drag a smaller box.`); return; }
+    const name = await ask(`A battlemap of ${Math.round(rect.w)} × ${Math.round(rect.h)} m here: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, with the buildings as walls, doors and roofs. Its name:`, `${m.name} scene`, "Make it");
+    if (!name?.trim()) return;
+    store.send({ t: "create_battle_from_city", name: name.trim(), rect });
+  }
+
   /** A city wall from the Wall tool's settings, open or a ring. */
   function finishWall(closed: boolean) {
     const pts = wallDraft.current, spec = metaRef.current?.city, o = uiRef.current;
@@ -828,8 +900,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   function moveSelected(ids: string[], dx: number, dy: number, label: string) {
     const spec = metaRef.current?.city, f = featRef.current;
     if (!spec) return;
-    const { buildings, streets, trees, land, walls } = selectedOf(f, ids);
-    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points), ...walls.flatMap((w) => w.points)] as Pt[];
+    const { buildings, streets, trees, land, walls, labels } = selectedOf(f, ids);
+    const all = [...buildings.flatMap((b) => b.points), ...streets.flatMap((s) => s.points), ...trees.flatMap((t) => t.points), ...land.flatMap((l) => l.points), ...walls.flatMap((w) => w.points), ...labels.map((l) => [l.x, l.y])] as Pt[];
     if (!all.length) return;
     const bb = pointsBounds(all);
     dx = Math.max(-bb.x0, Math.min(spec.widthM - bb.x1, dx)); dy = Math.max(-bb.y0, Math.min(spec.heightM - bb.y1, dy));
@@ -839,6 +911,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ...(buildings.length && { upsertBuildings: buildings.map((b) => ({ ...b, points: b.points.map(mv) })) }), ...(streets.length && { upsertStreets: streets.map((s) => ({ ...s, points: s.points.map(mv) })) }),
       ...(trees.length && { upsertTrees: trees.map((t) => ({ ...t, points: t.points.map(mv) })) }), ...(land.length && { upsertLand: land.map((l) => ({ ...l, points: l.points.map(mv) })) }),
       ...(walls.length && { upsertCityWalls: walls.map((w) => ({ ...w, points: w.points.map(mv) })) }),
+      ...(labels.length && { upsertLabels: labels.map((l) => { const [x, y] = mv([l.x, l.y]); return { ...l, x, y }; }) }),
     }, label);
   }
   function nudge(dx: number, dy: number, big: boolean): boolean {
@@ -869,6 +942,25 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     sendCityFeatures({ upsertBuildings: turned }, turned.length === 1 ? "Turn building" : `Turn ${turned.length} buildings`);
     return true;
   }
+  /** Paste a copy (new ids, moved by dx, dy metres, held inside the city) and select it. */
+  function pasteGroup(clip: CityClip, dx: number, dy: number, label: string) {
+    const spec = metaRef.current?.city;
+    if (!spec) return;
+    const r = pasteCity(clip, dx, dy, spec), n = r.ids.length;
+    sendCityFeatures(r.patch, n === 1 ? label : `${label} ${n} items`);
+    onUiRef.current({ selected: r.ids });
+  }
+  /** Ctrl+V: what was copied, centred on the pointer (or 5 m along and down when the pointer is off the map); pasting again in the same place steps it along. */
+  function pasteClip() {
+    const clip = getClip("city");
+    if (!clip) return;
+    const b = cityClipBounds(clip), p = pointer.current;
+    let dx = 5, dy = 5;
+    if (p) { const q = toM(p.x, p.y); dx = r2(q.x - (b.x0 + b.x1) / 2); dy = r2(q.y - (b.y0 + b.y1) / 2); }
+    ({ dx, dy } = unstack("city", dx, dy, 5));
+    pasteGroup(clip, dx, dy, "Paste");
+  }
+
   function deleteSelected() {
     if (removeSelected(featRef.current, uiRef.current.selected)) onUiRef.current({ selected: [] });
   }
@@ -876,6 +968,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   // ------------------------------------------------------------ effects
   useEffect(() => store.onPatch((r) => paintGround(r)), [paintGround]);
   useEffect(() => { void loadRoofPools(); return roofAssetsStore.subscribe(requestDraw); }, [meta?.id, requestDraw]);
+  useEffect(() => { void loadLabelFonts().then(requestDraw); }, [requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
   useEffect(() => { requestDraw(); }, [features, ui, meta, requestDraw]);
   useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
@@ -907,6 +1000,13 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       }
       const arrow = ARROW_DIRECTION[e.key];
       if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey && nudge(arrow[0], arrow[1], e.shiftKey)) { e.preventDefault(); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        // (Ctrl+C and Ctrl+V let the browser's copy and paste events happen: a picture copied after the map items is pasted as a reference instead, see clipboard.ts)
+        if (k === "c") { const clip = copyCity(featRef.current, o.selected); if (clip) { setClip("city", clip); itemsCopied(); } return; }
+        if (k === "v") { armItemsPaste("city", pasteClip); return; }
+        if (k === "d") { e.preventDefault(); const clip = copyCity(featRef.current, o.selected); if (clip) pasteGroup(clip, 5, 5, "Duplicate"); return; } // (Ctrl+D is "bookmark this page" in a browser)
+      }
       if (e.key === "Escape") { if (drag.current?.mode === "marquee") drag.current = null; onUiRef.current({ selected: [] }); requestDraw(); return; }
       const key = e.key.toLowerCase();
       if ((key === "q" || key === "e") && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -943,8 +1043,16 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     }
     if (e.button === 1 || e.button === 2 || o.tool === "pan" || spaceRef.current) { drag.current = { mode: "pan", ...base }; return; }
     if (e.button !== 0) return;
-    if (o.tool === "select") {
-      const hit = hitAt(q.x, q.y);
+    if (o.tool === "select" || o.tool === "citylabel") {
+      const lh = hitTest(labelHits.current, p.x, p.y);
+      const hit = lh?.kind === "label" ? { kind: "label" as const, id: lh.id } : o.tool === "select" ? hitAt(q.x, q.y) : null;
+      if (o.tool === "citylabel" && !hit) {
+        // the Name tool: a street, building or wall is named; open ground gets a new label
+        const thing = hitAt(q.x, q.y);
+        if (thing && thing.kind !== "trees") { void nameThing(thing.kind, thing.id); return; }
+        void addLabel(q.x, q.y);
+        return;
+      }
       if (hit) {
         const has = o.selected.includes(hit.id);
         if (e.shiftKey) { onUiRef.current({ selected: has ? o.selected.filter((id) => id !== hit.id) : [...o.selected, hit.id] }); return; }
@@ -959,6 +1067,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       return;
     }
     if (o.tool === "building") { drag.current = { mode: "rect", ...base }; return; }
+    if (o.tool === "citybattle") { drag.current = { mode: "battlebox", ...base }; return; }
     const dbl = (() => { const lc = lastClick.current, now = performance.now(); const d = !!lc && now - lc.t < 400 && Math.hypot(p.x - lc.x, p.y - lc.y) < 8; lastClick.current = { t: now, x: p.x, y: p.y }; return d; })();
     if (o.tool === "outline") {
       const pts = outline.current ?? [];
@@ -1050,6 +1159,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         for (const bl of f.buildings ?? []) { const [cx, cy] = polygonCentroid(bl.points as Pt[]); if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(bl.id); }
         for (const s of f.streets ?? []) if (s.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(s.id);
         for (const w of f.cityWalls ?? []) if (w.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) found.push(w.id);
+        if (uiRef.current.names) for (const l of f.labels ?? []) if (l.x >= x0 && l.x <= x1 && l.y >= y0 && l.y <= y1) found.push(l.id);
         for (const t of f.trees ?? []) { const [cx, cy] = t.points.length >= 3 ? polygonCentroid(t.points as Pt[]) : t.points[0]; if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) found.push(t.id); }
         onUiRef.current({ selected: d.add ? [...new Set([...(d.base ?? []), ...found])] : found });
       }
@@ -1059,6 +1169,10 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       addLand([[d.ax, d.ay]], dragged ? Math.hypot(b.x - d.ax, b.y - d.ay) : uiRef.current.landSize); // (a click: the usual size)
     }
     if (d?.mode === "slope" && p && Math.hypot(p.x - d.sx, p.y - d.sy) >= 6) { const b = toM(p.x, p.y); addLand([[d.ax, d.ay], [b.x, b.y]], 0); }
+    if (d?.mode === "battlebox" && p) {
+      const b = toM(p.x, p.y), spec = metaRef.current?.city, rect = { x: Math.min(d.ax, b.x), y: Math.min(d.ay, b.y), w: Math.abs(b.x - d.ax), h: Math.abs(b.y - d.ay) };
+      if (spec && rect.w >= 6 && rect.h >= 6) void makeBattle(rect);
+    }
     if (d?.mode === "rect" && p) {
       const o = uiRef.current, b = toM(p.x, p.y);
       if (Math.hypot(p.x - d.sx, p.y - d.sy) < 4) addBuilding(rectPolygon(d.ax, d.ay, DEFAULT_HOUSE.w, DEFAULT_HOUSE.h, o.angle)); // a click: the usual house
@@ -1093,8 +1207,10 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         {hover && <> · {counts}</>}
       </div>
       <div className="map-buttons">
+        <button onClick={() => setExportOpen(true)} title="Export the city as a picture (PNG), or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
         <button onClick={() => { fittedFor.current = null; fit(); requestDraw(); }} title="Fit the whole city in the window (0)">⤢ Fit</button>
       </div>
+      {exportOpen && meta?.city && <CityExportDialog meta={meta} names={ui.names} contours={ui.contours} prepare={prepareExport} paint={(t) => draw(t)} onClose={() => setExportOpen(false)} />}
       {meta && <TraceBar trace={features.trace} meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}
     </div>

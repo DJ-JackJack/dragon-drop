@@ -52,9 +52,9 @@ function renderRegion(ctx: CanvasRenderingContext2D, src: ExportSource, o: Expor
   }
 }
 
-const canvasBlob = (c: HTMLCanvasElement) => new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error("The browser couldn't make the image (it may be too large for this computer's memory)."))), "image/png"));
+export const canvasBlob = (c: HTMLCanvasElement) => new Promise<Blob>((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error("The browser couldn't make the image (it may be too large for this computer's memory)."))), "image/png"));
 
-const safeName = (n: string) => n.replace(/[^\w\- ]+/g, "").trim() || "map";
+export const safeName = (n: string) => n.replace(/[^\w\- ]+/g, "").trim() || "map";
 
 /** Make the export: one PNG, or a ZIP of PNG tiles when larger than MAX_SINGLE_PX. */
 export async function exportMap(src: ExportSource, o: ExportOptions, onProgress: (text: string) => void): Promise<{ blob: Blob; filename: string }> {

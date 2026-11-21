@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { citySpec, landGrid, renderCity } from "@mapmaker/core";
-import { runTool } from "@mapmaker/tools";
+import { encodeJpeg, runTool } from "@mapmaker/tools";
 import { Hub } from "../src/hub.ts";
 import { ProjectStore } from "../src/store.ts";
 
@@ -264,6 +264,78 @@ describe("city walls through Claude's tools", () => {
     expect((await ok(hub, "list_city_walls")).total).toBe(0);
     // bad input is refused with a reason
     expect(textOf(await tool(hub, "add_city_walls", { walls: [{ points: [[0, 0], [900, 0]] }] }))).toMatch(/outside the map/);
+    await hub.close();
+  });
+});
+
+describe("names on a city through Claude's tools", () => {
+  it("writes labels in metres, names streets, lists and changes them, shows them in previews and removes them", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Name Town", width_m: 300, height_m: 200 });
+    const road = await ok(hub, "add_streets", { streets: [{ points: [[0, 100], [300, 100]], kind: "street" }] });
+    await ok(hub, "update_streets", { changes: [{ id: road.ids[0], name: "Long Road" }] });
+    const added = await ok(hub, "add_city_labels", { labels: [{ text: "Old Town", x: 100, y: 50 }, { text: "The Mere", x: 200, y: 160, kind: "water", size: 1.5 }, { text: "Lost", x: 900, y: 10 }] });
+    expect(added.added.map((l: { text: string; kind: string }) => `${l.text}:${l.kind}`)).toEqual(["Old Town:district", "The Mere:water"]);
+    expect(added.skipped[0]).toMatch(/outside the map/);
+    const doc = hub.session.doc;
+    expect(doc.features!.labels.find((l) => l.text === "The Mere")).toMatchObject({ kind: "sea", x: 200, y: 160, size: 1.5 });
+    const list = await ok(hub, "list_city_labels");
+    expect(list.labels).toHaveLength(2);
+    expect(list.named_streets).toEqual([{ id: road.ids[0], name: "Long Road" }]);
+    const id = added.added[0].id;
+    expect((await ok(hub, "update_city_labels", { changes: [{ id, kind: "landmark", angle: 20 }] })).changed[0]).toMatchObject({ kind: "landmark", angle: 20 });
+    // the preview writes the names (and can leave them out)
+    const named = await tool(hub, "render_city", { grid: false }), bare = await tool(hub, "render_city", { grid: false, names: false });
+    const img = (r: typeof named) => (r.content as { type: string; data?: string }[]).find((c) => c.type === "image")!.data;
+    expect(img(named)).not.toBe(img(bare));
+    // the world map's label tools are refused on a city, and these are refused elsewhere
+    expect(textOf(await tool(hub, "add_label", { text: "X", x: 1, y: 1, kind: "region" }))).toMatch(/city map/i);
+    await ok(hub, "remove_city_labels", { ids: [id] });
+    expect((await ok(hub, "list_city_labels")).labels).toHaveLength(1);
+    await hub.close();
+  });
+});
+
+describe("a city on the phone page", () => {
+  it("gets a fresh picture after an edit (drawn on the compute thread)", async () => {
+    const { hub } = fresh();
+    const info = await ok(hub, "create_city", { name: "Phone Town", width_m: 200, height_m: 150 });
+    const jpeg = () => hub.renderJpeg(info.created.id, 512, (img) => encodeJpeg(img, 88, 16_000_000));
+    const before = await jpeg();
+    expect(before).toBeTruthy();
+    await ok(hub, "add_buildings", { buildings: [{ x: 100, y: 75, w: 30, h: 20 }] });
+    const after = await jpeg();
+    expect(Buffer.from(after!).equals(Buffer.from(before!))).toBe(false);
+    await hub.close();
+  });
+});
+
+describe("a battlemap from a part of a city", () => {
+  it("carries the ground, streets, buildings (walls, a door, roofs) and walls over, remembers the city, and refuses a box too big", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Scene Town", width_m: 400, height_m: 300 });
+    const road = await ok(hub, "add_streets", { streets: [{ points: [[0, 150], [400, 150]], kind: "street" }] });
+    await ok(hub, "add_buildings", { buildings: [{ x: 60, y: 140, w: 10, h: 8, roof: "thatch", kind: "tavern" }, { x: 60, y: 165, w: 12, h: 8, kind: "temple" }, { x: 99, y: 175, w: 10, h: 8 }] });
+    await ok(hub, "add_city_walls", { walls: [{ points: [[90, 100], [90, 200]] }] });
+    expect(textOf(await tool(hub, "create_battlemap_from_city", { x: 0, y: 0, w: 300, h: 300 }))).toMatch(/make the box smaller/);
+    const made = await ok(hub, "create_battlemap_from_city", { x: 40, y: 125, w: 60, h: 60, name: "Tavern Brawl" });
+    expect(made.created.description).toMatch(/3 buildings/);
+    const doc = hub.session.doc;
+    expect(doc.meta.kind).toBe("battle");
+    expect(doc.meta.battle).toMatchObject({ squaresX: 39, squaresY: 39, feetPerSquare: 5 });
+    expect(doc.meta.origin).toMatchObject({ name: "Scene Town", unit: "m", x: 70, y: 155 });
+    const f = doc.features!;
+    expect(f.roofs).toHaveLength(2); // (the two buildings wholly inside the box; the one cut by its edge gets walls only)
+    expect(f.roofs!.find((r) => r.style === "thatch")).toBeTruthy();
+    expect(f.walls!.filter((w) => w.kind === "door").length).toBeGreaterThanOrEqual(2);
+    expect(f.walls!.filter((w) => w.kind === "wall").length).toBeGreaterThan(6);
+    // the floor: cobbles on the street, planks in the tavern, flagstones in the temple, grass elsewhere
+    const b = doc.meta.battle!, m = 5 * 0.3048, at = (x: number, y: number) => doc.height.data[Math.floor(((y - 125) / m) * b.sub) * doc.height.w + Math.floor(((x - 40) / m) * b.sub)];
+    expect(at(80, 150)).toBe(2);
+    expect(at(60, 140)).toBe(3);
+    expect(at(60, 165)).toBe(1);
+    expect(at(50, 180)).toBe(5);
+    void road;
     await hub.close();
   });
 });

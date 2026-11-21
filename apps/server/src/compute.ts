@@ -7,7 +7,7 @@ import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
 } from "@mapmaker/core";
-import { type ReadResult, type ReaderOptions, type RGBAImage, readBuildings } from "@mapmaker/core";
+import { type ReadResult, type ReaderOptions, type RGBAImage, readBuildings, renderCity } from "@mapmaker/core";
 import { decodeImage } from "@mapmaker/tools";
 import { NoiseStore } from "./noiseStore.ts";
 
@@ -22,6 +22,8 @@ export interface MapCompute {
   regional(doc: MapDoc, plan: RegionalPlan, seed: number): Promise<Float32Array>;
   /** Start preparing for paint() in the background (e.g. when a map opens). */
   warm(doc: MapDoc): void;
+  /** A city map's picture (core renderCity), at most `maxSize` px a side, its roofs from the decoded asset-pack pictures given. */
+  city(doc: MapDoc, opts: { maxSize: number; roofTiles?: Record<string, TileData> }): Promise<RGBAImage>;
   /** Read buildings out of a picture (the city picture reader, core cityReader.ts). `key` names the picture, so asking again about the same one doesn't decode it again. */
   readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult>;
   close(): Promise<void>;
@@ -50,7 +52,8 @@ export type Job =
   | { op: "paint"; W: number; H: number; heights: Float32Array; meta: MapMeta; derived: Derived }
   | ({ op: "battle"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features } & BattleRenderOpts)
   | { op: "warm"; W: number; H: number; seed: number }
-  | { op: "read"; key: string; bytes: Uint8Array; opts: ReaderOptions };
+  | { op: "read"; key: string; bytes: Uint8Array; opts: ReaderOptions }
+  | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
 
@@ -90,7 +93,11 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | RGBAImage | null {
+    if (job.op === "city") {
+      const tiles = job.roofTiles;
+      return renderCity({ meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features }, { maxSize: job.maxSize, ...(tiles && { tileFor: (a: string) => tiles[a] ?? null }) }).img;
+    }
     if (job.op === "read") {
       if (this.pic?.key !== job.key) {
         const img = decodeImage(job.bytes);
@@ -151,6 +158,9 @@ export class InlineCompute implements MapCompute {
     return this.runner.run({ op: "battle", ...snapshot(doc), features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }) as Uint8ClampedArray;
   }
   warm() {}
+  async city(doc: MapDoc, opts: { maxSize: number; roofTiles?: Record<string, TileData> }) {
+    return this.runner.run({ op: "city", ...snapshot(doc), features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }) as RGBAImage;
+  }
   async readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions) {
     return this.runner.run({ op: "read", key, bytes, opts }) as ReadResult;
   }
@@ -240,6 +250,12 @@ export class WorkerCompute implements MapCompute {
     if (this.painter.dead) return this.inline.battle(doc, opts);
     const s = snapshot(doc);
     return this.painter.call<Uint8ClampedArray>({ op: "battle", ...s, features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }, [s.heights.buffer as ArrayBuffer]);
+  }
+
+  city(doc: MapDoc, opts: { maxSize: number; roofTiles?: Record<string, TileData> }): Promise<RGBAImage> {
+    if (this.painter.dead) return this.inline.city(doc, opts);
+    const s = snapshot(doc);
+    return this.painter.call<RGBAImage>({ op: "city", ...s, features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }, [s.heights.buffer as ArrayBuffer]);
   }
 
   readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult> {

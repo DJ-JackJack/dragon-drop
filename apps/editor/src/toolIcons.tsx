@@ -41,6 +41,8 @@ const P: Record<string, ReactNode> = {
   building: <><rect x="5" y="4" width="14" height="16" /><path d="M9 8h2M13 8h2M9 12h2M13 12h2M10 20v-4h4v4" /></>,
   outline: <path d="M5 9l7-5 7 5-2 10H7z" />,
   street: <path d="M9 21L11 3M15 21l-2-18" />,
+  citylabel: <path d="M5 6h14M12 6v13M9 19h6" />,
+  citybattle: <><rect x="4" y="4" width="16" height="16" /><path d="M4 12h16M12 4v16" /></>,
   citywall: <path d="M2 20V12h3v2h2v-2h3v2h2v-2h3v8M15 20V7h2v2h2V7h2v13M2 20h20" />,
   hills: <><path d="M2 18c3-7 6-9 9-4 2-5 6-6 11 4" /><path d="M6 18c1.5-2.5 3-3 4.5-1.5" /></>,
   trees: <><circle cx="9" cy="9" r="5" /><circle cx="16.5" cy="12" r="4" /><path d="M9 14v6M16.5 16v4" /></>,

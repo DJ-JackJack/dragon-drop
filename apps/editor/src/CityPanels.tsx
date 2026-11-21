@@ -1,8 +1,8 @@
 /** The city map's tool bar (the options of the chosen tool), the inspector for what is selected, and the city's own settings (its land and climate) for the Map panel. */
 import { useSyncExternalStore } from "react";
 import {
-  BUILDING_KINDS, CITY_CLIMATES, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
-  type CityClimate, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
+  BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
+  type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapLabel, cityLabelKind, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
   cityWallPieces, wallPieces, wallSettings,
 } from "@mapmaker/core";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
@@ -18,6 +18,8 @@ const HINTS: Partial<Record<CityUi["tool"], string>> = {
   building: "Click to place a house, or drag a rectangle to size one. Q and E turn it. Pick its roof above.",
   outline: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish.",
   street: "Click the points a street passes through. Double-click or press Enter to finish.",
+  citybattle: "Drag a box round the place of a fight or scene: a battlemap of it opens (its ground, streets, buildings as walls with doors and roofs, and walls). At 5 ft a square the box can be up to about 228 m across.",
+  citylabel: "Click a street, building or wall to name it. Click open ground to write a name there: pick what it names above. Names are yours: Claude only uses names you gave.",
   citywall: "Click the points of the wall. Click the first point to close it into a ring, or double-click or press Enter to end it. Where a street crosses it, a gate appears.",
   ground: "Drag to paint. [ and ] change the brush size.",
   select: "Click a building, street, wall or trees. Drag to move them, or drag on bare ground to select several. Delete removes; Q and E turn buildings.",
@@ -102,6 +104,17 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
           <label className="slider">
             <span>Towers {ui.wallTowers ? <>every <b>{ui.wallTowers}</b> m</> : <b>none</b>}</span>
             <input type="range" min={0} max={120} step={5} value={ui.wallTowers} onChange={(e) => { const v = Number(e.target.value); onUi({ wallTowers: v > 0 && v < 10 ? 10 : v }); }} data-testid="city-wall-towers" />
+          </label>
+        </>
+      )}
+      {ui.tool === "citylabel" && (
+        <>
+          <div className="seg" role="group" aria-label="What the name is for" data-testid="city-label-kinds">
+            {CITY_LABEL_KINDS.map((k) => <button key={k.id} className={ui.labelKind === k.id ? "on" : ""} onClick={() => onUi({ labelKind: k.id })} data-testid={`city-label-${k.id}`}>{k.name}</button>)}
+          </div>
+          <label className="slider">
+            <span>Size <b>{ui.labelSize.toFixed(1)}</b>×</span>
+            <input type="range" min={0.5} max={3} step={0.1} value={ui.labelSize} onChange={(e) => onUi({ labelSize: Number(e.target.value) })} data-testid="city-label-size" />
           </label>
         </>
       )}
@@ -199,6 +212,7 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         </label>
         {row("Hills, valleys and slopes", String((features.land ?? []).length))}
         <label className="check"><input type="checkbox" checked={ui.contours} onChange={(e) => onUi({ contours: e.target.checked })} data-testid="city-contours" /> Contour lines</label>
+        <label className="check"><input type="checkbox" checked={ui.names} onChange={(e) => onUi({ names: e.target.checked })} data-testid="city-names" /> Names and labels</label>
       </section>
     </>
   );
@@ -208,12 +222,13 @@ const hexOf = (c: [number, number, number]) => `#${c.map((v) => v.toString(16).p
 
 /** What is selected: one building or street to edit, or a group to change together. */
 export function CityInspector({ features, ui, onUi }: { features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {
-  const { buildings, streets, trees, land, walls } = selectedOf(features, ui.selected);
-  if (!buildings.length && !streets.length && !trees.length && !land.length && !walls.length) return null;
+  const { buildings, streets, trees, land, walls, labels } = selectedOf(features, ui.selected);
+  if (!buildings.length && !streets.length && !trees.length && !land.length && !walls.length && !labels.length) return null;
   const clear = () => onUi({ selected: [] });
-  const total = buildings.length + streets.length + trees.length + land.length + walls.length;
+  const total = buildings.length + streets.length + trees.length + land.length + walls.length + labels.length;
   const remove = () => { if (removeSelected(features, ui.selected)) onUi({ selected: [] }); };
   if (total === 1 && trees.length) return <TreesEditor t={trees[0]} onClear={clear} onRemove={remove} />;
+  if (total === 1 && labels.length) return <LabelEditor l={labels[0]} onClear={clear} onRemove={remove} />;
   if (total === 1 && walls.length) return <WallEditor w={walls[0]} streets={features.streets ?? []} onClear={clear} onRemove={remove} />;
   if (total === 1 && land.length) return <LandEditor l={land[0]} onClear={clear} onRemove={remove} />;
   const change = (patch: Partial<MapBuilding>, label: string) => sendCityFeatures({ upsertBuildings: buildings.map((b) => ({ ...b, ...patch })) }, label);
@@ -334,6 +349,32 @@ function StreetEditor({ s, onClear, onRemove }: { s: MapStreet; onClear: () => v
           {BRIDGE_CHOICES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       </label>
+      <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
+    </section>
+  );
+}
+
+/** One name on the city: its text, what it names, its size and turn. */
+function LabelEditor({ l, onClear, onRemove }: { l: MapLabel; onClear: () => void; onRemove: () => void }) {
+  const set = (patch: Partial<MapLabel>, label: string) => sendCityFeatures({ upsertLabels: [{ ...l, ...patch }] }, label);
+  return (
+    <section data-testid="city-inspector">
+      <h3>{l.text}</h3>
+      <label className="field">Text
+        <input key={l.id + l.text} defaultValue={l.text} maxLength={80} data-testid="city-label-text" onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== l.text) set({ text: v }, `Rename ${l.text} to ${v}`); }} />
+      </label>
+      <label className="field">What it names
+        <select value={cityLabelKind(l.kind)} onChange={(e) => set({ kind: CITY_LABEL_KINDS.find((k) => k.id === (e.target.value as CityLabelKind))!.kind }, `Name kind: ${e.target.value}`)} data-testid="city-label-edit-kind">
+          {CITY_LABEL_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+        </select>
+      </label>
+      <label className="slider"><span>Size <b>{(l.size ?? 1).toFixed(1)}</b>×</span>
+        <input type="range" min={0.3} max={4} step={0.1} value={l.size ?? 1} onChange={(e) => set({ size: Number(e.target.value) }, "Name size")} data-testid="city-label-edit-size" />
+      </label>
+      <label className="slider"><span>Turned <b>{l.angle ?? 0}</b>°</span>
+        <input type="range" min={-90} max={90} step={1} value={l.angle ?? 0} onChange={(e) => set({ angle: Number(e.target.value) }, "Turn name")} data-testid="city-label-angle" />
+      </label>
+      <p className="muted">Drag it with the Select or Name tool to move it.</p>
       <div className="row"><button onClick={onRemove} className="danger" data-testid="city-delete">Delete</button><button onClick={onClear}>Clear</button></div>
     </section>
   );

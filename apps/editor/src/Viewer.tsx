@@ -1,16 +1,21 @@
 /**
  * Read-only map page for phones and tablets (open /view). Shows the server's latest render
  * with crisp labels on top, follows edits live, and lets you tap places to read their notes.
- * Pinch or scroll to zoom, drag to pan, double-tap to zoom in.
+ * Pinch or scroll to zoom, drag to pan, double-tap to zoom in. A city map is shown in metres,
+ * with its names (streets, buildings, districts) drawn as the editor draws them (drawCityNames).
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { type Place, placeKind } from "@mapmaker/core";
+import { type MapMeta, type Place, placeKind } from "@mapmaker/core";
+import { drawCityNames } from "./drawCityNames.ts";
 import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.ts";
 import { drawFurniture, viewUnit } from "./drawFurniture.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { store } from "./store.ts";
 
 interface View { scale: number; ox: number; oy: number }
+
+/** The map's size in the units its features use: pixels for a world map or battlemap, metres for a city. */
+const dims = (m: MapMeta) => (m.city ? { w: m.city.widthM, h: m.city.heightM } : { w: m.width, h: m.height });
 
 export function Viewer() {
   const s = useSyncExternalStore(store.subscribe, store.getState);
@@ -44,10 +49,15 @@ export function Viewer() {
       ctx.fillStyle = "#0d0d10";
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const img = imgRef.current;
+      const img = imgRef.current, d = dims(m);
       if (img) {
         ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(img, v.ox, v.oy, m.width * v.scale, m.height * v.scale);
+        ctx.drawImage(img, v.ox, v.oy, d.w * v.scale, d.h * v.scale);
+      }
+      if (m.city) {
+        const W = c.width / dpr, H = c.height / dpr;
+        hits.current = live.current.showLabels ? drawCityNames(ctx, live.current.features, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: d.w, fitScale: Math.min(W / d.w, H / d.h), W, H }) : [];
+        return;
       }
       if (m.grid) drawMapGrid(ctx, m.grid, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, mapHeight: m.height, kmPerPx: m.kmPerPx }, c.width / dpr, c.height / dpr);
       drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });
@@ -60,9 +70,9 @@ export function Viewer() {
   const fit = useCallback(() => {
     const w = wrapRef.current, m = live.current.meta;
     if (!w || !m) return;
-    const W = w.clientWidth, H = w.clientHeight;
-    const scale = Math.min(W / m.width, H / m.height);
-    view.current = { scale, ox: (W - m.width * scale) / 2, oy: (H - m.height * scale) / 2 };
+    const W = w.clientWidth, H = w.clientHeight, d = dims(m);
+    const scale = Math.min(W / d.w, H / d.h);
+    view.current = { scale, ox: (W - d.w * scale) / 2, oy: (H - d.h * scale) / 2 };
     draw();
   }, [draw]);
 
@@ -91,8 +101,8 @@ export function Viewer() {
       setLoading(true);
       img.onload = () => { imgRef.current = img; setUpdated(new Date()); setLoading(false); draw(); };
       img.onerror = () => setLoading(false);
-      // native size: the server only upscales by whole factors (blocky), the browser scales smoothly
-      img.src = `/api/projects/${meta.id}/render.jpg?max=${Math.max(meta.width, meta.height)}&v=${s.derivedVersion}-${Date.now()}`;
+      // native size: the server only upscales by whole factors (blocky), the browser scales smoothly (a city is drawn as sharp as the server's picture of it goes)
+      img.src = `/api/projects/${meta.id}/render.jpg?max=${meta.city ? 2048 : Math.max(meta.width, meta.height)}&v=${s.derivedVersion}-${Date.now()}`;
     }, 400);
     return () => clearTimeout(t);
   }, [meta?.id, s.derivedVersion, draw]);
@@ -112,8 +122,8 @@ export function Viewer() {
   const zoomAt = (x: number, y: number, k: number) => {
     const v = view.current, m = live.current.meta, w = wrapRef.current;
     if (!v || !m || !w) return;
-    const fitScale = Math.min(w.clientWidth / m.width, w.clientHeight / m.height);
-    const ns = Math.min(fitScale * 16, Math.max(fitScale * 0.6, v.scale * k));
+    const d = dims(m), fitScale = Math.min(w.clientWidth / d.w, w.clientHeight / d.h);
+    const ns = Math.min(fitScale * (m.city ? 40 : 16), Math.max(fitScale * 0.6, v.scale * k));
     const r = ns / v.scale;
     view.current = { scale: ns, ox: x - (x - v.ox) * r, oy: y - (y - v.oy) * r };
     draw();
@@ -178,7 +188,7 @@ export function Viewer() {
   const goTo = (pl: Place) => {
     const w = wrapRef.current, m = live.current.meta;
     if (!w || !m) return;
-    const fitScale = Math.min(w.clientWidth / m.width, w.clientHeight / m.height);
+    const d = dims(m), fitScale = Math.min(w.clientWidth / d.w, w.clientHeight / d.h);
     const scale = Math.max(view.current?.scale ?? 0, fitScale * 4);
     view.current = { scale, ox: w.clientWidth / 2 - pl.x * scale, oy: w.clientHeight / 2 - pl.y * scale };
     setPicked(pl);
@@ -198,8 +208,8 @@ export function Viewer() {
             {loading ? "Updating..." : updated ? `Updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "\u00a0"}
           </span>
         </div>
-        <button onClick={() => setListOpen((o) => !o)} className={listOpen ? "on" : ""}>Places</button>
-        <button onClick={() => setShowLabels((x) => !x)} className={showLabels ? "on" : ""}>Labels</button>
+        {!meta?.city && <button onClick={() => setListOpen((o) => !o)} className={listOpen ? "on" : ""}>Places</button>}
+        <button onClick={() => setShowLabels((x) => !x)} className={showLabels ? "on" : ""}>{meta?.city ? "Names" : "Labels"}</button>
         <button onClick={fit} title="Fit the whole map">Fit</button>
         <a className="button" href="/">Editor</a>
       </header>

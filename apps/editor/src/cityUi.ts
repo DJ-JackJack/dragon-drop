@@ -1,8 +1,8 @@
 /** The city map's tools, their keys and the editor's own settings for them (nothing here is saved with the map). One list: the toolbar, the key handler and the shortcut sheet read it. */
-import type { BuildingKind, CityWallKind, Features, FeaturesPatch, MapBuilding, MapCityWall, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
+import type { BuildingKind, CityLabelKind, CityWallKind, Features, FeaturesPatch, MapBuilding, MapCityWall, MapLabel, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
 import { store } from "./store.ts";
 
-export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees";
+export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees" | "citylabel" | "citybattle";
 
 /** What the Land tool makes: a hill (a click, or a drag for its size), a ridge or valley (points along it), a plateau or hollow (an outline), a slope (a drag from low to high). */
 export type LandMode = "hill" | "ridge" | "valley" | "plateau" | "hollow" | "slope";
@@ -35,13 +35,18 @@ export interface CityUi {
   /** The Wall tool: what the next wall is built of, and metres between its towers (0: none). */
   wallKind: CityWallKind;
   wallTowers: number;
+  /** The Name tool: what a new label names, and its size (1 is usual). */
+  labelKind: CityLabelKind;
+  labelSize: number;
   /** Draw the contour lines. */
   contours: boolean;
+  /** Draw the names (labels, and the names of streets and buildings). */
+  names: boolean;
 }
 
 export const defaultCityUi: CityUi = {
   tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", streetBridge: "auto", material: 4, brush: 6,
-  landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", wallKind: "stone", wallTowers: 40, contours: true,
+  landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", wallKind: "stone", wallTowers: 40, labelKind: "district", labelSize: 1, contours: true, names: true,
 };
 
 export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: string; key: string; tip: string }[] }[] = [
@@ -60,6 +65,10 @@ export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: str
     { id: "hills", label: "Land", key: "L", tip: "Shape the land: hills, ridges, valleys, plateaus and slopes. Click one to select it" },
     { id: "trees", label: "Trees", key: "T", tip: "Plant woods, orchards, scattered trees, rows and single trees; their kind follows the climate" },
   ] },
+  { name: "More", tools: [
+    { id: "citylabel", label: "Name", key: "N", tip: "Click a street, building or wall to name it; click open ground to write a name there (a district, water, a landmark)" },
+    { id: "citybattle", label: "Battlemap here", key: "M", tip: "Drag a box round the place of a fight or scene: a battlemap of it opens, with its buildings as walls, doors and roofs" },
+  ] },
 ];
 export const CITY_TOOL_DEFS = CITY_TOOL_GROUPS.flatMap((g) => g.tools);
 
@@ -72,23 +81,25 @@ export function sendCityFeatures(patch: FeaturesPatch, label: string) {
 }
 
 /** The selected things, split by kind. */
-export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[]; walls: MapCityWall[] } {
+export function selectedOf(f: Features, ids: string[]): { buildings: MapBuilding[]; streets: MapStreet[]; trees: MapTrees[]; land: MapLandform[]; walls: MapCityWall[]; labels: MapLabel[] } {
   const want = new Set(ids);
   return {
     buildings: (f.buildings ?? []).filter((b) => want.has(b.id)), streets: (f.streets ?? []).filter((s) => want.has(s.id)),
     trees: (f.trees ?? []).filter((t) => want.has(t.id)), land: (f.land ?? []).filter((l) => want.has(l.id)), walls: (f.cityWalls ?? []).filter((w) => want.has(w.id)),
+    labels: (f.labels ?? []).filter((l) => want.has(l.id)),
   };
 }
 
 /** Remove the selected things, as one edit. */
 export function removeSelected(f: Features, ids: string[]): boolean {
-  const { buildings, streets, trees, land, walls } = selectedOf(f, ids);
-  const n = buildings.length + streets.length + trees.length + land.length + walls.length;
+  const { buildings, streets, trees, land, walls, labels } = selectedOf(f, ids);
+  const n = buildings.length + streets.length + trees.length + land.length + walls.length + labels.length;
   if (!n) return false;
-  const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : walls.length ? "Delete wall" : `Delete ${landName(land[0]).toLowerCase()}`;
+  const what = n > 1 ? `Delete ${n} items` : buildings.length ? "Delete building" : streets.length ? "Delete street" : trees.length ? "Delete trees" : walls.length ? "Delete wall" : labels.length ? `Delete name ${labels[0].text}` : `Delete ${landName(land[0]).toLowerCase()}`;
   sendCityFeatures({
     ...(buildings.length && { removeBuildings: buildings.map((b) => b.id) }), ...(streets.length && { removeStreets: streets.map((s) => s.id) }),
     ...(trees.length && { removeTrees: trees.map((t) => t.id) }), ...(land.length && { removeLand: land.map((l) => l.id) }), ...(walls.length && { removeCityWalls: walls.map((w) => w.id) }),
+    ...(labels.length && { removeLabels: labels.map((l) => l.id) }),
   }, what);
   return true;
 }

@@ -11,7 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
-  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, defaultCellM, isCity, isWorld, renderCity, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
+  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -178,7 +178,7 @@ export class Hub {
         if (active) this.broadcast({ t: "meta", meta: e.meta });
         this.markDirty(op, rt);
         // only settings that change the climate or the server's render need a recompute (not the grid, name or notes)
-        const key = JSON.stringify([e.meta.seaLevel, e.meta.climate, e.meta.style]);
+        const key = JSON.stringify([e.meta.seaLevel, e.meta.climate, e.meta.style, e.meta.city ?? null]); // (a city's climate colours its picture)
         if (active && key !== op.metaKey) {
           op.metaKey = key;
           this.contentChanged(op);
@@ -188,7 +188,8 @@ export class Hub {
         this.markDirty(op, rt);
         if (active) this.syncSelection(op);
         const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features)]); // regions and river sources (and where their places are) feed the climate and rivers
-        if (active && key !== op.regionsKey) {
+        if (active && !isWorld(session.doc)) this.contentChanged(op); // (a battlemap's or a city's picture is its features: the phone page's picture is out of date)
+        else if (active && key !== op.regionsKey) {
           op.regionsKey = key;
           this.contentChanged(op); // climate regions feed the climate model
         }
@@ -521,6 +522,34 @@ export class Hub {
     return { ...info, description: what };
   }
 
+  /** Make a battlemap of a box (metres) of the open city map and open it: its ground, streets and bridges as floors, its buildings as walls with doors and roofs, its walls and towers. */
+  async createBattleFromCity(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number }) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    const city = op.session.doc;
+    if (!isCity(city)) throw new Error("Open a city map first: this makes a battlemap from a part of one.");
+    if (op.session.inTransaction) op.session.commit();
+    const sp = citySpec(city), feet = o.feetPerSquare ?? 5;
+    const x0 = Math.max(0, Math.min(o.rect.x, o.rect.x + o.rect.w)), y0 = Math.max(0, Math.min(o.rect.y, o.rect.y + o.rect.h));
+    const rect = { x: x0, y: y0, w: Math.min(sp.widthM, Math.max(o.rect.x, o.rect.x + o.rect.w)) - x0, h: Math.min(sp.heightM, Math.max(o.rect.y, o.rect.y + o.rect.h)) - y0 };
+    if (!(rect.w >= 6 && rect.h >= 6)) throw new Error("The box is too small (or off the city): make it at least 6 m across each way.");
+    const { squaresX, squaresY } = cityBattleSquares(rect, feet);
+    // (70 px a square, or fewer for a big box: a battlemap's picture is at most 25 megapixels)
+    const px = Math.max(20, Math.min(70, Math.floor(Math.sqrt(MAX_BATTLE_PX / (squaresX * squaresY)))));
+    const err = battleSizeError(squaresX, squaresY, px);
+    if (err) throw new Error(`${err} (${Math.round(rect.w)} x ${Math.round(rect.h)} m at ${feet} ft a square is ${squaresX} x ${squaresY} squares: make the box smaller, or the squares bigger)`);
+    const name = o.name.trim() || `${city.meta.name} scene`;
+    const id = await this.store.uniqueId(name);
+    const doc = createBattleDoc({ id, name, squaresX, squaresY, pxPerSquare: px, feetPerSquare: feet, seed: Math.floor(Math.random() * 2 ** 31) });
+    const made = battleFromCity(city, rect, doc);
+    doc.meta.origin = { id: city.meta.id, name: city.meta.name, x: Math.round(rect.x + rect.w / 2), y: Math.round(rect.y + rect.h / 2), unit: "m" };
+    doc.meta.notes = `A scene in ${city.meta.name}: ${made.description}.`;
+    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A battlemap of ${made.description} (city map \`${city.meta.id}\`), ${squaresX} x ${squaresY} squares of ${feet} ft. Record what the scene is, who is here and what the DM has decided.*\n`);
+    await this.openProject(id);
+    const info = (await this.store.list()).find((p) => p.id === id)!;
+    return { ...info, description: made.description };
+  }
+
   /** A level of the open battlemap by id or by name (any case); an error that lists the levels when there is none, or when a name is ambiguous. */
   private levelByRef(op: OpenProject, ref: string): BattleLevel {
     const q = ref.trim().toLowerCase();
@@ -724,7 +753,14 @@ export class Hub {
    */
   private async refreshDerived(op: OpenProject, force = false): Promise<Derived | null> {
     if (this.open !== op) return null;
-    if (!isWorld(op.session.doc)) return null; // battlemaps and cities have no climate
+    if (!isWorld(op.session.doc)) {
+      // battlemaps and cities have no climate: the phone page only needs to know that the map changed, to fetch a fresh picture
+      if (op.derivedVersion !== op.contentVersion) {
+        op.derivedVersion = op.contentVersion;
+        this.broadcast({ t: "derived_ready", projectId: op.id, version: op.contentVersion });
+      }
+      return null;
+    }
     if (op.derived && op.derivedVersion === op.contentVersion) return op.derived;
     if (op.session.inTransaction && !force) return op.derived; // mid-brush-stroke: wait for the stroke to end
     if (op.deriving && op.derivingVersion === op.contentVersion) return op.deriving;
@@ -769,8 +805,9 @@ export class Hub {
       return { img: { w, h, data: await this.compute.battle(doc, { notes: true, ...(o.roofs && { roofs: 0.8 }), ...(await this.battleAssets(doc)).opts }) }, rivers: [] };
     }
     if (isCity(op.session.doc)) {
+      // (drawn on the compute thread: a big city takes half a second or more, and the phone page asks again after every edit)
       const tiles = await this.cityRoofTiles(op.session.doc);
-      return { img: renderCity(op.session.doc, { maxSize: 2048, tileFor: (a) => tiles[a] ?? null }).img, rivers: [] };
+      return { img: await this.compute.city(op.session.doc, { maxSize: 2048, roofTiles: tiles }), rivers: [] };
     }
     const d = await this.refreshDerived(op, true);
     if (!d) throw new Error("The map's climate and rivers couldn't be computed.");
@@ -951,6 +988,9 @@ export class Hub {
           await this.createCityFromWorld({ name: msg.name, x: msg.x, y: msg.y, widthM: msg.widthM, heightM: msg.heightM, place });
           return;
         }
+        case "create_battle_from_city":
+          await this.createBattleFromCity({ name: msg.name, rect: msg.rect, feetPerSquare: msg.feetPerSquare });
+          return;
         case "create_battle_here":
           return await this.createBattleFromWorld({ name: msg.name, x: msg.x, y: msg.y, squaresX: msg.squaresX, squaresY: msg.squaresY });
         case "create_regional":
@@ -1138,6 +1178,11 @@ export class Hub {
         return info;
       },
       readCityPicture: (o) => self.readCityPicture(o),
+      createBattleFromCity: async (o) => {
+        const info = await self.createBattleFromCity(o);
+        self.projectsCache = await self.store.list();
+        return info;
+      },
       createCityHere: async (o) => {
         const info = await self.createCityFromWorld(o);
         self.projectsCache = await self.store.list();

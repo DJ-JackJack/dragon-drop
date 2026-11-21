@@ -18,6 +18,7 @@ import { CITY_TOOLS, CITY_TOOL_NAMES, citySummary } from "./cityTools.ts";
 import { CITY_LAND_TOOLS, CITY_LAND_TOOL_NAMES } from "./cityLandTools.ts";
 import { CITY_PLAN_TOOLS, CITY_PLAN_TOOL_NAMES } from "./cityPlanTools.ts";
 import { CITY_WALL_TOOLS, CITY_WALL_TOOL_NAMES } from "./cityWallTools.ts";
+import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
 
@@ -52,6 +53,8 @@ export interface ToolContext {
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
   createBattleHere?(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
+  /** A battlemap of a box (metres) of the open city map, opened. */
+  createBattleFromCity?(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
   /**
    * Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. For a battlemap with several levels the
    * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.
@@ -1555,6 +1558,7 @@ export const TOOLS = [
   ...CITY_LAND_TOOLS,
   ...CITY_PLAN_TOOLS,
   ...CITY_WALL_TOOLS,
+  ...CITY_NAME_TOOLS,
 ] as const;
 
 function normShape(s: z.infer<typeof Shape>) {
@@ -1577,7 +1581,7 @@ const WORLD_ONLY = new Set([
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
   "get_selection", "select_area", "clear_selection",
 ]);
-const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES]);
+const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES, ...CITY_NAME_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);
 
 /** Validate input against the tool's schema and run it; errors become is_error results. */

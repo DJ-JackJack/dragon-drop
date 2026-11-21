@@ -1,23 +1,28 @@
 /**
  * The editor's own clipboard for copying places, objects, lights and the like (Ctrl+C, Ctrl+V). It holds copies of features, not text,
- * so it is kept here and not in the system clipboard. A world map's copies and a battlemap's copies are kept apart: pasting a place into a
+ * so it is kept here and not in the system clipboard. A world map's, a battlemap's and a city's copies are kept apart: pasting a place into a
  * battlemap, or an object onto a world map, does nothing. It survives switching between maps of the same kind, so something can be
- * copied from one battlemap into another.
+ * copied from one battlemap (or city) into another.
  */
-import { type FeatureClip, MAP_ITEMS_CLIPBOARD_TEXT, pasteChoice } from "@mapmaker/core";
+import { type CityClip, type FeatureClip, MAP_ITEMS_CLIPBOARD_TEXT, pasteChoice } from "@mapmaker/core";
 
-export type ClipKind = "world" | "battle";
+export type ClipKind = "world" | "battle" | "city";
 
-let held: { kind: ClipKind; clip: FeatureClip } | null = null;
+let held: { kind: ClipKind; clip: FeatureClip | CityClip } | null = null;
 let last: { kind: ClipKind; reqDx: number; reqDy: number; usedDx: number; usedDy: number } | null = null;
 
-export function setClip(kind: ClipKind, clip: FeatureClip) {
+export function setClip(kind: "city", clip: CityClip): void;
+export function setClip(kind: "world" | "battle", clip: FeatureClip): void;
+export function setClip(kind: ClipKind, clip: FeatureClip | CityClip) {
   held = { kind, clip };
   last = null;
 }
 
 /** What was copied, if it is of this kind of map. */
-export function getClip(kind: ClipKind): FeatureClip | null {
+export function getClip(kind: "city"): CityClip | null;
+export function getClip(kind: "world" | "battle"): FeatureClip | null;
+export function getClip(kind: ClipKind): FeatureClip | CityClip | null;
+export function getClip(kind: ClipKind): FeatureClip | CityClip | null {
   return held && held.kind === kind ? held.clip : null;
 }
 

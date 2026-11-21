@@ -1174,7 +1174,7 @@ try {
     const cx = (m) => cb.x + (cb.width - 600 * fitS) / 2 + m * fitS, cy = (m) => cb.y + (cb.height - 400 * fitS) / 2 + m * fitS;
     const status = (re) => page.getByTestId("city-status").getByText(re).waitFor({ timeout: 10000 });
     // a click with the Building tool places a house; a drag sizes one
-    await page.keyboard.press("b");
+    await page.getByTestId("ctool-building").click();
     await page.mouse.click(cx(100), cy(100));
     await status(/1 buildings/);
     await page.mouse.move(cx(200), cy(100));
@@ -1309,7 +1309,59 @@ try {
     await page.screenshot({ path: path.join(shots, "e2e-5d-city-wall.png") });
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByTestId("city-summary").getByText(/1 · 2 gates · \d+ towers/).waitFor({ timeout: 5000 });
+    // names: the Name tool names the street it clicks, and writes a district's name on open ground; that label's panel makes it name water instead, and Delete removes it
+    await page.getByTestId("ctool-citylabel").click();
+    await page.mouse.click(cx(150), cy(210));
+    await answer("Harbour Road");
+    await page.getByTestId("history").getByText("Name street Harbour Road").first().waitFor({ timeout: 5000 });
+    await page.mouse.click(cx(420), cy(330));
+    await answer("Old Town");
+    await page.getByTestId("history").getByText("Name Old Town").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-label-edit-kind").selectOption("water");
+    await page.getByTestId("history").getByText("Name kind: water").first().waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-5e-city-names.png") });
+    await page.getByTestId("city-delete").click();
+    await page.getByTestId("history").getByText("Delete name Old Town").first().waitFor({ timeout: 5000 });
+    // the city as a picture: 1 px per metre is 600 x 400 px
+    await page.getByTestId("export-button").click();
+    await page.getByTestId("export-dialog").getByText(/4,800 × 3,200 px/).waitFor({ timeout: 5000 });
+    await page.getByTestId("export-size-1").check();
+    const [cityPng] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("export-go").click()]);
+    if (!/E2E City \(1 px per m\)\.png$/.test(cityPng.suggestedFilename())) fail(`unexpected city export name ${cityPng.suggestedFilename()}`);
+    {
+      const { readFileSync } = await import("node:fs");
+      const png = readFileSync(await cityPng.path());
+      if (png.subarray(1, 4).toString() !== "PNG" || png.readUInt32BE(16) !== 600 || png.readUInt32BE(20) !== 400) fail("the exported city PNG isn't 600 x 400");
+    }
+    await page.getByTestId("export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // the phone page shows the city (its picture drawn on the server's compute thread) with a Names switch instead of Places, and picks up an edit
+    await phone.goto(`http://localhost:${port}/view`);
+    await phone.getByText(/^Updated/).waitFor({ timeout: 20000 });
+    await phone.getByRole("button", { name: "Names", exact: true }).waitFor({ timeout: 5000 });
+    if (await phone.getByRole("button", { name: "Places", exact: true }).count()) fail("the phone page offers Places on a city map");
+    const phoneLook = () => phone.evaluate(() => { const c = document.querySelector('[data-testid="viewer-canvas"]'); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let h = 0; for (let i = 0; i < d.length; i += 4 * 101) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0; return h; });
+    const shownBefore = await phoneLook();
+    await page.getByTestId("ctool-building").click();
+    await page.mouse.click(cx(540), cy(40));
+    await status(/20 buildings/);
+    await phone.waitForFunction(async (h) => { const c = document.querySelector('[data-testid="viewer-canvas"]'); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let x = 0; for (let i = 0; i < d.length; i += 4 * 101) x = (x * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0; return x !== h; }, shownBefore, { timeout: 20000 });
+    await phone.screenshot({ path: path.join(shots, "e2e-5f-city-phone.png") });
+    await page.bringToFront();
     await page.screenshot({ path: path.join(shots, "e2e-5-city.png") });
+    // a battlemap of part of the city: a box dragged with Battlemap here and named opens as a battlemap made from the city, which leads back to it
+    await page.getByTestId("ctool-citybattle").click();
+    await page.mouse.move(cx(80), cy(170));
+    await page.mouse.down();
+    await page.mouse.move(cx(180), cy(250), { steps: 6 });
+    await page.mouse.up();
+    await page.getByTestId("dialog").getByText(/6\d × 5\d squares/).waitFor({ timeout: 5000 });
+    await answer("E2E Street Fight");
+    await page.getByTestId("battle-canvas").waitFor({ timeout: 20000 });
+    await page.getByTestId("battle-origin").getByText(/E2E City/).waitFor({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(shots, "e2e-5g-city-battle.png") });
+    await page.getByRole("button", { name: /Back to E2E City/ }).click();
+    await page.getByTestId("city-canvas").waitFor({ timeout: 20000 });
     // a city map is its own kind of project, listed as such, and the other kinds' tools are not on screen
     if (!(await page.locator("select.project").evaluate((s) => s.selectedOptions[0].textContent)).includes("(city)")) fail("a city map is not listed as a city");
     if (await page.getByRole("button", { name: "Raise", exact: true }).count()) fail("the world map's terrain tools are showing on a city map");

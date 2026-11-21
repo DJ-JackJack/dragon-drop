@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   BUILDING_KINDS, MATERIALS, type MapBuilding, type MapStreet, type Rect, type RoofChoice, type Shape, ROOF_STYLES, STREET_KINDS, chooseRoof, citySpec, cityGroundMaterial, cleanBuilding, cleanStreet,
-  drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
+  drawCityNames, drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
@@ -160,6 +160,27 @@ export const CITY_TOOLS = [
   }),
 
   define({
+    name: "create_battlemap_from_city",
+    description:
+      "Make a battlemap of a part of the open CITY map and open it (for a fight or a scene there): a box in metres (x, y its top-left corner, w, h its size; at 5 ft a square, 150 squares is about 228 m, the most). " +
+      "The battlemap gets the city's ground there, the streets as cobbles or dirt (bridges as planks or flagstones), every building as walls with a door toward the nearest street, a floor by what it is and its roof, " +
+      "and the city walls and towers as walls. Trees, names and furniture are not carried over: add them on the battlemap. The battlemap remembers the city (a way back).",
+    schema: z.object({
+      x: z.number(), y: z.number(), w: z.number().min(6), h: z.number().min(6),
+      name: z.string().min(1).max(80).optional().describe("The battlemap's name (default: the city's, with \"scene\")"),
+      feet_per_square: z.number().min(1).max(30).optional().describe("Default 5"),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      if (!ctx.createBattleFromCity) return fail("Battlemaps can't be made from a city here.");
+      try {
+        const info = await ctx.createBattleFromCity({ name: i.name ?? "", rect: { x: i.x, y: i.y, w: i.w, h: i.h }, feetPerSquare: i.feet_per_square });
+        return json({ created: info, note: "The battlemap is open now. render_battlemap looks at it; doors, furniture and lights are yours to add." });
+      } catch (e) { return fail((e as Error).message); }
+    },
+  }),
+
+  define({
     name: "read_picture_buildings",
     description:
       "Read buildings out of the city's trace picture (a found city map laid over it with set_trace_picture and lined up), by roof colour: give where one roof of each kind is (x, y in metres, read off render_city with trace: true, " +
@@ -225,6 +246,7 @@ export const CITY_TOOLS = [
       buildings: z.boolean().optional().describe("Draw the buildings (default true; false shows the ground and streets alone)"),
       contours: z.boolean().optional().describe("Draw the contour lines (default true when the city has any land; every fifth line is darker)"),
       trees: z.boolean().optional().describe("Draw the trees (default true)"),
+      names: z.boolean().optional().describe("Write the names (labels, named streets, buildings and walls) over it (default true)"),
       trace: z.boolean().optional(),
     }),
     async run(ctx, i) {
@@ -233,6 +255,7 @@ export const CITY_TOOLS = [
       const tiles = (await ctx.cityTiles?.()) ?? {};
       const r = renderCity(doc, { region: i.region, maxSize: i.max_size ?? 1200, buildings: i.buildings, contours: i.contours, trees: i.trees, tileFor: (a) => tiles[a] ?? null });
       const traced = i.trace ? await traceOverlay(ctx, r.img, { x: Math.round(r.region.x * r.px), y: Math.round(r.region.y * r.px) }, 1, r.px) : "";
+      if (i.names !== false) drawCityNames(r.img, doc, r.region, r.px);
       const step = i.grid === false ? null : drawGrid(r.img, r.region, r.px);
       const jpg = encodeJpeg(r.img);
       const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;

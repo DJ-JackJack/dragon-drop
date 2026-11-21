@@ -99,7 +99,7 @@ export interface MapMeta {
   /** City maps: size in metres and the size of a ground cell. */
   city?: CitySpec;
   /** Battlemaps made from a spot on a world map: which map and where. */
-  origin?: { id: string; name: string; x: number; y: number };
+  origin?: { id: string; name: string; x: number; y: number; /** "m": a city map, x and y in metres (else map px of a world map). */ unit?: "m" };
 }
 
 export interface MapDoc {

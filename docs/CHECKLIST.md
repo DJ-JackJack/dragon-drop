@@ -6,7 +6,7 @@ documents each item points to. Started 2026-11-21 from the handoff notes, the ro
 ## Next release (0.1.11)
 
 Built and on `main`, not yet tried by the person or released: city land, climate and trees; bridges; Claude's city planning tools; City here (a city from a world map);
-hiding labels and markers; deleting maps; the startup fix; School and Whirlpool place kinds; the quick fixes and drained new maps below (the last three committed, not pushed).
+hiding labels and markers; deleting maps; the startup fix; School and Whirlpool place kinds; the quick fixes and drained new maps below; the city picture reader; city walls, names, export, phone page, copy and paste and battlemaps from a city (everything from School and Whirlpool on is committed, not pushed).
 
 - [ ] ~~Quick fixes and the lake problem~~ (done 2026-11-21), then a test copy with its own settings and maps folder (`RELEASING.md`), release notes, and the release.
 
@@ -21,7 +21,7 @@ hiding labels and markers; deleting maps; the startup fix; School and Whirlpool 
 
 - [x] **Too many lakes on new maps** (a new continent or island is about 20% lake): drain the generated land so water runs to the sea, and a "how many lakes" setting for new maps (`PLAN.md`, Water model). *(2026-11-21: a mountainous continent 19% lake before, 1.3% now; Lakes: none, few, some, many)*
 - [x] **City picture reader** (city stage 2): read a city picture's buildings onto a city map, the DM clicking one example of each kind of roof (`CITY-MAPS.md`, `spikes/city-reader/`). *(done 2026-11-21: the trace bar's Read buildings… on a city map, and Claude's `read_picture_buildings`; still to try on the DM's own city pictures)*
-- [ ] **More for cities**: walls with towers and gates; names and labels; picture export and the phone page; copy and paste; a battlemap from a spot in the city with a Foundry export (`CITY-MAPS.md` stages 3 to 5).
+- [x] **More for cities**: walls with towers and gates; names and labels; picture export and the phone page; copy and paste; a battlemap from a spot in the city with a Foundry export (`CITY-MAPS.md` stages 3 to 5). *(2026-11-21: the Wall tool `W`, the Name tool `N`, Export, the phone page, Ctrl+C/V/D, Battlemap here `M`, and Claude's tools for each; still to come: streets and water from a picture, water gates, district outlines)*
 - [ ] **Screen leftovers**: a bottom bar (save status, grid, zoom, Fit); Layers as eye-icon switches; an icons-only tool rail; an Objects list for cities and battlemaps.
 - [ ] **Water, later stages**: rivers and lakes as named, selectable things with a River tool; valleys carved by rivers; meanders, oxbows and deltas (`PLAN.md`, Water model).
 - [ ] **Foundry, not tried**: a player's (not the GM's) view of a roof; a token above a ceiling; what a hole does to a token. Needs someone logged in to Foundry as a player (`FOUNDRY.md`).

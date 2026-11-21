@@ -5,7 +5,7 @@
  * water...), and the buildings and streets live with the other features. A building is drawn as a roof (battleRoof.ts), which is what a building looks like from above.
  */
 import { HeightField, type MapDoc } from "./doc.ts";
-import { type MapBuilding, type MapRoof, type MapStreet, type RoofStyle, ROOF_STYLES, STREET_KINDS, emptyFeatures } from "./features.ts";
+import { type LabelKind, type MapBuilding, type MapRoof, type MapStreet, type RoofStyle, ROOF_STYLES, STREET_KINDS, emptyFeatures } from "./features.ts";
 import { ROOF_BASE, roofColour } from "./battleRoof.ts";
 import { parseAssetId } from "./assets.ts";
 import { DEFAULT_ROOF_TILE_M } from "./roofAssets.ts";
@@ -231,6 +231,19 @@ export function cleanStreet(s: unknown, spec: CitySpec): MapStreet | { error: st
   if (typeof o.name === "string" && o.name.trim()) out.name = o.name.trim().slice(0, 80);
   return out;
 }
+
+/**
+ * The kinds of free name on a city map. They are the world map's labels (`features.labels`, the same drawing) with their place in metres: a district or quarter (big, spaced
+ * capitals), a stretch of water (a harbour, a river, a pond) and a landmark or small place (a square, a gate, a garden).
+ */
+export const CITY_LABEL_KINDS = [
+  { id: "district", kind: "region", name: "District" },
+  { id: "water", kind: "sea", name: "Water" },
+  { id: "landmark", kind: "feature", name: "Landmark" },
+] as const satisfies readonly { id: string; kind: LabelKind; name: string }[];
+export type CityLabelKind = (typeof CITY_LABEL_KINDS)[number]["id"];
+/** A label's kind as a city names it (a world kind with no city name of its own reads as a landmark). */
+export const cityLabelKind = (k: LabelKind): CityLabelKind => CITY_LABEL_KINDS.find((x) => x.kind === k)?.id ?? "landmark";
 
 /** A ground material id the city can use (the battlemap materials; pack textures aren't used on city maps), or null. */
 export function cityGroundMaterial(id: number): number | null {
