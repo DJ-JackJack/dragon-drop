@@ -8,7 +8,9 @@ import type { MapMeta } from "./doc.ts";
 import type { Rect } from "./geom.ts";
 import type { ChangeEntry, Command } from "./session.ts";
 import type { RiverPath } from "./hydrology.ts";
-import type { Features } from "./features.ts";
+import type { Features, MapLabel } from "./features.ts";
+import type { LakeShape } from "./hydroSummary.ts";
+import type { NamedWater } from "./waterNames.ts";
 import type { ParentLink } from "./regional.ts";
 import type { SketchParams } from "./sketch.ts";
 import type { Selection } from "./selection.ts";
@@ -96,6 +98,8 @@ export type ClientMsg =
   | { t: "create_regional"; name: string; rect: Rect }
   /** On a regional map: re-read the climate from its parent map. */
   | { t: "regional_refresh" }
+  /** World maps: carve valleys along the rivers as they are now (carve.ts): a checkpoint is saved first, then one edit that Undo takes back. Answered with `carved`. */
+  | { t: "carve_valleys"; strength: number; floodplains: boolean; deltas: boolean }
   /** Lay a road or trail through waypoints (map px), found over the terrain. */
   | { t: "route_line"; kind: "road" | "trail"; points: [number, number][]; name?: string; id?: string }
   /** Turn a reference image into terrain (replaces the whole map; a checkpoint is saved first). */
@@ -160,7 +164,6 @@ export type ServerMsg =
   | { t: "chat"; ev: ChatEvent }
   | { t: "chat_settings"; settings: ChatSettings }
   | { t: "checkpoints"; list: CheckpointInfo[] }
-  /** The map is on disk (the answer to "save_now"). */
   /** The map is on disk: after Ctrl+S, or (`auto`) after an autosave; `failed`: an autosave didn't work (it will try again). */
   | { t: "saved"; auto?: boolean; failed?: boolean }
   /** What the picture reader found (metres), or why it couldn't read. */
@@ -169,6 +172,13 @@ export type ServerMsg =
   | { t: "map_deleted"; name: string; folder: string }
   /** New derived layers are ready (sent to every client; "lite" clients get no binary frames). */
   | { t: "derived_ready"; projectId: string; version: number }
+  /**
+   * World maps: the named rivers and lakes as the water is now (waterNames.ts), sent after the rivers are worked out and whenever a name changes: the labels to draw,
+   * each name's river or lake, and (not to the phone page) every lake's shore, for the River tool. `head` and `lake` refer to the rivers of the latest derived frame.
+   */
+  | { t: "water"; projectId: string; labels: MapLabel[]; named: NamedWater[]; lakes?: LakeShape[] }
+  /** Valleys were carved (the answer to `carve_valleys`): how many cells were lowered, how deep the deepest cut is (m), and how much delta land was made. */
+  | { t: "carved"; lowered: number; deepestM: number; deltaCells: number; checkpoint: string }
   /** What Claude Code last said (through its hooks): lets Assist mode wait until it is idle. */
   | { t: "claude_state"; state: ClaudeState }
   /** The selection changed (by the DM in an editor, or by Claude highlighting an area). */

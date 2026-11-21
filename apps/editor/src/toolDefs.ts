@@ -21,6 +21,7 @@ export const TOOL_GROUPS: { name: string; tools: ToolDef[] }[] = [
     { id: "place", label: "Place", key: "P", tip: "Click to add a named place (city, fort, ruin...)" },
     { id: "label", label: "Label", key: "T", tip: "Click to add a label (sea, region, range...), or drag to draw a line for it to follow" },
     { id: "line", label: "Roads", key: "O", tip: "Draw a road, trail or border. Roads and trails are routed over the terrain for you" },
+    { id: "river", label: "Rivers", key: "I", tip: "Point at a river or lake to see it whole; click to name it (or select it, if it has a name). Or start a river at a spot" },
     { id: "region", label: "Climate", key: "C", tip: "Climate region: click its corners, then double-click (or click the first corner, or press Enter) to close it. Esc cancels" },
     { id: "detail", label: "Detail map", key: "D", tip: "Drag a box around an area to make a separate, more detailed map of it" },
     { id: "battlehere", label: "Battlemap here", key: "M", tip: "Click a spot to make a battlemap of the ground there (its climate, rivers, lakes and coast choose the floors)" },

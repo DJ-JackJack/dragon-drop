@@ -1450,6 +1450,70 @@ try {
     await page.keyboard.press("h");
   }
 
+  // the River tool: start a great river on land, name it by clicking it, see it in the inspector and the Rivers and lakes list; lowland rivers and the carve dialog
+  {
+    await page.keyboard.press("0");
+    const cb = await page.getByTestId("map-canvas").boundingBox();
+    // find land a little way inland: the bottom bar says the height under the pointer ("120 m", or "40 m deep" at sea)
+    let land = null;
+    for (let gy = 0.3; gy <= 0.7 && !land; gy += 0.1) for (let gx = 0.3; gx <= 0.7 && !land; gx += 0.05) {
+      await page.mouse.move(cb.x + cb.width * gx, cb.y + cb.height * gy);
+      const t = await page.getByTestId("status-bar").first().innerText();
+      const m = /y \d+ · (\d+) m(?! deep)/.exec(t);
+      if (m && Number(m[1]) >= 60) land = { x: cb.x + cb.width * gx, y: cb.y + cb.height * gy };
+    }
+    if (!land) fail("no land found on the first map for the River tool");
+    await page.keyboard.press("i");
+    await page.getByTestId("river-modes").waitFor({ timeout: 5000 });
+    await page.getByTestId("tool-hint").getByText(/Point at a river or a lake/).waitFor({ timeout: 5000 });
+    await page.getByTestId("river-mode-source").click();
+    await page.getByTestId("river-size").selectOption("great");
+    await page.mouse.click(land.x, land.y);
+    await page.getByTestId("inspector").getByRole("heading", { name: "River source" }).waitFor({ timeout: 5000 });
+    if ((await page.getByTestId("source-size").inputValue()) !== "great") fail("the new river source isn't a great river");
+    // name the river it feeds: click round the source until the River tool finds the river (the rivers are worked out again first)
+    await page.getByTestId("river-mode-name").click();
+    let box = false;
+    for (let tries = 0; tries < 30 && !box; tries++) {
+      await page.waitForTimeout(500);
+      for (const r of [14, 22, 32]) {
+        for (let a = 0; a < 16 && !box; a++) {
+          await page.mouse.click(land.x + Math.cos((a / 16) * Math.PI * 2) * r, land.y + Math.sin((a / 16) * Math.PI * 2) * r);
+          box = (await page.getByTestId("water-name-box").count()) > 0;
+        }
+        if (box) break;
+      }
+    }
+    if (!box) fail("clicking near the new river never found it with the River tool");
+    await page.getByTestId("water-facts").getByText(/km .* long/).waitFor({ timeout: 5000 });
+    await page.getByTestId("water-name-input").fill("E2E River");
+    await page.getByTestId("water-name-save").click();
+    await page.getByTestId("inspector").getByRole("heading", { name: "River" }).waitFor({ timeout: 10000 });
+    if ((await page.getByTestId("water-rename").inputValue()) !== "E2E River") fail("the inspector doesn't show the river's name");
+    await page.getByTestId("water-names").getByText("E2E River").waitFor({ timeout: 10000 });
+    await page.getByTestId("water-inspector-facts").getByText(/long/).waitFor({ timeout: 15000 });
+    await page.screenshot({ path: path.join(shots, "river-named.png") });
+    // lowland rivers switch on and off (each an undoable change of the map's climate)
+    await page.getByTestId("lowland-rivers").click(); // (the box follows the server's reply)
+    await page.waitForFunction(() => document.querySelector('[data-testid="lowland-rivers"]')?.checked === true, null, { timeout: 10000 });
+    await page.getByTestId("lowland-rivers").click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="lowland-rivers"]')?.checked === false, null, { timeout: 10000 });
+    // the carve dialog opens and cancels (carving itself is tested on the server)
+    await page.getByTestId("carve-valleys").click();
+    await page.getByTestId("carve-dialog").waitFor({ timeout: 5000 });
+    await page.getByTestId("carve-dialog").getByRole("button", { name: "Cancel" }).click();
+    await page.getByTestId("carve-dialog").waitFor({ state: "detached", timeout: 5000 });
+    // remove the name (the river stays) and the source
+    await page.getByTestId("water-remove").click();
+    await page.getByTestId("water-names").getByText("E2E River").waitFor({ state: "detached", timeout: 10000 });
+    await page.getByTestId("river-mode-source").click();
+    await page.mouse.click(land.x, land.y);
+    await page.getByTestId("inspector").getByRole("heading", { name: "River source" }).waitFor({ timeout: 5000 });
+    await page.keyboard.press("Delete");
+    await page.getByTestId("inspector").waitFor({ state: "detached", timeout: 5000 });
+    await page.keyboard.press("h");
+  }
+
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);
   console.log(`E2E OK (screenshots in ${shots})`);
   await browser.close();

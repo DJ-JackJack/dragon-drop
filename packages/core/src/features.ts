@@ -338,6 +338,18 @@ export function connectorTo(c: Pick<MapConnector, "kind" | "to">): "up" | "down"
 }
 
 /** How much water a river source adds. The numbers are shares of the whole map's runoff: a river is anything above about 0.002, and the biggest ordinary rivers carry about 0.03. */
+/**
+ * A name for a river or a lake on a world map, pinned to a spot (map px): it belongs to whichever river runs past the spot (or the lake that holds it) each time the water
+ * is worked out (waterNames.ts), since rivers are never drawn by hand. Names are canon: only names the DM gave or confirmed.
+ */
+export interface WaterName {
+  id: string;
+  kind: "river" | "lake";
+  name: string;
+  x: number;
+  y: number;
+}
+
 export type RiverSize = "stream" | "river" | "major" | "great";
 export const RIVER_SIZE_SHARE: Record<RiverSize, number> = { stream: 0.002, river: 0.008, major: 0.03, great: 0.08 };
 
@@ -406,6 +418,8 @@ export interface Features {
   cityWalls?: MapCityWall[];
   /** City maps: districts (outlines with a name and a colour). */
   districts?: MapDistrict[];
+  /** World maps: the names of rivers and lakes, pinned to spots. */
+  waterNames?: WaterName[];
 }
 
 export interface FeaturesPatch {
@@ -447,6 +461,8 @@ export interface FeaturesPatch {
   removeCityWalls?: string[];
   upsertDistricts?: MapDistrict[];
   removeDistricts?: string[];
+  upsertWaterNames?: WaterName[];
+  removeWaterNames?: string[];
 }
 
 export function emptyFeatures(): Features {
@@ -563,6 +579,12 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertDistricts ?? []) ds.set(x.id, x);
     out.districts = [...ds.values()];
   } else if (f.districts) out.districts = f.districts;
+  if (p.upsertWaterNames || p.removeWaterNames) {
+    const ws = new Map((f.waterNames ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeWaterNames ?? []) ws.delete(id);
+    for (const x of p.upsertWaterNames ?? []) ws.set(x.id, x);
+    out.waterNames = [...ws.values()];
+  } else if (f.waterNames) out.waterNames = f.waterNames;
   const trace = p.setTrace === undefined ? f.trace : p.setTrace;
   if (trace) out.trace = trace;
   return out;
@@ -608,6 +630,8 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.removeCityWalls?.length) parts.push(`remove ${p.removeCityWalls.length} city wall(s)`);
   if (p.upsertDistricts?.length) parts.push(p.upsertDistricts.length === 1 ? (p.upsertDistricts[0].name ?? "district") : `${p.upsertDistricts.length} districts`);
   if (p.removeDistricts?.length) parts.push(`remove ${p.removeDistricts.length} district(s)`);
+  if (p.upsertWaterNames?.length) parts.push(p.upsertWaterNames.length === 1 ? `${p.upsertWaterNames[0].kind} ${p.upsertWaterNames[0].name}` : `${p.upsertWaterNames.length} river and lake names`);
+  if (p.removeWaterNames?.length) parts.push(`remove ${p.removeWaterNames.length} river or lake name(s)`);
   return parts.length ? `Edit ${parts.join("; ")}` : "Edit places/labels";
 }
 

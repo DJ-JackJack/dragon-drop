@@ -831,6 +831,80 @@ describe("river sources and the water check", () => {
   }, 60000);
 });
 
+describe("named rivers and lakes, carving valleys", () => {
+  it("names a river, lists, renames and removes names, previews and carves valleys, and switches lowland rivers on", async () => {
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORT}/mcp`)));
+    const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = await raw(name, args);
+      expect(r.isError, `${name}: ${JSON.stringify(r.content).slice(0, 300)}`).toBeFalsy();
+      return JSON.parse((r.content as { text: string }[])[0].text);
+    };
+    await call("create_map", { name: "Test Rivers", width: 256, height: 256, km_per_px: 4 });
+    const doc = hub.session.doc, W = 256;
+    // land falling south into the sea, with a great river fed in at the top
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) doc.height.data[y * W + x] = y >= 200 ? -300 : 300 + (200 - y) * 3 + Math.sin(x / 11) * 6;
+    await call("add_river_source", { x: 128, y: 20, size: "great" });
+    type Listed = { named: { name: string; found: boolean; length_km?: number; ends?: string }[]; unnamed_rivers: { length_km: number; point: [number, number]; ends: string }[] };
+    let listed = (await call("list_waters")) as Listed;
+    for (let i = 0; i < 40 && !listed.unnamed_rivers.some((r) => r.length_km > 400); i++) { await new Promise((r) => setTimeout(r, 250)); listed = await call("list_waters"); }
+    const big = listed.unnamed_rivers[0];
+    expect(big.length_km).toBeGreaterThan(400);
+
+    // naming: on the river, never twice, never where there is no water
+    const named = await call("name_water", { name: "Test River", x: big.point[0], y: big.point[1] });
+    expect(named.named).toMatchObject({ kind: "river", name: "Test River" });
+    expect(named).toMatchObject({ found: true, ends: "sea" });
+    expect(await raw("name_water", { name: "Again", x: big.point[0], y: big.point[1] })).toMatchObject({ isError: true });
+    expect(await raw("name_water", { name: "Nowhere", x: 5, y: 250 })).toMatchObject({ isError: true });
+    listed = await call("list_waters");
+    expect(listed.named[0]).toMatchObject({ name: "Test River", found: true, ends: "sea" });
+    expect(listed.named[0].length_km).toBeGreaterThan(400);
+    expect(listed.unnamed_rivers.some((r) => r.length_km === big.length_km && r.point[0] === big.point[0])).toBe(false);
+    // the editors are sent its label along the river
+    expect(hub.waterView()?.labels[0]).toMatchObject({ text: "Test River", kind: "feature", path: expect.any(Array) });
+    // the DM selects it: Claude sees what it is
+    hub.setSelection({ kind: "feature", featureKind: "water", id: named.named.id }, false);
+    const sel = await call("get_selection");
+    expect(sel.description).toBe('the river "Test River"');
+    expect(sel.feature).toMatchObject({ name: "Test River", found: true, end: "sea" });
+    hub.setSelection(null, false);
+    // previews draw it
+    const preview = (await raw("render_preview", { max_size: 400 })).content as { type: string }[];
+    expect(preview.some((b) => b.type === "image")).toBe(true);
+    // renaming and removing
+    expect((await call("name_water", { water: "Test River", name: "Long Water" })).renamed.name).toBe("Long Water");
+    expect(doc.features?.waterNames?.map((w) => w.name)).toEqual(["Long Water"]);
+
+    // carving: a preview changes nothing; carving lowers the land, saves a checkpoint, and undo takes it back
+    const before = new Float32Array(doc.height.data);
+    const pv = (await raw("carve_valleys", { preview: true, strength: 0.6 })).content as { type: string; text?: string }[];
+    expect(pv.some((b) => b.type === "image")).toBe(true);
+    expect(doc.height.data).toEqual(before);
+    const carved = await call("carve_valleys", { strength: 0.6 });
+    expect(carved.cells_lowered).toBeGreaterThan(100);
+    expect(carved.checkpoint).toBe("Before carving valleys");
+    let lowered = 0;
+    for (let i = 0; i < before.length; i++) { expect(doc.height.data[i]).toBeLessThanOrEqual(before[i] + 1e-3 + (before[i] <= 0 ? 400 : 0)); if (doc.height.data[i] < before[i] - 0.5) lowered++; }
+    expect(lowered).toBeGreaterThan(100);
+    expect(JSON.stringify((await raw("list_checkpoints")).content)).toContain("Before carving valleys");
+    await raw("undo");
+    expect(doc.height.data).toEqual(before);
+    // the name is still on its river after all that
+    expect((await call("list_waters")).named[0]).toMatchObject({ name: "Long Water", found: true });
+
+    // lowland rivers are a climate setting
+    await call("set_climate", { lowland_rivers: true });
+    expect(doc.meta.climate?.lowlandRivers).toBe(true);
+    await call("remove_water_name", { water: "Long Water" });
+    expect(doc.features?.waterNames).toEqual([]);
+    expect(await raw("remove_water_name", { water: "Long Water" })).toMatchObject({ isError: true });
+    await call("open_project", { id: "test-world" }); // (the tests after this one use the first map)
+    await client.close();
+  }, 60000);
+});
+
 describe("selection and the edit lock", () => {
   it("shares the DM's selection with Claude, locks Claude's edits to it, and lets only the DM change a locked selection", async () => {
     const client = new Client({ name: "test", version: "1.0.0" });

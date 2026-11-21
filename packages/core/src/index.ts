@@ -44,6 +44,8 @@ export * from "./cityBridges.ts";
 export * from "./cityWalls.ts";
 export * from "./cityClip.ts";
 export * from "./cityDistricts.ts";
+export * from "./waterNames.ts";
+export * from "./carve.ts";
 export * from "./cityBattle.ts";
 export * from "./cityPlan.ts";
 export * from "./cityWorld.ts";

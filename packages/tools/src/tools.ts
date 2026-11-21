@@ -11,6 +11,7 @@ import {
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
+  type LakeShape, type NamedWater, type RiverNet,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -20,6 +21,7 @@ import { CITY_PLAN_TOOLS, CITY_PLAN_TOOL_NAMES } from "./cityPlanTools.ts";
 import { CITY_WALL_TOOLS, CITY_WALL_TOOL_NAMES } from "./cityWallTools.ts";
 import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
+import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
 
 export interface ToolContext {
@@ -79,6 +81,13 @@ export interface ToolContext {
   createRegional?(o: { name: string; rect: Rect }): Promise<ProjectInfo>;
   /** Optional: the open map's climate, lakes and rivers (route finding avoids lakes and river crossings). */
   derived?(): Promise<Derived | null>;
+  /**
+   * Optional (world maps): the named rivers and lakes as the water was last worked out (call `derived()` first for the latest), every lake's shore, and how the rivers join up
+   * (core waterNames.ts). Null until the rivers are worked out.
+   */
+  water?(): { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[]; net: RiverNet } | null;
+  /** Optional (world maps): carve valleys along the rivers (core carve.ts). Applied: a checkpoint first, then one edit. `preview`: only worked out, the new heights returned. */
+  carveValleys?(o: { strength?: number; floodplains?: boolean; deltas?: boolean; preview?: boolean }): Promise<{ lowered: number; deepestM: number; deltaCells: number; checkpoint?: string; heights?: Float32Array }>;
   readBrief(): Promise<string>;
   writeBrief(text: string): Promise<void>;
   listRefs(): Promise<RefInfo[]>;
@@ -407,7 +416,9 @@ export const TOOLS = [
       if (i.labels !== false) {
         drawRegions(img, region, scale, s.doc.features);
         drawLines(img, region, scale, s.doc.features);
-        drawFeatures(img, region, scale, s.doc.features);
+        // (the river and lake names are drawn like labels, along their rivers as they are now)
+        const water = ctx.water?.()?.labels ?? [];
+        drawFeatures(img, region, scale, s.doc.features && { ...s.doc.features, labels: [...s.doc.features.labels, ...water] });
       }
       for (const m of i.markers ?? []) drawMarker(img, region, scale, m.x, m.y, m.label);
       const outline = selectionShape(sel, s.doc.features);
@@ -750,6 +761,7 @@ export const TOOLS = [
       snow_lat: z.number().min(0).max(1.5).optional().describe("How much the snowline drops toward the poles"),
       wind: z.enum(WIND_NAMES as [string, ...string[]]).optional().describe("Prevailing wind, named for where it blows FROM: west = westerlies, northwest = it blows toward the south-east (rain shadows fall downwind of ranges)"),
       river_density: z.number().min(0).max(1).optional().describe("More, smaller rivers (default 0.5)"),
+      lowland_rivers: z.boolean().optional().describe("Big rivers on flat ground wander in wide loops with oxbow lakes beside them, and widen into estuaries at the sea (default off; only when the DM wants it, since every river is worked out again)"),
     }),
     async run(ctx, i) {
       const cur = climateOf(ctx.session().doc);
@@ -765,6 +777,7 @@ export const TOOLS = [
         ...(i.snow_lat !== undefined && { snowLat: i.snow_lat }),
         ...(i.wind !== undefined && { wind: i.wind as WindName }),
         ...(i.river_density !== undefined && { riverDensity: i.river_density }),
+        ...(i.lowland_rivers !== undefined && { lowlandRivers: i.lowland_rivers }),
       };
       const r = ctx.execute({ op: "set_meta", patch: { climate: next }, label: "Change climate" });
       return json({ change: r.seq, before: cur, after: { ...DEFAULT_CLIMATE, ...next } });
@@ -1563,6 +1576,7 @@ export const TOOLS = [
   ...CITY_PLAN_TOOLS,
   ...CITY_WALL_TOOLS,
   ...CITY_NAME_TOOLS,
+  ...WATER_TOOLS,
 ] as const;
 
 function normShape(s: z.infer<typeof Shape>) {
@@ -1583,7 +1597,7 @@ const WORLD_ONLY = new Set([
   "list_labels", "add_climate_region", "update_climate_region", "remove_climate_region", "list_climate_regions", "set_map_furniture", "set_grid", "route_road",
   "add_line", "update_line", "remove_line", "list_lines", "export_gazetteer", "find_straits", "add_strait_reefs", "add_coast_reefs",
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
-  "get_selection", "select_area", "clear_selection",
+  "get_selection", "select_area", "clear_selection", ...WATER_TOOL_NAMES,
 ]);
 const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES, ...CITY_NAME_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);

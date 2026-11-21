@@ -17,6 +17,7 @@ const P: Record<string, ReactNode> = {
   place: <><path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></>,
   label: <path d="M5 6h14M12 6v13M9 19h6" />,
   line: <path d="M4 20c2-8 6-4 8-8s4-6 8-8" />,
+  river: <><path d="M5 3c3 3-2 6 1 9s-1 6 2 9" /><path d="M14 3c1 3 4 4 3 8s2 6 2 10" /></>,
   region: <path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11-1 4.5 4.5 0 0 0 1 9z" />,
   detail: <><rect x="3" y="3" width="12" height="12" /><circle cx="16" cy="16" r="4" /><path d="M19 19l3 3" /></>,
   battlehere: <><rect x="4" y="4" width="16" height="16" /><path d="M4 12h16M12 4v16" /></>,

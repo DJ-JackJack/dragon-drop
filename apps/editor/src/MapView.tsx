@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
+  type RiverSize, type RiverSource,
 } from "@mapmaker/core";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
@@ -16,14 +17,16 @@ import { drawFurniture, viewUnit } from "./drawFurniture.ts";
 import { MIN_CELL_SCREEN_PX, drawMapGrid } from "./drawMapGrid.ts";
 import { drawRegions, regionAt } from "./drawRegions.ts";
 import { PaintClient } from "./paintClient.ts";
-import { store } from "./store.ts";
+import { type AppState, store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
+import { type WaterPick, namedShape, pickWater, withWaterLabels } from "./waterUi.ts";
+import type { RiverMode } from "./WorldToolBar.tsx";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
 const MAX_ZOOM = 80;
-export type Tool = "pan" | "select" | "area" | "place" | "label" | "region" | "detail" | "line" | "battlehere" | "cityhere" | BrushTool;
+export type Tool = "pan" | "select" | "area" | "place" | "label" | "region" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
 /** The shape the Select area tool drags out. */
 export type AreaShape = "rect" | "circle" | "free" | "poly";
 const isBrush = (t: Tool): t is BrushTool => ["raise", "lower", "smooth", "flatten", "land", "water"].includes(t);
@@ -78,6 +81,11 @@ interface Props {
   onPoint: (x: number, y: number) => void;
   /** Overlays that sit on the map (the selection bar). */
   children?: React.ReactNode;
+  /** Named rivers and lakes (their labels are drawn; the River tool finds rivers and lakes with them), the River tool's mode and the size of a river it starts, and what it picked. */
+  water?: AppState["water"];
+  riverMode?: RiverMode;
+  riverSize?: RiverSize;
+  onWaterPick?: (p: WaterPick) => void;
 }
 
 interface View {
@@ -96,7 +104,7 @@ interface RiverChunk {
   w: number;
 }
 
-export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children }: Props) {
+export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children, water = null, riverMode = "name", riverSize = "river", onWaterPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -123,6 +131,12 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   const nudgeTimer = useRef<number | undefined>(undefined);
   const featuresRef = useRef(features);
   featuresRef.current = features;
+  const waterRef = useRef(water);
+  waterRef.current = water;
+  const riverRef = useRef({ mode: riverMode, size: riverSize, onPick: onWaterPick });
+  riverRef.current = { mode: riverMode, size: riverSize, onPick: onWaterPick };
+  /** The river or lake under the pointer while the River tool names and selects. */
+  const waterHover = useRef<WaterPick | null>(null);
   const selRef = useRef(selectedId);
   selRef.current = selectedId;
   /** Places and labels selected together (two or more; `selectedId` is then the one most recently added). */
@@ -418,6 +432,17 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     // climate regions: when the layer is on, while drawing one, or when one is selected
     const selRegion = f.regions?.some((r) => r.id === selRef.current);
     if (optsRef.current.showRegions || optsRef.current.tool === "region" || selRegion) drawRegions(ctx, f.regions, v, selRef.current);
+    // a selected river or lake, whole; the one under the River tool; the river sources while the River tool is in use
+    const wv = waterRef.current, rivers = store.derived?.rivers;
+    if (wv && rivers && selRef.current && f.waterNames?.some((w) => w.id === selRef.current)) {
+      const sh = namedShape(rivers, wv, selRef.current);
+      if (sh) drawWaterShape(ctx, v, sh, "rgba(255, 215, 60, 0.95)");
+    }
+    if (optsRef.current.tool === "river") {
+      const wh = waterHover.current;
+      if (wh && riverRef.current.mode === "name") drawWaterShape(ctx, v, wh, "rgba(110, 220, 255, 0.95)");
+      drawSources(ctx, v, f, selRef.current);
+    }
     const ld = lineDraft.current;
     if (ld && ld.length) {
       const colour = optsRef.current.lineKind === "border" ? "rgba(214, 90, 150, 0.95)" : optsRef.current.lineKind === "reef" ? "rgba(120, 200, 190, 0.97)" : "rgba(255, 190, 90, 0.97)";
@@ -472,7 +497,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       for (const [x, y] of rd) { ctx.beginPath(); ctx.arc(v.ox + x * v.scale, v.oy + y * v.scale, 3.5, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     }
-    hitsRef.current = drawFeatures(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
+    hitsRef.current = drawFeatures(ctx, withWaterLabels(f, waterRef.current), { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
     drawSelectionOverlay(ctx, v, selectionRef.current.selection, selectionRef.current.lock, f, drag.current, pointer.current, optsRef.current.areaShape, toMapRef.current);
     // title, scale bar, compass and frame (what exports will show)
     drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });
@@ -528,6 +553,17 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       ctx.beginPath();
       dl.pts.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + x * v.scale, v.oy + y * v.scale) : ctx.moveTo(v.ox + x * v.scale, v.oy + y * v.scale)));
       ctx.stroke();
+      ctx.restore();
+    }
+    // what the River tool points at: its name, or that a click names it
+    const wh = waterHover.current;
+    if (optsRef.current.tool === "river" && riverRef.current.mode === "name" && wh && pointer.current) {
+      const tip = wh.named ? `${wh.named.name} (click to select)` : `Click to name this ${wh.kind}`;
+      ctx.save();
+      ctx.font = "600 12px system-ui, sans-serif";
+      const tw = ctx.measureText(tip).width + 12, tx = pointer.current.x + 14, ty = pointer.current.y + 14;
+      ctx.fillStyle = "rgba(15, 18, 28, 0.88)"; ctx.fillRect(tx, ty, tw, 20);
+      ctx.fillStyle = "#dff6ff"; ctx.textBaseline = "middle"; ctx.fillText(tip, tx + 6, ty + 10);
       ctx.restore();
     }
     // where a "Battlemap here" scene would be made
@@ -594,7 +630,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   }), [paintView]);
   // a new style, or relief shading switched on or off
   useEffect(() => { const v = paintView(); if (v) clientRef.current?.repaint(null, v); }, [hillshade, showRivers, meta?.style, paintView]);
-  useEffect(() => { requestDraw(); }, [labelScale, showGrid, smooth, showRivers, showRegions, showLabels, showMarkers, tool, brush, features, selectedId, meta, selection, selectionLock, areaShape, requestDraw]);
+  useEffect(() => { requestDraw(); }, [labelScale, showGrid, smooth, showRivers, showRegions, showLabels, showMarkers, tool, brush, features, selectedId, meta, selection, selectionLock, areaShape, water, riverMode, requestDraw]);
   useEffect(() => {
     // fonts load asynchronously; redraw labels once Cinzel is ready
     void loadLabelFonts().then(() => requestDraw());
@@ -664,6 +700,10 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       }
       if ((e.key !== "Delete" && e.key !== "Backspace") || !selRef.current) return;
       const id = selRef.current, f = featuresRef.current;
+      // a named river or lake loses its name (the water itself stays); a river source is removed
+      const wn = f.waterNames?.find((w) => w.id === id);
+      if (wn) { store.send({ t: "cmd", cmd: { op: "features", patch: { removeWaterNames: [id] }, label: `Remove the name of the ${wn.kind} ${wn.name}` } }); onSelect(null); return; }
+      if (f.sources?.some((x) => x.id === id)) { store.send({ t: "cmd", cmd: { op: "features", patch: { removeSources: [id] }, label: "Remove a river source" } }); onSelect(null); return; }
       const place = f.places.find((p) => p.id === id);
       const region = f.regions?.find((r) => r.id === id);
       const line = f.lines?.find((l) => l.id === id);
@@ -735,6 +775,23 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     }
     if (tl === "detail") {
       drag.current = { mode: "rect", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y };
+      return;
+    }
+    if (tl === "river") {
+      const f = featuresRef.current, mt = metaRef.current!;
+      // a river source under the pointer is selected (to change its size or remove it), in either mode
+      const near = sourceSpots(f).find((s) => Math.hypot((s.x - m.x) * v.scale, (s.y - m.y) * v.scale) < 9);
+      if (near) { onSelect(near.id); return; }
+      if (riverRef.current.mode === "source") {
+        if (store.heights.sample(m.x, m.y) <= mt.seaLevel) return; // (a river starts on land)
+        const src: RiverSource = { id: newFeatureId("s"), x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10, size: riverRef.current.size };
+        store.send({ t: "cmd", cmd: { op: "features", patch: { upsertSources: [src] }, label: `Start a ${riverRef.current.size === "major" ? "major river" : riverRef.current.size === "great" ? "great river" : riverRef.current.size} here` } });
+        onSelect(src.id);
+        return;
+      }
+      const pick = waterHover.current ?? pickAt(m.x, m.y);
+      if (pick) riverRef.current.onPick?.(pick);
+      else onSelect(null);
       return;
     }
     if (tl === "area" && optsRef.current.areaShape === "poly") {
@@ -850,6 +907,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(m); return; }
+    if (optsRef.current.tool === "river") waterHover.current = !d && riverRef.current.mode === "name" ? pickAt(m.x, m.y) : null;
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "move" && d.hit) {
@@ -976,6 +1034,13 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     requestDraw();
   };
 
+  /** The river or lake at a point (map px) with what is known about it, or null (the River tool reaches a few screen px either side of a river). */
+  function pickAt(x: number, y: number): WaterPick | null {
+    const wv = waterRef.current, rivers = store.derived?.rivers, mt = metaRef.current, hf = store.heights;
+    if (!wv || !rivers || !mt) return null;
+    return pickWater(rivers, wv, mt.kmPerPx, x, y, Math.max(1.2, 9 / viewRef.current.scale), hf ? { data: hf.data, w: hf.w, h: hf.h, sea: mt.seaLevel } : undefined);
+  }
+
   /**
    * Finish the road, trail or border being drawn. Roads and trails are routed over the terrain
    * (by the server) unless automatic routing is off; borders and hand-drawn lines are used as drawn.
@@ -1034,7 +1099,9 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   }
 
   // switching tools abandons a half-drawn line or region
-  useEffect(() => { lineDraft.current = null; regionDraft.current = null; polyDraft.current = null; requestDraw(); }, [tool, areaShape, requestDraw]);
+  useEffect(() => { lineDraft.current = null; regionDraft.current = null; polyDraft.current = null; waterHover.current = null; requestDraw(); }, [tool, areaShape, riverMode, requestDraw]);
+  // new rivers or names: what is under the pointer is looked for again
+  useEffect(() => { waterHover.current = null; requestDraw(); }, [water, requestDraw]);
 
   const onWheel = (e: React.WheelEvent) => {
     const p = local(e);
@@ -1048,7 +1115,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
 
   const cursor = traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
     : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab")
-    : tool === "select" ? "default" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" || tool === "cityhere" ? "crosshair" : "none";
+    : tool === "select" ? "default" : tool === "river" ? "pointer" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" || tool === "cityhere" ? "crosshair" : "none";
 
   return (
     <div className="mapview-col">
@@ -1061,7 +1128,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onPointerLeave={() => { pointer.current = null; setHover(null); requestDraw(); }}
+        onPointerLeave={() => { pointer.current = null; waterHover.current = null; setHover(null); requestDraw(); }}
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
         data-testid="map-canvas"
@@ -1074,7 +1141,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       {exportOpen && meta && (
         <ExportDialog
           meta={meta} onClose={() => setExportOpen(false)}
-          source={() => (offRef.current ? { off: offRef.current, meta, features: featuresRef.current, rivers: riverChunks.current } : null)}
+          source={() => (offRef.current ? { off: offRef.current, meta, features: withWaterLabels(featuresRef.current, waterRef.current), rivers: riverChunks.current } : null)}
         />
       )}
       {gridTooFine && meta?.grid && (
@@ -1189,6 +1256,45 @@ function drawSelectionOverlay(
       ctx.setLineDash([6, 4]);
       ctx.stroke();
     }
+  }
+  ctx.restore();
+}
+
+/** A river's course or a lake's shore, highlighted (a dark edge under a bright line). */
+function drawWaterShape(ctx: CanvasRenderingContext2D, v: View, s: { course?: number[]; outline?: [number, number][] }, colour: string) {
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  if (s.course) for (let k = 0; k < s.course.length; k += 2) { const x = v.ox + s.course[k] * v.scale, y = v.oy + s.course[k + 1] * v.scale; if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+  else if (s.outline) { s.outline.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + x * v.scale, v.oy + y * v.scale) : ctx.moveTo(v.ox + x * v.scale, v.oy + y * v.scale))); ctx.closePath(); }
+  ctx.strokeStyle = "rgba(8, 16, 28, 0.7)";
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Where each river source is (map px): at its place, or its own point. */
+function sourceSpots(f: Features): { id: string; x: number; y: number }[] {
+  const out: { id: string; x: number; y: number }[] = [];
+  for (const s of f.sources ?? []) {
+    const at = s.placeId ? f.places.find((p) => p.id === s.placeId) : s.x !== undefined && s.y !== undefined ? { x: s.x, y: s.y } : undefined;
+    if (at) out.push({ id: s.id, x: at.x, y: at.y });
+  }
+  return out;
+}
+
+/** The river sources while the River tool is in use: blue drops, the selected one ringed in gold. */
+function drawSources(ctx: CanvasRenderingContext2D, v: View, f: Features, selected: string | null) {
+  ctx.save();
+  for (const s of sourceSpots(f)) {
+    const x = v.ox + s.x * v.scale, y = v.oy + s.y * v.scale;
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = "#3ea6ff"; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = s.id === selected ? "rgba(255, 215, 60, 0.98)" : "#ffffff"; ctx.stroke();
   }
   ctx.restore();
 }

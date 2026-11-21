@@ -14,7 +14,10 @@ import { CITY_TOOL_DEFS, CITY_TOOL_GROUPS, type CityUi, defaultCityUi } from "./
 import { BATTLE_TOOLS, BATTLE_TOOL_GROUPS, BattleInspector, BattleKey, BattleSettings, BattleToolBar, BattleView, type BattleUi, defaultBattleUi } from "./Battle.tsx";
 import { ToolRail } from "./ToolRail.tsx";
 import { ObjectsList } from "./ObjectsList.tsx";
-import { WorldToolBar } from "./WorldToolBar.tsx";
+import { type RiverMode, WorldToolBar } from "./WorldToolBar.tsx";
+import { WaterNameBox, WaterSection } from "./WaterPanel.tsx";
+import type { WaterPick } from "./waterUi.ts";
+import type { RiverSize } from "@mapmaker/core";
 import { type AreaShape, type Brush, type Tool, MapView } from "./MapView.tsx";
 import { type ToolDef, TOOL_GROUPS } from "./toolDefs.ts";
 import { ShortcutHelp } from "./ShortcutHelp.tsx";
@@ -32,6 +35,7 @@ function featureKindOf(f: Features, id: string): SelectedFeatureKind | null {
   if (f.lines?.some((l) => l.id === id)) return "line";
   if (f.regions?.some((r) => r.id === id)) return "region";
   if (f.sources?.some((x) => x.id === id)) return "source";
+  if (f.waterNames?.some((x) => x.id === id)) return "water";
   return null;
 }
 
@@ -70,6 +74,10 @@ export function App() {
   useEffect(() => setRoutingId(null), [s.error]);
   const onRouting = useCallback((id: string) => setRoutingId(id), []);
   const [areaShape, setAreaShape] = useState<AreaShape>("rect");
+  // the River tool: naming and selecting, or starting a river (and how big); a picked river or lake with no name waits in a box for one
+  const [riverMode, setRiverMode] = useState<RiverMode>("name");
+  const [riverSize, setRiverSize] = useState<RiverSize>("river");
+  const [waterPick, setWaterPick] = useState<WaterPick | null>(null);
   // what is selected lives in the store (the server shares it with Claude); an id that isn't on the map yet (just created) waits here until it arrives
   const [pendingId, setPendingId] = useState<string | null>(null);
   const selectedId = s.selection?.kind === "feature" ? s.selection.id : pendingId;
@@ -99,6 +107,14 @@ export function App() {
     store.setSelection({ kind: "point", x, y });
   }, []);
   const clearSelection = useCallback(() => { setPendingId(null); if (store.getState().selection) store.setSelection(null); }, []);
+  // a named river or lake is selected (Claude sees it with get_selection); one with no name is pointed at (the point on it) and a box asks for a name
+  const onWaterPick = useCallback((p: WaterPick) => {
+    if (p.named) { onSelect(p.named.id); setWaterPick(null); return; }
+    setPendingId(null);
+    store.setSelection({ kind: "point", x: p.x, y: p.y });
+    setWaterPick(p);
+  }, [onSelect]);
+  useEffect(() => setWaterPick(null), [s.meta?.id]);
   const style = s.meta?.style ?? "painted";
   const isBattle = s.meta?.kind === "battle";
   const isCity = s.meta?.kind === "city";
@@ -289,6 +305,7 @@ export function App() {
         <WorldToolBar
           tool={tool} brush={brush} onBrush={setBrush} lineKind={lineKind} onLineKind={setLineKind} lineAuto={lineAuto} onLineAuto={setLineAuto}
           areaShape={areaShape} onAreaShape={setAreaShape} placeType={placeType} onPlaceType={setPlaceType} labelKind={labelKind} onLabelKind={setLabelKind}
+          riverMode={riverMode} onRiverMode={setRiverMode} riverSize={riverSize} onRiverSize={setRiverSize}
         />
       )}
       <div className={`main${desktop && wide ? " wide" : ""}${mapOpen ? "" : " no-map"}${claudeOpen ? "" : " no-claude"}${railNames ? "" : " rail-icons"}${isBattle && tabNow === "assets" && mapOpen ? " assets-wide" : ""}`}>
@@ -309,6 +326,7 @@ export function App() {
           features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions} showLabels={showLabels} showMarkers={showMarkers}
           lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere} onCityHere={onCityHere}
           selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
+          water={s.water} riverMode={riverMode} riverSize={riverSize} onWaterPick={onWaterPick}
         >
           <SelectionBar
             selection={s.selection} lock={s.selectionLock} lockPref={s.lockPref} features={s.features} kmPerPx={s.meta?.kmPerPx ?? 1}
@@ -342,7 +360,7 @@ export function App() {
             </>
           )}
           {isWorld && <>
-          <Inspector features={s.features} selectedId={selectedId} kmPerPx={s.meta?.kmPerPx ?? 1} onClear={() => onSelect(null)} />
+          <Inspector features={s.features} selectedId={selectedId} kmPerPx={s.meta?.kmPerPx ?? 1} onClear={() => onSelect(null)} water={s.water} />
 
           <section>
             <h3>Style</h3>
@@ -383,6 +401,8 @@ export function App() {
               ))}
             </div>
           </section>
+
+          {s.meta && <WaterSection meta={s.meta} features={s.features} water={s.water} carving={s.carving} selectedId={selectedId} onPick={(id) => { onSelect(id); setTool("river"); }} />}
 
           {(childMaps.length > 0 || s.meta?.parent) && (
             <section data-testid="regional">
@@ -486,6 +506,7 @@ export function App() {
         )}
       </div>
       {newOpen && <NewMapDialog onClose={() => setNewOpen(false)} />}
+      {waterPick && <WaterNameBox pick={waterPick} onClose={() => setWaterPick(null)} onNamed={(id) => { setWaterPick(null); onSelect(id); }} />}
       {cityHere && <CityHereDialog spot={cityHere} onClose={() => setCityHere(null)} onMake={(name) => { setMaking(name); setCityHere(null); }} />}
       {settingsOpen && desktop && <DesktopSettings onClose={() => setSettingsOpen(false)} />}
       {helpOpen && <ShortcutHelp battle={isBattle} city={isCity} onClose={() => setHelpOpen(false)} />}

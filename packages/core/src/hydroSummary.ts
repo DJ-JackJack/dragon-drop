@@ -5,6 +5,7 @@
  */
 import type { Hydrology, RiverInflow } from "./hydrology.ts";
 import { landCellNear } from "./hydrology.ts";
+import { simplifyClosed, traceOutline } from "./cityReader.ts";
 
 export interface HydroLake {
   /** Centre, map px. */
@@ -18,6 +19,15 @@ export interface HydroLake {
 }
 
 export type RiverEnd = "sea" | "lake" | "river" | "elsewhere";
+
+/** A lake as the editor and the names need it: where it is, how big, what leaves it, and its shore (map px, a simplified outline). */
+export interface LakeShape {
+  x: number;
+  y: number;
+  areaKm2: number;
+  outflow: HydroLake["outflow"];
+  outline: [number, number][];
+}
 
 export interface HydroSourceReport {
   x: number;
@@ -40,6 +50,8 @@ export interface HydroSummary {
   /** The share of river length through very dry land. */
   dryShare: number;
   lakes: HydroLake[];
+  /** Every lake with its shore (not only the largest twenty). */
+  shapes: LakeShape[];
   sources: HydroSourceReport[];
 }
 
@@ -98,12 +110,12 @@ export function summariseHydrology(o: HydroInput): HydroSummary {
 
   // lakes: connected cells, with the way out of each
   const N = W * H, label = new Int32Array(N);
-  const lakes: HydroLake[] = [];
+  const lakes: HydroLake[] = [], shapes: LakeShape[] = [];
   let n = 0;
   for (let i = 0; i < N; i++) {
     if (!hy.lakes[i] || label[i]) continue;
     n++;
-    let cells = 0, sx = 0, sy = 0, spill = -1, spillAcc = 0;
+    let cells = 0, sx = 0, sy = 0, spill = -1, spillAcc = 0, bx0 = W, by0 = H, bx1 = 0, by1 = 0;
     const stack = [i];
     label[i] = n;
     while (stack.length) {
@@ -111,6 +123,7 @@ export function summariseHydrology(o: HydroInput): HydroSummary {
       cells++;
       const x = c % W, y = (c / W) | 0;
       sx += x; sy += y;
+      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
       const rc = flow.receiver[c];
       if (rc >= 0 && !hy.lakes[rc] && flow.acc[c] > spillAcc) { spill = rc; spillAcc = flow.acc[c]; }
       if (x > 0 && hy.lakes[c - 1] && !label[c - 1]) { label[c - 1] = n; stack.push(c - 1); }
@@ -119,7 +132,14 @@ export function summariseHydrology(o: HydroInput): HydroSummary {
       if (y < H - 1 && hy.lakes[c + W] && !label[c + W]) { label[c + W] = n; stack.push(c + W); }
     }
     const size = spill >= 0 ? spillAcc / hy.riverThreshold : 0;
-    lakes.push({ x: Math.round(sx / cells), y: Math.round(sy / cells), areaKm2: Math.round(cells * kmPerPx * kmPerPx), outflow: spill < 0 ? "none" : size >= 1 ? "river" : "stream", outflowSize: Math.round(size * 100) / 100 });
+    const lake: HydroLake = { x: Math.round(sx / cells), y: Math.round(sy / cells), areaKm2: Math.round(cells * kmPerPx * kmPerPx), outflow: spill < 0 ? "none" : size >= 1 ? "river" : "stream", outflowSize: Math.round(size * 100) / 100 };
+    lakes.push(lake);
+    // its shore: the outline of its cells (in the box round it), simplified to at most about 80 corners
+    const mw = bx1 - bx0 + 1, mh = by1 - by0 + 1, mask = new Uint8Array(mw * mh);
+    for (let yy = by0; yy <= by1; yy++) for (let xx = bx0; xx <= bx1; xx++) if (label[yy * W + xx] === n) mask[(yy - by0) * mw + (xx - bx0)] = 1;
+    let outline = traceOutline(mask, mw, mh), tol = 0.8;
+    do { outline = simplifyClosed(outline, tol); tol *= 1.6; } while (outline.length > 80);
+    shapes.push({ x: lake.x + 0.5, y: lake.y + 0.5, areaKm2: lake.areaKm2, outflow: lake.outflow, outline: outline.map(([x, y]) => [x + bx0, y + by0] as [number, number]) });
   }
   lakes.sort((a, b) => b.areaKm2 - a.areaKm2);
 
@@ -143,6 +163,6 @@ export function summariseHydrology(o: HydroInput): HydroSummary {
   return {
     riverCount: hy.rivers.length, riverLengthKm: Math.round(total), ends,
     bowlShare: points ? Math.round((bowl / points) * 1000) / 1000 : 0, dryShare: points ? Math.round((dry / points) * 1000) / 1000 : 0,
-    lakes: lakes.slice(0, 20), sources,
+    lakes: lakes.slice(0, 20), shapes, sources,
   };
 }

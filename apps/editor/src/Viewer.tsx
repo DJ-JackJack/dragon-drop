@@ -11,6 +11,7 @@ import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.
 import { drawFurniture, viewUnit } from "./drawFurniture.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { store } from "./store.ts";
+import { withWaterLabels } from "./waterUi.ts";
 
 interface View { scale: number; ox: number; oy: number }
 
@@ -32,8 +33,10 @@ export function Viewer() {
   const [showLabels, setShowLabels] = useState(true);
   const [listOpen, setListOpen] = useState(false);
 
-  const live = useRef({ features: s.features, showLabels, meta, picked });
-  live.current = { features: s.features, showLabels, meta, picked };
+  // (a world map's river and lake names are drawn like its labels)
+  const features = withWaterLabels(s.features, meta?.city ? null : s.water);
+  const live = useRef({ features, showLabels, meta, picked });
+  live.current = { features, showLabels, meta, picked };
 
   useEffect(() => { store.connect(true); }, []);
   useEffect(() => { if (meta) document.title = `${meta.name} · Dragon Drop`; }, [meta?.name]);
@@ -108,7 +111,7 @@ export function Viewer() {
   }, [meta?.id, s.derivedVersion, draw]);
 
   useEffect(() => { void loadLabelFonts().then(draw); }, [draw]);
-  useEffect(draw, [s.features, showLabels, picked, draw]);
+  useEffect(draw, [s.features, s.water, showLabels, picked, draw]);
 
   // keep the open place card in sync with edits made elsewhere
   useEffect(() => {

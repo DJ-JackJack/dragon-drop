@@ -1,7 +1,8 @@
 /**
  * What the DM has selected on the map, and what that means for Claude.
  *
- * A selection is a point, an area (rectangle, circle, or a polygon drawn freehand or corner by corner) or one feature (a place, label, line, climate region or river source).
+ * A selection is a point, an area (rectangle, circle, or a polygon drawn freehand or corner by corner) or one feature (a place, label, line, climate region, river source, or
+ * a named river or lake).
  * The editor sends it to the server; Claude reads it with `get_selection`, and an area (or a climate region) can also *lock* Claude's edits:
  * while the lock is on, terrain changes Claude makes are clipped to the area (with a soft edge inside it, nothing outside changes) and
  * feature edits outside it are refused. All of that lives here as pure functions so the editor, server and tests share one meaning.
@@ -10,12 +11,14 @@ import type { Derived } from "./climate.ts";
 import type { MapDoc } from "./doc.ts";
 import type { FeaturesPatch, Features, RiverSource } from "./features.ts";
 import { BIOMES, GROUNDS, biomeWeights, dominantBiome, emptyBiomeWeights } from "./biomeLook.ts";
+import { resolveWaterNames, riverNet, seaNear } from "./waterNames.ts";
 import { smoothstep } from "./noise.ts";
 import { desertWeight, jungleWeight } from "./painted.ts";
 import { MI_PER_KM } from "./grid.ts";
 import { type Point, type Rect, type Shape, clipRect, pointInPolygon, shapeBounds, signedDistance } from "./geom.ts";
 
-export type SelectedFeatureKind = "place" | "label" | "line" | "region" | "source";
+/** "water": a named river or lake (its `WaterName` id). */
+export type SelectedFeatureKind = "place" | "label" | "line" | "region" | "source" | "water";
 export type SelectableShape = Extract<Shape, { type: "rect" | "circle" | "polygon" }>;
 
 export type Selection =
@@ -37,7 +40,7 @@ export interface EditLock {
   featherPx: number;
 }
 
-const FEATURE_KINDS: SelectedFeatureKind[] = ["place", "label", "line", "region", "source"];
+const FEATURE_KINDS: SelectedFeatureKind[] = ["place", "label", "line", "region", "source", "water"];
 const MAX_POLYGON_POINTS = 1000;
 const ID_RE = /^[\w.-]{1,64}$/;
 
@@ -105,6 +108,7 @@ export function selectionFeatureExists(sel: Extract<Selection, { kind: "feature"
     case "line": return !!f?.lines?.some((l) => l.id === sel.id);
     case "region": return !!f?.regions?.some((r) => r.id === sel.id);
     case "source": return !!f?.sources?.some((x) => x.id === sel.id);
+    case "water": return !!f?.waterNames?.some((x) => x.id === sel.id);
   }
 }
 
@@ -214,6 +218,8 @@ function spotsOfPatch(patch: FeaturesPatch, f: Features): Spot[] {
   };
   for (const s of patch.upsertSources ?? []) { const sp = sourceSpot(s); if (sp) spots.push(sp); }
   for (const id of patch.removeSources ?? []) { const s = (f.sources ?? []).find((x) => x.id === id); const sp = s && sourceSpot(s); if (sp) spots.push(sp); }
+  for (const w of patch.upsertWaterNames ?? []) spots.push({ what: `the name of the ${w.kind} ${w.name}`, points: [[w.x, w.y]] });
+  for (const id of patch.removeWaterNames ?? []) { const w = (f.waterNames ?? []).find((x) => x.id === id); if (w) spots.push({ what: `the name of the ${w.kind} ${w.name}`, points: [[w.x, w.y]] }); }
   return spots;
 }
 
@@ -238,6 +244,7 @@ export function selectionFocusRect(doc: MapDoc, sel: Selection | null): Rect | n
   const key = sel.featureKind;
   if (key === "place") { const p = f?.places.find((x) => x.id === sel.id); return p ? around(p.x, p.y, 200) : null; }
   if (key === "label") { const l = f?.labels.find((x) => x.id === sel.id); return l ? around(l.x, l.y, 200) : null; }
+  if (key === "water") { const w = f?.waterNames?.find((x) => x.id === sel.id); return w ? around(w.x, w.y, 200) : null; }
   if (key === "source") {
     const s = f?.sources?.find((x) => x.id === sel.id);
     const at = s?.placeId ? f?.places.find((p) => p.id === s.placeId) : s && s.x !== undefined && s.y !== undefined ? { x: s.x, y: s.y } : undefined;
@@ -295,10 +302,23 @@ export function describeSelection(sel: Selection | null, f: Features | undefined
     if (sel.featureKind === "label") return f?.labels.find((l) => l.id === sel.id)?.text;
     if (sel.featureKind === "line") { const l = f?.lines?.find((x) => x.id === sel.id); return l ? l.name ?? l.kind : undefined; }
     if (sel.featureKind === "region") return f?.regions?.find((r) => r.id === sel.id)?.name;
+    if (sel.featureKind === "water") return f?.waterNames?.find((w) => w.id === sel.id)?.name;
     const s = f?.sources?.find((x) => x.id === sel.id);
     return s ? s.name ?? (s.placeId ? f?.places.find((p) => p.id === s.placeId)?.name : undefined) ?? "a river source" : undefined;
   })();
-  return `the ${sel.featureKind === "source" ? "river source" : sel.featureKind === "region" ? "climate region" : sel.featureKind}${name ? ` "${name}"` : ` (${sel.id}, no longer on the map)`}`;
+  const word = sel.featureKind === "source" ? "river source" : sel.featureKind === "region" ? "climate region"
+    : sel.featureKind === "water" ? f?.waterNames?.find((w) => w.id === sel.id)?.kind ?? "river or lake" : sel.featureKind;
+  return `the ${word}${name ? ` "${name}"` : ` (${sel.id}, no longer on the map)`}`;
+}
+
+/** A named river or lake with what the water is now: whether it was found, its length and where it ends, or its size. */
+function waterFacts(doc: MapDoc, derived: Derived | null, id: string): unknown {
+  const w = doc.features?.waterNames?.find((x) => x.id === id);
+  if (!w || !derived?.hydro) return w;
+  const hf = doc.height;
+  const [facts] = resolveWaterNames([w], riverNet(derived.rivers), derived.hydro.shapes, { mapWidth: doc.meta.width, kmPerPx: doc.meta.kmPerPx, isSea: seaNear(hf.data, hf.w, hf.h, doc.meta.seaLevel) }).named;
+  const { head: _h, lake: _l, ...rest } = facts;
+  return { ...w, ...rest };
 }
 
 /** The facts about a selection that Claude can't see in a picture: numbers and what lies inside. */
@@ -328,6 +348,7 @@ export function selectionReport(doc: MapDoc, derived: Derived | null, sel: Selec
       : key === "label" ? f?.labels.find((x) => x.id === sel.id)
       : key === "line" ? f?.lines?.find((x) => x.id === sel.id)
       : key === "region" ? f?.regions?.find((x) => x.id === sel.id)
+      : key === "water" ? waterFacts(doc, derived, sel.id)
       : f?.sources?.find((x) => x.id === sel.id);
   }
 

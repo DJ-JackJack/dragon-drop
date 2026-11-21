@@ -141,6 +141,8 @@ export interface RiverPath {
   pts: number[];
   /** Width in map px at each point. */
   widths: number[];
+  /** Why the tracing stopped: it reached the sea, a lake, a river already traced (its last point is on that one), or the map's edge. Missing on rivers made elsewhere. */
+  end?: "sea" | "lake" | "join" | "edge";
 }
 
 export interface Hydrology {
@@ -150,6 +152,8 @@ export interface Hydrology {
   /** 1 = lake cell. */
   lakes: Uint8Array;
   riverThreshold: number;
+  /** Lowland rivers only: oxbow lakes (1 = water), cut-off loops beside the big rivers on flat ground. Painted as lakes; not lakes for the water's account. */
+  oxbows?: Uint8Array;
 }
 
 export interface HydrologyOptions {
@@ -170,6 +174,11 @@ export interface HydrologyOptions {
   runoff?: Float32Array;
   /** River sources: extra flow at a point. */
   inflows?: RiverInflow[];
+  /**
+   * Lowland rivers (water model stage 4, a map's choice, off by default so existing maps keep their rivers): big rivers on flat ground wander in wide meanders, with
+   * oxbow lakes beside them, and widen into an estuary where they meet the sea.
+   */
+  lowland?: boolean;
 }
 
 export function computeHydrology(h: Float32Array, W: number, H: number, seaLevel: number, opts: HydrologyOptions = {}, flow?: FlowField): Hydrology {
@@ -215,22 +224,64 @@ export function computeHydrology(h: Float32Array, W: number, H: number, seaLevel
   const visited = new Uint8Array(N);
   const meander = new Simplex2D(opts.seed ?? 17);
   const rivers: RiverPath[] = [];
+  const lowland = !!opts.lowland;
+  const oxbows = lowland ? new Uint8Array(N) : undefined;
   for (const head of heads) {
     const cells: number[] = [];
-    let c = head;
+    let c = head, atSea = false, end: RiverPath["end"] = "edge";
     for (;;) {
       cells.push(c);
-      if (visited[c]) break;
+      if (visited[c]) { end = "join"; break; }
       visited[c] = 1;
       const nx = f.receiver[c];
-      if (nx < 0 || h[nx] <= seaLevel) { if (nx >= 0) cells.push(nx); break; }
-      if (lakes[nx]) { cells.push(nx); break; }
+      if (nx < 0 || h[nx] <= seaLevel) { if (nx >= 0) { cells.push(nx); atSea = true; end = "sea"; } break; }
+      if (lakes[nx]) { cells.push(nx); end = "lake"; break; }
       c = nx;
     }
     if (cells.length < 3) continue;
-    rivers.push(smoothRiver(cells, W, f.acc, thr, meander, h, donors));
+    const river: RiverPath = { ...smoothRiver(cells, W, f.acc, thr, meander, h, donors, lowland, atSea), end };
+    rivers.push(river);
+    if (oxbows) addOxbows(oxbows, river, cells, W, H, h, seaLevel, f.acc, thr, lakes, meander);
   }
-  return { flow: f, rivers, lakes, riverThreshold: thr };
+  // (an oxbow never sits on a river's own line)
+  if (oxbows) for (const r of rivers) for (let k = 0; k < r.pts.length; k += 2) { const x = Math.floor(r.pts[k]), y = Math.floor(r.pts[k + 1]); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < W && Y < H) oxbows[Y * W + X] = 0; } }
+  return { flow: f, rivers, lakes, riverThreshold: thr, ...(oxbows && { oxbows }) };
+}
+
+/**
+ * Oxbow lakes beside a lowland river: on its flat stretches (dropping under a third of a metre a cell) where it is big (eight times the smallest river or more), now and then a
+ * crescent of water off to one side, as a loop the river has cut off would leave. Only on land, never in a lake or the sea.
+ */
+function addOxbows(out: Uint8Array, r: RiverPath, cells: number[], W: number, H: number, h: Float32Array, sea: number, acc: Float32Array, thr: number, lakes: Uint8Array, noise: Simplex2D) {
+  const p = r.pts, n = p.length / 2;
+  if (n < 12) return;
+  let gap = 0, side = 1;
+  for (let k = 6; k < n - 6; k++) {
+    gap += Math.hypot(p[k * 2] - p[k * 2 - 2], p[k * 2 + 1] - p[k * 2 - 1]); // (map px along the river since the last one)
+    // the cell under this point, and how steep and big the river is there
+    const c = Math.floor(p[k * 2 + 1]) * W + Math.floor(p[k * 2]);
+    const ci = Math.min(cells.length - 1, Math.round((k / n) * cells.length)), ca = Math.max(0, ci - 3), cb = Math.min(cells.length - 1, ci + 3);
+    const drop = Math.max(0, (h[cells[ca]] - h[cells[cb]]) / Math.max(1, cb - ca));
+    if (drop > 0.35 || acc[cells[ci]] < thr * 8 || h[c] <= sea) continue;
+    const every = 45 + 40 * (noise.noise(p[k * 2] / 13 + 7, p[k * 2 + 1] / 13) + 1);
+    if (gap < every) continue;
+    gap = 0; side = -side;
+    const tx = p[k * 2 + 2] - p[k * 2 - 2], ty = p[k * 2 + 3] - p[k * 2 - 1], tl = Math.hypot(tx, ty) || 1, nx = -ty / tl, ny = tx / tl;
+    const w = r.widths[k], rad = 1.6 + 1.4 * Math.min(1.5, w), off = rad + 1.2 + w;
+    const cx = p[k * 2] + nx * off * side, cy = p[k * 2 + 1] + ny * off * side;
+    // a crescent: a ring two-thirds round, opening toward the river, about one cell thick
+    const facing = Math.atan2(-ny * side, -nx * side);
+    for (let y = Math.floor(cy - rad - 2); y <= Math.ceil(cy + rad + 2); y++) for (let x = Math.floor(cx - rad - 2); x <= Math.ceil(cx + rad + 2); x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
+      if (Math.abs(d - rad) > 0.75) continue;
+      let a = Math.atan2(dy, dx) - facing;
+      a = Math.atan2(Math.sin(a), Math.cos(a));
+      if (Math.abs(a) < Math.PI * 0.33) continue; // (the open side, toward the river)
+      const i = y * W + x;
+      if (h[i] > sea && !lakes[i]) out[i] = 1;
+    }
+  }
 }
 
 /** The land cell closest to (x, y) within a few cells, or -1. */
@@ -250,7 +301,7 @@ export function landCellNear(h: Float32Array, W: number, H: number, sea: number,
  * A river's path, smoothed and made to wander. How much it wanders follows how steeply it drops: a river on a steep slope runs nearly straight,
  * one on flat ground meanders. Where a tributary joins (cells with several donors) the wander dies away, so the two still meet exactly.
  */
-function smoothRiver(cells: number[], W: number, acc: Float32Array, thr: number, noise: Simplex2D, h: Float32Array, donors: Uint8Array): RiverPath {
+function smoothRiver(cells: number[], W: number, acc: Float32Array, thr: number, noise: Simplex2D, h: Float32Array, donors: Uint8Array, lowland = false, atSea = false): RiverPath {
   // Flow never decreases downstream (the outlet cell itself - sea or lake - carries no accumulation).
   let run = 0;
   let pts: [number, number, number][] = cells.map((i) => {
@@ -274,9 +325,13 @@ function smoothRiver(cells: number[], W: number, acc: Float32Array, thr: number,
       const ka = Math.max(0, k - 3), kb = Math.min(n - 1, k + 3);
       const run = Math.hypot(pts[kb][0] - pts[ka][0], pts[kb][1] - pts[ka][1]) || 1;
       const drop = Math.max(0, (h[cells[ka]] - h[cells[kb]]) / run);
-      const amp = 0.3 + 1.25 * (1 - smoothstep(1, 6, drop));
+      let amp = 0.3 + 1.25 * (1 - smoothstep(1, 6, drop));
+      // lowland rivers: a big river on flat ground swings in wide, slow loops (the bigger, the wider)
+      const big = lowland ? Math.min(1.3, Math.max(0, Math.log2(Math.max(a, thr) / thr) / 3)) : 0;
+      if (lowland) amp += 2.4 * big * (1 - smoothstep(0.3, 2.5, drop));
       const taper = smoothstep(0, 4, near[k]);
-      const off = (noise.noise(x / 7, y / 7) + 0.35 * noise.noise(x / 3 + 91, y / 3)) * amp * taper;
+      const f = lowland && big > 0.3 ? 11 : 7;
+      const off = (noise.noise(x / f, y / f) + 0.35 * noise.noise(x / 3 + 91, y / 3)) * amp * taper;
       out.push([x - (dy / len) * off, y + (dx / len) * off, a]);
     }
     out.push(pts[pts.length - 1]);
@@ -294,10 +349,14 @@ function smoothRiver(cells: number[], W: number, acc: Float32Array, thr: number,
   }
   const flat: number[] = [];
   const widths: number[] = [];
-  for (const [x, y, a] of pts) {
+  const n = pts.length;
+  pts.forEach(([x, y, a], k) => {
     flat.push(Math.round(x * 100) / 100, Math.round(y * 100) / 100);
-    widths.push(Math.round((0.45 + Math.log2(Math.max(a, thr) / thr) * 0.32) * 100) / 100);
-  }
+    let w = 0.45 + Math.log2(Math.max(a, thr) / thr) * 0.32;
+    // a lowland river that reaches the sea widens into an estuary over its last stretch
+    if (lowland && atSea && w >= 0.8) w *= 1 + 2.2 * smoothstep(0.82, 1, k / Math.max(1, n - 1));
+    widths.push(Math.round(w * 100) / 100);
+  });
   return { pts: flat, widths };
 }
 

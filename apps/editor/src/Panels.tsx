@@ -3,7 +3,8 @@ import { placeKind,
   GROUND_INFO, MI_PER_KM, WIND_NAMES, type ClimateParams, type ClimateRegion, DEFAULT_CLIMATE, type Corner, type Features, type MapFurniture, type MapGrid, type MapLine, describeFurniture, lineLengthKm, clampGridSize, describeGrid, gridCellPx, niceGridSize, type LabelKind, type MapLabel, type MapMeta, type NamePos, type Place, type PlaceType,
 } from "@mapmaker/core";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
-import { store } from "./store.ts";
+import { type AppState, store } from "./store.ts";
+import { SourceEditor, WaterEditor, deleteWaterThing } from "./WaterPanel.tsx";
 
 export const LABEL_KINDS: { id: LabelKind; label: string }[] = [
   { id: "sea", label: "Sea / ocean" }, { id: "region", label: "Region" }, { id: "range", label: "Mountain range" },
@@ -15,11 +16,26 @@ const sendRegion = (r: ClimateRegion, label?: string) => store.send({ t: "cmd", 
 const sendLabel = (l: MapLabel, label?: string) => store.send({ t: "cmd", cmd: { op: "features", patch: { upsertLabels: [l] }, label } });
 
 /** Edit the selected place or label. Sliders preview locally and commit on release (one undo step each). */
-export function Inspector({ features, selectedId, kmPerPx, onClear }: { features: Features; selectedId: string | null; kmPerPx: number; onClear: () => void }) {
+export function Inspector({ features, selectedId, kmPerPx, onClear, water }: { features: Features; selectedId: string | null; kmPerPx: number; onClear: () => void; water?: AppState["water"] }) {
   const place = features.places.find((p) => p.id === selectedId);
   const lab = features.labels.find((l) => l.id === selectedId);
   const region = features.regions?.find((r) => r.id === selectedId);
   const line = features.lines?.find((l) => l.id === selectedId);
+  // a named river or lake, or a river source
+  const wn = features.waterNames?.find((w) => w.id === selectedId);
+  const src = features.sources?.find((x) => x.id === selectedId);
+  if (wn || src) {
+    return (
+      <section className="inspector" data-testid="inspector">
+        <h3>{wn ? (wn.kind === "river" ? "River" : "Lake") : "River source"}</h3>
+        {wn ? <WaterEditor w={wn} water={water ?? null} /> : <SourceEditor s={src!} features={features} />}
+        <div className="row">
+          <button onClick={onClear}>Done</button>
+          <button className="danger" onClick={() => { if (deleteWaterThing(features, selectedId!) && wn) onClear(); }} data-testid="water-remove">{wn ? "Remove the name" : "Remove source"}</button>
+        </div>
+      </section>
+    );
+  }
   if (!place && !lab && !region && !line) return null;
   return (
     <section className="inspector" data-testid="inspector">

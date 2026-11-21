@@ -6,6 +6,7 @@ import { Worker } from "node:worker_threads";
 import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
+  type CarveOptions, type CarveResult, type RiverPath, carveValleys,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
 
@@ -32,6 +33,8 @@ export interface MapCompute {
   readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult>;
   /** The reader for streets or water (or buildings), the same way. */
   readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer>;
+  /** Valleys carved along these rivers (core carve.ts): new heights, the map itself is not changed. */
+  carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult>;
   close(): Promise<void>;
 }
 
@@ -60,7 +63,8 @@ export type Job =
   | { op: "warm"; W: number; H: number; seed: number }
   | { op: "read"; key: string; bytes: Uint8Array; opts: ReaderOptions }
   | { op: "read_as"; key: string; bytes: Uint8Array; job: ReadJob }
-  | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> };
+  | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> }
+  | { op: "carve"; W: number; H: number; heights: Float32Array; meta: MapMeta; rivers: RiverPath[]; opts: CarveOptions };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
 
@@ -100,7 +104,8 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | null {
+    if (job.op === "carve") return carveValleys(job.heights, job.W, job.H, job.meta.seaLevel, job.rivers, job.opts);
     if (job.op === "city") {
       const tiles = job.roofTiles;
       return renderCity({ meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features }, { maxSize: job.maxSize, ...(tiles && { tileFor: (a: string) => tiles[a] ?? null }) }).img;
@@ -175,6 +180,9 @@ export class InlineCompute implements MapCompute {
   }
   async readPictureAs(key: string, bytes: Uint8Array, job: ReadJob) {
     return this.runner.run({ op: "read_as", key, bytes, job }) as ReadAnswer;
+  }
+  async carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions) {
+    return this.runner.run({ op: "carve", ...snapshot(doc), rivers, opts }) as CarveResult;
   }
   async close() {}
 }
@@ -278,6 +286,12 @@ export class WorkerCompute implements MapCompute {
   readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer> {
     if (this.painter.dead) return this.inline.readPictureAs(key, bytes, job);
     return this.painter.call<ReadAnswer>({ op: "read_as", key, bytes, job }, [bytes.buffer as ArrayBuffer]);
+  }
+
+  carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult> {
+    if (this.painter.dead) return this.inline.carve(doc, rivers, opts);
+    const s = snapshot(doc);
+    return this.painter.call<CarveResult>({ op: "carve", ...s, rivers, opts }, [s.heights.buffer as ArrayBuffer]);
   }
 
   warm(doc: MapDoc) {

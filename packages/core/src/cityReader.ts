@@ -91,7 +91,7 @@ export function guessRoofLook([r, g, b]: RGB): RoofStyle {
 // ---------------------------------------------------------------- shapes
 
 /** A blob's outline (its outer boundary, traced round the pixel edges), as corners. */
-function traceOutline(mask: Uint8Array, bw: number, bh: number): Pt[] {
+export function traceOutline(mask: Uint8Array, bw: number, bh: number): Pt[] {
   const at = (x: number, y: number) => x >= 0 && y >= 0 && x < bw && y < bh && mask[y * bw + x] === 1;
   // start at the top-left pixel's top-left corner, walking the boundary with the inside on the right
   let sx = -1, sy = -1;
@@ -117,7 +117,7 @@ function traceOutline(mask: Uint8Array, bw: number, bh: number): Pt[] {
 }
 
 /** Fewer corners, none further than `tol` from the line (Douglas-Peucker on a closed outline). */
-function simplifyClosed(pts: Pt[], tol: number): Pt[] {
+export function simplifyClosed(pts: Pt[], tol: number): Pt[] {
   if (pts.length < 4) return pts;
   // split at the point furthest from the first, simplify both halves
   let far = 0, fd = -1;

@@ -11,6 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
+  type RiverNet, resolveWaterNames, riverNet, seaNear,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -80,6 +81,9 @@ interface OpenProject {
   regionsKey: string;
   /** Meta settings the climate and server render depend on, as last seen. */
   metaKey: string;
+  /** The river and lake names as last seen (a change is sent to the editors), and how the latest rivers join up (waterNames.ts). */
+  waterKey: string;
+  net: { rivers: RiverPath[]; net: RiverNet } | null;
 }
 
 const DERIVED_DEBOUNCE_MS = 700;
@@ -193,6 +197,11 @@ export class Hub {
           op.regionsKey = key;
           this.contentChanged(op); // climate regions feed the climate model
         }
+        const wkey = JSON.stringify(e.features.waterNames ?? []);
+        if (active && isWorld(session.doc) && wkey !== op.waterKey) {
+          op.waterKey = wkey;
+          this.sendWater(op); // (a river or lake named, renamed or unnamed: its label, with the rivers as they are)
+        }
       } else if (e.type === "history" && active) {
         this.broadcast({ t: "change", change: e.change, canUndo: session.canUndo, canRedo: session.canRedo });
         // a finished brush stroke: derived layers may have been skipped while it was in progress
@@ -225,6 +234,7 @@ export class Hub {
         derived: null, derivedVersion: -1, deriving: null, derivingVersion: -1, contentVersion: 0, derivedTimer: null,
         regionsKey: JSON.stringify([doc.features?.regions ?? [], resolveRiverSources(doc.features)]),
         metaKey: JSON.stringify([doc.meta.seaLevel, doc.meta.climate, doc.meta.style]),
+        waterKey: JSON.stringify(doc.features?.waterNames ?? []), net: null,
       };
       for (const rt of runtime) this.wire(op, rt);
       this.open = op;
@@ -844,6 +854,7 @@ export class Hub {
           const frame = this.derivedFrame(op);
           for (const c of this.clients) if (!this.lite.has(c) && c.readyState === c.OPEN) c.send(frame);
           this.broadcast({ t: "derived_ready", projectId: op.id, version });
+          this.sendWater(op);
         }
       }
       return d;
@@ -858,6 +869,50 @@ export class Hub {
     } finally {
       if (op.deriving === job) op.deriving = null;
     }
+  }
+
+  /** The named rivers and lakes as the water is now (waterNames.ts), with every lake's shore. Null before the rivers are worked out, and on battlemaps and cities. */
+  waterView(op = this.open) {
+    const d = op?.derived;
+    if (!op || !d?.hydro || !isWorld(op.session.doc)) return null;
+    if (op.net?.rivers !== d.rivers) op.net = { rivers: d.rivers, net: riverNet(d.rivers) };
+    const doc = op.session.doc, hf = doc.height;
+    const v = resolveWaterNames(doc.features?.waterNames, op.net.net, d.hydro.shapes, { mapWidth: doc.meta.width, kmPerPx: doc.meta.kmPerPx, isSea: seaNear(hf.data, hf.w, hf.h, doc.meta.seaLevel) });
+    return { ...v, lakes: d.hydro.shapes, net: op.net.net };
+  }
+
+  /** Send the names' labels and rivers (and, to the editors, the lakes' shores for the River tool) to every client, or to one. */
+  private sendWater(op: OpenProject, only?: WebSocket) {
+    if (this.open !== op) return;
+    const v = this.waterView(op);
+    if (!v) return;
+    const lite = JSON.stringify({ t: "water", projectId: op.id, labels: v.labels, named: v.named } satisfies ServerMsg);
+    const full = JSON.stringify({ t: "water", projectId: op.id, labels: v.labels, named: v.named, lakes: v.lakes } satisfies ServerMsg);
+    for (const c of only ? [only] : this.clients) if (c.readyState === c.OPEN) c.send(this.lite.has(c) ? lite : full);
+  }
+
+  /**
+   * Carve valleys along the rivers as they are now (core carve.ts, on the compute thread). Applied: a checkpoint is saved first, then one edit Undo takes back.
+   * `preview`: only worked out (the new heights are returned), the map is not changed.
+   */
+  async carveValleys(o: { strength?: number; floodplains?: boolean; deltas?: boolean; preview?: boolean }, author: Author) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    if (!isWorld(op.session.doc)) throw new Error("Valleys are carved on world maps.");
+    if (op.session.inTransaction) op.session.commit();
+    const d = await this.refreshDerived(op, true);
+    if (!d?.rivers.length) throw new Error("This map has no rivers yet, so there are no valleys to carve.");
+    const doc = op.session.doc;
+    const strength = Math.max(0, Math.min(1, o.strength ?? 0.5));
+    const r = await this.compute.carve(doc, d.rivers, { strength, floodplains: o.floodplains !== false, deltas: o.deltas !== false, kmPerPx: doc.meta.kmPerPx });
+    if (this.open !== op) throw new Error("Another map was opened meanwhile.");
+    const facts = { lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells };
+    if (o.preview) return { ...facts, heights: r.heights };
+    if (!r.lowered && !r.deltaCells) throw new Error("Nothing to carve: the rivers already run in valleys this deep.");
+    const checkpoint = "Before carving valleys";
+    await this.saveCheckpoint(checkpoint, "Saved automatically before valleys were carved along the rivers");
+    op.session.execute({ op: "replace_heights", data: r.heights, label: `Carve valleys along the rivers (strength ${Math.round(strength * 100)}%)` }, author);
+    return { ...facts, checkpoint };
   }
 
   private derivedFrame(op: OpenProject): ArrayBuffer {
@@ -1023,6 +1078,7 @@ export class Hub {
     } else if (this.open.derived) {
       this.send(ws, { t: "derived_ready", projectId: id, version: this.open.derivedVersion });
     }
+    this.sendWater(this.open, ws);
     this.send(ws, { t: "checkpoints", list: await this.store.listCheckpoints(id) });
   }
 
@@ -1085,6 +1141,11 @@ export class Hub {
           return await this.createRegional({ name: msg.name, rect: msg.rect });
         case "regional_refresh":
           return await this.refreshRegionalClimate();
+        case "carve_valleys": {
+          const r = await this.carveValleys({ strength: msg.strength, floodplains: msg.floodplains, deltas: msg.deltas }, "user");
+          this.send(ws, { t: "carved", lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells, checkpoint: "checkpoint" in r ? r.checkpoint : "" });
+          return;
+        }
         case "sketch_import": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
@@ -1331,6 +1392,15 @@ export class Hub {
       render: (o) => self.renderMap(o),
       listCheckpoints: () => self.store.listCheckpoints(id()),
       saveCheckpoint: (name, note) => self.saveCheckpoint(name, note),
+      carveValleys: async (o) => {
+        const r = await self.carveValleys(o, author);
+        if (via === "mcp" && !o.preview) self.open?.agent.note("Claude Code: carved valleys along the rivers");
+        return r;
+      },
+      water: () => {
+        const v = self.waterView();
+        return v && { labels: v.labels, named: v.named, lakes: v.lakes, net: v.net };
+      },
       selection: () => self.selectionState,
       setSelection: (sel) => {
         if (self.selectionLock) throw new Error("The DM has locked your edits to their selection: you can't change it.");

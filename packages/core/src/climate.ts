@@ -40,6 +40,8 @@ export interface ClimateParams {
   wind: WindName;
   /** 0..1 more = more, smaller rivers. */
   riverDensity: number;
+  /** Lowland rivers: wide meanders on flat ground, oxbow lakes, estuaries (hydrology.ts). Off when missing, so maps made before keep their rivers. */
+  lowlandRivers?: boolean;
 }
 
 export const DEFAULT_CLIMATE: ClimateParams = {
@@ -85,6 +87,14 @@ export interface Derived {
   rivers: RiverPath[];
   /** An account of the water (not sent to the editor). */
   hydro?: HydroSummary;
+}
+
+/** The lakes to paint: the lakes, and any oxbow lakes of lowland rivers. */
+function withOxbows(hy: { lakes: Uint8Array; oxbows?: Uint8Array }): Uint8Array {
+  if (!hy.oxbows) return hy.lakes;
+  const out = hy.lakes.slice();
+  for (let i = 0; i < out.length; i++) if (hy.oxbows[i]) out[i] = 1;
+  return out;
 }
 
 export function latAt(c: ClimateParams, y: number, H: number) {
@@ -171,12 +181,12 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
     const lb = upsampleBase(b.lakes, b.w, b.h, W, H);
     const lakeMask = new Uint8Array(N);
     for (let i = 0; i < N; i++) lakeMask[i] = lb[i] > 0.15 ? 1 : 0;
-    const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, lakeMask, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows });
+    const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, lakeMask, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers });
     return {
       W, H, seq,
       temp: q(tB, 255), moist: q(mB, 255),
       seaDist: q(seaDist, 1), landDist: q(landDist, 1),
-      lakes: hy.lakes, snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }),
+      lakes: withOxbows(hy), snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }),
       hydro: summariseHydrology({ h: data, W, H, sea, kmPerPx: doc.meta.kmPerPx, hy, moist: mB, inflows: extras.inflows }),
     };
   }
@@ -220,12 +230,12 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
   const rock = regionRock(doc.features?.regions, W, H, doc.meta.kmPerPx);
   const volcanic = regionVolcanic(doc.features?.regions, W, H, doc.meta.kmPerPx);
 
-  const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows });
+  const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers });
   return {
     W, H, seq,
     temp: q(tB, 255), moist: q(mB, 255),
     seaDist: q(seaDist, 1), landDist: q(landDist, 1),
-    lakes: hy.lakes, snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }),
+    lakes: withOxbows(hy), snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }),
     hydro: summariseHydrology({ h: data, W, H, sea, kmPerPx: doc.meta.kmPerPx, hy, moist: mB, inflows: extras.inflows }),
   };
 }

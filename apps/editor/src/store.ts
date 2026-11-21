@@ -6,7 +6,7 @@
 import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
-  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem,
+  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
 
@@ -46,6 +46,10 @@ export interface AppState {
   /** Pictures being added as references, or just added (a note at the bottom of the window). `at` changes each time. */
   /** A short note at the bottom of the window ("Added ... to References", "... was deleted"); it goes away by itself after `ms` (4 s when not given). */
   pictureNote: { text: string; busy: boolean; at: number; ms?: number } | null;
+  /** World maps: the named rivers and lakes as the water is now (labels to draw, each name's river or lake) and every lake's shore (the River tool). Null until the rivers are worked out. */
+  water: { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[] } | null;
+  /** Valleys are being carved (the Carve valleys button waits). */
+  carving: boolean;
 }
 
 function loadLockPref(): boolean {
@@ -56,7 +60,7 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null,
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false,
 };
 
 /** The most pictures added in one go (a whole folder dropped by mistake shouldn't start hundreds of uploads). */
@@ -214,6 +218,12 @@ class Store {
     this.set({ error: null });
   }
 
+  /** Carve valleys along the rivers (the server saves a checkpoint first; the answer is `carved`, or an error). */
+  carve(o: { strength: number; floodplains: boolean; deltas: boolean }) {
+    this.set({ carving: true });
+    this.send({ t: "carve_valleys", ...o });
+  }
+
   /**
    * Add pictures as references of the open map (the Add picture button, or pictures dropped or pasted anywhere). Each is checked here
    * first with the server's own rules (`referencePictureProblem`), so one that can't be used is refused with a note that says what to do
@@ -284,7 +294,7 @@ class Store {
           storedAt: 0, changedAt: 0, saveFailed: false,
           meta: m.meta, projects: m.projects, changes: m.changes, seq: m.seq, canUndo: m.canUndo, canRedo: m.canRedo,
           refs: m.refs, chat: m.chat, chatSettings: m.chatSettings, chatBusy: m.chatBusy, usage: m.usage,
-          apiKeyConfigured: m.apiKeyConfigured, features: m.features, levels: m.levels ?? null, selection: null, selectionLock: false,
+          apiKeyConfigured: m.apiKeyConfigured, features: m.features, levels: m.levels ?? null, selection: null, selectionLock: false, water: null, carving: false,
         });
         break;
       case "projects":
@@ -312,6 +322,15 @@ class Store {
         break;
       case "picture_read":
         for (const l of this.readListeners) l(m);
+        break;
+      case "water":
+        if (m.projectId === this.state.meta?.id) this.set({ water: { labels: m.labels, named: m.named, lakes: m.lakes ?? this.state.water?.lakes ?? [] } });
+        break;
+      case "carved":
+        this.set({
+          carving: false,
+          pictureNote: { text: `Valleys carved: ${m.lowered.toLocaleString()} map pixels lowered, the deepest cut ${m.deepestM.toLocaleString()} m${m.deltaCells ? `, ${m.deltaCells.toLocaleString()} pixels of new delta land` : ""}. Undo takes it back; the checkpoint "${m.checkpoint}" has the map as it was.`, busy: false, at: Date.now(), ms: 12000 },
+        });
         break;
       case "map_deleted":
         this.set({ pictureNote: { text: `"${m.name}" was deleted. Its folder is kept in your maps folder, under "Deleted maps", if you ever want it back.`, busy: false, at: Date.now(), ms: 9000 } });
@@ -345,7 +364,7 @@ class Store {
         break;
       }
       case "error":
-        this.set({ error: m.message });
+        this.set({ error: m.message, carving: false });
         break;
     }
   }
