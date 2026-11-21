@@ -173,3 +173,27 @@ describe("bridges", () => {
     await hub.close();
   });
 });
+
+describe("planning tools", () => {
+  it("route a main road across a river, line it with buildings in one edit, and check the result", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Plan Town", width_m: 600, height_m: 400 });
+    await ok(hub, "paint_ground", { shape: { type: "rect", x: 290, y: 0, w: 30, h: 400 }, material: "deep water" });
+    await ok(hub, "shape_land", { landforms: [{ kind: "hill", x: 150, y: 90, height: 30, radius: 80 }] });
+    const road = await ok(hub, "route_street", { points: [[10, 200], [590, 210]], kind: "street", max_grade_percent: 8 });
+    expect(road.length_m).toBeGreaterThan(560);
+    expect(road.bridges[0].kind).toBe("stone bridge");
+    const seq = hub.session.seq;
+    const lined = await ok(hub, "line_streets", { streets: [road.id], character: "town" });
+    expect(lined.added).toBeGreaterThan(30);
+    expect(lined.skipped_spots.water).toBeGreaterThan(0);
+    expect(hub.session.seq).toBe(seq + 1); // (one edit)
+    const check = await ok(hub, "check_city");
+    expect([check.in_water.count, check.on_streets.count, check.overlapping.count]).toEqual([0, 0, 0]);
+    expect(check.verdict ?? check.advice.join(" ")).toBeTruthy();
+    hub.session.undo("user");
+    expect((await ok(hub, "get_map_summary")).buildings).toBe(0);
+    expect((await tool(hub, "line_streets", { streets: ["nope"] })).isError).toBe(true);
+    await hub.close();
+  });
+});
