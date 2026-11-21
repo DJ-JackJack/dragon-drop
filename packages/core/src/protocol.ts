@@ -78,7 +78,7 @@ export type ClientMsg =
   | { t: "open_project"; id: string }
   /** Delete a map: its folder is moved into the maps folder's "Deleted maps" folder (never erased), and another map is opened if it was the open one. Only the DM does this (no tool of Claude's). */
   | { t: "delete_project"; id: string }
-  | { t: "create_project"; name: string; width: number; height: number; kmPerPx: number; template: string; seed: number }
+  | { t: "create_project"; name: string; width: number; height: number; kmPerPx: number; template: string; seed: number; lakes?: "none" | "few" | "some" | "many" }
   /** Make a battlemap (a grid-based tabletop map) and open it. */
   | { t: "create_battle"; name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }
   /** Make a battlemap of the ground at a point (map px) of the open world map, and open it. */

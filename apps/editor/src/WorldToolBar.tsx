@@ -4,6 +4,7 @@ import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { LABEL_KINDS } from "./Panels.tsx";
 import type { AreaShape, Brush, Tool } from "./MapView.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
+import { TOOL_GROUPS } from "./toolDefs.ts";
 
 export const AREA_SHAPES: { id: AreaShape; label: string; tip: string }[] = [
   { id: "rect", label: "Rectangle", tip: "Drag from one corner to the opposite one" },
@@ -41,7 +42,7 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
 }) {
   const hint = tool === "line" ? lineHint(lineKind, lineAuto) : TOOL_HINTS[tool];
   return (
-    <ToolBar hint={hint || undefined}>
+    <ToolBar hint={hint || undefined} tool={{ id: tool, name: TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === tool)?.label ?? tool }}>
       {tool === "line" && (
         <>
           <label className="field">Draw a

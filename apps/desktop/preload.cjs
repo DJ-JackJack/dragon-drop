@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("dragonDrop", {
   clearAssetsFolder: () => ipcRenderer.invoke("dd:clear-assets"),
   openProjectsFolder: () => ipcRenderer.invoke("dd:open-projects"),
   openLogs: () => ipcRenderer.invoke("dd:open-logs"),
+  openLicences: () => ipcRenderer.invoke("dd:open-licences"),
   openClaude: (launch = true) => ipcRenderer.invoke("dd:open-claude", { launch }),
   termStart: (opts) => ipcRenderer.invoke("dd:term-start", opts || {}),
   claudeInstall: (opts) => ipcRenderer.invoke("dd:claude-install", opts || {}),

@@ -1347,7 +1347,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
   const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
   const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <ToolBar hint={BATTLE_HINTS[ui.tool]}>
+    <ToolBar hint={BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "roof" && (
         <label className="field">New roofs look like
           <select value={ui.roofStyle} onChange={(e) => onUi({ roofStyle: e.target.value as RoofStyle })} data-testid="roof-new-style">

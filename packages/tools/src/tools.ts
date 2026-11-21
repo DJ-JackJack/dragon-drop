@@ -7,7 +7,7 @@ import {
   type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
   MI_PER_KM, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
   clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, renderFull,
-  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth,
+  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
@@ -455,12 +455,13 @@ export const TOOLS = [
       km_per_px: z.number().positive().optional().describe("Real-world km per pixel, default 2"),
       template: z.enum(["ocean", "island", "archipelago", "continent", "noise"]).optional(),
       land_fraction: z.number().min(0.02).max(0.95).optional(),
+      lakes: z.enum(LAKE_AMOUNTS as unknown as [string, ...string[]]).optional().describe("How many lakes the new land keeps (default few)"),
       seed: seedSchema,
     }),
     async run(ctx, i) {
       const info = await ctx.createProject({ name: i.name, width: i.width ?? 1024, height: i.height ?? 1024, kmPerPx: i.km_per_px ?? 2 });
       const template = i.template ?? "ocean";
-      ctx.execute({ op: "generate_terrain", params: { template, seed: i.seed ?? randSeed(), landFraction: i.land_fraction } });
+      ctx.execute({ op: "generate_terrain", params: { template, seed: i.seed ?? randSeed(), landFraction: i.land_fraction, ...(i.lakes && { lakes: i.lakes as LakeAmount }) } });
       return json({ created: info, template, summary: summary(ctx) });
     },
   }),
@@ -494,6 +495,7 @@ export const TOOLS = [
       land_fraction: z.number().min(0.02).max(0.95).optional().describe("Share of the map above sea level (default 0.35)"),
       mountains: z.number().min(0).max(1).optional().describe("How mountainous (default 0.5)"),
       max_elevation_m: z.number().positive().optional(),
+      lakes: z.enum(LAKE_AMOUNTS as unknown as [string, ...string[]]).optional().describe("How many lakes the land keeps (default few; the other hollows are drained so water runs to the sea). many keeps every hollow, as maps were before"),
       replace_existing: z.boolean().optional(),
       seed: seedSchema,
     }),
@@ -505,7 +507,7 @@ export const TOOLS = [
       }
       const seed = i.seed ?? randSeed();
       const r = ctx.execute({ op: "generate_terrain", params: {
-        template: i.template, seed, landFraction: i.land_fraction, mountains: i.mountains, maxElevationM: i.max_elevation_m,
+        template: i.template, seed, landFraction: i.land_fraction, mountains: i.mountains, maxElevationM: i.max_elevation_m, ...(i.lakes && { lakes: i.lakes as LakeAmount }),
       } });
       return json({ change: r.seq, seed, summary: summary(ctx) });
     },

@@ -33,6 +33,8 @@ if (SMOKE) {
 }
 
 const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, "build");
+/** The open-source licences of everything the app bundles (scripts/notices.mjs makes it; the installer carries it). */
+const noticesFile = () => path.join(resources, "THIRD-PARTY-NOTICES.txt");
 // Which build is this? A copy made for itch.io carries resources/channel.json ({"channel":"itch"}): the itch app does the updating there, so the in-app updater stays off.
 const CHANNEL = (() => { try { return JSON.parse(fs.readFileSync(path.join(resources, "channel.json"), "utf8")).channel === "itch" ? "itch" : "github"; } catch { return "github"; } })();
 const serverMain = path.join(resources, "server", "main.mjs");
@@ -276,7 +278,7 @@ function buildMenu() {
       { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" },
     ] },
     { label: "Help", submenu: [
-      { label: "Open-source licences", click: () => void shell.openPath(path.join(resources, "THIRD-PARTY-NOTICES.txt")) },
+      { label: "Open-source licences", click: () => void shell.openPath(noticesFile()) },
     ] },
   ]));
 }
@@ -722,6 +724,13 @@ ipcMain.handle("dd:check-update", async (e) => {
 ipcMain.handle("dd:install-update", (e) => { if (fromEditor(e) && autoUpdater && updateState.status === "ready") autoUpdater.quitAndInstall(); });
 ipcMain.handle("dd:set-auto-update", (e, on) => { if (fromEditor(e)) { settings.autoUpdate = !!on; saveSettings(); } return settings.autoUpdate !== false; });
 ipcMain.handle("dd:open-logs", (e) => { if (fromEditor(e)) void shell.openPath(path.dirname(logFile())); });
+// the open-source licences of everything bundled: also in Settings, because the window's own title bar hides the Help menu on Windows
+ipcMain.handle("dd:open-licences", (e) => {
+  if (!fromEditor(e)) return { ok: false };
+  if (!fs.existsSync(noticesFile())) return { ok: false };
+  void shell.openPath(noticesFile());
+  return { ok: true };
+});
 
 // ---------------------------------------------------------------- start up
 /** Smoke-test result: to the console, and to a file when DRAGON_DROP_SMOKE_OUT is set (a Windows GUI app has no console). */
@@ -755,7 +764,7 @@ async function smokeTest() {
   const deadline = Date.now() + 60000;
   const check = () => win.webContents.executeJavaScript(`({
     connected: document.body.innerText.includes("Connected"),
-    bridge: !!(window.dragonDrop && window.dragonDrop.version),
+    bridge: !!(window.dragonDrop && window.dragonDrop.version && typeof window.dragonDrop.openLicences === "function"),
     brand: document.body.innerText.toUpperCase().includes("DRAGON DROP"),
     canvas: !!document.querySelector('[data-testid="map-canvas"]'),
   })`);

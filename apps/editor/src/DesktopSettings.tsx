@@ -164,6 +164,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
         <div className="row">
           <span className="muted" style={{ flex: 1 }}>Dragon Drop {s?.version ?? bridge.version}</span>
           <button className="ghost" onClick={() => void bridge.openLogs()} style={{ flex: "none" }}>Open logs</button>
+          <button className="ghost" onClick={() => void bridge.openLicences().then((r) => { if (!r.ok) setError("The licences file isn't in this copy (it comes with the installed app)."); })} style={{ flex: "none" }} data-testid="open-licences" title="The open-source licences of everything Dragon Drop is built with">Licences</button>
           <button className="ghost" onClick={onClose} disabled={!!busy} style={{ flex: "none" }}>Close</button>
         </div>
       </div>

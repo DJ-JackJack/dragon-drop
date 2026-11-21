@@ -4,7 +4,7 @@ import {
   BUILDING_KINDS, CITY_CLIMATES, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type Features, type MapBuilding, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
 } from "@mapmaker/core";
-import { type CityUi, type LandMode, landName, selectedOf, sendCityFeatures } from "./cityUi.ts";
+import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { store } from "./store.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
@@ -49,7 +49,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
   const have = roofs.pools?.[ui.roof]?.length ?? 0;
   const ground = MATERIALS[ui.material];
   return (
-    <ToolBar hint={ui.tool === "hills" ? LAND_MODES.find((m) => m.id === ui.landMode)?.hint : ui.tool === "trees" ? TREE_KINDS.find((k) => k.id === ui.treeKind)?.hint : HINTS[ui.tool]}>
+    <ToolBar tool={{ id: ui.tool, name: CITY_TOOL_DEFS.find((t) => t.id === ui.tool)?.label ?? ui.tool }} hint={ui.tool === "hills" ? LAND_MODES.find((m) => m.id === ui.landMode)?.hint : ui.tool === "trees" ? TREE_KINDS.find((k) => k.id === ui.treeKind)?.hint : HINTS[ui.tool]}>
       {building && (
         <>
           <div className="seg" role="group" aria-label="Roof look" data-testid="city-roofs">

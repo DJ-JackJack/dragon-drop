@@ -11,10 +11,12 @@ afterEach(() => { vi.useRealTimers(); });
 
 const noModel = async () => { throw new Error("no model in this test"); };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until<T>(fn: () => Promise<T>, ok: (v: T) => boolean, tries = 200): Promise<T> {
-  for (let i = 0; ; i++) {
+/** Ask again until it is so, for up to 30 s: a backup of a full-size map can take seconds while the whole test suite runs at once (a 5 s limit failed now and then). */
+async function until<T>(fn: () => Promise<T>, ok: (v: T) => boolean, ms = 30_000): Promise<T> {
+  const end = performance.now() + ms; // (performance.now, not Date: one test fakes the date)
+  for (;;) {
     const v = await fn();
-    if (ok(v) || i >= tries) return v; // (counted in tries, not by the clock: one test fakes the date)
+    if (ok(v) || performance.now() > end) return v;
     await sleep(25);
   }
 }

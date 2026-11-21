@@ -3,6 +3,7 @@
  * (already clipped to the map), or null if nothing changed.
  */
 import type { MapDoc } from "./doc.ts";
+import { type LakeAmount, drainTerrain } from "./terrainDrain.ts";
 import {
   type Point, type Rect, type Shape, clipRect, expandRect, shapeBounds, shapeSize, signedDistance, distToPolyline,
 } from "./geom.ts";
@@ -21,6 +22,8 @@ export interface GenerateTerrainParams {
   maxElevationM?: number;
   /** Deepest ocean, metres (positive number). */
   maxDepthM?: number;
+  /** How many lakes the new land keeps: the rest of its hollows are drained so the water runs to the sea (terrainDrain.ts). Default "few". */
+  lakes?: LakeAmount;
 }
 
 /** Replace the whole heightfield with a generated one. */
@@ -132,6 +135,8 @@ export function generateTerrain(doc: MapDoc, p: GenerateTerrainParams): Rect {
       }
     }
   }
+  // the ridged mountains leave deep closed hollows: drain all but a few, or a new continent comes out a fifth lake
+  drainTerrain(data, W, H, sea, p.lakes ?? "few");
   return { x: 0, y: 0, w: W, h: H };
 }
 

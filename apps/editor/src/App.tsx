@@ -532,6 +532,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const [size, setSize] = useState(1024);
   const [miles, setMiles] = useState(1000);
   const [template, setTemplate] = useState("ocean");
+  const [lakes, setLakes] = useState<"none" | "few" | "some" | "many">("few");
   const [sx, setSx] = useState(30);
   const [sy, setSy] = useState(20);
   const [feet, setFeet] = useState(5);
@@ -574,6 +575,16 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
                 <option value="continent">Continent</option>
               </select>
             </label>
+            {template !== "ocean" && (
+              <label>Lakes
+                <select value={lakes} onChange={(e) => setLakes(e.target.value as typeof lakes)} data-testid="new-lakes" title="The rest of the land's hollows are drained, so its water runs to the sea">
+                  <option value="none">None</option>
+                  <option value="few">A few</option>
+                  <option value="some">Some</option>
+                  <option value="many">Many (every hollow)</option>
+                </select>
+              </label>
+            )}
           </>
         ) : kind === "city" ? (
           <>
@@ -613,7 +624,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
               } else if (kind === "battle") {
                 store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: feet, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
               } else {
-                store.send({ t: "create_project", name: name.trim() || "New Map", width: size, height: size, kmPerPx, template, seed: Math.floor(Math.random() * 1e9) });
+                store.send({ t: "create_project", name: name.trim() || "New Map", width: size, height: size, kmPerPx, template, seed: Math.floor(Math.random() * 1e9), lakes });
               }
               onClose();
             }}

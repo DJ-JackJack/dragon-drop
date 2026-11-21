@@ -9,6 +9,8 @@ interface DragonDropBridge {
   clearAssetsFolder(): Promise<void>;
   openProjectsFolder(): Promise<void>;
   openLogs(): Promise<void>;
+  /** Open the open-source licences file; ok is false when it isn't there (a developer build). */
+  openLicences(): Promise<{ ok: boolean }>;
   openClaude(launch?: boolean): Promise<{ ok: boolean; reason?: string; workspace?: string; claudePath?: string }>;
   termStart(opts: { cols: number; rows: number; resume?: boolean }): Promise<{ ok: boolean; reason?: string; command?: string }>;
   /** Set what the terminal runs ("" is Claude Code). A valid change saves and ends the running terminal. */

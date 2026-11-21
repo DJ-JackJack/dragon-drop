@@ -510,6 +510,11 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 .toolbar .muted { margin: 0; }
 .toolbar .tool-hint { margin: 0; padding: 3px 8px; font-size: 12px; min-height: 22px; }
 .toolbar .tool-hint.empty { visibility: hidden; }
+/* a tool with no settings is named in their place, so the bar isn't an empty strip */
+.toolbar .tb-tool { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase; }
+.toolbar .tb-tool .ticon { width: 16px; height: 16px; }
+/* headings after something else in the same panel section (the battlemap's Grid, Light level, Layers) get room above them */
+.side section > h3:not(:first-child) { margin-top: 16px; }
 .toolbar .prop-options { display: contents; }
 .toolbar .cavewalls { margin: 0 0 0 auto; }
 .toolbar .cavewalls button { width: auto; }

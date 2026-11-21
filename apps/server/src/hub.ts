@@ -898,7 +898,7 @@ export class Hub {
         case "create_project": {
           const info = await this.createProject({ name: msg.name, width: msg.width, height: msg.height, kmPerPx: msg.kmPerPx });
           if (msg.template && msg.template !== "ocean") {
-            this.session.execute({ op: "generate_terrain", params: { template: msg.template as never, seed: msg.seed } }, "user");
+            this.session.execute({ op: "generate_terrain", params: { template: msg.template as never, seed: msg.seed, ...(msg.lakes && { lakes: msg.lakes }) } }, "user");
           }
           return info;
         }
