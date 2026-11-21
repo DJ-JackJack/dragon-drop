@@ -6,9 +6,9 @@ documents each item points to. Started 2026-11-21 from the handoff notes, the ro
 ## Next release (0.1.11)
 
 Built and on `main`, not yet tried by the person or released: city land, climate and trees; bridges; Claude's city planning tools; City here (a city from a world map);
-hiding labels and markers; deleting maps; the startup fix; School and Whirlpool place kinds; the quick fixes and drained new maps below; the city picture reader; city walls, names, export, phone page, copy and paste and battlemaps from a city (everything from School and Whirlpool on is committed, not pushed).
+hiding labels and markers; deleting maps; the startup fix; School and Whirlpool place kinds; the quick fixes and drained new maps below; the city picture reader; city walls, names, export, phone page, copy and paste and battlemaps from a city; water gates, districts and streets and water from a picture; the bottom bar, eye switches, pictures-only rail and Objects list; named rivers and lakes, carved valleys and lowland rivers (everything from School and Whirlpool on is committed, not pushed).
 
-- [ ] ~~Quick fixes and the lake problem~~ (done 2026-11-21), then a test copy with its own settings and maps folder (`RELEASING.md`), release notes, and the release.
+- [ ] ~~Quick fixes and the lake problem~~ (done 2026-11-21), ~~then a test copy with its own settings and maps folder (`RELEASING.md`), release notes~~ (2026-11-21: built locally into `Desktop\Dragon Drop 0.1.11 test build`, with a START HERE guide and the draft notes), the person's try of it, and the release.
 
 ## Quick fixes
 
