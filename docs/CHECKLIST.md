@@ -3,12 +3,15 @@
 The list the person and Claude work through, in rough order. Tick an item when it is done (with the date), add new ones where they belong, and keep it short: details live in the
 documents each item points to. Started 2026-11-21 from the handoff notes, the roadmap (`PLAN.md`), the city plan (`CITY-MAPS.md`) and the selling checklist (`SELLING.md`).
 
-## Next release (0.1.11)
+## Release 0.1.11 (released 2026-11-21)
 
-Built and on `main`, not yet tried by the person or released: city land, climate and trees; bridges; Claude's city planning tools; City here (a city from a world map);
-hiding labels and markers; deleting maps; the startup fix; School and Whirlpool place kinds; the quick fixes and drained new maps below; the city picture reader; city walls, names, export, phone page, copy and paste and battlemaps from a city; water gates, districts and streets and water from a picture; the bottom bar, eye switches, pictures-only rail and Objects list; named rivers and lakes, carved valleys and lowland rivers (everything from School and Whirlpool on is committed, not pushed).
+City land, climate and trees; bridges; Claude's city planning tools; City here (a city from a world map); hiding labels and markers; deleting maps; the startup fix; School and
+Whirlpool place kinds; the quick fixes and drained new maps below; the city picture reader; city walls, names, export, phone page, copy and paste and battlemaps from a city;
+water gates, districts and streets and water from a picture; the bottom bar, eye switches, pictures-only rail and Objects list; named rivers and lakes, carved valleys and lowland
+rivers; drawn rivers and carving part of the map; Muse Code.
 
-- [ ] ~~Quick fixes and the lake problem~~ (done 2026-11-21), ~~then a test copy with its own settings and maps folder (`RELEASING.md`), release notes~~ (2026-11-21: built locally into `Desktop\Dragon Drop 0.1.11 test build`, with a START HERE guide and the draft notes), the person's try of it, and the release.
+- [x] Quick fixes and the lake problem, a test copy with its own settings and maps folder (`RELEASING.md`), release notes, the person's try of it (rounds 1 to 3 good, with the Rivers tool and carving changed after round 1), and the release. *(2026-11-21: https://github.com/DJ-JackJack/dragon-drop/releases/tag/v0.1.11)*
+- [ ] The person: update the installed Dragon Drop (Settings → Updates → Check now) and check it reads 0.1.11; then the Desktop test build folders can be deleted.
 
 ## Quick fixes
 
