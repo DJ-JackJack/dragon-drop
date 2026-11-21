@@ -18,6 +18,7 @@ import { store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
+import { readerCtl } from "./reader.ts";
 
 type Pt = [number, number];
 interface View { scale: number; ox: number; oy: number } // scale: screen px per metre
@@ -27,7 +28,7 @@ const GOLD = "rgba(255, 224, 120, 0.95)";
 interface Props { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }
 
 type Drag = {
-  mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope";
+  mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope" | "reader";
   sx: number; sy: number; ox: number; oy: number;
   /** Where it started, in metres. */
   ax: number; ay: number;
@@ -117,6 +118,9 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     return () => { off(); if (traceCtl.redraw === requestDraw) traceCtl.redraw = () => {}; };
   }, [requestDraw]);
   const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
+  // the picture reader's marks redraw the view as they change
+  const reading = useSyncExternalStore(readerCtl.subscribe, () => readerCtl.state.on);
+  useEffect(() => readerCtl.subscribe(requestDraw), [requestDraw]);
 
   const infoOf = (b: MapBuilding) => {
     let c = cache.current.get(b);
@@ -342,6 +346,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     if (o.tool === "hills" || (f.land ?? []).some((l) => sel.has(l.id))) drawLand(ctx, v, (f.land ?? []).filter((l) => o.tool === "hills" || sel.has(l.id)), sel, dx, dy);
 
     drawTools(ctx, v, o, W, H);
+    if (readerCtl.state.on) drawReader(ctx, v);
     // the scale bar
     const bar = niceLength(90 / v.scale);
     ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(W - 24 - bar * v.scale - 8, H - 62, bar * v.scale + 16, 22);
@@ -486,6 +491,31 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ctx.setLineDash([]); ctx.font = "bold 11px sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.fillStyle = "#fff";
       const label = `${landName(l)} ${l.height > 0 ? "+" : ""}${l.height} m`;
       ctx.strokeText(label, at[0] + 7, at[1] - 7); ctx.fillText(label, at[0] + 7, at[1] - 7);
+    }
+    ctx.restore();
+  }
+
+  /** The picture reader's marks: the area (or the box being dragged), what was found (cyan), the roof samples (their colour, numbered) and the ground samples (squares). */
+  function drawReader(ctx: CanvasRenderingContext2D, v: View) {
+    const s = readerCtl.state, X = (x: number) => v.ox + x * v.scale, Y = (y: number) => v.oy + y * v.scale;
+    ctx.save();
+    const box = s.drag ? [[s.drag.ax, s.drag.ay], [s.drag.bx, s.drag.ay], [s.drag.bx, s.drag.by], [s.drag.ax, s.drag.by]] : s.area;
+    if (box) {
+      ctx.setLineDash([7, 5]); ctx.lineWidth = 2; ctx.strokeStyle = GOLD;
+      ctx.beginPath(); box.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (s.found) {
+      ctx.lineWidth = 1.6; ctx.strokeStyle = "rgba(0, 240, 255, 0.95)"; ctx.fillStyle = "rgba(0, 240, 255, 0.12)";
+      for (const b of s.found) { ctx.beginPath(); b.points.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    }
+    s.roofs.forEach((r, i) => {
+      ctx.beginPath(); ctx.arc(X(r.x), Y(r.y), 8, 0, Math.PI * 2); ctx.fillStyle = `rgb(${r.rgb.join(",")})`; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.lineWidth = 1; ctx.strokeStyle = "#000"; ctx.stroke();
+      ctx.font = "bold 11px sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.fillStyle = "#fff"; ctx.strokeText(String(i + 1), X(r.x) + 10, Y(r.y) - 8); ctx.fillText(String(i + 1), X(r.x) + 10, Y(r.y) - 8);
+    });
+    for (const g of s.ground) {
+      ctx.fillStyle = `rgb(${g.rgb.join(",")})`; ctx.fillRect(X(g.x) - 6, Y(g.y) - 6, 12, 12);
+      ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.strokeRect(X(g.x) - 6, Y(g.y) - 6, 12, 12); ctx.lineWidth = 1; ctx.strokeStyle = "#000"; ctx.strokeRect(X(g.x) - 7.5, Y(g.y) - 7.5, 15, 15);
     }
     ctx.restore();
   }
@@ -779,6 +809,14 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const base = { sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
     // lining up the trace picture takes a left click, whatever the tool (Space still pans)
     if (e.button === 0 && !spaceRef.current && traceCtl.down(featRef.current.trace, q)) { drag.current = { mode: "trace", ...base }; requestDraw(); return; }
+    // the picture reader takes a left click while it is on: the area's box, a roof or the ground
+    if (e.button === 0 && !spaceRef.current && readerCtl.state.on) {
+      const t = featRef.current.trace;
+      readerCtl.click(q.x, q.y, t ? traceCtl.colourAt(m.id, t, q.x, q.y) : null);
+      if (readerCtl.state.drag) drag.current = { mode: "reader", ...base };
+      requestDraw();
+      return;
+    }
     if (e.button === 1 || e.button === 2 || o.tool === "pan" || spaceRef.current) { drag.current = { mode: "pan", ...base }; return; }
     if (e.button !== 0) return;
     if (o.tool === "select") {
@@ -854,6 +892,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
+    if (d?.mode === "reader") { readerCtl.dragTo(q.x, q.y); return; }
     if (d?.mode === "pan") viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     else if (d?.mode === "move" && moving.current) { if (Math.hypot(p.x - d.sx, p.y - d.sy) > 4 || moving.current.dx || moving.current.dy) moving.current = { ...moving.current, dx: q.x - d.ax, dy: q.y - d.ay }; }
     else if (d?.mode === "brush") {
@@ -866,6 +905,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const d = drag.current, p = pointer.current;
     drag.current = null;
     if (d?.mode === "trace") { traceCtl.up(); return; }
+    if (d?.mode === "reader") { readerCtl.dragEnd(); requestDraw(); return; }
     if (d?.mode === "brush") store.send({ t: "txn_end" });
     if (d?.mode === "move") {
       const mv = moving.current;
@@ -904,7 +944,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   };
 
   const tool = ui.tool;
-  const cursor = traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
+  const cursor = reading ? "crosshair" : traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
     : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab") : tool === "select" ? "default" : tool === "ground" ? "none" : "crosshair";
   const spec = meta?.city;
   const counts = `${(features.buildings ?? []).length.toLocaleString()} buildings · ${(features.streets ?? []).length.toLocaleString()} streets`;

@@ -7,7 +7,7 @@ import {
   type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
   MI_PER_KM, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
   clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, renderFull,
-  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount,
+  isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
@@ -44,6 +44,8 @@ export interface ToolContext {
   /** Optional: make a city map (sized in metres) and open it. */
   createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number }): Promise<ProjectInfo>;
   /** Start a city from a spot on the open world map (cityWorld.ts); returns what it took from the world map, in words. */
+  /** The city picture reader (the open city's trace picture): what it finds, in metres, not yet added. */
+  readCityPicture?(o: { area?: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground?: [number, number][]; tolerance?: number; minAreaM2?: number; maxAreaM2?: number }): Promise<{ buildings: { points: [number, number][]; look: RoofStyle }[]; skipped: { small: number; large: number }; alreadyThere: number; colours: { roofs: [number, number, number][]; ground: [number, number, number][] } }>;
   createCityHere?(o: { name: string; x: number; y: number; widthM?: number; heightM?: number; place?: string }): Promise<ProjectInfo & { from_world: string[] }>;
   /** Optional: make a battlemap and open it. */
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;

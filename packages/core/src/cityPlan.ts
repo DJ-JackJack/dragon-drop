@@ -133,9 +133,10 @@ export class CitySpace {
     }
     return false;
   }
-  /** Does the shape overlap a building already there (touching is fine)? */
-  onBuilding(p: readonly Pt[]): boolean {
-    const b = bounds(p), mine = shrink(p, 0.12), seen = new Set<Pt[]>();
+  /** Does the shape overlap a building already there? Touching is fine, and so is an overlap of less than `slack` metres or so (the checker's and the reader's
+   *  allowance for rounding); the planner passes 0, so what it places never overlaps at all and the checker can't find a corner poking in. */
+  onBuilding(p: readonly Pt[], slack = 0.12): boolean {
+    const b = bounds(p), mine = slack > 0 ? shrink(p, slack) : p, seen = new Set<Pt[]>();
     for (const c of this.cells(b.x0, b.y0, b.x1, b.y1)) for (const q of this.polys[c] ?? []) {
       if (seen.has(q)) continue;
       seen.add(q);
@@ -216,7 +217,7 @@ export function planFrontage(doc: MapDoc, streets: readonly MapStreet[], o: Fron
     const c = p.reduce((s, q) => [s[0] + q[0] / p.length, s[1] + q[1] / p.length], [0, 0]);
     if (space.slope(c[0], c[1]) > maxSlope) return "steep";
     if (space.onStreet(p)) return "street";
-    if (space.onBuilding(p)) return "building";
+    if (space.onBuilding(p, 0)) return "building";
     if (o.keepWoods !== false && space.inWood(p)) return "wood";
     return null;
   };

@@ -53,6 +53,14 @@ const assetsDir = path.join(tmp, "Assets");
     sk.data.set(land ? [90, 160, 70, 255] : [40, 90, 170, 255], (y * 256 + x) * 4);
   }
   writeFileSync(path.join(tmp, "e2e-sketch.png"), PNG.sync.write(sk));
+  // a made-up town seen from above (300 x 200 px: grass, a sandy street, a row of red tile roofs above it and a row of grey slate ones below), for the city picture reader
+  const town = new PNG({ width: 300, height: 200 });
+  for (let y = 0; y < 200; y++) for (let x = 0; x < 300; x++) {
+    const k = (x - 20) % 30, house = x >= 20 && x < 290 && k < 8;
+    const c = house && y >= 60 && y < 70 ? [178, 74, 52] : house && y >= 120 && y < 130 ? [96, 104, 112] : y >= 95 && y < 105 ? [196, 178, 140] : [100, 150, 70];
+    town.data.set([...c, 255], (y * 300 + x) * 4);
+  }
+  writeFileSync(path.join(tmp, "e2e-town.png"), PNG.sync.write(town));
 }
 
 const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_CACHE_DIR: path.join(tmp, "cache"), MAPMAKER_AUTO_BACKUP_MINUTES: "0.03" }; // (rolling backups every couple of seconds instead of every 15 minutes)
@@ -1257,6 +1265,37 @@ try {
     await page.getByTestId("references").getByTestId("ref-card").first().waitFor({ timeout: 15000 });
     await page.getByTestId("references").getByTestId("ref-card").first().getByTestId("ref-trace").click();
     await page.getByTestId("trace-bar").waitFor({ timeout: 10000 });
+    await page.getByTestId("trace-stop").click();
+    await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
+    // the picture reader: a town picture laid over the whole city (2 m a pixel), one red roof and one grey one clicked, the grass and the street clicked as ground,
+    // Find shows what it found, Accept adds it as one edit (the house the town's row runs into is left out: it is already there)
+    await page.getByTestId("references").getByTestId("ref-file").setInputFiles(path.join(tmp, "e2e-town.png"));
+    const townCard = page.getByTestId("references").getByTestId("ref-card").filter({ hasText: "e2e-town.png" });
+    await townCard.waitFor({ timeout: 15000 });
+    await townCard.getByTestId("ref-trace").click();
+    await page.getByTestId("trace-bar").getByText("e2e-town.png").waitFor({ timeout: 10000 });
+    await page.getByTestId("reader-start").click();
+    await page.getByTestId("reader-whole").click();
+    await page.waitForTimeout(500); // (the trace picture loads in the page before its colours can be read)
+    await page.mouse.click(cx(2 * 24), cy(2 * 65));
+    await page.mouse.click(cx(2 * 84), cy(2 * 125));
+    await page.getByTestId("reader-roof").nth(1).waitFor({ timeout: 5000 });
+    const looks = await page.getByTestId("reader-roof").locator("select").evaluateAll((ss) => ss.map((x) => x.value));
+    if (looks.join() !== "tile,slate") fail(`the reader guessed the roofs as ${looks.join()} (red tile and grey slate expected)`);
+    await page.getByTestId("reader-ground").click();
+    await page.mouse.click(cx(2 * 10), cy(2 * 30));
+    await page.mouse.click(cx(2 * 150), cy(2 * 100));
+    await page.getByTestId("reader-ground").getByText("3 Ground (2)").waitFor({ timeout: 5000 });
+    await page.getByTestId("reader-find").click();
+    await page.getByTestId("reader-help").getByText(/^Found \d+ buildings/).waitFor({ timeout: 20000 });
+    const found = Number((await page.getByTestId("reader-accept").textContent()).replace(/\D/g, ""));
+    if (!(found >= 15 && found <= 18)) fail(`the reader found ${found} buildings in the town picture (about 17 expected)`);
+    await page.screenshot({ path: path.join(shots, "e2e-5c-city-reader.png") });
+    await page.getByTestId("reader-accept").click();
+    await page.getByTestId("history").getByText(`Read ${found} buildings from the picture`).first().waitFor({ timeout: 10000 });
+    await status(new RegExp(`${2 + found} buildings`));
+    await page.getByTestId("reader-done").click();
+    await page.getByTestId("reader-samples").waitFor({ state: "detached", timeout: 5000 });
     await page.getByTestId("trace-stop").click();
     await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
     await page.screenshot({ path: path.join(shots, "e2e-5-city.png") });

@@ -158,6 +158,60 @@ export const CITY_TOOLS = [
   }),
 
   define({
+    name: "read_picture_buildings",
+    description:
+      "Read buildings out of the city's trace picture (a found city map laid over it with set_trace_picture and lined up), by roof colour: give where one roof of each kind is (x, y in metres, read off render_city with trace: true, " +
+      "and the roof look its buildings get), where the ground between them is (one or more points: it tells roofs from ground of a similar colour, and a paved square from a slate roof), and the area to read. " +
+      "Without add it shows what it would add (a picture with the found outlines in cyan) and counts them; check it, adjust (more ground points, another tolerance), then call again with add: true " +
+      "(one edit, one undo step; roofs from the asset packs as add_buildings does). Buildings already on the map are left out. Expect some to fix by hand: say how many it found and that they come from the picture.",
+    schema: z.object({
+      roofs: z.array(z.object({ x: z.number(), y: z.number(), roof: Roof })).min(1).max(12).describe("One point on a roof of each kind, metres"),
+      ground: z.array(Pt).max(12).optional().describe("Points on the ground between the roofs (and on squares or roads a roof's colour), metres"),
+      area: z.union([Metres, z.array(Pt).min(3).max(100)]).optional().describe("A rectangle or an outline (metres) to read; default the whole picture"),
+      tolerance: z.number().min(0).max(1).optional().describe("0 strict .. 1 loose (default 0.5): looser finds more, and more that isn't a roof"),
+      min_area_m2: z.number().min(1).max(500).optional().describe("Default 10"), max_area_m2: z.number().min(50).max(20000).optional().describe("Default 3000"),
+      add: z.boolean().optional(), roof_assets: RoofAssetsMode,
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      if (!ctx.readCityPicture) return fail("The picture reader isn't available here.");
+      const area = !i.area ? undefined : Array.isArray(i.area) ? (i.area as [number, number][]) : ([[i.area.x, i.area.y], [i.area.x + i.area.w, i.area.y], [i.area.x + i.area.w, i.area.y + i.area.h], [i.area.x, i.area.y + i.area.h]] as [number, number][]);
+      let res;
+      try {
+        res = await ctx.readCityPicture({ area, roofs: i.roofs.map((r) => ({ x: r.x, y: r.y, look: r.roof as MapBuilding["roof"] & string })), ground: i.ground as [number, number][] | undefined, tolerance: i.tolerance, minAreaM2: i.min_area_m2, maxAreaM2: i.max_area_m2 });
+      } catch (e) { return fail((e as Error).message); }
+      const counts = { found: res.buildings.length, already_on_the_map: res.alreadyThere, skipped_too_small: res.skipped.small, skipped_too_large: res.skipped.large, by_look: Object.fromEntries(ROOF_STYLES.map((s) => [s, res.buildings.filter((b) => b.look === s).length]).filter(([, n]) => n)) };
+      if (!i.add) {
+        // the picture: the area (or the whole city) with the trace picture half see-through and the found outlines in cyan
+        const doc = ctx.session().doc, sp = citySpec(doc);
+        const bb = area ? pointsBounds(area) : { x0: 0, y0: 0, x1: sp.widthM, y1: sp.heightM };
+        const r = renderCity(doc, { region: { x: bb.x0, y: bb.y0, w: Math.max(10, bb.x1 - bb.x0), h: Math.max(10, bb.y1 - bb.y0) }, maxSize: 1200 });
+        await traceOverlay(ctx, r.img, { x: Math.round(r.region.x * r.px), y: Math.round(r.region.y * r.px) }, 1, r.px);
+        const d = r.img.data, Wp = r.img.w, Hp = r.img.h;
+        const dot = (x: number, y: number) => { const X = Math.round(x), Y = Math.round(y); if (X < 0 || Y < 0 || X >= Wp || Y >= Hp) return; const o = (Y * Wp + X) * 4; d[o] = 0; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = 255; };
+        for (const b of res.buildings) for (let k = 0; k < b.points.length; k++) {
+          const [ax, ay] = b.points[k], [bx, by] = b.points[(k + 1) % b.points.length];
+          const x0 = (ax - r.region.x) * r.px, y0 = (ay - r.region.y) * r.px, x1 = (bx - r.region.x) * r.px, y1 = (by - r.region.y) * r.px, n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+          for (let s = 0; s <= n; s++) dot(x0 + ((x1 - x0) * s) / n, y0 + ((y1 - y0) * s) / n);
+        }
+        const step = drawGrid(r.img, r.region, r.px);
+        const jpg = encodeJpeg(r.img);
+        const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
+        return { content: [{ type: "text", text: JSON.stringify({ ...counts, preview: `the found outlines in cyan over the trace picture; grid every ${step} m`, next: "add: true adds them (one edit)" }, null, 1) }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
+      }
+      if (!res.buildings.length) return fail(`Nothing to add: ${JSON.stringify(counts)}. Check the roof points (render_city with trace: true), add ground points, or loosen the tolerance.`);
+      const sp = citySpec(ctx.session().doc), pools = ctx.roofPools?.() ?? null, mode = i.roof_assets ?? "auto", added: MapBuilding[] = [];
+      for (const b of res.buildings) {
+        const id = newFeatureId("b"), pic = mode === "auto" ? chooseRoof(pools, b.look, id) : null;
+        const c = cleanBuilding({ id, points: b.points, roof: b.look, kind: "house", ...(pic && { asset: pic.asset, tile: pic.tile }) }, sp);
+        if (!("error" in c)) added.push(c);
+      }
+      const r = ctx.execute({ op: "features", patch: { upsertBuildings: added } }, `Read ${added.length} buildings from the picture`);
+      return json({ change: r.seq, added: added.length, ...counts, note: "Read from the picture: some may need fixing by hand (merged neighbours, a yard read as a roof). check_city finds overlaps." });
+    },
+  }),
+
+  define({
     name: "render_city",
     description:
       "Render the city (or a part of it, in metres) to an image so you can see it, with a labelled grid in metres. Use after edits, and a region with a larger max_size to inspect detail. " +

@@ -121,6 +121,14 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .trace-opacity input { width: 90px; }
 .trace-help { color: #e8dcb4; max-width: 640px; }
 .trace-help > span:first-child { flex: 1 1 260px; }
+.reader-row { border-top: 1px solid rgba(212, 175, 55, 0.3); padding-top: 6px; }
+.reader-title { color: var(--gold-hi); margin-right: 2px; }
+.reader-samples { gap: 8px; }
+.reader-sample { display: inline-flex; align-items: center; gap: 4px; padding: 1px 2px 1px 5px; border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 5px; }
+.reader-sample select { font-size: 12px; padding: 1px 2px; }
+.reader-sample button { padding: 0 6px; line-height: 1.3; }
+.reader-dot, .reader-square { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #000; }
+.reader-dot { border-radius: 50%; }
 .trace-adjust { display: flex; align-items: center; gap: 4px; }
 .trace-adjust button { min-width: 26px; }
 .history { overflow-y: auto; flex: 1; min-height: 0; }

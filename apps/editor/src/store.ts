@@ -99,6 +99,12 @@ class Store {
   private ws: WebSocket | null = null;
   private listeners = new Set<() => void>();
   private patchListeners = new Set<(r: Rect | null, why: PatchReason) => void>();
+  /** Who wants the picture reader's answers (reader.ts). */
+  private readListeners = new Set<(m: Extract<ServerMsg, { t: "picture_read" }>) => void>();
+  onPictureRead(cb: (m: Extract<ServerMsg, { t: "picture_read" }>) => void) {
+    this.readListeners.add(cb);
+    return () => { this.readListeners.delete(cb); };
+  }
   private derivedListeners = new Set<(frame: DerivedFrame) => void>();
   /** A climate frame that arrived while nobody was listening (the map view mounts a moment after the first frames). */
   private pendingDerived: DerivedFrame | null = null;
@@ -297,6 +303,9 @@ class Store {
         break;
       case "saved":
         this.set({ savedAt: Date.now() });
+        break;
+      case "picture_read":
+        for (const l of this.readListeners) l(m);
         break;
       case "map_deleted":
         this.set({ pictureNote: { text: `"${m.name}" was deleted. Its folder is kept in your maps folder, under "Deleted maps", if you ever want it back.`, busy: false, at: Date.now(), ms: 9000 } });

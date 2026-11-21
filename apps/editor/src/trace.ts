@@ -9,7 +9,7 @@
  */
 import {
   type MapMeta, type RefInfo, type TracePicture, fitTrace, gridPinTargets, moveTrace, rotateTraceAbout, scaleTraceAbout, traceCentre, traceFromPins,
-  tracePoint, traceToPicture,
+  sampleColour, tracePoint, traceToPicture,
 } from "@mapmaker/core";
 import { ask, notice } from "./dialogs.tsx";
 import { store } from "./store.ts";
@@ -130,6 +130,19 @@ class TraceController {
       this.images.set(url, img);
     }
     return img.complete && img.naturalWidth > 0 ? img : null;
+  }
+
+  /** The colour of the trace picture around a point of the map (metres on a city): a small patch's median, as the server's reader samples it; null while it loads. */
+  colourAt(mapId: string, t: TracePicture, x: number, y: number): [number, number, number] | null {
+    const img = this.image(refUrl(mapId, t.ref));
+    if (!img) return null;
+    const [u, v] = traceToPicture(t, x, y);
+    if (u < 0 || v < 0 || u >= t.w || v >= t.h) return null;
+    const c = document.createElement("canvas");
+    c.width = c.height = 7;
+    const g = c.getContext("2d", { willReadFrequently: true })!;
+    g.drawImage(img, Math.round(u) - 3, Math.round(v) - 3, 7, 7, 0, 0, 7, 7);
+    return sampleColour({ w: 7, h: 7, data: g.getImageData(0, 0, 7, 7).data }, 3, 3, 3).rgb;
   }
 
   /** Is the picture there to draw? (False while it loads, or when its file has gone.) */

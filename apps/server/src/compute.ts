@@ -7,6 +7,8 @@ import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
 } from "@mapmaker/core";
+import { type ReadResult, type ReaderOptions, type RGBAImage, readBuildings } from "@mapmaker/core";
+import { decodeImage } from "@mapmaker/tools";
 import { NoiseStore } from "./noiseStore.ts";
 
 export interface MapCompute {
@@ -20,6 +22,8 @@ export interface MapCompute {
   regional(doc: MapDoc, plan: RegionalPlan, seed: number): Promise<Float32Array>;
   /** Start preparing for paint() in the background (e.g. when a map opens). */
   warm(doc: MapDoc): void;
+  /** Read buildings out of a picture (the city picture reader, core cityReader.ts). `key` names the picture, so asking again about the same one doesn't decode it again. */
+  readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult>;
   close(): Promise<void>;
 }
 
@@ -45,7 +49,8 @@ export type Job =
   | { op: "regional"; W: number; H: number; heights: Float32Array; meta: MapMeta; plan: RegionalPlan; seed: number }
   | { op: "paint"; W: number; H: number; heights: Float32Array; meta: MapMeta; derived: Derived }
   | ({ op: "battle"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features } & BattleRenderOpts)
-  | { op: "warm"; W: number; H: number; seed: number };
+  | { op: "warm"; W: number; H: number; seed: number }
+  | { op: "read"; key: string; bytes: Uint8Array; opts: ReaderOptions };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
 
@@ -62,6 +67,8 @@ export interface NoiseStorage {
 export class JobRunner {
   private full: NoiseCache | null = null;
   private climate: ClimateNoise | null = null;
+  /** The last picture read (decoding a big one takes a second or two: reading it again with other samples shouldn't). */
+  private pic: { key: string; img: RGBAImage } | null = null;
 
   constructor(private storage?: NoiseStorage) {}
 
@@ -83,7 +90,15 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | null {
+    if (job.op === "read") {
+      if (this.pic?.key !== job.key) {
+        const img = decodeImage(job.bytes);
+        if (!img) throw new Error("The trace picture couldn't be read as a picture.");
+        this.pic = { key: job.key, img };
+      }
+      return readBuildings(this.pic.img, job.opts);
+    }
     if (job.op === "warm") {
       this.fullNoise(job.W, job.H, job.seed);
       return null;
@@ -136,6 +151,9 @@ export class InlineCompute implements MapCompute {
     return this.runner.run({ op: "battle", ...snapshot(doc), features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }) as Uint8ClampedArray;
   }
   warm() {}
+  async readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions) {
+    return this.runner.run({ op: "read", key, bytes, opts }) as ReadResult;
+  }
   async close() {}
 }
 
@@ -222,6 +240,11 @@ export class WorkerCompute implements MapCompute {
     if (this.painter.dead) return this.inline.battle(doc, opts);
     const s = snapshot(doc);
     return this.painter.call<Uint8ClampedArray>({ op: "battle", ...s, features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }, [s.heights.buffer as ArrayBuffer]);
+  }
+
+  readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult> {
+    if (this.painter.dead) return this.inline.readPicture(key, bytes, opts);
+    return this.painter.call<ReadResult>({ op: "read", key, bytes, opts }, [bytes.buffer as ArrayBuffer]);
   }
 
   warm(doc: MapDoc) {

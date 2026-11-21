@@ -11,7 +11,7 @@ import {
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
   type ReferenceKind, type RefInfo, PICTURE_HEAD_BYTES, REFERENCE_KIND_TYPE, pictureKind,
-  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, defaultCellM, isCity, isWorld, renderCity, type RoofPools, groupRoofAssets,
+  citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, defaultCellM, isCity, isWorld, renderCity, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
 import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -296,6 +296,39 @@ export class Hub {
     await this.openProject(id);
     const info = (await this.store.list()).find((p) => p.id === id)!;
     return { ...info, from_world: said };
+  }
+
+  /**
+   * The city picture reader: read buildings out of the open city's trace picture, by roof colour (core cityReader.ts, on the compute thread). Everything in metres: the area
+   * (none: the whole picture), where a roof of each kind is (and its look), where the ground is. Returns what it found, in metres, not yet added: those already covered by a
+   * building are left out and counted.
+   */
+  async readCityPicture(o: { area?: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground?: [number, number][]; tolerance?: number; minAreaM2?: number; maxAreaM2?: number }) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    const doc = op.session.doc;
+    if (!isCity(doc)) throw new Error("The picture reader is for city maps.");
+    const t = doc.features?.trace;
+    if (!t) throw new Error("Lay the picture over the city first (References: Trace over map) and line it up, then read it.");
+    if (!o.roofs.length) throw new Error("Give at least one roof to read by (one of each kind of roof).");
+    const bytes = await this.store.readRef(op.id, t.ref);
+    if (!bytes) throw new Error(`The trace picture "${t.ref}" is missing from References.`);
+    const toPic = ([x, y]: [number, number]) => traceToPicture(t, x, y);
+    const area = o.area && o.area.length >= 3 ? o.area.map(toPic) : ([[0, 0], [t.w, 0], [t.w, t.h], [0, t.h]] as [number, number][]);
+    const s2 = t.scale * t.scale;
+    const res = await this.compute.readPicture(`${op.id}/${t.ref}/${t.w}x${t.h}`, new Uint8Array(bytes), {
+      area, roofs: o.roofs.map((r) => { const [x, y] = toPic([r.x, r.y]); return { x, y, look: r.look }; }),
+      ground: (o.ground ?? []).map((g) => { const [x, y] = toPic(g); return { x, y }; }),
+      tolerance: o.tolerance, minArea: (o.minAreaM2 ?? 10) / s2, maxArea: (o.maxAreaM2 ?? 3000) / s2,
+    });
+    const sp = citySpec(doc), space = new CitySpace(doc), buildings: { points: [number, number][]; look: RoofStyle }[] = [];
+    let alreadyThere = 0;
+    for (const b of res.buildings) {
+      const points = b.points.map(([u, v]) => { const [x, y] = tracePoint(t, u, v); return [Math.round(Math.min(sp.widthM, Math.max(0, x)) * 100) / 100, Math.round(Math.min(sp.heightM, Math.max(0, y)) * 100) / 100] as [number, number]; });
+      if (space.onBuilding(points)) { alreadyThere++; continue; }
+      buildings.push({ points, look: b.look });
+    }
+    return { buildings, skipped: res.skipped, alreadyThere, colours: res.colours };
   }
 
   /** Make a battlemap (a grid-based tabletop map) and open it. */
@@ -890,6 +923,13 @@ export class Hub {
           return this.sendProject(ws);
         case "open_project":
           return this.openProject(msg.id);
+        case "read_picture": {
+          try {
+            const r = await this.readCityPicture({ area: msg.area, roofs: msg.roofs, ground: msg.ground, tolerance: msg.tolerance });
+            this.send(ws, { t: "picture_read", buildings: r.buildings, skipped: r.skipped, alreadyThere: r.alreadyThere });
+          } catch (e) { this.send(ws, { t: "picture_read", error: (e as Error).message }); }
+          return;
+        }
         case "delete_project": {
           const r = await this.deleteProject(msg.id);
           this.broadcast({ t: "map_deleted", name: r.name, folder: r.folder });
@@ -1097,6 +1137,7 @@ export class Hub {
         self.projectsCache = await self.store.list();
         return info;
       },
+      readCityPicture: (o) => self.readCityPicture(o),
       createCityHere: async (o) => {
         const info = await self.createCityFromWorld(o);
         self.projectsCache = await self.store.list();
