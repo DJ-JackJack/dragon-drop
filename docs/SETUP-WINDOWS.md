@@ -191,7 +191,7 @@ The terminal on the right runs Claude Code by default. In **Settings → AI assi
 | **Muse Code** (Meta) | `.mcp.json`, the same file as Claude Code's | Muse asks once whether to trust the folder: say yes, or it ignores the map tools. Install it from Meta first |
 | **Anything else** | Nothing | Add the address and header shown in Settings in that assistant's own settings |
 
-**What each one needs, and what it costs.** Each assistant has its own sign-in, and some are paid for separately from the same company's chat app. Checked against each company's own pages in November 2026; plans change, so their pricing page has the last word. Settings shows the same line under the assistant you pick.
+**What each one needs, and what it costs.** Each assistant has its own sign-in, and some are paid for separately from the same company's chat app. Checked against each company's own pages in November 2026; plans change, so their pricing page has the last word. From version 0.1.12, Settings shows the same line under the assistant you pick.
 
 | Assistant | Free? | What it needs |
 |---|---|---|
