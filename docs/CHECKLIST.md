@@ -54,7 +54,7 @@ From `SELLING.md`, where each has its details:
 
 ## On GitHub (the person's)
 
-- [ ] The Dependabot pull request #1 (merge after a release).
+- [x] The Dependabot pull request #1 (merge after a release). *(2026-11-21: merged)*
 - [ ] Repository security settings: Dependabot alerts and security updates, private vulnerability reporting.
 - [ ] Two-factor sign-in on the account; branch and tag protection when wanted (it would also stop Claude pushing).
 
