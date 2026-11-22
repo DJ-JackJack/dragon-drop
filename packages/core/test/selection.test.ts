@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Features, LockedEditError, MapSession, cleanSelection, cleanView, createDoc, defaultFeather, describeSelection, emptyFeatures, featuresOutsideLock,
+  type Features, LockedEditError, MapSession, NotYourChangeError, cleanSelection, cleanView, createDoc, defaultFeather, describeSelection, emptyFeatures, featuresOutsideLock,
   generateTerrain, selectionMask, selectionReport, selectionShape, shapeContains, signedDistance,
 } from "../src/index.ts";
 
@@ -134,6 +134,28 @@ describe("Claude's edits held to a selection", () => {
     expect(insideChanged).toBeGreaterThan(0);
     const r = s.execute({ op: "sculpt", params: { shape: { type: "circle", x: 20, y: 20, r: 10 }, mode: "raise", amountM: 300 } }, "claude");
     expect(r.rect).toBeNull();
+  });
+
+  // (found 2026-11-22: Claude's undo took back up to 20 of the newest changes, the DM's own outside the lock included)
+  it("lets Claude undo and redo only its own changes, and under a lock only those made under it", () => {
+    const doc = flatDoc(0), s = new MapSession(doc);
+    const raise = (x: number, by: "user" | "claude") => s.execute({ op: "sculpt", params: { shape: { type: "circle", x, y: x, r: 6 }, mode: "raise", amountM: 300 } }, by);
+    raise(20, "claude"); // before the lock, outside the area it will hold
+    raise(30, "user"); // the DM's own
+    expect(() => s.undo("claude")).toThrow(NotYourChangeError);
+    expect(doc.height.data[30 * W + 30]).toBeGreaterThan(100); // the DM's change stays
+    s.undo("user");
+    s.editLock = lockOf();
+    expect(() => s.undo("claude")).toThrow(LockedEditError); // made before the lock: it reaches outside the area
+    raise(100, "claude");
+    expect(s.undo("claude")?.label).toMatch(/Sculpt|raise/i); // its own, under the lock
+    expect(s.redo("claude")).not.toBeNull();
+    s.undo("user");
+    s.editLock = null;
+    expect(s.undo("claude")).not.toBeNull(); // no lock: its own changes, whenever made
+    raise(40, "user");
+    s.undo("user");
+    expect(() => s.redo("claude")).toThrow(NotYourChangeError); // nor make the DM's again
   });
 
   it("does not hold the DM's own edits, nor Claude's once the lock is off", () => {

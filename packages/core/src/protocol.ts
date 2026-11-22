@@ -80,6 +80,20 @@ export type ChatEvent =
   | { type: "busy"; busy: boolean }
   | { type: "usage"; usage: Usage; session: Usage };
 
+/** Which map (project id) and, on a battlemap, which level an edit was made on. Missing (scripts, tests): whatever is open. */
+export interface EditTarget { projectId?: string; level?: string }
+
+/**
+ * The messages that act on the map on screen: the DM's edits and everything else that changes or reads that map (see EditTarget). The editor names the map
+ * and level on each; one meant for a map or level that is no longer open is refused, not done to the next one.
+ */
+export const EDIT_MESSAGES = new Set([
+  "cmd", "txn_begin", "txn_end", "undo", "redo",
+  "checkpoint_save", "checkpoint_restore", "carve_valleys", "draw_river", "route_line", "paint_cells", "sketch_import", "selection",
+  "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as",
+  "create_city_here", "create_battle_here", "create_battle_from_city", "create_regional", "regional_refresh", "duplicate_project", "chat_send",
+]);
+
 export type ClientMsg =
   | { t: "hello" }
   /** The DM's answer to a `confirm` question (from the editor or the phone page). */
@@ -119,11 +133,16 @@ export type ClientMsg =
   | { t: "route_line"; kind: "road" | "trail"; points: [number, number][]; name?: string; id?: string }
   /** Turn a reference image into terrain (replaces the whole map; a checkpoint is saved first). */
   | { t: "sketch_import"; ref: string; params: SketchParams }
-  | { t: "cmd"; cmd: WireCommand; label?: string }
-  | { t: "txn_begin"; label: string }
-  | { t: "txn_end" }
-  | { t: "undo" }
-  | { t: "redo" }
+  /**
+   * The DM's edits (and their undo and redo) name the map, and on a battlemap the level, they were made on (`EditTarget`, filled in by the editor's `store.send`):
+   * the AI can open another map or level meanwhile, and an edit meant for the one that was on screen must not land on the next. One for a map or level that is
+   * no longer open is refused.
+   */
+  | ({ t: "cmd"; cmd: WireCommand; label?: string } & EditTarget)
+  | ({ t: "txn_begin"; label: string } & EditTarget)
+  | ({ t: "txn_end" } & EditTarget)
+  | ({ t: "undo" } & EditTarget)
+  | ({ t: "redo" } & EditTarget)
   /** Ctrl+S: write the map to disk now (it also saves itself a moment after every change). Answered with "saved" once it is on disk. */
   | { t: "save_now" }
   | { t: "chat_send"; text: string; images: { name: string; mediaType: string; data: string }[] }
@@ -203,8 +222,8 @@ export type ServerMsg =
   | { t: "compare"; id: string; name: string; kind: string; rect: Rect | null; how: string[] }
   /** A river was drawn (the answer to `draw_river`): its new source, how long it is, how it ends, the deepest cut through high ground (m), and whether the line was turned round. */
   | { t: "river_drawn"; source: string; lengthKm: number; end: "sea" | "land" | "edge"; deepestM: number; reversed: boolean }
-  /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor and phone page until answered (`confirm_done`). via: the API chat or an assistant through the map tools. */
-  | { t: "confirm"; id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number }
+  /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor and phone page until answered (`confirm_done`). via: the API chat or an assistant through the map tools. `map`: the name of the map (and level) it is about, which may not be the one on screen. */
+  | { t: "confirm"; id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; map?: string }
   /** That question is settled (answered here or elsewhere, or no answer in time). */
   | { t: "confirm_done"; id: string; answer: "allowed" | "refused" | "timeout" | "nobody" }
   /** What Claude Code last said (through its hooks): lets Assist mode wait until it is idle. */

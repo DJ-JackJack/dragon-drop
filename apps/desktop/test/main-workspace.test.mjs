@@ -28,7 +28,7 @@ function loadMain(userData, documents) {
   };
   const req = createRequire(mainFile);
   const fakeRequire = (id) => (id === "electron" ? electron : req(id));
-  const src = `${readFileSync(mainFile, "utf8")}\n;globalThis.__main = { loadSettings, writeClaudeWorkspace, hookCommand, editorUrl, getSettings: () => settings, setPort: (p) => { port = p; } };`;
+  const src = `${readFileSync(mainFile, "utf8")}\n;globalThis.__main = { loadSettings, writeClaudeWorkspace, hookCommand, editorUrl, ownPicture, getSettings: () => settings, setPort: (p) => { port = p; } };`;
   const sandbox = { require: fakeRequire, module: { exports: {} }, exports: {}, process, console, __dirname: path.dirname(mainFile), __filename: mainFile, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, URL, globalThis: null };
   sandbox.globalThis = sandbox;
   vm.runInNewContext(`(function (require, module, exports, __dirname, __filename) {\n${src}\n}).call(this, require, module, exports, __dirname, __filename)`, sandbox, { filename: mainFile });
@@ -56,7 +56,8 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
     expect(again.getSettings().accessToken).toBe(key);
 
     main.setPort(4747);
-    expect(main.editorUrl()).toBe(`http://localhost:4747/?t=${key}`);
+    // (127.0.0.1, never "localhost": that goes to IPv6 first, where another program could listen and be sent the key)
+    expect(main.editorUrl()).toBe(`http://127.0.0.1:4747/?t=${key}`);
     expect(main.hookCommand()).toContain("http://127.0.0.1:4747/api/claude-hook");
 
     main.writeClaudeWorkspace(null); // (this is the function that failed on Windows when a local variable hid `settings`)
@@ -218,5 +219,34 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
       write();
       expect(existsSync(path.join(dir, "opencode.json"))).toBe(false);
     });
+  });
+
+  // (from the adversarial review of 2026-11-22)
+  it("keeps a damaged settings file aside instead of writing over it", () => {
+    const userData = mkdtempSync(path.join(os.tmpdir(), "dd-user-")), documents = mkdtempSync(path.join(os.tmpdir(), "dd-docs-"));
+    writeFileSync(path.join(userData, "settings.json"), '{"projectsDir": "D:\\Maps", "accessTo');
+    const { main } = loadMain(userData, documents);
+    main.loadSettings();
+    expect(main.getSettings().accessToken).toMatch(/^[0-9a-f]{64}$/);
+    const aside = readdirSync(userData).filter((n) => n.startsWith("settings.unreadable-"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(path.join(userData, aside[0]), "utf8")).toContain('"projectsDir": "D:\\Maps"'); // (still says where the maps were)
+  });
+
+  it("opens only the maps' own pictures from the chat, in Windows' picture viewer", () => {
+    const userData = mkdtempSync(path.join(os.tmpdir(), "dd-user-")), documents = mkdtempSync(path.join(os.tmpdir(), "dd-docs-"));
+    const maps = mkdtempSync(path.join(os.tmpdir(), "dd-maps-"));
+    mkdirSync(path.join(maps, "my-map", "refs"), { recursive: true });
+    writeFileSync(path.join(maps, "my-map", "refs", "Old map.png"), "png");
+    writeFileSync(path.join(maps, "my-map", "refs", "notes.html"), "<b>");
+    const { main } = loadMain(userData, documents);
+    main.loadSettings();
+    main.getSettings().projectsDir = maps;
+    main.setPort(4747);
+    expect(main.ownPicture("http://127.0.0.1:4747/api/projects/my-map/refs/Old%20map.png")).toBe(path.join(maps, "my-map", "refs", "Old map.png"));
+    expect(main.ownPicture("http://127.0.0.1:4747/api/projects/my-map/refs/notes.html")).toBeNull();
+    expect(main.ownPicture("http://127.0.0.1:4747/api/projects/my-map/refs/..%2F..%2Fsettings.png")).toBeNull();
+    expect(main.ownPicture("http://localhost:4747/api/projects/my-map/refs/Old%20map.png")).toBeNull();
+    expect(main.ownPicture("https://example.com/api/projects/my-map/refs/Old%20map.png")).toBeNull();
   });
 });

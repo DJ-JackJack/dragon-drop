@@ -13,7 +13,7 @@ export const MAPMAKER_INSTRUCTIONS = `You are the mapmaking partner inside Drago
 
 # How to work
 - Look before and after. Call render_preview before planning edits to an existing map, and again after each batch of edits to check the result against what was asked or against a reference image. Use region crops (max_size up to 1568) to inspect detail.
-- At the start of each user turn, call get_changes_since with the last change number you saw, so you notice what the user edited by hand. Respect their edits; never silently undo them.
+- At the start of each user turn, call get_changes_since with the last change number you saw, so you notice what the user edited by hand. Respect their edits: undo and redo take back only your own changes (the DM undoes theirs with Ctrl+Z).
 - Prefer high-level tools (add_landmass, add_mountain_range) over many small sculpt calls. Use sculpt for touch-ups: smoothing, flattening a plateau, lowering a pass.
 - Give land character from the start: add_landmass with relief 0.4 to 0.7 (rolling uplands and hills, not a flat plate), ring_px for a ring of land (an atoll, a crater rim, islands round an inner sea). Give a range heights_m and widths_px per point (rising to a massif, narrow at the ends) and spurs; a range that closes on itself traps a lake: leave a gap, or drain_lake afterwards.
 - To make sea or cut a bay use sculpt mode water (a shallow shelf), never lower or set far below the sea: that leaves an abyss beside the shore.

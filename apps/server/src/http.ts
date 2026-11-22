@@ -24,7 +24,8 @@ const MIME: Record<string, string> = {
  * spending your API credits).
  */
 export function accessPolicy(cfg: Config) {
-  const ports = [cfg.port, 5173];
+  // (the developer setup's editor, `pnpm dev`, is served by Vite on its own port; the Windows app turns that port off)
+  const ports = [cfg.port, ...(cfg.devEditorPort ? [cfg.devEditorPort] : [])];
   const names = ["localhost", "127.0.0.1", "[::1]", ...cfg.extraHosts.map((h) => h.toLowerCase())];
   // extra hosts (e.g. a private Tailscale name) may also arrive without a port (HTTPS on 443)
   const hosts = [...names.flatMap((n) => ports.map((p) => `${n}:${p}`)), ...cfg.extraHosts.map((h) => h.toLowerCase())];
@@ -106,7 +107,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
       if (url.pathname === "/api/noise") return await handleNoise(hub, url, req, res);
       const rj = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/render\.jpg$/);
       if (rj) {
-        const max = Math.min(4096, Math.max(256, Number(url.searchParams.get("max") ?? 2048)));
+        const max = pictureSide(url.searchParams.get("max"));
         const bytes = await hub.renderJpeg(rj[1], max, (img) => encodeJpeg(img, 88, 16_000_000));
         if (!bytes) return void res.writeHead(404, { "content-type": "text/plain" }).end("Not the open project");
         res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" }).end(bytes);
@@ -115,7 +116,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
       // any map as a picture in its style (the editor's compare view): the open map, or another one read only
       const pj = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/picture\.jpg$/);
       if (pj) {
-        const max = Math.min(4096, Math.max(256, Number(url.searchParams.get("max") ?? 2048)));
+        const max = pictureSide(url.searchParams.get("max"));
         try {
           const level = url.searchParams.get("level") ?? undefined; // a battlemap's level (id), from the editor's compare view
           const bytes = await hub.mapPicture(pj[1], max, (img) => encodeJpeg(img, 88, 16_000_000), level && level.length <= 80 ? level : undefined);
@@ -150,7 +151,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
       const m = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/(refs|previews)\/([^/]+)$/);
       if (m) {
         const file = hub.store.filePath(m[1], m[2] as "refs" | "previews", decodeURIComponent(m[3]));
-        return sendFile(res, file, "private, max-age=3600");
+        return sendPicture(res, file);
       }
       return serveEditor(cfg, url.pathname, res, editorCsp(req.headers.host, policy.hosts));
     } catch (e) {
@@ -301,7 +302,7 @@ async function handleAssets(hub: Hub, url: URL, req: IncomingMessage, res: Serve
     if (!f) return void res.writeHead(404, { "content-type": "text/plain" }).end("No such asset (or its author doesn't allow its use here).");
     const orig = (f as { orig?: { w: number; h: number } }).orig;
     res.writeHead(200, {
-      "content-type": f.mime, "content-length": f.bytes.byteLength, "cache-control": "private, max-age=86400",
+      "content-type": f.mime, "content-length": f.bytes.byteLength, "cache-control": "private, max-age=86400", "content-security-policy": "default-src 'none'; sandbox",
       ...(orig && { "x-asset-width": String(orig.w), "x-asset-height": String(orig.h), "access-control-expose-headers": "x-asset-width, x-asset-height" }),
     }).end(f.bytes);
     return;
@@ -315,6 +316,12 @@ async function handleAssets(hub: Hub, url: URL, req: IncomingMessage, res: Serve
     return sendJson(res, { started: true });
   }
   res.writeHead(404, { "content-type": "text/plain" }).end("Not found");
+}
+
+/** The longest side asked for a map picture: 256 to 4096 px, 2048 when the number is missing or isn't one. */
+export function pictureSide(v: string | null): number {
+  const n = v === null || v.trim() === "" ? NaN : Number(v);
+  return Number.isFinite(n) ? Math.round(Math.min(4096, Math.max(256, n))) : 2048;
 }
 
 function unauthorised(res: ServerResponse) {
@@ -335,6 +342,17 @@ function sendFile(res: ServerResponse, file: string, cache = "no-cache") {
     return;
   }
   res.writeHead(200, { "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream", "cache-control": cache });
+  createReadStream(file).pipe(res);
+}
+
+/** The picture types a map's own folders (references, previews) are served as. Anything else there (an .html or .svg in a map someone shared) is never sent as a page. */
+const PICTURE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+
+/** A reference picture or a preview: only as a PNG, JPEG or WebP picture, never anything a browser would run (and no page could run in it: the policy forbids all). */
+export function sendPicture(res: ServerResponse, file: string) {
+  const type = PICTURE_TYPES[path.extname(file).toLowerCase()];
+  if (!type || !existsSync(file) || !statSync(file).isFile()) return void res.writeHead(404, { "content-type": "text/plain" }).end("Not found");
+  res.writeHead(200, { "content-type": type, "cache-control": "private, max-age=3600", "content-security-policy": "default-src 'none'; sandbox" });
   createReadStream(file).pipe(res);
 }
 

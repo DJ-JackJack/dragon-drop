@@ -25,6 +25,8 @@ export interface Config {
    * `/?t=<key>` once), or null for none. The desktop app always sets one; the developer setup is open unless MAPMAKER_ACCESS_TOKEN is set.
    */
   accessToken: string | null;
+  /** The developer setup's editor port (Vite, `pnpm dev`), also let in; null for none (the Windows app sets MAPMAKER_DEV_EDITOR_PORT empty). */
+  devEditorPort: number | null;
 }
 
 /** The shortest access key accepted (a short one would be guessable; this fails loudly instead of quietly protecting nothing). */
@@ -34,8 +36,10 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   const port = Number(process.env.MAPMAKER_PORT ?? 4747);
   const token = process.env.MAPMAKER_ACCESS_TOKEN?.trim() || null;
   if (token && token.length < MIN_ACCESS_TOKEN) throw new Error(`MAPMAKER_ACCESS_TOKEN must be at least ${MIN_ACCESS_TOKEN} characters (use a long random string).`);
+  const dev = process.env.MAPMAKER_DEV_EDITOR_PORT ?? "5173";
   return {
     accessToken: token,
+    devEditorPort: /^\d{2,5}$/.test(dev.trim()) ? Number(dev.trim()) : null,
     port,
     host: process.env.MAPMAKER_HOST ?? "127.0.0.1",
     projectsDir: path.resolve(process.env.MAPMAKER_PROJECTS_DIR ?? path.join(REPO_ROOT, "projects")),

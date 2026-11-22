@@ -11,9 +11,10 @@
  */
 import { createHash } from "node:crypto";
 import { type FileHandle, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
-  type AssetCategory, type AssetItem, type RandomAccess, type RoofAsset, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
+  type AssetCategory, type AssetItem, type RandomAccess, type RGBAImage, type RoofAsset, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
   categoryOf, defaultTileSquares, imageSize, opaqueRowCount, parseAssetId, readPck, readPckFile, roofLookOfAsset,
 } from "@mapmaker/core";
 import { decodeImage } from "@mapmaker/tools";
@@ -78,6 +79,19 @@ interface CachedIndex {
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const MAX_DECODE_PIXELS = 40_000_000;
 const MAX_FOLDER_DEPTH = 12;
+
+/**
+ * Does a pack's own info say it may not be used by other mapping programs? `false`, but also the other ways an author writes no ("false", "no", 0):
+ * a pack whose author said no must never be served or drawn, so any no counts.
+ */
+/** A path with the person's home folder written as ~ (it holds their Windows user name). */
+export function shortHome(p: string, home = os.homedir()): string {
+  return home && p.toLowerCase().startsWith(home.toLowerCase()) ? `~${p.slice(home.length)}` : p;
+}
+
+export function forbidsUse(v: unknown): boolean {
+  return v === false || v === 0 || (typeof v === "string" && /^\s*(false|no|0|off)\s*$/i.test(v));
+}
 const MAX_FOLDER_FILES = 400_000;
 const MAX_FOLDERS = 50_000;
 
@@ -269,7 +283,7 @@ export class AssetLibrary {
     const info: PackInfo = {
       key: "", name: str(d.packJson?.name) ?? name, file, kind, bytes: st.size, mtimeMs: st.mtimeMs, formatVersion: extra.formatVersion, engine: extra.engine,
       packId: str(d.packJson?.id), version: str(d.packJson?.version), author: str(d.packJson?.author),
-      restricted: d.packJson?.allow_3rd_party_mapping_software === false,
+      restricted: forbidsUse(d.packJson?.allow_3rd_party_mapping_software),
       files: entries.length, categories,
     };
     return { info, entries, byPath: new Map(entries.map((e) => [e.path.toLowerCase(), e])), tags: d.tags, packJson: d.packJson };
@@ -491,11 +505,18 @@ export class AssetLibrary {
     const s = await this.sizeOf(r.pack, r.entry);
     if (s && s.w * s.h > MAX_DECODE_PIXELS) return null;
     try {
-      return decodeImage(await this.bytesOf(r.pack, r.entry));
+      const bytes = await this.bytesOf(r.pack, r.entry);
+      return this.pictures ? await this.pictures.decode(bytes) : decodeImage(bytes);
     } catch {
       return null;
     }
   }
+
+  /**
+   * Where pictures are read: the server's worker thread (main.ts sets it), so browsing a pack of big pictures for the first time doesn't hold up the
+   * map and the editor (found 2026-11-22: every thumbnail was a whole picture decoded on the main thread). Without one (tests), here.
+   */
+  pictures: { decode(bytes: Uint8Array): Promise<RGBAImage | null>; thumbnail(bytes: Uint8Array, max: number): Promise<{ png: Uint8Array; w: number; h: number } | null> } | null = null;
 
   private remember<T>(key: string, value: T, bytes: number): T {
     this.decoded.set(key, { value, bytes });
@@ -548,6 +569,13 @@ export class AssetLibrary {
     // (the file's size is in the name, so a picture that was replaced by another of the same name is made again)
     const cacheFile = path.join(this.cacheDir, "thumbs", `${createHash("sha1").update(`${id}@${max}@${r.entry.size}`).digest("hex")}.png`);
     try { return { bytes: new Uint8Array(await readFile(cacheFile)), mime: "image/png", orig }; } catch { /* make it */ }
+    if (this.pictures && !(orig && orig.w * orig.h > MAX_DECODE_PIXELS)) {
+      const t = await this.bytesOf(r.pack, r.entry).then((b) => this.pictures!.thumbnail(b, max)).catch(() => null);
+      if (!t) { const f = await this.read(id); return f && { ...f, orig }; }
+      await mkdir(path.dirname(cacheFile), { recursive: true });
+      await writeFile(cacheFile, t.png).catch(() => {});
+      return { bytes: t.png, mime: "image/png", orig: { w: t.w, h: t.h } };
+    }
     const img = await this.decode(id);
     if (!img) { const f = await this.read(id); return f && { ...f, orig }; }
     const k = Math.min(1, max / Math.max(img.w, img.h));
@@ -566,7 +594,8 @@ export class AssetLibrary {
     const L: string[] = [];
     const st = this.status();
     const all = [...this.packs.values()];
-    L.push(`Dragon Drop asset report ${new Date().toISOString()}`, `folder: ${this.dir}`);
+    // (the home folder shortened: it holds the Windows user name, and this report is sent to whoever improves Dragon Drop)
+    L.push(`Dragon Drop asset report ${new Date().toISOString()}`, `folder: ${shortHome(this.dir)}`);
     L.push(`packs: ${st.packs} (${st.usablePacks} usable, ${st.restricted} restricted by their authors, ${all.filter((p) => p.info.supersededBy).length} older duplicates), files in usable packs: ${st.files}`);
     const kinds: Record<string, number> = {};
     for (const p of all) kinds[p.info.kind] = (kinds[p.info.kind] ?? 0) + 1;

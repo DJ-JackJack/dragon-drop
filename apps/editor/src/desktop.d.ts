@@ -12,6 +12,8 @@ interface DragonDropBridge {
   openBackups(id: string): Promise<{ ok: boolean; opened: "backups" | "map" | null }>;
   /** The phone page's address (the PC's Tailscale name), "" for off. The server starts again; the answer is what was kept. */
   setPhoneHost(host: string): Promise<string>;
+  /** Make a new access key: the old one stops working everywhere (the server starts again, and the window reloads with the new one). */
+  newAccessKey(): Promise<boolean>;
   openLogs(): Promise<void>;
   /** Open the open-source licences file; ok is false when it isn't there (a developer build). */
   openLicences(): Promise<{ ok: boolean }>;

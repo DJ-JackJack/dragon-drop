@@ -24,11 +24,13 @@ import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
 import { MAP_TOOLS } from "./mapTools.ts";
-import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
+import { type PictureWork, encodeJpeg, inlinePictures, toBase64 } from "./images.ts";
 import { refusal, riskOf } from "./risky.ts";
 import { define, fail, json, text } from "./toolKit.ts";
 
 export interface ToolContext {
+  /** Reading pictures off the server's main thread (missing: read here). */
+  pictures?: PictureWork;
   /** The open project's session (throws if no project is open). */
   session(): MapSession;
   projectId(): string | null;
@@ -395,6 +397,21 @@ function changeLine(c: ChangeEntry) {
   return `#${c.seq} ${c.kind} by ${c.author}: ${c.label}${r}`;
 }
 
+/** Undo or redo up to `steps` of the AI's own changes; it stops at the first it may not take back (the DM's, or one from before a lock) and says why. */
+function historySteps(steps: number, step: () => ChangeEntry | null, what: "undo" | "redo"): ToolResult {
+  const done: string[] = [];
+  for (let k = 0; k < steps; k++) {
+    let c: ChangeEntry | null;
+    try { c = step(); } catch (e) {
+      const why = (e as Error).message;
+      return done.length ? text(`${done.join("\n")}\nStopped there: ${why}`) : { ...text(why), isError: true };
+    }
+    if (!c) break;
+    done.push(c.label);
+  }
+  return text(done.length ? done.join("\n") : `Nothing to ${what}.`);
+}
+
 export const TOOLS = [
   define({
     name: "get_map_summary",
@@ -589,7 +606,7 @@ export const TOOLS = [
       }
       const bytes = await ctx.readRef(i.name);
       if (!bytes) return { ...text(`No reference named ${i.name}. Use list_references.`), isError: true };
-      const img = decodeImage(bytes);
+      const img = await (ctx.pictures ?? inlinePictures).decode(bytes);
       if (!img) return { ...text("This image format can't be decoded here (use PNG, JPEG or a still WebP)."), isError: true };
       if (ctx.saveCheckpoint) await ctx.saveCheckpoint("Before sketch import", `Before turning ${i.name} into terrain`).catch(() => {});
       const r = sketchToHeights(img, { W: doc.height.w, H: doc.height.h, seaLevel: doc.meta.seaLevel }, {
@@ -698,31 +715,19 @@ export const TOOLS = [
 
   define({
     name: "undo",
-    description: "Undo the most recent change(s), whoever made them (the user's own edits included, so check get_changes_since first).",
+    description: "Undo your own most recent change(s). It stops at a change the DM made (theirs are theirs to undo, with Ctrl+Z), and while your edits are locked to the DM's selection it undoes only what you did under that lock.",
     schema: z.object({ steps: z.number().int().min(1).max(20).optional() }),
     async run(ctx, i) {
-      const done: string[] = [];
-      for (let k = 0; k < (i.steps ?? 1); k++) {
-        const c = ctx.undo();
-        if (!c) break;
-        done.push(c.label);
-      }
-      return text(done.length ? done.join("\n") : "Nothing to undo.");
+      return historySteps(i.steps ?? 1, () => ctx.undo(), "undo");
     },
   }),
 
   define({
     name: "redo",
-    description: "Redo change(s) that were undone.",
+    description: "Redo your own change(s) that were undone (not the DM's).",
     schema: z.object({ steps: z.number().int().min(1).max(20).optional() }),
     async run(ctx, i) {
-      const done: string[] = [];
-      for (let k = 0; k < (i.steps ?? 1); k++) {
-        const c = ctx.redo();
-        if (!c) break;
-        done.push(c.label);
-      }
-      return text(done.length ? done.join("\n") : "Nothing to redo.");
+      return historySteps(i.steps ?? 1, () => ctx.redo(), "redo");
     },
   }),
 
@@ -935,7 +940,7 @@ export const TOOLS = [
     async run(ctx, i) {
       const bytes = await ctx.readRef(i.name);
       if (!bytes) return { ...text(`No reference named ${i.name}. Use list_references.`), isError: true };
-      const ref = decodeImage(bytes);
+      const ref = await (ctx.pictures ?? inlinePictures).decode(bytes);
       if (!ref) return { ...text("This image format can't be decoded here (use PNG, JPEG or a still WebP)."), isError: true };
       const half = Math.floor((i.max_size ?? 1400) / 2) - 6;
       const rr = i.ref_region ?? { x: 0, y: 0, w: ref.w, h: ref.h };
@@ -1690,7 +1695,7 @@ export const TOOLS = [
     async run(ctx, i) {
       const bytes = await ctx.readRef(i.name);
       if (!bytes) return { ...text(`No reference named ${i.name}. Use list_references.`), isError: true };
-      const prep = prepareReference(bytes, i.max_size ?? 1568, i.region);
+      const prep = await (ctx.pictures ?? inlinePictures).reference(bytes, i.max_size ?? 1568, i.region);
       if (!prep) return { ...text("This image format can't be decoded here (use PNG, JPEG or a still WebP)."), isError: true };
       return { content: [
         { type: "text", text: `${i.name}: ${prep.width}x${prep.height} px${i.region ? `, crop x${i.region.x} y${i.region.y} ${i.region.w}x${i.region.h}` : ""}, shown at ${prep.outW}x${prep.outH}.` },
@@ -1785,8 +1790,13 @@ export async function runTool(ctx: ToolContext, name: string, input: unknown): P
   if (ctx.confirm) {
     const what = await riskOf(ctx, name, parsed.data);
     if (what) {
+      // (the map and level asked about: another call may open another while the DM decides, and a copy of a map has the same names in it)
+      const project = ctx.projectId(), session = ctx.session();
       const answer = await ctx.confirm({ tool: name, text: what });
       if (answer !== "allowed") return { ...text(refusal(answer, what)), isError: true };
+      if (ctx.projectId() !== project || ctx.session() !== session) {
+        return { ...text(`While the DM was deciding, another map or level was opened, so this wasn't done: ${what}. Open the one it was meant for and ask again.`), isError: true };
+      }
     }
   }
   try {

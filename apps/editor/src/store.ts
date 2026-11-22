@@ -6,7 +6,7 @@
 import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
-  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize,
+  PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize, EDIT_MESSAGES, IMAGE_HEAD_BYTES, imageSize,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
 
@@ -51,7 +51,7 @@ export interface AppState {
   /** Valleys are being carved (the Carve valleys button waits). */
   carving: boolean;
   /** The AI assistant's questions waiting for the DM's OK (tools risky.ts), oldest first, with when each arrived (AskBox.tsx). */
-  asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number }[];
+  asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number; map?: string }[];
 }
 
 function loadLockPref(): boolean {
@@ -183,7 +183,9 @@ class Store {
   }
 
   send(msg: ClientMsg) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    // an edit says which map and level it was made on: the AI may open another meanwhile, and the server then refuses it rather than make it there
+    const out = EDIT_MESSAGES.has(msg.t) ? { ...msg, projectId: this.state.meta?.id, ...(this.state.levels && { level: this.state.levels.active }) } : msg;
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(out));
   }
 
   /** The DM selects something, or nothing. An area (or a climate region) locks Claude's edits to it while the lock preference is on. */
@@ -255,9 +257,10 @@ class Store {
     this.set({ pictureNote: { text: take.length === 1 ? "Adding the picture…" : `Adding ${take.length} pictures…`, busy: true, at: Date.now() } });
     const added: string[] = [], problems: string[] = [];
     for (const f of take) {
-      const kind = pictureKind(new Uint8Array(await f.slice(0, PICTURE_HEAD_BYTES).arrayBuffer()));
+      const head = new Uint8Array(await f.slice(0, IMAGE_HEAD_BYTES).arrayBuffer());
+      const kind = pictureKind(head.subarray(0, PICTURE_HEAD_BYTES));
       const name = f.name || `pasted-picture.${kind === "jpeg" ? "jpg" : kind ?? "png"}`;
-      const problem = referencePictureProblem(name, kind, f.size);
+      const problem = referencePictureProblem(name, kind, f.size, imageSize(head));
       if (problem) { problems.push(problem); continue; }
       const r = await uploadPicture(`/api/projects/${encodeURIComponent(id)}/refs`, f, name);
       if (r.ok) added.push(r.name); else problems.push(r.message);
@@ -358,7 +361,7 @@ class Store {
         this.set({ pictureNote: { text: `"${m.name}" is a copy of "${m.from}", now open: change it, and compare it with the original from the Map panel. The original is left as it was.`, busy: false, at: Date.now(), ms: 9000 } });
         break;
       case "confirm":
-        if (!this.state.asks.some((a) => a.id === m.id)) this.set({ asks: [...this.state.asks, { id: m.id, via: m.via, tool: m.tool, text: m.text, waitMs: m.waitMs, at: Date.now() }] });
+        if (!this.state.asks.some((a) => a.id === m.id)) this.set({ asks: [...this.state.asks, { id: m.id, via: m.via, tool: m.tool, text: m.text, waitMs: m.waitMs, at: Date.now(), ...(m.map && { map: m.map }) }] });
         break;
       case "confirm_done":
         this.set({ asks: this.state.asks.filter((a) => a.id !== m.id) });

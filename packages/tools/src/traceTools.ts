@@ -7,7 +7,7 @@ import { z } from "zod";
 import {
   IMAGE_HEAD_BYTES, type MapDoc, type RGBAImage, type TracePicture, battleSpec, citySpec, cleanTrace, fitTrace, imageSize, isBattle, isCity, overlayTrace, traceFromPins, traceSummary,
 } from "@mapmaker/core";
-import { decodeImage } from "./images.ts";
+import { inlinePictures } from "./images.ts";
 import type { ToolContext } from "./tools.ts";
 import { define, fail, json, text } from "./toolKit.ts";
 
@@ -105,7 +105,7 @@ export async function traceOverlay(ctx: ToolContext, img: RGBAImage, region: { x
   if (!bytes) return `, the trace picture ${t.ref} is missing from the references`;
   const key = `${t.ref}:${bytes.byteLength}`;
   if (decoded?.key !== key) {
-    const pic = decodeImage(bytes);
+    const pic = await (ctx.pictures ?? inlinePictures).decode(bytes).catch(() => null);
     if (!pic) return `, the trace picture ${t.ref} can't be read`;
     decoded = { key, img: pic };
   }

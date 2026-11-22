@@ -18,7 +18,15 @@ export const RISKY_TOOLS = new Set([
   "remove_place", "remove_label", "remove_climate_region", "remove_river_source", "remove_line", "remove_water_name",
   "remove_city_labels", "remove_city_districts", "remove_buildings", "remove_streets", "remove_city_walls",
   "remove_props", "remove_walls", "remove_lights", "remove_light_zones", "remove_notes", "remove_land", "remove_trees", "remove_connectors", "remove_roofs",
+  // renaming a named thing replaces the DM's canon as surely as removing it (added 2026-11-22)
+  "update_place", "update_label", "update_climate_region", "name_water", "update_city_labels", "update_city_districts",
 ]);
+
+/** Renaming `from` to `to` (both names): the question, or null when the name stays (or there was none). */
+function renaming(what: string, from: string | undefined, to: unknown): string | null {
+  if (typeof to !== "string" || !to.trim() || !from?.trim() || to.trim() === from.trim()) return null;
+  return `Rename the ${what} ${q(from)} to ${q(to.trim())}`;
+}
 
 type Named = { id: string; name?: string; text?: string };
 const q = (s: string) => `"${s}"`;
@@ -105,6 +113,17 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
     case "remove_trees": return removal(ids, undefined, "group of trees", "groups of trees");
     case "remove_connectors": return removal(ids, undefined, "stair, ladder or hole", "stairs, ladders and holes");
     case "remove_roofs": return removal(ids, undefined, "roof", "roofs");
+    case "update_place": return renaming("place", find(f.places, String(i.place))?.name, i.name);
+    case "update_label": { const l = find(f.labels as Named[], String(i.label)); return renaming("label", l?.text ?? l?.name, i.text); }
+    case "update_climate_region": return renaming("climate region", find(f.regions, String(i.region))?.name, i.name);
+    case "name_water": return typeof i.water === "string" && i.water.trim() ? renaming("water", find(f.waterNames, i.water)?.name, i.name) : null;
+    case "update_city_labels":
+    case "update_city_districts": {
+      const list = (name === "update_city_labels" ? f.labels : f.districts) as Named[] | undefined;
+      const changes = Array.isArray(i.changes) ? (i.changes as { id?: string; text?: string; name?: string }[]) : [];
+      const renamed = changes.map((c) => { const was = list?.find((x) => x.id === c.id); return renaming(name === "update_city_labels" ? "name" : "district", was?.text ?? was?.name, name === "update_city_labels" ? c.text : c.name); }).filter((s): s is string => !!s);
+      return renamed.length === 0 ? null : renamed.length === 1 ? renamed[0] : `${renamed.length} renamings: ${renamed.slice(0, 3).join("; ")}${renamed.length > 3 ? " and more" : ""}`;
+    }
   }
   return null;
 }

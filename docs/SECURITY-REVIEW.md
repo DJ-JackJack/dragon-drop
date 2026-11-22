@@ -36,8 +36,10 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   key's length, the start command's length and control characters. Folders are chosen in Windows' own dialog, never from the page.
 - **The page can't run foreign code**: the editor sets no raw HTML anywhere (no `dangerouslySetInnerHTML`, `innerHTML`, `document.write`), map
   text is shown through React, which escapes it; the Content-Security-Policy allows only the program's own scripts (no inline script) and
-  connections only back to its own server; every response is `nosniff` and `no-referrer`; asset and reference pictures are served only as
-  PNG, JPEG or WebP (anything else as a download), SVG and HTML never.
+  connections only back to its own server; every response is `nosniff` and `no-referrer`. A map's reference pictures and previews are served
+  only as PNG, JPEG or WebP (`sendPicture` in `http.ts`; anything else in those folders is not found), with a policy that forbids everything and
+  a sandbox; asset pictures likewise. *(Until 2026-11-22 an `.html` or `.svg` file in a map's `refs` folder was sent as a page, with no policy:
+  found in the adversarial review.)* The bridge also refuses any page under `/api/` (`fromEditor`).
 - **The server**: on 127.0.0.1 only, Host and Origin checked first, then the access key on every `/api`, `/mcp` and `/ws` request (compared in
   constant time); the window's cookie is HttpOnly and SameSite=Strict; the phone page is off until the person turns it on. (Tested by the
   smoke test: a request without the key gets 401.)
@@ -48,6 +50,28 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
 - **The terminal** never types on its own unless Claude Code's hooks say it is idle, and then only the one line the person asked to send.
 - **Assistants and risky actions**: removing or replacing things waits for the person's Allow in the editor or on the phone (a prompt
   injection in a place's notes, telling the AI to delete every place, is in the model check and is stopped).
+
+## Found in the adversarial review (2026-11-22) and fixed
+
+- **The window went to IPv6 first.** It opened `http://localhost:<port>/?t=<key>`, and Electron tries `[::1]` before `127.0.0.1` (tried: a test
+  server on `[::1]` got the key), while the server listens on `127.0.0.1` only. Another program or Windows user listening on `[::1]` at that port
+  would have been sent the access key and treated as the editor (the bridge, the terminal). The window, its navigation rule and `fromEditor` now
+  use `127.0.0.1` (`editorOrigin` in `main.cjs`), and the start-up check fails if the window is on another address.
+- **The build could be taken over by a bad dependency.** The installer job had write access on every push, and the checkout kept the token for
+  later steps (which run every package's install scripts). Now every job reads only (`permissions: contents: read`, `persist-credentials: false`),
+  and only a separate `publish` job, for version tags, may write: it runs no install scripts, only the release action on the files built before.
+- **The access key couldn't be changed.** Settings → Access key → Make a new access key (`dd:new-access-key`): the old key stops everywhere.
+- **The PC's environment reached the server**: a `MAPMAKER_ASK_BEFORE_RISKY=0` there turned off the Allow box, and an `ANTHROPIC_BASE_URL` would have
+  sent the chat elsewhere. The Windows app now passes the server no `MAPMAKER_*` or `ANTHROPIC_*` variable it didn't set itself.
+- **A small file could claim a huge picture** (a 137 KB PNG of 12,000 pixels square took 828 MB and a second to read). Pictures over 40 million
+  pixels are refused before they are read (`PICTURE_MAX_PIXELS`), and reference pictures are read on a worker thread (`ToolContext.pictures`).
+- **The AI's Undo took back the DM's own changes**, outside a locked area too, without asking. It now undoes and redoes only its own changes, and
+  under a lock only those made under it (`NotYourChangeError`, `checkAiHistory` in `session.ts`). Renaming a named place, label, region, river or
+  lake, name or district now asks the DM, like removing one, and a named lake can't be drained by a point on it.
+- The developer setup's editor port (5173) is no longer let in by the sold app (`MAPMAKER_DEV_EDITOR_PORT`, set empty by the Windows app).
+- *(second pass)* **The Allow box could act on another map**: a risky call waits up to two minutes, and another call could open another map (a
+  copy of it has the same names) meanwhile. `runTool` now refuses the action if the open map or level changed while the DM decided, and the box
+  names the map. A pack whose author wrote "no" as text is now held to it too (`forbidsUse`), and the worker's errors no longer carry file paths.
 
 ## Left, for the person and for the reviewer
 
@@ -70,6 +94,11 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   version wrote (`RETIRED_TARGETS` in `assistants.cjs`).
 - **R7. Claude Code's workspace pre-approves the map tools** (`mcp__mapmaker` in `.claude/settings.json`), so ordinary edits don't ask:
   every edit can be undone, and the risky ones ask in Dragon Drop itself.
+- **R8. An assistant that can run commands could answer the Allow box itself.** The terminal's assistant has the access key in its environment
+  (`DRAGON_DROP_KEY`, so its map tools work), so a command it runs could talk to the server as the editor does, Allow included, or change the map
+  files directly. The Allow box guards against the AI's choice of map tools (a confused model, a prompt injection in a place's notes), not against a
+  program running on the PC. Claude Code asks before running any command (only the map tools are pre-approved); for another assistant, keep
+  its own "ask before commands" setting on.
 
 ## Keeping Electron current
 

@@ -42,10 +42,25 @@ export function pictureKind(b: Uint8Array): PictureKind | null {
 const SAVE_AS = "Save it as PNG or JPEG first (most picture programs can: Save as, or Export)";
 
 /** Null when the picture can be used; otherwise one or two sentences for the person, naming the file and saying what to do. */
-export function referencePictureProblem(name: string, kind: PictureKind | null, bytes: number): string | null {
+/**
+ * The most pixels a picture may have (40 megapixels, about 7700 x 5200): a small file can claim a huge picture (a 137 KB PNG that said 12,000 pixels square
+ * took 828 MB and a second of the server's time to read), so the size it says is checked before it is read.
+ */
+export const PICTURE_MAX_PIXELS = 40_000_000;
+
+/** What is wrong with a picture as big as `size` says, or null. */
+export function picturePixelsProblem(name: string, size: { w: number; h: number } | null | undefined): string | null {
+  if (!size || size.w * size.h <= PICTURE_MAX_PIXELS) return null;
+  return `"${oneLine(name || "The picture", 60)}" is ${size.w.toLocaleString("en")} x ${size.h.toLocaleString("en")} pixels, and a picture can have at most ${PICTURE_MAX_PIXELS / 1e6} million (about 7700 x 5200). Save a smaller copy first.`;
+}
+
+/** What is wrong with a picture as a reference, for the person, or null. `size`, when known, is its size in pixels (`imageSize`). */
+export function referencePictureProblem(name: string, kind: PictureKind | null, bytes: number, size?: { w: number; h: number } | null): string | null {
   const n = `"${oneLine(name || "The picture", 60)}"`;
   if (bytes === 0) return `${n} is empty.`;
   if (bytes > REFERENCE_PICTURE_MAX_BYTES) return `${n} is ${(bytes / 1048576).toFixed(0)} MB, and a picture can be at most ${REFERENCE_PICTURE_MAX_BYTES / 1048576} MB. Save a smaller copy, as JPEG, first.`;
+  const big = picturePixelsProblem(name, size);
+  if (big && (kind === "png" || kind === "jpeg" || kind === "webp")) return big;
   switch (kind) {
     case "png": case "jpeg": case "webp": return null;
     case "webp-animated": return `${n} is an animated WebP. Only still pictures can be used: save one frame of it as PNG or JPEG.`;

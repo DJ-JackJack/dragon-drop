@@ -210,7 +210,7 @@ Dragon Drop does not turn off the assistant's own questions: Codex, Gemini CLI, 
 
 ## 7. The map on your phone (Tailscale)
 
-> **In the Windows app** the steps are shorter: do steps 1 to 3 below, then enter the address `tailscale serve` printed (without `https://`) in **Settings → Phone page** and press Save. Settings then has **Copy the phone link** (it holds your access key: open it once on your phone). The phone page is off until you do this. Steps 4 to 6 are for the developer setup.
+> **In the Windows app** the steps are shorter: do steps 1 to 3 below, then enter the address `tailscale serve` printed (without `https://`) in **Settings → Phone page** and press Save. Settings then has **Copy the phone link** (it holds your access key: open it once on your phone). The phone page is off until you do this. If the link went somewhere it shouldn't, or a phone with it is lost, **Settings → Access key → Make a new access key** stops the old key everywhere (the phone then needs the new link). Steps 4 to 6 are for the developer setup.
 
 The app has a phone-friendly, view-only page at **/view**. It shows the map with its labels, updates live as you or Claude edit, and lets you tap a place to read its notes. Pinch to zoom, drag to pan and double-tap to zoom in. **Places** lists every named place. On the PC you can try it now at <http://localhost:4747/view>.
 

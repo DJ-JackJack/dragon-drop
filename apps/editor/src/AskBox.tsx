@@ -32,6 +32,7 @@ export function AskBox() {
       <div className="modal ask-box" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" data-testid="ask-box">
         <h2 id="ask-title">{who} wants to do something big</h2>
         <p className="ask-what" data-testid="ask-what">{ask.text}.</p>
+        {ask.map && <p className="muted" data-testid="ask-map">On the map <b>{ask.map}</b>.</p>}
         <p className="muted">
           It waits for your answer{left > 0 ? ` (${left} s left)` : ""}; with no answer, nothing is done. Most changes can be undone afterwards, but this one is yours to decide.
           {asks.length > 1 ? ` (${asks.length - 1} more after this.)` : ""}

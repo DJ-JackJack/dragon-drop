@@ -60,7 +60,7 @@ export const ESSENTIAL_INSTRUCTIONS = `You help a Dungeons & Dragons game master
 Tools for one kind refuse on the others. get_map_summary says which kind is open.
 
 # How to work
-- At the start of each turn call get_changes_since with the last change number you saw: the DM may have edited by hand. Never undo their edits silently.
+- At the start of each turn call get_changes_since with the last change number you saw: the DM may have edited by hand. undo takes back only your own changes, never theirs.
 - Look before and after: render_preview (render_battlemap, render_city) shows the map. If you can't see pictures, use get_map_summary and the list tools instead.
 - One small step at a time, and say briefly what you changed. If a request is unclear in a way that changes the result (where, how big), ask one short question.
 - save_checkpoint before a big experiment; undo takes back your last change.

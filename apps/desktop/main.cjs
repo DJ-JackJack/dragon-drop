@@ -53,7 +53,12 @@ let restarting = false;
 // ---------------------------------------------------------------- settings
 function loadSettings() {
   settingsFile = path.join(app.getPath("userData"), "settings.json");
-  try { settings = JSON.parse(fs.readFileSync(settingsFile, "utf8")); } catch { settings = {}; }
+  try { settings = JSON.parse(fs.readFileSync(settingsFile, "utf8")); } catch (e) {
+    settings = {};
+    // a damaged file is kept aside rather than written over (it still says where the maps are)
+    if (!(e && e.code === "ENOENT")) { try { fs.renameSync(settingsFile, `${settingsFile.replace(/\.json$/, "")}.unreadable-${Date.now()}.json`); } catch { /* can't move it: it is replaced */ } }
+  }
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) settings = {};
   // The access key: every request to this app's own server (the editor window, Claude Code's map tools, its hooks) carries it, so another program,
   // another Windows user or a web page can't drive the app. Made once per install and kept in the settings file (readable only by this user).
   if (typeof settings.accessToken !== "string" || settings.accessToken.length < 32) {
@@ -65,7 +70,9 @@ function loadSettings() {
 function saveSettings() {
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
   const tmp = `${settingsFile}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(settings, null, 2), { mode: 0o600 });
+  // on the disk before the rename (a power cut could otherwise leave an empty settings file: the maps folder and the key forgotten)
+  const fd = fs.openSync(tmp, "w", 0o600);
+  try { fs.writeFileSync(fd, JSON.stringify(settings, null, 2)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, settingsFile);
 }
 
@@ -176,13 +183,15 @@ async function startServer() {
   try { if (fs.statSync(logFile()).size > 2_000_000) fs.rmSync(logFile()); } catch { /* no log yet */ }
   const out = fs.createWriteStream(logFile(), { flags: "a" });
   out.write(`\n--- ${new Date().toISOString()} starting on port ${port}, maps in ${settings.projectsDir} ---\n`);
+  // The server gets only the settings chosen here: none of the developer setup's MAPMAKER_* switches (one turns off the Allow box) nor an ANTHROPIC_* key
+  // or address from the PC's environment (the chat uses the key entered in Settings, and talks only to Anthropic).
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(MAPMAKER_|ANTHROPIC_)/i.test(k)));
   const env = {
-    ...process.env, ELECTRON_RUN_AS_NODE: "1", MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1",
+    ...inherited, ELECTRON_RUN_AS_NODE: "1", MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1", MAPMAKER_DEV_EDITOR_PORT: "",
     MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: settings.projectsDir, MAPMAKER_EDITOR_DIST: editorDir, MAPMAKER_ACCESS_TOKEN: settings.accessToken,
   };
   // the phone page is reached only through an address the person chose in Settings (their Tailscale name); one set in the PC's environment for the
   // developer setup is not taken, so the phone page stays off unless chosen here
-  delete env.MAPMAKER_ALLOWED_HOSTS;
   if (settings.phoneHost) env.MAPMAKER_ALLOWED_HOSTS = settings.phoneHost;
   const key = getApiKey();
   if (key) env.ANTHROPIC_API_KEY = key;
@@ -237,8 +246,27 @@ async function restartServer() {
 }
 
 // ---------------------------------------------------------------- window
+/**
+ * The editor's own address. 127.0.0.1, never "localhost": the window tries IPv6 ([::1]) first for "localhost", and the server listens on IPv4 only, so
+ * another program (another Windows user's, say) listening on [::1] at this port would be sent the access key and would count as the editor (found 2026-11-22).
+ */
+const editorOrigin = () => `http://127.0.0.1:${port}`;
 /** The editor's address with the access key: the server turns it into a session cookie and redirects to the plain address. */
-const editorUrl = () => `http://localhost:${port}/?t=${settings.accessToken}`;
+const editorUrl = () => `${editorOrigin()}/?t=${settings.accessToken}`;
+
+/** The file on disk behind one of the server's picture addresses (/api/projects/<map>/refs/<name> or .../previews/<name>), or null: only pictures inside the maps folder. */
+function ownPicture(url) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  if (u.origin !== editorOrigin() || !settings.projectsDir) return null;
+  const m = u.pathname.match(/^\/api\/projects\/([a-z0-9][a-z0-9-]{0,63})\/(refs|previews)\/([^/]+)$/);
+  if (!m) return null;
+  let name;
+  try { name = decodeURIComponent(m[3]); } catch { return null; }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}\.(png|jpe?g|webp)$/i.test(name) || name.includes("..")) return null;
+  const file = path.join(settings.projectsDir, m[1], m[2] === "refs" ? "refs" : path.join("map", "previews"), name);
+  try { return fs.statSync(file).isFile() ? file : null; } catch { return null; }
+}
 
 function createWindow() {
   const overlay = process.platform === "win32" || process.platform === "darwin";
@@ -251,11 +279,14 @@ function createWindow() {
   win.once("ready-to-show", () => { if (!SMOKE || process.env.DRAGON_DROP_SHOT) win.show(); });
   win.loadURL(editorUrl());
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) void shell.openExternal(url);
+    // a picture of a map's (a chat attachment, a preview) opens in Windows' own picture viewer: the web browser has no access key, and would show "Unauthorized"
+    const picture = ownPicture(url);
+    if (picture) void shell.openPath(picture);
+    else if (/^https?:/i.test(url) && !url.startsWith(`${editorOrigin()}/`)) void shell.openExternal(url);
     return { action: "deny" };
   });
   const keepLocal = (e, url) => {
-    if (!url.startsWith(`http://localhost:${port}/`)) { e.preventDefault(); if (/^https?:/i.test(url)) void shell.openExternal(url); }
+    if (!url.startsWith(`${editorOrigin()}/`)) { e.preventDefault(); if (/^https?:/i.test(url)) void shell.openExternal(url); }
   };
   win.webContents.on("will-navigate", keepLocal);
   win.webContents.on("will-redirect", keepLocal);
@@ -650,7 +681,8 @@ function setupUpdater() {
 }
 
 // ---------------------------------------------------------------- bridge to the editor (see preload.cjs)
-const fromEditor = (e) => !!win && e.senderFrame && e.senderFrame.url.startsWith(`http://localhost:${port}/`);
+// (only the editor's own pages: a picture or file the server sends is never a page that can reach this bridge, see http.ts sendStored)
+const fromEditor = (e) => !!win && e.senderFrame && e.senderFrame.url.startsWith(`${editorOrigin()}/`) && !/^\/api\//.test(new URL(e.senderFrame.url).pathname);
 
 ipcMain.on("dd:version", (e) => { e.returnValue = app.getVersion(); });
 ipcMain.handle("dd:settings", (e) => {
@@ -757,6 +789,17 @@ ipcMain.handle("dd:set-phone-host", async (e, text) => {
   await restartServer();
   return host;
 });
+// a new access key (Settings): the old one stops working everywhere (a lost phone, a link sent to the wrong place); the server starts again with it,
+// the window gets its new cookie, and the assistant's files are written again with it
+ipcMain.handle("dd:new-access-key", async (e) => {
+  if (!fromEditor(e)) return false;
+  settings.accessToken = crypto.randomBytes(32).toString("hex");
+  saveSettings();
+  killTerminal();
+  const ok = await restartServer();
+  try { writeClaudeWorkspace(findClaude()); } catch { /* written again when the terminal starts */ }
+  return ok;
+});
 ipcMain.handle("dd:open-claude", (e, opts) => {
   if (!fromEditor(e)) return { ok: false, reason: "not-allowed" };
   try { return openClaude(!(opts && opts.launch === false)); } catch (err) { return { ok: false, reason: String(err && err.message ? err.message : err) }; }
@@ -852,7 +895,8 @@ async function smokeTest() {
         const keyed = await fetch(`http://127.0.0.1:${port}/api/health`, { headers: { authorization: `Bearer ${settings.accessToken}` } }).catch(() => null);
         if (!keyed || keyed.status !== 200) return fatal(`the server refused the access key (${keyed ? keyed.status : "no answer"})`);
         if (here.includes("t=")) return fatal(`the access key was left in the window's address: ${here}`);
-        const page = await fetch(`http://localhost:${port}/`).catch(() => null);
+        if (!here.startsWith(`http://127.0.0.1:${port}/`)) return fatal(`the window isn't on the IPv4 address (a "localhost" one goes to IPv6 first): ${here}`);
+        const page = await fetch(`http://127.0.0.1:${port}/`).catch(() => null);
         if (!page || !page.headers.get("content-security-policy") || page.headers.get("x-content-type-options") !== "nosniff") return fatal("the editor page is served without its security headers");
         const ptyOk = await ptySelfTest();
         if (!ptyOk) return fatal("the pseudo-terminal could not run a command");

@@ -6,12 +6,18 @@ on:
     tags: ["v*"] # a version tag such as v0.1.1 also publishes a GitHub Release (what the in-app updater reads)
   workflow_dispatch:
 
+# Every job reads only, unless it says otherwise: only "publish" (version tags) may write, and it runs no project code (found 2026-11-22: the build,
+# which runs every package's install scripts, had write access on every push and kept the token in the checkout, so a bad package could publish a release).
+permissions:
+  contents: read
+
 jobs:
   checks:
     name: Type check and tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false } # (no later step needs the token: a package's script can't take it)
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
@@ -22,14 +28,13 @@ jobs:
   windows-installer:
     name: Dragon Drop installer (Windows)
     runs-on: windows-latest
-    permissions:
-      contents: write # only used to publish a Release for version tags
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false" # no certificate in the runner's store; signing, when set up, goes through Microsoft's Artifact Signing
       # Code signing (docs/SIGNING.md) is on only when the SIGN_ENDPOINT repository secret exists; without it the build is unsigned, as before.
       SIGNING: ${{ secrets.SIGN_ENDPOINT != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false } # (no later step needs the token: a package's script can't take it)
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 24, cache: pnpm }
@@ -159,14 +164,37 @@ jobs:
           if-no-files-found: error
           # only this run's older-windows job needs it (a release's installer is on the release page)
           retention-days: 1
-      - name: Publish the release (version tags only)
+      - name: Keep the release files for the publish job (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          files: |
+          name: Dragon-Drop-release-files
+          path: |
             apps/desktop/release/Dragon-Drop-Setup-*.exe
             apps/desktop/release/Dragon-Drop-Setup-*.exe.blockmap
             apps/desktop/release/latest.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    # The only job that may write to the repository: it runs no install scripts and no project code, only the release action on the files built above.
+    name: Publish the release (version tags only)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-installer, older-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Dragon-Drop-release-files
+          path: release
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          files: |
+            release/Dragon-Drop-Setup-*.exe
+            release/Dragon-Drop-Setup-*.exe.blockmap
+            release/latest.yml
           generate_release_notes: true
 
   older-windows:

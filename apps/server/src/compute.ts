@@ -5,7 +5,7 @@
 import { Worker } from "node:worker_threads";
 import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
-  type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
+  type Features, type SpriteData, type TileData, HeightField, boxResize, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
@@ -13,7 +13,7 @@ import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOpt
 /** What the picture reader is asked for: buildings, streets or water (core cityReader.ts). */
 export type ReadJob = { what: "buildings"; opts: ReaderOptions } | { what: "streets"; opts: StreetReadOptions } | { what: "water"; opts: WaterReadOptions };
 export type ReadAnswer = ReturnType<typeof readBuildings> | ReturnType<typeof readStreets> | ReturnType<typeof readWater>;
-import { decodeImage } from "@mapmaker/tools";
+import { type PreparedReference, decodeImage, encodePngRgba, prepareReference } from "@mapmaker/tools";
 import { NoiseStore } from "./noiseStore.ts";
 
 export interface MapCompute {
@@ -37,6 +37,12 @@ export interface MapCompute {
   carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult>;
   /** One lake drained (core terrainDrain.ts drainLakeAt): the new heights of the whole map and what was done; the map itself is not changed. */
   drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }): Promise<DrainLakeResult & { heights: Float32Array }>;
+  /** A small PNG of a picture, at most `max` px a side, and the picture's own size (the asset library's thumbnails); null when it can't be read. */
+  thumbnail(bytes: Uint8Array, max: number): Promise<Thumbnail | null>;
+  /** A picture (PNG, JPEG, WebP) as RGBA, or null when it isn't one that can be read; a picture over PICTURE_MAX_PIXELS is refused with a message. */
+  decodePicture(bytes: Uint8Array): Promise<RGBAImage | null>;
+  /** A reference picture as a JPEG no bigger than `maxPx` a side (a part of it with `region`), and its size (tools images.ts prepareReference). */
+  preparePicture(bytes: Uint8Array, maxPx: number, region?: { x: number; y: number; w: number; h: number }): Promise<PreparedReference | null>;
   close(): Promise<void>;
 }
 
@@ -56,6 +62,19 @@ export interface BattleRenderOpts {
   roofTiles?: Record<string, TileData>;
 }
 
+/** A thumbnail: a small PNG, and the size of the picture it was made from. */
+export interface Thumbnail { png: Uint8Array; w: number; h: number }
+
+/** A picture made small (box filter, never enlarged) and written as PNG with its see-through parts. */
+export function thumbnailOf(bytes: Uint8Array, max: number): Thumbnail | null {
+  const img = decodeImage(bytes);
+  if (!img) return null;
+  const k = Math.min(1, max / Math.max(img.w, img.h));
+  const w = Math.max(1, Math.round(img.w * k)), h = Math.max(1, Math.round(img.h * k));
+  const data = k < 1 ? boxResize(img.data, img.w, img.h, w, h) : img.data;
+  return { png: encodePngRgba({ w, h, data }), w: img.w, h: img.h };
+}
+
 // ------------------------------------------------------------------ shared job runner
 export type Job =
   | { op: "derive"; W: number; H: number; heights: Float32Array; meta: MapMeta; regions?: ClimateRegion[]; baseClimate?: BaseClimate; inflows?: RiverInflow[]; seq: number }
@@ -67,7 +86,10 @@ export type Job =
   | { op: "read_as"; key: string; bytes: Uint8Array; job: ReadJob }
   | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> }
   | { op: "carve"; W: number; H: number; heights: Float32Array; meta: MapMeta; rivers: RiverPath[]; opts: CarveOptions }
-  | { op: "drain"; W: number; H: number; heights: Float32Array; meta: MapMeta; x: number; y: number; opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number } };
+  | { op: "drain"; W: number; H: number; heights: Float32Array; meta: MapMeta; x: number; y: number; opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number } }
+  | { op: "decode"; bytes: Uint8Array }
+  | { op: "thumb"; bytes: Uint8Array; max: number }
+  | { op: "reference"; bytes: Uint8Array; maxPx: number; region?: { x: number; y: number; w: number; h: number } };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
 
@@ -107,7 +129,10 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | null {
+    if (job.op === "decode") return decodeImage(job.bytes);
+    if (job.op === "thumb") return thumbnailOf(job.bytes, job.max);
+    if (job.op === "reference") return prepareReference(job.bytes, job.maxPx, job.region);
     if (job.op === "carve") return carveValleys(job.heights, job.W, job.H, job.meta.seaLevel, job.rivers, job.opts);
     if (job.op === "drain") { const h = job.heights.slice(); return { ...drainLakeAt(h, job.W, job.H, job.meta.seaLevel, job.x, job.y, job.opts), heights: h }; }
     if (job.op === "city") {
@@ -192,6 +217,18 @@ export class InlineCompute implements MapCompute {
   async drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }) {
     return this.runner.run({ op: "drain", ...snapshot(doc), x, y, opts }) as DrainLakeResult & { heights: Float32Array };
   }
+  async decodePicture(bytes: Uint8Array): Promise<RGBAImage | null> {
+    return decodeImage(bytes);
+  }
+
+  async thumbnail(bytes: Uint8Array, max: number): Promise<Thumbnail | null> {
+    return thumbnailOf(bytes, max);
+  }
+
+  async preparePicture(bytes: Uint8Array, maxPx: number, region?: { x: number; y: number; w: number; h: number }): Promise<PreparedReference | null> {
+    return prepareReference(bytes, maxPx, region);
+  }
+
   async close() {}
 }
 
@@ -284,6 +321,25 @@ export class WorkerCompute implements MapCompute {
     if (this.painter.dead) return this.inline.city(doc, opts);
     const s = snapshot(doc);
     return this.painter.call<RGBAImage>({ op: "city", ...s, features: structuredClone(doc.features ?? { places: [], labels: [] }), ...opts }, [s.heights.buffer as ArrayBuffer]);
+  }
+
+  // (pictures are read on the painter's thread: a big one takes a second or more, and the climate thread runs after every edit)
+  decodePicture(bytes: Uint8Array): Promise<RGBAImage | null> {
+    if (this.painter.dead) return this.inline.decodePicture(bytes);
+    const copy = bytes.slice(); // (sent over, not shared: the caller keeps its own)
+    return this.painter.call<RGBAImage | null>({ op: "decode", bytes: copy }, [copy.buffer as ArrayBuffer]);
+  }
+
+  thumbnail(bytes: Uint8Array, max: number): Promise<Thumbnail | null> {
+    if (this.painter.dead) return this.inline.thumbnail(bytes, max);
+    const copy = bytes.slice();
+    return this.painter.call<Thumbnail | null>({ op: "thumb", bytes: copy, max }, [copy.buffer as ArrayBuffer]);
+  }
+
+  preparePicture(bytes: Uint8Array, maxPx: number, region?: { x: number; y: number; w: number; h: number }): Promise<PreparedReference | null> {
+    if (this.painter.dead) return this.inline.preparePicture(bytes, maxPx, region);
+    const copy = bytes.slice();
+    return this.painter.call<PreparedReference | null>({ op: "reference", bytes: copy, maxPx, ...(region && { region }) }, [copy.buffer as ArrayBuffer]);
   }
 
   readPicture(key: string, bytes: Uint8Array, opts: ReaderOptions): Promise<ReadResult> {

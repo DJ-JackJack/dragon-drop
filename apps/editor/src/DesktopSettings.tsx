@@ -36,6 +36,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
     return () => { alive = false; window.clearInterval(t); };
   }, []);
   const [copied, setCopied] = useState(false);
+  const [sureKey, setSureKey] = useState(false);
   const [upd, setUpd] = useState<{ status: string; version: string | null; message: string; channel?: string; movedTo?: string } | null>(null);
   useEffect(() => {
     let alive = true;
@@ -97,6 +98,17 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               <div className="row end"><button onClick={() => void navigator.clipboard.writeText(`https://${s.phoneHost}/view?t=${encodeURIComponent((s.mcpHeader ?? "").replace(/^Authorization: Bearer /, ""))}`)} data-testid="phone-link-copy">Copy the phone link</button></div>
             </>
           )}
+        </fieldset>
+
+        <fieldset disabled={!!busy}>
+          <legend>Access key</legend>
+          <p className="muted">Everything that talks to Dragon Drop (this window, the AI assistant's map tools, the phone page) carries a secret key, so other programs and web pages can't. If the phone link went somewhere it shouldn't, or a phone with it was lost, make a new key: the old one stops working everywhere. The phone then needs the new link, and an assistant you connected yourself, outside this window, needs its command again.</p>
+          <div className="row end">
+            <button data-testid="new-access-key"
+              onClick={() => { if (!sureKey) { setSureKey(true); return; } void run("Making a new key…", async () => { await bridge.newAccessKey(); setSureKey(false); }); }}>
+              {sureKey ? "Sure? Click again" : "Make a new access key"}
+            </button>
+          </div>
         </fieldset>
 
         <fieldset disabled={!!busy}>

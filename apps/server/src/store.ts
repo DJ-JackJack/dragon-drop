@@ -112,8 +112,15 @@ export function slugify(name: string): string {
   return plainLetters(name).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "map";
 }
 
-/** Every file a checkpoint entry keeps. */
-const entryFiles = (c: CheckpointEntry) => [...new Set([c.file, ...(c.levels ?? []).map((l) => l.file)])];
+/** Every file a checkpoint entry keeps (its own copy of the entry too: see `entryFileOf`). */
+const entryFiles = (c: CheckpointEntry) => [...new Set([c.file, ...(c.levels ?? []).map((l) => l.file), entryFileOf(c.file)])];
+/**
+ * Each checkpoint keeps a copy of its own list entry beside its files (`<name>-<time>.entry.json`), so a damaged list (index.json) can be rebuilt with every
+ * checkpoint's name, settings and places. (Checkpoints saved before 2026-11-22 have none: those are rebuilt from their file names.)
+ */
+const entryFileOf = (file: string) => file.replace(/\.f32\.gz$/, ".entry.json");
+/** A checkpoint's land file: `<slug>-<ms>.f32.gz`, or `<slug>-<ms>-<level id>.f32.gz` for another level of the same checkpoint. */
+const CHECKPOINT_FILE = /^(.+)-(\d{13})(?:-([a-z0-9][a-z0-9-]{0,31}))?\.f32\.gz$/;
 
 /** A date as a folder-name-safe stamp, e.g. 2026-11-18T18-27-43-123Z. */
 const stamp = (d = new Date()) => d.toISOString().replace(/[:.]/g, "-");
@@ -246,11 +253,13 @@ export class ProjectStore {
   async readLevels(id: string): Promise<LevelsFile> {
     const f = path.join(this.dir(id), "levels.json");
     if (!existsSync(f)) return defaultLevels();
+    // (a file that can't be read just now, such as an offline cloud file, stops the opening and is left alone: only one that reads but makes no sense is set aside)
+    const text = await readFile(f, "utf8");
     try {
-      const ok = cleanLevels(JSON.parse(await readFile(f, "utf8")));
+      const ok = cleanLevels(JSON.parse(text));
       if (ok) return ok;
     } catch {
-      /* unreadable: handled below */
+      /* not valid: handled below */
     }
     const aside = `levels.unreadable-${stamp()}.json`;
     await rename(f, path.join(this.dir(id), aside));
@@ -362,11 +371,14 @@ export class ProjectStore {
   private async readFeaturesAt(d: string, id: string, primary: boolean): Promise<Features> {
     const f = path.join(d, "features.json");
     if (!existsSync(f)) return emptyFeatures();
+    // A file that can't be read just now (an offline OneDrive file, one held by another program) stops the opening with its error and is left as it is:
+    // setting it aside would open the map without its places, and the next save would write that. Only a file that reads but isn't valid is set aside.
+    const text = await readFile(f, "utf8");
     try {
-      const v = JSON.parse(await readFile(f, "utf8")) as unknown;
+      const v = JSON.parse(text) as unknown;
       if (v && typeof v === "object" && !Array.isArray(v)) return v as Features;
     } catch {
-      /* unreadable: handled below */
+      /* not valid: handled below */
     }
     const aside = `features.unreadable-${stamp()}.json`;
     await rename(f, path.join(d, aside));
@@ -494,7 +506,7 @@ export class ProjectStore {
    */
   async addRef(id: string, name: string, bytes: Uint8Array): Promise<RefInfo> {
     const kind = pictureKind(bytes.subarray(0, PICTURE_HEAD_BYTES));
-    const problem = referencePictureProblem(name, kind, bytes.byteLength);
+    const problem = referencePictureProblem(name, kind, bytes.byteLength, imageSize(bytes));
     if (problem || !isReferenceKind(kind)) throw new PictureRefused(problem ?? "Not a picture.");
     const d = path.join(this.dir(id), "refs");
     await mkdir(d, { recursive: true });
@@ -563,18 +575,78 @@ export class ProjectStore {
     return path.join(this.dir(id), "map", "checkpoints");
   }
 
+  /**
+   * The list of checkpoints. A list that is damaged (or missing while checkpoint files are there) is never taken as empty: the next checkpoint would write a
+   * list with only itself, and every earlier one would drop off it. It is set aside and the list is rebuilt from the checkpoints' own files. A list that
+   * can't be read just now (held by another program) is an error, not an empty list.
+   */
   private async cpIndex(id: string): Promise<CheckpointEntry[]> {
-    const f = path.join(this.cpDir(id), "index.json");
-    if (!existsSync(f)) return [];
-    try {
-      return JSON.parse(await readFile(f, "utf8")) as CheckpointEntry[];
-    } catch {
-      return [];
+    const dir = this.cpDir(id);
+    const f = path.join(dir, "index.json");
+    if (existsSync(f)) {
+      const text = await readFile(f, "utf8");
+      try {
+        const v = JSON.parse(text) as unknown;
+        if (Array.isArray(v) && v.every((c) => c && typeof c === "object" && typeof c.name === "string" && typeof c.file === "string")) return v as CheckpointEntry[];
+      } catch { /* damaged: rebuilt below */ }
+      const aside = `index.unreadable-${stamp()}.json`;
+      try { await rename(f, path.join(dir, aside)); } catch { /* another reader set it aside first */ }
+      const rebuilt = await this.rebuildCpIndex(id);
+      this.notice(id, `This map's list of checkpoints was damaged. It has been kept as map/checkpoints/${aside}, and the list was made again from the checkpoints themselves (${rebuilt.length} found).`);
+      // written after whatever checkpoint change is running now (which writes a whole list itself)
+      void this.serial(id, async () => { if (!existsSync(f)) await atomicWrite(f, JSON.stringify(await this.rebuildCpIndex(id), null, 1)); }).catch(() => {});
+      return rebuilt;
     }
+    if (!existsSync(dir)) return [];
+    // no list, but checkpoints: an earlier list was lost (the first checkpoint's list is written after its files)
+    return (await readdir(dir)).some((n) => CHECKPOINT_FILE.test(n)) ? this.rebuildCpIndex(id) : [];
+  }
+
+  /** The checkpoint list made again from what is in the folder: each checkpoint's own copy of its entry, or (older ones) its file names. */
+  private async rebuildCpIndex(id: string): Promise<CheckpointEntry[]> {
+    const dir = this.cpDir(id);
+    const names = await readdir(dir);
+    const out: CheckpointEntry[] = [];
+    const covered = new Set<string>();
+    for (const n of names.filter((x) => x.endsWith(".entry.json"))) {
+      try {
+        const e = JSON.parse(await readFile(path.join(dir, n), "utf8")) as CheckpointEntry;
+        if (typeof e?.name !== "string" || typeof e.file !== "string" || !existsSync(path.join(dir, safeFileName(e.file)))) continue;
+        out.push(e);
+        for (const file of entryFiles(e)) covered.add(file);
+      } catch { /* a damaged copy: its files are picked up by name below */ }
+    }
+    // older checkpoints (no copy of their entry): one per land file, named from the file; another level's file joins its checkpoint when the level is known
+    const groups = new Map<string, { slug: string; ms: number; main?: string; levels: { id: string; file: string }[] }>();
+    for (const n of names) {
+      const m = CHECKPOINT_FILE.exec(n);
+      if (!m || covered.has(n)) continue;
+      const key = `${m[1]}-${m[2]}`;
+      const g = groups.get(key) ?? { slug: m[1], ms: Number(m[2]), levels: [] };
+      if (m[3]) g.levels.push({ id: m[3], file: n }); else g.main = n;
+      groups.set(key, g);
+    }
+    const taken = new Set(out.map((c) => c.name.toLowerCase()));
+    for (const g of groups.values()) {
+      if (!g.main) continue;
+      let name = `${g.slug.replace(/-/g, " ")} (recovered)`.slice(0, 60);
+      for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${g.slug.replace(/-/g, " ")} (recovered ${i})`.slice(0, 60);
+      taken.add(name.toLowerCase());
+      const entry: CheckpointEntry = { name, file: g.main, time: new Date(g.ms).toISOString(), seq: 0, note: "Recovered from its file after the checkpoint list was damaged: its places and settings weren't kept.", meta: {} };
+      // (which level the main file was isn't written in its name, so only the other levels come back with it)
+      if (g.levels.length) entry.levels = g.levels.map((l) => ({ id: l.id, file: l.file, meta: {} }));
+      out.push(entry);
+    }
+    return out.sort((a, b) => a.time.localeCompare(b.time));
   }
 
   async listCheckpoints(id: string): Promise<CheckpointInfo[]> {
-    return (await this.cpIndex(id)).map(({ meta: _m, features: _f, levels: _l, ...info }) => info);
+    try {
+      return (await this.cpIndex(id)).map(({ meta: _m, features: _f, levels: _l, ...info }) => info);
+    } catch (e) {
+      console.error(`[${id}] The checkpoint list couldn't be read just now:`, (e as Error).message); // (only shown: nothing is written from this)
+      return [];
+    }
   }
 
   /** Run `fn` after the earlier checkpoint changes for this map have finished. */
@@ -615,9 +687,12 @@ export class ProjectStore {
           entry.levels.push({ id: o.id, file: f, meta: o.meta, features: o.features, info: o.info });
         }
       }
+      // its own copy of the entry, beside its files: a damaged list can be made again from these (cpIndex)
+      await atomicWrite(path.join(this.cpDir(id), entryFileOf(file)), JSON.stringify(entry));
       index.push(entry);
       await atomicWrite(path.join(this.cpDir(id), "index.json"), JSON.stringify(index, null, 1));
-      for (const old of replaced) for (const f of entryFiles(old)) await rm(path.join(this.cpDir(id), safeFileName(f)), { force: true }); // (a leftover file is harmless; a dangling entry would not be)
+      const mine = new Set(entryFiles(entry));
+      for (const old of replaced) for (const f of entryFiles(old)) if (!mine.has(f)) await rm(path.join(this.cpDir(id), safeFileName(f)), { force: true }); // (a leftover file is harmless; a dangling entry would not be)
       const { meta: _m, features: _f, levels: _l, ...info } = entry;
       return info;
     });
@@ -637,7 +712,11 @@ export class ProjectStore {
 
   /** When the newest automatic checkpoint was taken (ms since 1970), or 0 if there is none. */
   async lastAutoCheckpointTime(id: string): Promise<number> {
-    return (await this.cpIndex(id)).filter((c) => c.auto).reduce((t, c) => Math.max(t, Date.parse(c.time) || 0), 0);
+    try {
+      return (await this.cpIndex(id)).filter((c) => c.auto).reduce((t, c) => Math.max(t, Date.parse(c.time) || 0), 0);
+    } catch {
+      return 0; // (can't be read just now: the next backup tries again, and says so if it fails)
+    }
   }
 
   async readCheckpoint(id: string, name: string) {
@@ -683,7 +762,18 @@ let tmpCount = 0;
 
 export async function atomicWrite(file: string, data: string | Uint8Array) {
   const tmp = `${file}.tmp-${process.pid}-${++tmpCount}`; // (its own name, so two writes of one file never share a temporary file)
-  await writeFile(tmp, data);
+  // on the disk before the rename: otherwise a power cut just after it can leave an empty file where the map's was (the rename can reach the disk first)
+  const fh = await open(tmp, "w");
+  try {
+    await fh.writeFile(data);
+    // (best effort: a drive that can't flush, such as some network or cloud drives, still saves, as it did before)
+    await fh.sync().catch(() => {});
+  } catch (e) {
+    await fh.close().catch(() => {});
+    await rm(tmp, { force: true }).catch(() => {});
+    throw e;
+  }
+  await fh.close();
   // On Windows a rename over a file that another program has open fails with EPERM/EBUSY/EACCES until it lets go: try again for a while (an automatic
   // backup was lost to a short hold in the tests; OneDrive and virus scanners hold a big map for seconds), and leave no temporary file behind
   for (let attempt = 0; ; attempt++) {

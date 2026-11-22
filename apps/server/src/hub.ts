@@ -5,7 +5,7 @@
 import type { WebSocket } from "ws";
 import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
-  type ClaudeState, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
+  type ClaudeState, type EditTarget, EDIT_MESSAGES, pointInPolygon, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
   PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleRoofRects, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, paintLakes, renderFull, routeWaypoints,
   type BattleExportFormat, battleKey, foundryConnectorProblems, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
@@ -15,7 +15,7 @@ import {
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
 } from "@mapmaker/core";
-import { type ToolContext, decodeImage, encodePng, encodePngRgba } from "@mapmaker/tools";
+import { type ToolContext, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
@@ -105,6 +105,8 @@ export class Hub {
   /** Clients that only want JSON (the phone viewer): no heightmap or derived-layer frames. */
   private lite = new WeakSet<WebSocket>();
   private opening: Promise<void> = Promise.resolve();
+  /** When an editor's edit was last refused for being meant for another map or level (the message is said once per stroke). */
+  private refusedAt = new WeakMap<WebSocket, number>();
   /** What happened at start that the person should know (a map that wouldn't open and was skipped): told to the first editor that connects. */
   private startupNotes: string[] = [];
   /** The user's asset library, when a folder is configured. */
@@ -247,6 +249,14 @@ export class Hub {
         waterKey: JSON.stringify(doc.features?.waterNames ?? []), net: null,
       };
       for (const rt of runtime) this.wire(op, rt);
+      // edits to the old map went on while this one was read: finish a stroke in progress and save them, then switch with nothing in between
+      // (they would otherwise be made after its last save, and lost with it)
+      const old = this.open;
+      if (old) {
+        for (const rt of old.runtime) if (rt.session.inTransaction) rt.session.commit();
+        for (let i = 0; old.dirty && i < 5; i++) await this.flush();
+        if (old.dirty) throw new Error(`The latest changes to "${old.session.doc.meta.name}" couldn't be saved just now, so it was kept open (nothing was lost). Try again in a moment.`);
+      }
       this.open = op;
       this.selection = null; this.selectionLock = false; this.view = null; // a selection belongs to the map it was made on
       this.broadcast({ t: "selection", selection: null, lock: false });
@@ -1008,6 +1018,12 @@ export class Hub {
       x = shape.x; y = shape.y; what = w.name;
     }
     if (x === undefined || y === undefined) throw new Error("Say which lake: x and y on it (map px), or a lake's name.");
+    if (!o.lake && author === "claude") {
+      // a named lake is canon: draining it asks the DM first, which goes by its name (tools risky.ts); a point on it must not get round that
+      const d = await this.refreshDerived(op, true), v = this.waterView(op);
+      const named = v?.named.find((n) => n.kind === "lake" && n.lake !== undefined && d?.hydro?.shapes[n.lake] && pointInPolygon(x!, y!, d.hydro.shapes[n.lake].outline));
+      if (named) throw new Error(`That point is in the lake "${named.name}", which has a name the DM gave it. Drain it by its name (lake: "${named.name}"), so the DM is asked first, and only if they want it gone.`);
+    }
     const doc = op.session.doc;
     const r = await this.compute.drain(doc, x, y, { mode: o.mode, maxCutM: o.maxCutM });
     if (this.open !== op) throw new Error("Another map was opened meanwhile.");
@@ -1279,7 +1295,11 @@ export class Hub {
     if (![...this.clients].some((c) => c.readyState === c.OPEN)) return Promise.resolve("nobody");
     const waitMs = this.opts.askWaitMs ?? 120_000;
     const id = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    const msg = { t: "confirm" as const, id, via, tool, text, waitMs };
+    // which map (and level) it is about: the DM may be looking at another, and a copy of a map has the same names in it
+    const op = this.open;
+    const level = op && op.runtime.length > 1 ? op.levels.levels.find((l) => l.id === op.levels.active)?.name : undefined;
+    const map = op ? `${op.session.doc.meta.name}${level ? `, ${level}` : ""}` : undefined;
+    const msg = { t: "confirm" as const, id, via, tool, text, waitMs, ...(map && { map }) };
     return new Promise((resolve) => {
       const settle = (a: "allowed" | "refused" | "timeout") => {
         if (!this.asks.delete(id)) return;
@@ -1327,6 +1347,16 @@ export class Hub {
 
   async handleClient(ws: WebSocket, msg: ClientMsg) {
     try {
+      if (EDIT_MESSAGES.has(msg.t)) {
+        const why = this.notForThisMap(msg as EditTarget);
+        if (why) {
+          // (a brush stroke sends many: say it once)
+          const now = Date.now();
+          if (now - (this.refusedAt.get(ws) ?? 0) > 3000) this.send(ws, { t: "error", message: why });
+          this.refusedAt.set(ws, now);
+          return;
+        }
+      }
       switch (msg.t) {
         case "hello":
           await this.sendProject(ws);
@@ -1416,7 +1446,7 @@ export class Hub {
           if (!/^[\w. -]{1,120}$/.test(msg.ref)) throw new Error("Bad image name.");
           const bytes = await this.store.readRef(op.id, msg.ref);
           if (!bytes) throw new Error(`No reference image named ${msg.ref}.`);
-          const img = decodeImage(bytes);
+          const img = await this.compute.decodePicture(bytes);
           if (!img) throw new Error("That image can't be read (use PNG, JPEG or a still WebP).");
           await this.saveCheckpoint("Before sketch import", `Before turning ${msg.ref} into terrain`);
           const doc = op.session.doc;
@@ -1532,6 +1562,18 @@ export class Hub {
     }
   }
 
+  /** Why an edit from an editor can't be made (it names a map or level that is no longer open), or null when it can. */
+  private notForThisMap(t: EditTarget): string | null {
+    const op = this.open;
+    if (!op) return null;
+    if (t.projectId && t.projectId !== op.id) return `That was done on another map just as "${op.session.doc.meta.name}" was opened, so it wasn't done (on either map). Do it again here if you want it.`;
+    if (t.level && op.levels && op.runtime.length > 1 && op.levels.active !== t.level) {
+      const now = op.levels.levels.find((l) => l.id === op.levels.active)?.name ?? "another level";
+      return `That was done on another level just as ${now} was opened, so it wasn't done. Do it again if you want it.`;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- Claude
   /** Tool context for Claude. `via` marks where the call came from (shown in the editor for MCP). */
   toolContext(via: "chat" | "mcp"): ToolContext {
@@ -1542,6 +1584,7 @@ export class Hub {
       return self.open.id;
     };
     const ctx: ToolContext = {
+      pictures: { decode: (b) => self.compute.decodePicture(b), reference: (b, m, r) => self.compute.preparePicture(b, m, r) },
       session: () => self.session,
       projectId: () => self.activeId,
       execute: (cmd, label) => {

@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   type ChatEvent, type ChatImage, type ChatItem, type ChatSettings, type ModelId, type Usage, MODEL_PRICES, emptyUsage,
 } from "@mapmaker/core";
-import { MAPMAKER_INSTRUCTIONS, type ToolContext, prepareReference, runTool, toBase64, toolJsonSchemas } from "@mapmaker/tools";
+import { MAPMAKER_INSTRUCTIONS, type ToolContext, inlinePictures, runTool, toBase64, toolJsonSchemas } from "@mapmaker/tools";
 
 type MessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 type Message = Anthropic.Beta.Messages.BetaMessage;
@@ -50,6 +50,60 @@ export interface AgentHost {
 }
 
 const MAX_STEPS = 40;
+
+/** The newest pictures kept in the conversation (attachments and previews); older ones become a line of text. */
+export const KEEP_PICTURES = 6;
+/** About how big the conversation may grow (characters of its JSON, pictures left out) before its oldest turns are dropped: roughly 120,000 tokens. */
+export const MAX_HISTORY_CHARS = 480_000;
+const PICTURE_GONE = "[A picture was here. It was left out of the conversation to keep it small: look again with render_preview or view_reference if it is needed.]";
+const EARLIER_GONE = "[The start of this conversation was left out to keep it small. The map, the brief and get_changes_since have what was done.]";
+
+type Block = Record<string, unknown> & { type?: string };
+/** A message as far as trimming cares: who sent it, and its content (text, or a list of blocks). */
+type Msg = { role: string; content?: unknown };
+const isPicture = (b: unknown): boolean => !!b && typeof b === "object" && (b as Block).type === "image";
+const blocksOf = (m: Msg): Block[] | null => (Array.isArray(m.content) ? (m.content as Block[]) : null);
+/** A user message that starts a turn (the DM's words), as opposed to one that carries tool results. */
+const startsTurn = (m: Msg) => m.role === "user" && !(blocksOf(m) ?? []).some((b) => b.type === "tool_result");
+/** The conversation's size without its pictures' data (those are counted by KEEP_PICTURES). */
+const sizeOf = (ms: Msg[]) => JSON.stringify(ms, (k, v) => (k === "data" && typeof v === "string" ? "" : v)).length;
+
+/**
+ * The conversation made small enough to send again and again (and to save in chat.json): the newest KEEP_PICTURES pictures are kept, older ones become a
+ * line of text; and while it is over MAX_HISTORY_CHARS, its oldest turns are dropped, whole (so every tool call keeps its result). Without this a long chat
+ * grew with every preview until each message cost more and Claude refused it as too long.
+ */
+export function trimHistory<M extends Msg>(messages: M[]): M[] {
+  let seen = 0;
+  const keep = (b: Block): Block => (++seen <= KEEP_PICTURES ? b : { type: "text", text: PICTURE_GONE });
+  const out = messages.slice().reverse().map((m) => {
+    const blocks = blocksOf(m);
+    if (!blocks) return m;
+    let changed = false;
+    const content = blocks.slice().reverse().map((blk) => {
+      if (isPicture(blk)) { const k = keep(blk); if (k !== blk) changed = true; return k; }
+      if (blk.type === "tool_result" && Array.isArray(blk.content)) {
+        let inner = false;
+        const c = (blk.content as Block[]).slice().reverse().map((x) => { if (!isPicture(x)) return x; const k = keep(x); if (k !== x) inner = true; return k; }).reverse();
+        if (inner) { changed = true; return { ...blk, content: c }; }
+      }
+      return blk;
+    }).reverse();
+    return changed ? { ...m, content } : m;
+  }).reverse();
+  let kept = out;
+  while (sizeOf(kept) > MAX_HISTORY_CHARS) {
+    const next = kept.findIndex((m, i) => i > 0 && startsTurn(m));
+    if (next < 0) break; // (one turn left: it is what is being worked on)
+    kept = kept.slice(next);
+  }
+  if (kept !== out && kept.length) {
+    const first = kept[0];
+    const content = blocksOf(first) ?? [{ type: "text", text: String(first.content ?? "") }];
+    kept = [{ ...first, content: [{ type: "text", text: EARLIER_GONE }, ...content] }, ...kept.slice(1)];
+  }
+  return kept;
+}
 const FALLBACK_MODELS: ReadonlySet<ModelId> = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
 
 export function defaultChatState(): ChatState {
@@ -106,7 +160,7 @@ export class ChatAgent {
     this.host.emit({ type: "item_add", item: userItem });
 
     if (!this.call || !this.host.apiKeyConfigured()) {
-      this.note("No Anthropic API key is configured, so the in-app chat can't reach Claude yet. Add ANTHROPIC_API_KEY to the .env file in the project folder and restart the server (see docs/SETUP-WINDOWS.md). You can still use the map tools from Claude Code.", "error");
+      this.note("No Anthropic API key is set, so this chat can't reach Claude yet. Open Settings (the gear at the top) and paste a key from console.anthropic.com under \"Claude\". (Running Dragon Drop from its code instead: ANTHROPIC_API_KEY in the .env file.) Claude Code in the terminal panel works without a key.", "error");
       await this.host.persist(this.state);
       return;
     }
@@ -115,8 +169,9 @@ export class ChatAgent {
     const content: ContentBlockParam[] = [];
     const ctxNote = this.contextNote();
     if (ctxNote) content.push({ type: "text", text: ctxNote });
+    const pictures = this.host.toolContext().pictures ?? inlinePictures;
     for (const img of images) {
-      const prep = prepareReference(img.bytes, 1568);
+      const prep = await pictures.reference(img.bytes, 1568).catch(() => null); // (on the worker thread: a big picture would hold up the server)
       if (prep) {
         content.push({ type: "text", text: `[Attached image saved as reference "${img.name}" (${prep.width}x${prep.height}); view_reference can crop it at full resolution.]` });
         content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: toBase64(prep.jpeg) } });
@@ -125,6 +180,8 @@ export class ChatAgent {
       }
     }
     content.push({ type: "text", text: text || "(no text)" });
+    // (trimmed only here, at the start of a turn: changing older messages costs the prompt cache once, not at every step)
+    this.state.messages = trimHistory(this.state.messages);
     this.state.messages.push({ role: "user", content });
 
     this.busy = true;

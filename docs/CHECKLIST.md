@@ -40,6 +40,36 @@ On `main` already: Settings says what each AI assistant needs (and whether it is
 - [x] **Water, later stages**: rivers and lakes as named, selectable things with a River tool; valleys carved by rivers; meanders, oxbows and deltas (`PLAN.md`, Water model). *(2026-11-21: the Rivers tool `I` names, selects and starts rivers; names drawn along the rivers and in lakes, on the map, the phone page and exports; Carve valleys… with floodplains and deltas, a checkpoint first; Lowland rivers with wide loops, oxbow lakes and estuaries; Claude's `name_water`, `list_waters`, `remove_water_name`, `carve_valleys`; still to try on the DM's own map)*
 - [ ] **Foundry, not tried**: a player's (not the GM's) view of a roof; a token above a ceiling; what a hole does to a token. Needs someone logged in to Foundry as a player (`FOUNDRY.md`).
 
+## Fixes from the adversarial review (2026-11-22)
+
+Found by Claude going through the app as an attacker and a clumsy user would. Most were proven on a throwaway server; the ones marked *(read)* were found by reading the code.
+In order of harm. *(All fixed 2026-11-22 on `selling-prep`, each with a test; `SECURITY-REVIEW.md` has the security ones.)*
+
+- [x] **The checkpoint list can be wiped.** If `map/checkpoints/index.json` is ever damaged (a power cut mid-save), the next checkpoint, and so the next automatic backup, writes a new list with only itself: every earlier checkpoint drops off the list (the files stay on disk, unlisted). Set a damaged list aside and rebuild it from the files, as `features.json` is.
+- [x] **An edit made while the AI opens another map is lost.** The DM's edits don't say which map they are for: one that arrives while the AI opens or creates a map (City here, Battlemap here...) goes to the old map after its last save, and is never saved. Edits should carry the map's id, and the switch should save last.
+- [x] **The AI's Undo ignores the lock and the Allow box.** `undo` takes back up to 20 of the newest changes, the DM's own included, outside a locked area too; any edit after it clears Redo, so that work is then gone from history. Hold the AI's undo to its own changes (or ask first), and respect the lock.
+- [x] *(read)* **A file that can't be read just now is treated as damaged**: an offline OneDrive file, say. The places and labels are set aside and the map opens without them. Only a file that reads but isn't valid JSON should count as damaged; a read error should fail the opening and try again.
+- [x] *(read)* **Saves aren't flushed to the disk** before the rename (`atomicWrite`), so a power cut can leave an empty file in place of the map's (worst with the checkpoint list above).
+- [x] **The window's address goes to IPv6 first.** The window opens `http://localhost:<port>/?t=<key>`, and Electron tries `[::1]` before `127.0.0.1`: another program or Windows user listening on `[::1]` at that port is sent the access key, and its page counts as the editor (the bridge, the terminal). Use `127.0.0.1` in the window, its address checks and `fromEditor`.
+- [x] **A big picture in a small file.** A 137 KB PNG that claims to be 12,000 pixels square is taken as a reference; reading it froze the server for a second and took 828 MB, and a bigger one would crash it. Refuse pictures over a pixel count (asset packs already are), and decode references off the server's main thread.
+- [x] *(read)* **The build can be taken over by a bad dependency.** The installer job has write access on every push to `main`, and the checkout keeps the token for later steps, so a compromised package could publish a release that every copy updates to. Give write access only to a separate publish job for version tags, and `persist-credentials: false`.
+- [x] **Files in a map's `refs` or `previews` folder are served as web pages**: an `.html` or `.svg` put there (in a map someone shares) is sent as a page, with no security policy. Serve only PNG, JPEG and WebP from there, and correct `SECURITY-REVIEW.md`, which says the opposite.
+- [x] *(read)* **The access key never changes.** The phone link holds it, the phone keeps it for a year, and nothing can change it. A "new access key" button in Settings.
+- [x] *(read)* **The in-app chat's history never shrinks**: every preview picture stays in `chat.json` and in every request, so a long chat gets slower and dearer, then fails until reset. Drop old pictures from the history and cap its size.
+- [x] *(read)* **The PC's environment reaches the sold app's server**: `MAPMAKER_ASK_BEFORE_RISKY=0` turns off the Allow box, and `ANTHROPIC_BASE_URL` would send the chat elsewhere. Pass only what the app sets.
+- [x] *(read)* Small ones: clicking a picture in the in-app chat opens the web browser, which says "Unauthorized"; the chat's no-key message tells a buyer to edit a `.env` file (Settings, in the app); `render.jpg?max=abc` makes a broken picture; the sold app still accepts the developer port 5173; renaming a named place, and draining a named lake given by position, don't ask; and an assistant with a shell has the key in its environment and could answer the Allow box itself (say so in `SECURITY-REVIEW.md`).
+
+**Second pass** (2026-11-22, after the fixes; the first pass's attacks were tried again and all failed):
+
+- [x] The DM's other map actions (restoring a checkpoint, drawing a river, carving, the selection, levels, pictures, the chat) didn't say which map they were for either: they now do, like the edits.
+- [x] **The Allow box could act on the wrong map**: while the DM decided, the AI could open another map (a copy, with the same names in it), and the action then ran there. It is now refused if the map or level changed meanwhile, and the box says which map it is about.
+- [x] Browsing a pack of big pictures for the first time decoded each one on the server's main thread (the map stuttered): thumbnails and asset pictures are made on the worker now.
+- [x] A pack whose author wrote "no" as text (`"false"`, `"no"`) instead of `false` was used anyway: every way of writing no counts.
+- [x] The asset library's Copy report showed the Windows user name (in the folder's path): the home folder is written as `~`.
+- [x] Errors from the worker thread carried the program's file paths into messages for the person and the AI: only the message now (the details go to the log).
+- [x] In the fixes themselves: a drive that can't flush (some network or cloud drives) would have failed every save (now best effort), and the chat's size limit counted the pictures' data (now left out of the count).
+- [ ] Left as they are (each in `SECURITY-REVIEW.md`): `RunAsNode` (R2), unsigned updates until signing (R3), F12 (R4), an assistant that can run commands (R8). Also: a floor texture is still shrunk on the main thread the first time it is used (bounded by the 40-megapixel limit, then kept), and a prompt injection in a shared map can still lead the AI to *add* made-up names or notes (removing and renaming ask; the instructions forbid inventing canon).
+
 ## Before selling
 
 From `SELLING.md`, where each has its details. **Sorted by what it costs** (2026-11-22): the person sells alone and can't pay a lawyer, so where the

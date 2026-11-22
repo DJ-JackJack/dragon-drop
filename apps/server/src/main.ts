@@ -15,7 +15,8 @@ export async function start(overrides: Parameters<typeof loadConfig>[0] = {}) {
   mkdirSync(cfg.projectsDir, { recursive: true });
   const fake = process.env.MAPMAKER_FAKE_MODEL === "1";
   // the texture noise is kept in the cache folder: worked out once per map size and seed, not at every launch
-  const hub = new Hub(new ProjectStore(cfg.projectsDir), fake ? scriptedModel() : apiKeyConfigured() ? anthropicModelCall() : null, new WorkerCompute(cfg.cacheDir), {
+  const compute = new WorkerCompute(cfg.cacheDir);
+  const hub = new Hub(new ProjectStore(cfg.projectsDir), fake ? scriptedModel() : apiKeyConfigured() ? anthropicModelCall() : null, compute, {
     // rolling backups of the map being edited (MAPMAKER_AUTO_BACKUP_MINUTES=0 turns them off)
     autoBackupMs: Math.max(0, Number(process.env.MAPMAKER_AUTO_BACKUP_MINUTES ?? 15) || 0) * 60_000,
     autoBackupKeep: Math.max(1, Number(process.env.MAPMAKER_AUTO_BACKUP_KEEP ?? 6) || 6),
@@ -26,6 +27,7 @@ export async function start(overrides: Parameters<typeof loadConfig>[0] = {}) {
   await hub.ensureProject();
   if (cfg.assetsDir) {
     hub.assets = new AssetLibrary(cfg.assetsDir, cfg.cacheDir);
+    hub.assets.pictures = { decode: (b) => compute.decodePicture(b), thumbnail: (b, m) => compute.thumbnail(b, m) }; // (off the main thread)
     void hub.assets.scan().catch((e) => console.error("Couldn't scan the asset packs:", e)); // in the background: the server is usable meanwhile
   }
   const server = createAppServer(cfg, hub);

@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { NewerFormatError } from "@mapmaker/core";
-import { ProjectStore } from "../src/store.ts";
+import { ProjectStore, atomicWrite } from "../src/store.ts";
 
 const root = mkdtempSync(path.join(tmpdir(), "mapmaker-store-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -199,5 +199,69 @@ describe("checkpoints and rolling backups", () => {
     const doc = await store.create({ name: "Together", width: 128, height: 128, kmPerPx: 4 });
     await Promise.all([store.saveCheckpoint(doc.meta.id, "One", doc, 1), store.saveCheckpoint(doc.meta.id, "Two", doc, 2, undefined, { auto: true })]);
     expect((await names(store, doc.meta.id)).sort()).toEqual(["One", "Two"]);
+  });
+
+  // (found 2026-11-22: a damaged list was read as empty, and the next checkpoint, an automatic backup say, wrote a list with only itself)
+  it("rebuilds a damaged list from the checkpoints instead of starting a new one", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Damaged list", width: 128, height: 128, kmPerPx: 4 });
+    const id = doc.meta.id, dir = path.join(root, id, "map", "checkpoints");
+    doc.features!.places = [{ id: "p1", name: "Harbour", type: "town", x: 1, y: 1 }];
+    await store.saveCheckpoint(id, "First", doc, 1);
+    await store.saveCheckpoint(id, "Second", doc, 2, "a note", { auto: true });
+    writeFileSync(path.join(dir, "index.json"), ""); // a power cut mid-save
+    expect(await names(store, id)).toEqual(["First", "Second"]);
+    expect(store.takeNotices(id)[0]).toMatch(/list of checkpoints was damaged/);
+    expect(readdirSync(dir).some((n) => n.startsWith("index.unreadable-"))).toBe(true);
+    await store.saveCheckpoint(id, "Third", doc, 3);
+    expect(await names(store, id)).toEqual(["First", "Second", "Third"]);
+    const back = (await store.readCheckpoint(id, "First"))!;
+    expect(back.features!.places![0].name).toBe("Harbour"); // (each checkpoint's own copy of its entry keeps its places)
+    expect((await store.listCheckpoints(id)).find((c) => c.name === "Second")!.auto).toBe(true);
+  });
+
+  it("brings back older checkpoints (without their own copy of the entry) by their file names", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Old list", width: 128, height: 128, kmPerPx: 4 });
+    const id = doc.meta.id, dir = path.join(root, id, "map", "checkpoints");
+    await store.saveCheckpoint(id, "Before the war", doc, 1);
+    for (const n of readdirSync(dir)) if (n.endsWith(".entry.json")) rmSync(path.join(dir, n)); // (as saved before 2026-11-22)
+    writeFileSync(path.join(dir, "index.json"), "{ not json");
+    const list = await store.listCheckpoints(id);
+    expect(list.map((c) => c.name)).toEqual(["before the war (recovered)"]);
+    expect((await store.readCheckpoint(id, "before the war (recovered)"))!.data.length).toBe(128 * 128);
+  });
+
+  it("never takes a list that can't be read just now for an empty one", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Held list", width: 128, height: 128, kmPerPx: 4 });
+    const id = doc.meta.id, dir = path.join(root, id, "map", "checkpoints");
+    await store.saveCheckpoint(id, "Kept", doc, 1);
+    rmSync(path.join(dir, "index.json"));
+    mkdirSync(path.join(dir, "index.json")); // (reading it fails, as for a file held by another program)
+    await expect(store.saveCheckpoint(id, "New", doc, 2)).rejects.toThrow();
+    rmSync(path.join(dir, "index.json"), { recursive: true });
+    expect(await names(store, id)).toEqual(["Kept"]); // (no list at all, but checkpoints: made again from them)
+  });
+});
+
+describe("files that can't be read just now", () => {
+  it("doesn't set the places aside when their file can't be read (only when it is damaged)", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Offline places", width: 64, height: 64, kmPerPx: 4 });
+    const f = path.join(root, doc.meta.id, "features.json");
+    rmSync(f);
+    mkdirSync(f); // (stands for an offline cloud file: reading it fails)
+    await expect(store.load(doc.meta.id)).rejects.toThrow();
+    expect(readdirSync(path.join(root, doc.meta.id)).some((n) => n.startsWith("features.unreadable-"))).toBe(false);
+    expect(store.takeNotices(doc.meta.id)).toEqual([]);
+  });
+
+  it("writes the whole file through to the disk", async () => {
+    const f = path.join(mkdtempSync(path.join(root, "aw-")), "x.json");
+    await atomicWrite(f, "{\"a\":1}");
+    await atomicWrite(f, new Uint8Array([123, 125]));
+    expect(readFileSync(f, "utf8")).toBe("{}");
+    expect(readdirSync(path.dirname(f))).toEqual(["x.json"]);
   });
 });

@@ -47,6 +47,47 @@ describe("what asks the DM first", () => {
     expect(await riskOf(ctx, "add_place", { name: "X", type: "town", x: 1, y: 1 })).toBeNull();
   });
 
+  // (added 2026-11-22: a rename replaces the DM's canon as surely as a removal)
+  it("asks before renaming a named place, label or region, and not for other changes to them", async () => {
+    const { ctx } = context("allowed");
+    await runTool(ctx, "add_place", { name: "Gate Town", type: "town", x: 30, y: 30 });
+    await runTool(ctx, "add_label", { text: "The Wolds", kind: "region", x: 30, y: 25 });
+    expect(await riskOf(ctx, "update_place", { place: "Gate Town", name: "Harbour" })).toBe('Rename the place "Gate Town" to "Harbour"');
+    expect(await riskOf(ctx, "update_place", { place: "Gate Town", name: "Gate Town", x: 31 })).toBeNull();
+    expect(await riskOf(ctx, "update_place", { place: "Gate Town", notes: "a gate" })).toBeNull();
+    expect(await riskOf(ctx, "update_label", { label: "The Wolds", text: "The Downs" })).toBe('Rename the label "The Wolds" to "The Downs"');
+    expect(await riskOf(ctx, "name_water", { name: "Silver", x: 3, y: 3 })).toBeNull(); // (naming new water: no name is lost)
+    const no = context("refused");
+    await runTool(no.ctx, "add_place", { name: "Gate Town", type: "town", x: 30, y: 30 });
+    expect((await runTool(no.ctx, "update_place", { place: "Gate Town", name: "Harbour" })).isError).toBe(true);
+    expect(no.ctx.session().doc.features!.places[0].name).toBe("Gate Town");
+  });
+
+  it("doesn't do it when another map was opened while the DM decided", async () => {
+    const { ctx, session } = context("allowed");
+    await runTool(ctx, "add_place", { name: "Gate Town", type: "town", x: 30, y: 30 });
+    let open = "w";
+    const moving = { ...ctx, projectId: () => open, confirm: async () => { open = "copy-of-w"; return "allowed" as const; } } as ToolContext;
+    const r = await runTool(moving, "remove_place", { place: "Gate Town" });
+    expect(r.isError).toBe(true);
+    expect((r.content[0] as { text: string }).text).toMatch(/another map or level was opened/);
+    expect(session.doc.features!.places).toHaveLength(1);
+  });
+
+  it("lets the AI undo only its own changes", async () => {
+    const { ctx, session } = context("allowed");
+    await runTool(ctx, "add_place", { name: "Mine", type: "town", x: 30, y: 30 });
+    session.execute({ op: "features", patch: { upsertPlaces: [{ id: "p-dm", name: "The DM's", type: "town", x: 25, y: 25 }] } }, "user");
+    const r = await runTool(ctx, "undo", { steps: 5 });
+    expect(r.isError).toBe(true);
+    expect((r.content[0] as { text: string }).text).toMatch(/made by the DM/);
+    expect(session.doc.features!.places.map((p) => p.name).sort()).toEqual(["Mine", "The DM's"]);
+    session.undo("user"); // (the DM takes theirs back)
+    const mine = await runTool(ctx, "undo", { steps: 5 });
+    expect(mine.isError).toBeFalsy();
+    expect(session.doc.features!.places).toHaveLength(0);
+  });
+
   it("does nothing when the DM says no, and goes ahead when they say yes", async () => {
     const no = context("refused");
     await runTool(no.ctx, "add_place", { name: "Gate Town", type: "town", x: 30, y: 30 });

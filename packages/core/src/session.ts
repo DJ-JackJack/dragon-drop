@@ -24,6 +24,17 @@ export class LockedEditError extends Error {
   }
 }
 
+/**
+ * The AI's undo or redo would take back (or make again) a change that isn't its own: the DM's work is theirs to undo (Ctrl+Z). Without this, an undo of
+ * 20 steps followed by any edit (which clears Redo) took the DM's work out of the history for good, outside a locked area too.
+ */
+export class NotYourChangeError extends Error {
+  constructor(what: "undo" | "redo", label: string, by: Author) {
+    super(`The ${what === "undo" ? "newest" : "next"} change ("${label}") was made by ${by === "user" ? "the DM" : "the program"}, not by you, so it wasn't ${what === "undo" ? "undone" : "redone"}: you can only ${what} your own changes. If the DM wants theirs ${what === "undo" ? "taken back" : "made again"}, they can press ${what === "undo" ? "Ctrl+Z" : "Ctrl+Y"}.`);
+    this.name = "NotYourChangeError";
+  }
+}
+
 export type Command =
   | { op: "generate_terrain"; params: GenerateTerrainParams }
   | { op: "add_landmass"; params: AddLandmassParams }
@@ -61,6 +72,8 @@ interface UndoEntry {
   metaAfter?: Partial<MapMeta>;
   featuresBefore?: Features;
   featuresAfter?: Features;
+  /** The lock the AI's edit was held to when it was made (its undo is allowed under that same lock only: it was clipped to it). */
+  heldBy?: EditLock | null;
 }
 
 export type SessionEvent =
@@ -112,7 +125,7 @@ export class MapSession {
   readonly changes: ChangeEntry[] = [];
   private undoStack: UndoEntry[] = [];
   private redoStack: UndoEntry[] = [];
-  private txn: { author: Author; label: string; snapshot: Float32Array; rect: Rect | null; meta: MapMeta } | null = null;
+  private txn: { author: Author; label: string; snapshot: Float32Array; rect: Rect | null; meta: MapMeta; heldBy: EditLock | null } | null = null;
   private listeners = new Set<(e: SessionEvent) => void>();
   /** While set, Claude's edits are held to this area: terrain changes are clipped to it (soft edge inside, nothing outside), feature edits outside it are refused. The editor's own edits are never held. */
   editLock: EditLock | null = null;
@@ -146,7 +159,7 @@ export class MapSession {
     const lbl = label ?? describeCommand(cmd);
     const hf = this.doc.height;
     const standalone = !this.txn;
-    const lock = author === "claude" && this.editLock && !isBattle(this.doc) ? this.editLock : null;
+    const lock = this.heldFor(author);
     if (lock) this.checkLock(cmd, lock);
     const snapshot = standalone ? new Float32Array(hf.data) : null;
     const lockPre = lock && LOCK_CLIPS.has(cmd.op) ? (snapshot ?? new Float32Array(hf.data)) : null;
@@ -224,6 +237,7 @@ export class MapSession {
       seq: this.seq, author, label: lbl, rect,
       before: rect && snapshot ? cropData(snapshot, hf.w, rect) : null,
       after: rect ? hf.copyRect(rect) : null,
+      heldBy: lock,
     };
     if (metaChanged) {
       const keys = ["seaLevel", "style", "climate", "name", "notes", "grid", "furniture", "battle", "city"] as const;
@@ -292,7 +306,19 @@ export class MapSession {
   /** Group several commands (e.g. one brush stroke) into a single undoable step. */
   begin(author: Author, label: string) {
     if (this.txn) this.commit();
-    this.txn = { author, label, snapshot: new Float32Array(this.doc.height.data), rect: null, meta: { ...this.doc.meta } };
+    this.txn = { author, label, snapshot: new Float32Array(this.doc.height.data), rect: null, meta: { ...this.doc.meta }, heldBy: this.heldFor(author) };
+  }
+
+  /** The lock an edit by `author` is held to now (only the AI's are, and not on battlemaps). */
+  private heldFor(author: Author): EditLock | null {
+    return author === "claude" && this.editLock && !isBattle(this.doc) ? this.editLock : null;
+  }
+
+  /** The AI may undo or redo only its own changes, and while its edits are locked to an area, only those it made under that lock. */
+  private checkAiHistory(e: UndoEntry, what: "undo" | "redo") {
+    if (e.author !== "claude") throw new NotYourChangeError(what, e.label, e.author);
+    const lock = this.heldFor("claude");
+    if (lock && e.heldBy !== lock) throw new LockedEditError(`would ${what} "${e.label}", which was made before your edits were locked to the selection (so it can reach outside it)`);
   }
 
   commit(): { seq: number; rect: Rect | null } | null {
@@ -304,7 +330,7 @@ export class MapSession {
     this.seq++;
     this.pushUndo({
       seq: this.seq, author: t.author, label: t.label, rect: t.rect,
-      before: cropData(t.snapshot, hf.w, t.rect), after: hf.copyRect(t.rect),
+      before: cropData(t.snapshot, hf.w, t.rect), after: hf.copyRect(t.rect), heldBy: t.heldBy,
     });
     this.redoStack = [];
     this.log("edit", t.author, t.label, t.rect);
@@ -313,8 +339,10 @@ export class MapSession {
 
   undo(author: Author): ChangeEntry | null {
     if (this.txn) this.commit();
-    const e = this.undoStack.pop();
-    if (!e) return null;
+    const top = this.undoStack[this.undoStack.length - 1];
+    if (!top) return null;
+    if (author === "claude") this.checkAiHistory(top, "undo");
+    const e = this.undoStack.pop()!;
     this.restore(e, "before");
     this.redoStack.push(e);
     this.seq++;
@@ -322,8 +350,10 @@ export class MapSession {
   }
 
   redo(author: Author): ChangeEntry | null {
-    const e = this.redoStack.pop();
-    if (!e) return null;
+    const next = this.redoStack[this.redoStack.length - 1];
+    if (!next) return null;
+    if (author === "claude") this.checkAiHistory(next, "redo");
+    const e = this.redoStack.pop()!;
     this.restore(e, "after");
     this.undoStack.push(e);
     this.seq++;
