@@ -5,7 +5,7 @@ import path from "node:path";
 import { crc32, deflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { PICTURE_MAX_PIXELS } from "@mapmaker/core";
+import { PICTURE_MAX_PIXELS, shrinkPicture } from "@mapmaker/core";
 import { decodeImage, runTool } from "@mapmaker/tools";
 import { KEEP_PICTURES, MAX_HISTORY_CHARS, trimHistory } from "../src/agent.ts";
 import { AssetLibrary, forbidsUse } from "../src/assets.ts";
@@ -138,7 +138,7 @@ describe("asset packs", () => {
     writeFileSync(path.join(packs, "Kit", "Props", "crate.png"), Buffer.from(hugePng(200)));
     const lib = new AssetLibrary(packs, path.join(packs, ".cache"));
     let made = 0;
-    lib.pictures = { decode: async () => null, thumbnail: async (b, m) => { made++; return thumbnailOf(b, m); } };
+    lib.pictures = { decode: async () => null, thumbnail: async (b, m) => { made++; return thumbnailOf(b, m); }, shrink: async () => null };
     await lib.scan();
     const id = lib.list({ q: "crate" }).items[0].id;
     const t = await lib.thumbnail(id, 64);
@@ -146,6 +146,12 @@ describe("asset packs", () => {
     expect(t?.orig).toEqual({ w: 200, h: 200 });
     expect(await lib.thumbnail(id, 64)).not.toBeNull();
     expect(made).toBe(1); // (the second came from the cache)
+    // floor tiles and objects are made ready there too (the first use of a big texture held up the server)
+    let shrunk = 0;
+    lib.pictures = { ...lib.pictures, shrink: async (b, j) => { shrunk++; const img = decodeImage(b); return img ? shrinkPicture(img, j) : null; } };
+    expect(await lib.sprite(id, 0.5)).toMatchObject({ w: 100, h: 100, origW: 200 });
+    expect((await lib.tile(id))?.size).toBe(512);
+    expect(shrunk).toBe(2);
     rmSync(packs, { recursive: true, force: true });
   });
 });

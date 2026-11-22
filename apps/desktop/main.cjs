@@ -9,7 +9,7 @@
  * Run `node scripts/prepare.mjs` first; then `npx electron .` for a development run, or
  * `npm run dist` to build the Windows installer.
  */
-const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell, utilityProcess } = require("electron");
 const { execFileSync, spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -61,9 +61,13 @@ function loadSettings() {
   if (!settings || typeof settings !== "object" || Array.isArray(settings)) settings = {};
   // The access key: every request to this app's own server (the editor window, Claude Code's map tools, its hooks) carries it, so another program,
   // another Windows user or a web page can't drive the app. Made once per install and kept in the settings file (readable only by this user).
-  if (typeof settings.accessToken !== "string" || settings.accessToken.length < 32) {
-    settings.accessToken = crypto.randomBytes(32).toString("hex");
-    try { saveSettings(); } catch { /* saved with the next change; the key is only needed while the app runs */ }
+  // The map tools key: what the AI assistant is handed (its map tools and its hooks), so it doesn't hold the access key itself. The server takes it only for
+  // the map tools and the hooks, never for the editor's own connection (where the Allow box is answered) or the rest of /api (found 2026-11-22).
+  const weak = (k) => typeof k !== "string" || k.length < 32;
+  if (weak(settings.accessToken) || weak(settings.toolsToken) || settings.toolsToken === settings.accessToken) {
+    if (weak(settings.accessToken)) settings.accessToken = crypto.randomBytes(32).toString("hex");
+    if (weak(settings.toolsToken) || settings.toolsToken === settings.accessToken) settings.toolsToken = crypto.randomBytes(32).toString("hex");
+    try { saveSettings(); } catch { /* saved with the next change; the keys are only needed while the app runs */ }
   }
 }
 
@@ -187,8 +191,9 @@ async function startServer() {
   // or address from the PC's environment (the chat uses the key entered in Settings, and talks only to Anthropic).
   const inherited = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(MAPMAKER_|ANTHROPIC_)/i.test(k)));
   const env = {
-    ...inherited, ELECTRON_RUN_AS_NODE: "1", MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1", MAPMAKER_DEV_EDITOR_PORT: "",
+    ...inherited, MAPMAKER_START: "1", MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1", MAPMAKER_DEV_EDITOR_PORT: "",
     MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: settings.projectsDir, MAPMAKER_EDITOR_DIST: editorDir, MAPMAKER_ACCESS_TOKEN: settings.accessToken,
+    MAPMAKER_TOOLS_TOKEN: settings.toolsToken,
   };
   // the phone page is reached only through an address the person chose in Settings (their Tailscale name); one set in the PC's environment for the
   // developer setup is not taken, so the phone page stays off unless chosen here
@@ -198,7 +203,10 @@ async function startServer() {
   env.MAPMAKER_CACHE_DIR = path.join(app.getPath("userData"), "cache");
   if (settings.assetsDir) env.MAPMAKER_ASSETS_DIR = settings.assetsDir;
   childLog = [];
-  const proc = spawn(process.execPath, [serverMain], { env, stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true });
+  // An Electron utility process (Node, with no window), not this program run as plain Node (ELECTRON_RUN_AS_NODE): so the RunAsNode switch can be off,
+  // and a signed Dragon Drop.exe can't be used by other programs as a Node.js of their own (found 2026-11-22). MAPMAKER_START tells main.mjs to start.
+  delete env.ELECTRON_RUN_AS_NODE;
+  const proc = utilityProcess.fork(serverMain, [], { env, stdio: "pipe", serviceName: "Dragon Drop map server" });
   child = proc;
   const sink = (d) => {
     out.write(d);
@@ -226,7 +234,7 @@ async function stopServer() {
   const proc = child;
   if (!proc) return;
   const done = new Promise((resolve) => proc.once("exit", resolve));
-  try { proc.send("shutdown"); } catch { proc.kill(); }
+  try { proc.postMessage("shutdown"); } catch { proc.kill(); }
   const timer = setTimeout(() => proc.kill(), 8000); // it saves first; this only matters if it hangs
   await done;
   clearTimeout(timer);
@@ -274,7 +282,9 @@ function createWindow() {
     width: 1500, height: 940, minWidth: 980, minHeight: 640, backgroundColor: "#0a0a0c", title: APP_NAME, icon: iconPath,
     show: false, autoHideMenuBar: true,
     ...(overlay && { titleBarStyle: "hidden", titleBarOverlay: { color: "#0a0a0c", symbolColor: "#d4af37", height: 44 } }),
-    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+    // (no developer tools in the installed app: "press F12 and paste this" is how a scammer would get a person to run code in the page, which can drive
+    // the terminal; the log folder is what support needs. A development run keeps them.)
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false, devTools: !app.isPackaged },
   });
   win.once("ready-to-show", () => { if (!SMOKE || process.env.DRAGON_DROP_SHOT) win.show(); });
   win.loadURL(editorUrl());
@@ -294,9 +304,11 @@ function createWindow() {
   const okPermissions = new Set(["clipboard-sanitized-write", "fullscreen"]);
   win.webContents.session.setPermissionRequestHandler((_wc, permission, done) => done(okPermissions.has(permission)));
   win.webContents.session.setPermissionCheckHandler((_wc, permission) => okPermissions.has(permission));
-  win.webContents.on("before-input-event", (e, input) => {
-    if (input.type === "keyDown" && (input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i"))) win.webContents.toggleDevTools();
-  });
+  if (!app.isPackaged) {
+    win.webContents.on("before-input-event", (e, input) => {
+      if (input.type === "keyDown" && (input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i"))) win.webContents.toggleDevTools();
+    });
+  }
   win.on("closed", () => { win = null; });
 }
 
@@ -406,12 +418,13 @@ function writeClaudeWorkspace(claudePath) {
   fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
   // the files that hold the key go in the app-data folder; an earlier version left a copy in the workspace, which is taken out now
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
-  const ours = { type: "http", url: assistants.mcpAddress(port, settings.toolSet), headers: { Authorization: `Bearer ${settings.accessToken}` } };
+  // (the assistant gets the map tools key, never the access key: see loadSettings)
+  const ours = { type: "http", url: assistants.mcpAddress(port, settings.toolSet), headers: { Authorization: `Bearer ${settings.toolsToken}` } };
   fs.writeFileSync(mcpConfigFile(), JSON.stringify({ mcpServers: { mapmaker: ours } }, null, 2), { mode: 0o600 });
-  fs.writeFileSync(hookHeaderFile(), `Authorization: Bearer ${settings.accessToken}\n`, { mode: 0o600 });
+  fs.writeFileSync(hookHeaderFile(), `Authorization: Bearer ${settings.toolsToken}\n`, { mode: 0o600 });
   try { fs.unlinkSync(path.join(dir, "mapmaker.mcp.json")); } catch { /* not there */ }
   // the chosen assistant finds the map tools in its own project file (and no other assistant's file keeps our entry)
-  const assistant = assistants.syncAssistantConfigs(dir, { profile: assistants.profileFor(settings.terminalCommand), port, key: settings.accessToken, tools: settings.toolSet });
+  const assistant = assistants.syncAssistantConfigs(dir, { profile: assistants.profileFor(settings.terminalCommand), port, key: settings.toolsToken, tools: settings.toolSet });
   const another = assistant.assistant === "claude"; // Claude Code started by another program (typed, or `ollama launch claude`): it reads .mcp.json, and we pre-approve the server there
   // the same notes under each assistant's own file name
   for (const name of ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]) {
@@ -579,7 +592,8 @@ function startTerminal({ cols, rows, resume }) {
   }
   try {
     // (the access key goes to the assistant in the environment: its project file names the variable, so the file in the workspace doesn't hold the key)
-    const env = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", [assistants.KEY_ENV]: settings.accessToken };
+    // (the map tools key: with it the assistant's map tools and hooks work, but it can't drive the editor's connection, where the Allow box is answered)
+    const env = { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", [assistants.KEY_ENV]: settings.toolsToken };
     delete env.ELECTRON_RUN_AS_NODE;
     const proc = loadPty().spawn(file, fileArgs, { name: "xterm-256color", cols: Math.max(20, cols | 0 || 80), rows: Math.max(5, rows | 0 || 24), cwd: workspace, env });
     term = proc;
@@ -691,10 +705,11 @@ ipcMain.handle("dd:settings", (e) => {
     version: app.getVersion(), projectsDir: settings.projectsDir, hasApiKey: !!getApiKey(), port, defaultPort: DEFAULT_PORT, autoUpdate: settings.autoUpdate !== false, assetsDir: settings.assetsDir || null,
     mcpUrl: assistants.mcpAddress(port, settings.toolSet),
     // the line for connecting Claude Code from the user's own terminal: with the access key to copy, and the same line with the key hidden to show
-    mcpCommand: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer ${settings.accessToken}"`,
-    mcpCommandShown: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer (your access key)"`,
+    mcpCommand: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer ${settings.toolsToken}"`,
+    mcpCommandShown: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer (your map tools key)"`,
     logDir: path.dirname(logFile()), encrypted: safeStorage.isEncryptionAvailable(),
-    mcpHeader: `Authorization: Bearer ${settings.accessToken}`, // other assistants send this with every request to the map tools
+    mcpHeader: `Authorization: Bearer ${settings.toolsToken}`, // other assistants send this with every request to the map tools (the map tools key)
+    phoneKey: settings.accessToken, // (the phone link: the phone page is an editor, so it needs the access key itself)
     terminalCommand: settings.terminalCommand || "",
     // all the map tools, or the smaller set for smaller models (tools essentials.ts)
     toolSet: settings.toolSet === "essentials" ? "essentials" : "all",
@@ -794,6 +809,7 @@ ipcMain.handle("dd:set-phone-host", async (e, text) => {
 ipcMain.handle("dd:new-access-key", async (e) => {
   if (!fromEditor(e)) return false;
   settings.accessToken = crypto.randomBytes(32).toString("hex");
+  settings.toolsToken = crypto.randomBytes(32).toString("hex");
   saveSettings();
   killTerminal();
   const ok = await restartServer();
@@ -879,6 +895,11 @@ async function smokeTest() {
         if (!info || !info.project) return fatal(`server health had no open project: ${JSON.stringify(info)}`);
         if (!s || s.port !== port) return fatal("settings bridge returned nothing");
         // the web page is sandboxed: no Node in it, it can't leave the local address, and a pop-up window is refused
+        if (app.isPackaged) {
+          win.webContents.openDevTools();
+          await new Promise((r) => setTimeout(r, 300));
+          if (win.webContents.isDevToolsOpened()) return fatal("the installed app opened the developer tools");
+        }
         const iso = await win.webContents.executeJavaScript(`({ req: typeof require, proc: typeof process })`);
         if (iso.req !== "undefined" || iso.proc !== "undefined") return fatal(`the editor page can see Node (${JSON.stringify(iso)})`);
         const here = win.webContents.getURL();
@@ -894,6 +915,12 @@ async function smokeTest() {
         if (!bare || bare.status !== 401) return fatal(`the server answered a request with no access key (${bare ? bare.status : "no answer"})`);
         const keyed = await fetch(`http://127.0.0.1:${port}/api/health`, { headers: { authorization: `Bearer ${settings.accessToken}` } }).catch(() => null);
         if (!keyed || keyed.status !== 200) return fatal(`the server refused the access key (${keyed ? keyed.status : "no answer"})`);
+        // the map tools key opens the map tools and nothing else (not the API, not the editor's connection, where the Allow box is answered)
+        const toolsAuth = { authorization: `Bearer ${settings.toolsToken}` };
+        const toolsApi = await fetch(`http://127.0.0.1:${port}/api/health`, { headers: toolsAuth }).catch(() => null);
+        if (!toolsApi || toolsApi.status !== 401) return fatal(`the map tools key opened the API (${toolsApi ? toolsApi.status : "no answer"})`);
+        const toolsMcp = await fetch(`http://127.0.0.1:${port}/mcp`, { headers: toolsAuth }).catch(() => null);
+        if (!toolsMcp || toolsMcp.status !== 405) return fatal(`the map tools key didn't reach the map tools (${toolsMcp ? toolsMcp.status : "no answer"})`);
         if (here.includes("t=")) return fatal(`the access key was left in the window's address: ${here}`);
         if (!here.startsWith(`http://127.0.0.1:${port}/`)) return fatal(`the window isn't on the IPv4 address (a "localhost" one goes to IPv6 first): ${here}`);
         const page = await fetch(`http://127.0.0.1:${port}/`).catch(() => null);
@@ -941,7 +968,7 @@ async function smokeTest() {
           await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)"); // (writes the workspace files without starting anything)
           const text = readWs(rel);
           if (text === null || !text.includes(url)) return fatal(`with "${cmd}" chosen, ${rel} should carry the map tools: ${text}`);
-          if (text.includes(settings.accessToken)) return fatal(`with "${cmd}" chosen, ${rel} holds the access key`);
+          if (text.includes(settings.accessToken) || text.includes(settings.toolsToken)) return fatal(`with "${cmd}" chosen, ${rel} holds a key`);
           for (const other of [".mcp.json", ".codex/config.toml", ".gemini/settings.json", "opencode.json", ".agents/mcp_config.json"]) {
             if (other !== rel && readWs(other) !== null) return fatal(`with "${cmd}" chosen, ${other} is still in the workspace`);
           }
@@ -981,10 +1008,10 @@ async function smokeTest() {
         if (!cl || !cl.workspace) return fatal(`openClaude returned ${JSON.stringify(cl)}`);
         const mcp = (() => { try { return fs.readFileSync(mcpConfigFile(), "utf8"); } catch { return ""; } })();
         if (!mcp.includes(`http://127.0.0.1:${port}/mcp`)) return fatal(`the map tools file is wrong: ${mcp}`);
-        if (!mcp.includes(`Bearer ${settings.accessToken}`)) return fatal("the map tools file has no access key for the map tools");
+        if (!mcp.includes(`Bearer ${settings.toolsToken}`) || mcp.includes(settings.accessToken)) return fatal("the map tools file should hold the map tools key and never the access key");
         // (the Documents workspace is often synced to the cloud: no file in it may hold the access key)
         const holders = [];
-        const scan = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) scan(f); else if (fs.readFileSync(f, "utf8").includes(settings.accessToken)) holders.push(f); } };
+        const scan = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) scan(f); else if (fs.readFileSync(f, "utf8").includes(settings.accessToken) || fs.readFileSync(f, "utf8").includes(settings.toolsToken)) holders.push(f); } };
         scan(cl.workspace);
         if (holders.length) return fatal(`the access key is in the Claude workspace: ${holders.join(", ")}`);
         for (const f of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "open-claude.cmd", path.join(".claude", "settings.json")]) {

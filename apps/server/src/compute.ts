@@ -5,7 +5,7 @@
 import { Worker } from "node:worker_threads";
 import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
-  type Features, type SpriteData, type TileData, HeightField, boxResize, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
+  type Features, type SpriteData, type TileData, HeightField, boxResize, type ShrinkJob, type ShrunkPicture, shrinkPicture, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
@@ -37,6 +37,8 @@ export interface MapCompute {
   carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult>;
   /** One lake drained (core terrainDrain.ts drainLakeAt): the new heights of the whole map and what was done; the map itself is not changed. */
   drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }): Promise<DrainLakeResult & { heights: Float32Array }>;
+  /** An asset pack's picture made ready to draw (a floor or roof tile, an object at a scale: core shrinkPicture); null when it can't be read. */
+  shrinkPicture(bytes: Uint8Array, job: ShrinkJob): Promise<ShrunkPicture | null>;
   /** A small PNG of a picture, at most `max` px a side, and the picture's own size (the asset library's thumbnails); null when it can't be read. */
   thumbnail(bytes: Uint8Array, max: number): Promise<Thumbnail | null>;
   /** A picture (PNG, JPEG, WebP) as RGBA, or null when it isn't one that can be read; a picture over PICTURE_MAX_PIXELS is refused with a message. */
@@ -89,6 +91,7 @@ export type Job =
   | { op: "drain"; W: number; H: number; heights: Float32Array; meta: MapMeta; x: number; y: number; opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number } }
   | { op: "decode"; bytes: Uint8Array }
   | { op: "thumb"; bytes: Uint8Array; max: number }
+  | { op: "shrink"; bytes: Uint8Array; job: ShrinkJob }
   | { op: "reference"; bytes: Uint8Array; maxPx: number; region?: { x: number; y: number; w: number; h: number } };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
@@ -129,9 +132,10 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | ShrunkPicture | null {
     if (job.op === "decode") return decodeImage(job.bytes);
     if (job.op === "thumb") return thumbnailOf(job.bytes, job.max);
+    if (job.op === "shrink") { const img = decodeImage(job.bytes); return img ? shrinkPicture(img, job.job) : null; }
     if (job.op === "reference") return prepareReference(job.bytes, job.maxPx, job.region);
     if (job.op === "carve") return carveValleys(job.heights, job.W, job.H, job.meta.seaLevel, job.rivers, job.opts);
     if (job.op === "drain") { const h = job.heights.slice(); return { ...drainLakeAt(h, job.W, job.H, job.meta.seaLevel, job.x, job.y, job.opts), heights: h }; }
@@ -223,6 +227,11 @@ export class InlineCompute implements MapCompute {
 
   async thumbnail(bytes: Uint8Array, max: number): Promise<Thumbnail | null> {
     return thumbnailOf(bytes, max);
+  }
+
+  async shrinkPicture(bytes: Uint8Array, job: ShrinkJob): Promise<ShrunkPicture | null> {
+    const img = decodeImage(bytes);
+    return img ? shrinkPicture(img, job) : null;
   }
 
   async preparePicture(bytes: Uint8Array, maxPx: number, region?: { x: number; y: number; w: number; h: number }): Promise<PreparedReference | null> {
@@ -328,6 +337,12 @@ export class WorkerCompute implements MapCompute {
     if (this.painter.dead) return this.inline.decodePicture(bytes);
     const copy = bytes.slice(); // (sent over, not shared: the caller keeps its own)
     return this.painter.call<RGBAImage | null>({ op: "decode", bytes: copy }, [copy.buffer as ArrayBuffer]);
+  }
+
+  shrinkPicture(bytes: Uint8Array, job: ShrinkJob): Promise<ShrunkPicture | null> {
+    if (this.painter.dead) return this.inline.shrinkPicture(bytes, job);
+    const copy = bytes.slice();
+    return this.painter.call<ShrunkPicture | null>({ op: "shrink", bytes: copy, job }, [copy.buffer as ArrayBuffer]);
   }
 
   thumbnail(bytes: Uint8Array, max: number): Promise<Thumbnail | null> {

@@ -14,8 +14,8 @@ import { type FileHandle, mkdir, open, readFile, readdir, stat, writeFile } from
 import os from "node:os";
 import path from "node:path";
 import {
-  type AssetCategory, type AssetItem, type RandomAccess, type RGBAImage, type RoofAsset, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
-  categoryOf, defaultTileSquares, imageSize, opaqueRowCount, parseAssetId, readPck, readPckFile, roofLookOfAsset,
+  type AssetCategory, type AssetItem, type RandomAccess, type RGBAImage, type ShrinkJob, type ShrunkPicture, shrinkPicture, type RoofAsset, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
+  categoryOf, defaultTileSquares, imageSize, parseAssetId, readPck, readPckFile, roofLookOfAsset,
 } from "@mapmaker/core";
 import { decodeImage } from "@mapmaker/tools";
 import { PNG } from "pngjs";
@@ -516,7 +516,11 @@ export class AssetLibrary {
    * Where pictures are read: the server's worker thread (main.ts sets it), so browsing a pack of big pictures for the first time doesn't hold up the
    * map and the editor (found 2026-11-22: every thumbnail was a whole picture decoded on the main thread). Without one (tests), here.
    */
-  pictures: { decode(bytes: Uint8Array): Promise<RGBAImage | null>; thumbnail(bytes: Uint8Array, max: number): Promise<{ png: Uint8Array; w: number; h: number } | null> } | null = null;
+  pictures: {
+    decode(bytes: Uint8Array): Promise<RGBAImage | null>;
+    thumbnail(bytes: Uint8Array, max: number): Promise<{ png: Uint8Array; w: number; h: number } | null>;
+    shrink(bytes: Uint8Array, job: ShrinkJob): Promise<ShrunkPicture | null>;
+  } | null = null;
 
   private remember<T>(key: string, value: T, bytes: number): T {
     this.decoded.set(key, { value, bytes });
@@ -537,12 +541,9 @@ export class AssetLibrary {
     const key = `tile:${id}:${squares ?? ""}${roof ? ":roof" : ""}`;
     const hit = this.decoded.get(key);
     if (hit) return hit.value as TileData | null;
-    const img = await this.decode(id);
-    if (!img) return null;
-    const size = 512;
-    const rows = roof ? opaqueRowCount(img.data, img.w, img.h) : img.h;
-    const data = img.w === size && rows === size ? img.data : boxResize(rows === img.h ? img.data : img.data.subarray(0, img.w * rows * 4), img.w, rows, size, size);
-    return this.remember(key, { data, size, squares: squares ?? defaultTileSquares(img.w) }, data.length);
+    const t = await this.shrunk(id, { kind: "tile", size: 512, roof });
+    if (!t) return null;
+    return this.remember(key, { data: t.data, size: 512, squares: squares ?? defaultTileSquares(t.origW) }, t.data.length);
   }
 
   /**
@@ -554,11 +555,25 @@ export class AssetLibrary {
     const key = `sprite:${id}:${r}`;
     const hit = this.decoded.get(key);
     if (hit) return hit.value as (SpriteData & { origW: number; origH: number }) | null;
-    const img = await this.decode(id);
-    if (!img) return null;
-    const w = Math.max(1, Math.round(img.w * r)), h = Math.max(1, Math.round(img.h * r));
-    const data = r < 1 ? boxResize(img.data, img.w, img.h, w, h) : img.data;
-    return this.remember(key, { w, h, data, origW: img.w, origH: img.h }, data.length);
+    const s = await this.shrunk(id, { kind: "sprite", ratio: r });
+    if (!s) return null;
+    return this.remember(key, { w: s.w, h: s.h, data: s.data, origW: s.origW, origH: s.origH }, s.data.length);
+  }
+
+  /** A pack's picture made ready to draw (core shrinkPicture): on the worker thread when the server gave one (`pictures`), else here. */
+  private async shrunk(id: string, job: ShrinkJob): Promise<ShrunkPicture | null> {
+    const r = await this.locate(id);
+    if (!r) return null;
+    const s = await this.sizeOf(r.pack, r.entry);
+    if (s && s.w * s.h > MAX_DECODE_PIXELS) return null;
+    try {
+      const bytes = await this.bytesOf(r.pack, r.entry);
+      if (this.pictures) return await this.pictures.shrink(bytes, job);
+      const img = decodeImage(bytes);
+      return img ? shrinkPicture(img, job) : null;
+    } catch {
+      return null;
+    }
   }
 
   /** A small PNG for the browser (cached on disk); other formats are passed through unchanged. `orig` is the full-size pixel size when known. */

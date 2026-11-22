@@ -1538,6 +1538,35 @@ describe("the access key", () => {
     await expect(bare.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)))).rejects.toThrow();
   });
 
+  // (2026-11-22: the AI assistant is handed this key, not the access key, so a command it runs can't answer the Allow box over the editor's connection)
+  it("lets the map tools key into the map tools and the hooks only", async () => {
+    const TOOLS = "test-tools-key-fedcba9876543210";
+    const PORT3 = PORT2 + 1;
+    const cfg = loadConfig({ port: PORT3, host: "127.0.0.1", projectsDir: dir2, editorDist: path.join(dir2, "no-editor"), accessToken: KEY, toolsToken: TOOLS });
+    const s3 = createAppServer(cfg, hub2);
+    await new Promise<void>((r) => s3.listen(PORT3, "127.0.0.1", r));
+    const b3 = `http://127.0.0.1:${PORT3}`, h = { authorization: `Bearer ${TOOLS}` };
+    try {
+      const client = new Client({ name: "test", version: "1.0.0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${b3}/mcp`), { requestInit: { headers: h } }));
+      expect((await client.listTools()).tools.length).toBeGreaterThan(20);
+      await client.close();
+      expect((await fetch(`${b3}/api/claude-hook`, { method: "POST", headers: h, body: JSON.stringify({ hook_event_name: "Stop" }) })).status).toBe(204);
+      expect((await fetch(`${b3}/api/health`, { headers: h })).status).toBe(401);
+      expect((await fetch(`${b3}/api/projects/locked-world/refs`, { method: "POST", headers: h, body: "x" })).status).toBe(401);
+      expect((await fetch(`${b3}/?t=${TOOLS}`, { redirect: "manual" })).headers.get("set-cookie")).toBeNull(); // (it gives no editor cookie)
+      const ws = await new Promise<string>((resolve) => {
+        const w = new WebSocket(`ws://127.0.0.1:${PORT3}/ws`, { headers: h });
+        w.on("open", () => { w.close(); resolve("open"); });
+        w.on("unexpected-response", (_req, res) => resolve(String(res.statusCode)));
+        w.on("error", () => resolve("error"));
+      });
+      expect(ws).toBe("401");
+    } finally {
+      s3.close();
+    }
+  });
+
   it("gives the editor a session cookie when it opens the page with the key once, and then needs no header", async () => {
     // a wrong key gives no cookie
     const bad = await fetch(`${base}/?t=not-the-key-not-the-key-nope`, { redirect: "manual" });

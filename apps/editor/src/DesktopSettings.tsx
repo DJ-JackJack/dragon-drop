@@ -95,7 +95,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
           {!!s?.phoneHost && (
             <>
               <p className="muted" data-testid="phone-on">On: open <b>https://{s.phoneHost}/view</b> on your phone, with Tailscale switched on there. The first time, use the link below: it holds your access key, so the phone is let in and remembers it. Send it only to your own phone.</p>
-              <div className="row end"><button onClick={() => void navigator.clipboard.writeText(`https://${s.phoneHost}/view?t=${encodeURIComponent((s.mcpHeader ?? "").replace(/^Authorization: Bearer /, ""))}`)} data-testid="phone-link-copy">Copy the phone link</button></div>
+              <div className="row end"><button onClick={() => void navigator.clipboard.writeText(`https://${s.phoneHost}/view?t=${encodeURIComponent(s.phoneKey ?? "")}`)} data-testid="phone-link-copy">Copy the phone link</button></div>
             </>
           )}
         </fieldset>

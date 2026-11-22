@@ -71,11 +71,12 @@ const assetsDir = path.join(tmp, "Assets");
 }
 
 const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_CACHE_DIR: path.join(tmp, "cache"), MAPMAKER_AUTO_BACKUP_MINUTES: "0.03" }; // (rolling backups every couple of seconds instead of every 15 minutes)
-// E2E_APP=<an unpacked Dragon Drop folder> runs the test against that program's own server and editor (a test copy before a release), the way the desktop app starts them
+// E2E_APP=<an unpacked Dragon Drop folder> runs the test against that program's own server and editor (a test copy before a release), with the settings
+// the desktop app gives them. (Through this Node: Dragon Drop.exe can't be run as Node any more, its RunAsNode switch is off.)
 const appDir = process.env.E2E_APP ? path.resolve(process.env.E2E_APP) : null;
-if (appDir) Object.assign(env, { ELECTRON_RUN_AS_NODE: "1", MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1", MAPMAKER_EDITOR_DIST: path.join(appDir, "resources", "editor") });
+if (appDir) Object.assign(env, { MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1", MAPMAKER_DEV_EDITOR_PORT: "", MAPMAKER_EDITOR_DIST: path.join(appDir, "resources", "editor") });
 const server = appDir
-  ? spawn(path.join(appDir, "Dragon Drop.exe"), [path.join(appDir, "resources", "server", "main.mjs")], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"] })
+  ? spawn(process.execPath, [path.join(appDir, "resources", "server", "main.mjs")], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"] })
   : spawn(process.execPath, [path.join(root, "node_modules/tsx/dist/cli.mjs"), "src/main.ts"], { cwd: path.join(root, "apps/server"), env, stdio: ["ignore", "pipe", "pipe"] });
 let log = "";
 server.stdout.on("data", (d) => (log += d));

@@ -20,7 +20,7 @@ more. Now (`apps/desktop/package.json`, `build.electronFuses`):
 | `EnableEmbeddedAsarIntegrityValidation` | on | the program checks its `app.asar` against a hash written into `Dragon Drop.exe` at build time, so a changed archive doesn't load |
 | `OnlyLoadAppFromAsar` | on | the program loads only its archive, never a loose folder put beside it |
 | `GrantFileProtocolExtraPrivileges` | off | the window never uses `file://` pages |
-| `RunAsNode` | **still on** | the map server runs as a child process through `ELECTRON_RUN_AS_NODE` (see R2) |
+| `RunAsNode` | off (since 2026-11-22) | `Dragon Drop.exe` can't be used as a plain Node.js: the map server is an Electron utility process (see R2) |
 
 Tried 2026-11-22 on a locally built copy (`npm run dist:dir`): its start-up check passes (sandbox, server, access key, terminal, the
 Claude Code check), and with `NODE_OPTIONS` set to load a missing file it still starts (the variable is ignored). The build checks the fuses
@@ -79,14 +79,17 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   terminal, set its start command (Settings) and type into it. So the whole defence is that nothing foreign can run in the page (above).
   Keep it that way: no raw HTML, no scripts or pages from elsewhere, the policy as strict as it is. **This is where a reviewer should look
   hardest.**
-- **R2. `RunAsNode` is still on.** Anyone who can already start programs on the PC can use `Dragon Drop.exe` (once signed) as a plain
-  Node.js. To switch it off, the map server has to be started with Electron's `utilityProcess` instead of `ELECTRON_RUN_AS_NODE` (the server,
-  its compute workers and the smoke test would all need trying again). Worth doing within a few releases of signing.
+- **R2. Fixed 2026-11-22: `RunAsNode` is off.** It was on because the map server ran as `Dragon Drop.exe` with `ELECTRON_RUN_AS_NODE`, which
+  let any program use the (once signed) exe as a plain Node.js. The server is now an Electron utility process (`utilityProcess.fork` in
+  `main.cjs` `startServer`; it is told to start by `MAPMAKER_START` and to stop through its parent port), its compute workers run inside it as
+  before, and the fuse is off and checked in every build. Tried on a locally built copy: its start-up check passes, and with
+  `ELECTRON_RUN_AS_NODE=1` set it still starts as Dragon Drop, not as Node.
 - **R3. Updates are trusted on GitHub's word until the program is signed** (they come over HTTPS from the release page). After signing,
   each copy also checks the update's signature (`SIGNING.md`). Either way, whoever controls the GitHub account can ship code to every copy:
   two-factor sign-in on it matters most of all (`SELLING.md`).
-- **R4. F12 opens the browser's developer tools** in the sold program too. Only the person at the PC can press it, and it helps with
-  support, so it is left on. Switch it off if a reviewer prefers.
+- **R4. Fixed 2026-11-22: no developer tools in the installed app** (`devTools: !app.isPackaged`, and F12 / Ctrl+Shift+I only in a
+  development run). "Press F12 and paste this" is how a scammer would get a person to run code in the page, which can drive the terminal (R1);
+  support has the log folder instead. The installed app's start-up check fails if the tools open.
 - **R5. The access key is stored unencrypted** in the app-data folder (`settings.json`, and the window's cookie). Only programs running as the
   same Windows user can read it, and those can already do anything that user can. Fine as it is.
 - **R6. Fixed 2026-11-22: no workspace file holds the key any more.** Antigravity's file held it (Antigravity can't read it from the
@@ -94,11 +97,14 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   version wrote (`RETIRED_TARGETS` in `assistants.cjs`).
 - **R7. Claude Code's workspace pre-approves the map tools** (`mcp__mapmaker` in `.claude/settings.json`), so ordinary edits don't ask:
   every edit can be undone, and the risky ones ask in Dragon Drop itself.
-- **R8. An assistant that can run commands could answer the Allow box itself.** The terminal's assistant has the access key in its environment
-  (`DRAGON_DROP_KEY`, so its map tools work), so a command it runs could talk to the server as the editor does, Allow included, or change the map
-  files directly. The Allow box guards against the AI's choice of map tools (a confused model, a prompt injection in a place's notes), not against a
-  program running on the PC. Claude Code asks before running any command (only the map tools are pre-approved); for another assistant, keep
-  its own "ask before commands" setting on.
+- **R8. Narrowed 2026-11-22: an assistant that can run commands has only the map tools key.** The terminal's assistant used to be handed the
+  access key itself (`DRAGON_DROP_KEY`), so a command it ran could talk to the server as the editor does, Allow box included. It now gets a key
+  of its own, the map tools key (`settings.toolsToken`, `MAPMAKER_TOOLS_TOKEN`; also in the map tools file, the hooks' header file and Settings'
+  command for Claude Code in your own terminal), which the server takes only for `/mcp` and `/api/claude-hook` (`TOOLS_ROUTES`,
+  `toolsAuthorised` in `http.ts`): not for the editor's connection, where the Allow box is answered, nor for the rest of `/api`, nor for the
+  editor's cookie. What is left: the assistant runs as the same Windows user, so a command could still read the access key from the app-data
+  folder or change the map files directly. Claude Code asks before running any command (only the map tools are pre-approved); for another
+  assistant, keep its own "ask before commands" setting on. Make a new access key in Settings makes a new map tools key too.
 
 ## Keeping Electron current
 

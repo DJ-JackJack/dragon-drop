@@ -63,17 +63,23 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
     main.writeClaudeWorkspace(null); // (this is the function that failed on Windows when a local variable hid `settings`)
     const dir = path.join(documents, "Dragon Drop", "Claude");
     // the files that hold the key are in the app-data folder; the hooks read their header from a file there (curl's -H @file)
+    // the assistant gets its own key, the map tools key (it opens the map tools and the hooks, not the editor's connection): never the access key
+    const tools = main.getSettings().toolsToken;
+    expect(tools).toMatch(/^[0-9a-f]{64}$/);
+    expect(tools).not.toBe(key);
     const headerFile = path.join(userData, "hook-header.txt");
-    expect(readFileSync(headerFile, "utf8")).toBe(`Authorization: Bearer ${key}\n`);
+    expect(readFileSync(headerFile, "utf8")).toBe(`Authorization: Bearer ${tools}\n`);
     expect(main.hookCommand()).toContain(`-H "@${headerFile.replace(/\\/g, "/")}"`);
     expect(main.hookCommand()).not.toContain(key);
     const mcp = JSON.parse(readFileSync(path.join(userData, "mapmaker.mcp.json"), "utf8"));
     expect(mcp.mcpServers.mapmaker.url).toBe("http://127.0.0.1:4747/mcp");
-    expect(mcp.mcpServers.mapmaker.headers.Authorization).toBe(`Bearer ${key}`);
+    expect(mcp.mcpServers.mapmaker.headers.Authorization).toBe(`Bearer ${tools}`);
+    expect(readFileSync(path.join(userData, "mapmaker.mcp.json"), "utf8")).not.toContain(key);
     expect(existsSync(path.join(dir, "mapmaker.mcp.json"))).toBe(false);
     const cfg = JSON.parse(readFileSync(path.join(dir, ".claude", "settings.json"), "utf8"));
     for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "SessionEnd"]) expect(JSON.stringify(cfg.hooks[ev])).toContain("hook-header.txt");
     expect(workspaceFilesHolding(dir, key)).toEqual([]); // (Documents is often synced to the cloud)
+    expect(workspaceFilesHolding(dir, tools)).toEqual([]);
     expect(readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toContain("list_grounds");
 
     // the user's own Claude settings are kept, and the hooks are rewritten (not duplicated) on the next start
@@ -113,6 +119,7 @@ describe("the Windows app's settings and Claude workspace (main.cjs, without Ele
     const { main } = loadMain(userData, documents);
     main.loadSettings();
     expect(main.getSettings().accessToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(main.getSettings().toolsToken).toMatch(/^[0-9a-f]{64}$/); // (an older settings file has none: one is made)
     expect(main.getSettings().projectsDir).toBe("C:\\maps"); // (the rest of the old settings stays)
   });
 

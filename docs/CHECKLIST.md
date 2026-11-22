@@ -68,7 +68,7 @@ In order of harm. *(All fixed 2026-11-22 on `selling-prep`, each with a test; `S
 - [x] The asset library's Copy report showed the Windows user name (in the folder's path): the home folder is written as `~`.
 - [x] Errors from the worker thread carried the program's file paths into messages for the person and the AI: only the message now (the details go to the log).
 - [x] In the fixes themselves: a drive that can't flush (some network or cloud drives) would have failed every save (now best effort), and the chat's size limit counted the pictures' data (now left out of the count).
-- [ ] Left as they are (each in `SECURITY-REVIEW.md`): `RunAsNode` (R2), unsigned updates until signing (R3), F12 (R4), an assistant that can run commands (R8). Also: a floor texture is still shrunk on the main thread the first time it is used (bounded by the 40-megapixel limit, then kept), and a prompt injection in a shared map can still lead the AI to *add* made-up names or notes (removing and renaming ask; the instructions forbid inventing canon).
+- [x] Left at first, then fixed the same day (asked 2026-11-22): `RunAsNode` is off (the map server is an Electron utility process: R2); the installed app has no developer tools (R4); the assistant gets a map tools key of its own, which can't answer the Allow box (R8); floor textures and objects are made ready on the worker. Still left, because code can't fix them: unsigned updates until signing (R3, the person's signing account), and a prompt injection in a shared map leading the AI to *add* made-up names or notes (removing and renaming ask; every addition is the AI's in History and can be undone).
 
 ## Before selling
 

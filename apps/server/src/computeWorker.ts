@@ -16,6 +16,7 @@ parentPort!.on("message", ({ id, job }: { id: number; job: Job }) => {
       : job.op === "city" || job.op === "decode" ? [(value as RGBAImage).data.buffer as ArrayBuffer]
       : job.op === "reference" ? [(value as PreparedReference).jpeg.buffer as ArrayBuffer]
       : job.op === "thumb" ? [(value as Thumbnail).png.buffer as ArrayBuffer]
+      : job.op === "shrink" ? [] // (its pixels may be the decoded picture's own, inside a bigger buffer: copied)
       : job.op === "carve" || job.op === "drain" ? [(value as CarveResult).heights.buffer as ArrayBuffer]
       : value instanceof Uint8ClampedArray || value instanceof Float32Array ? [value.buffer as ArrayBuffer]
       : derivedBuffers(value as Derived);

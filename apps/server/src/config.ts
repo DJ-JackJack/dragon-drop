@@ -25,6 +25,11 @@ export interface Config {
    * `/?t=<key>` once), or null for none. The desktop app always sets one; the developer setup is open unless MAPMAKER_ACCESS_TOKEN is set.
    */
   accessToken: string | null;
+  /**
+   * A second key that opens only the map tools (/mcp) and Claude Code's hooks (/api/claude-hook): what the AI assistant is handed (env MAPMAKER_TOOLS_TOKEN),
+   * so a command it runs can't drive the editor's own connection, where the Allow box is answered, or the rest of /api. Null: only the access key.
+   */
+  toolsToken: string | null;
   /** The developer setup's editor port (Vite, `pnpm dev`), also let in; null for none (the Windows app sets MAPMAKER_DEV_EDITOR_PORT empty). */
   devEditorPort: number | null;
 }
@@ -37,8 +42,11 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   const token = process.env.MAPMAKER_ACCESS_TOKEN?.trim() || null;
   if (token && token.length < MIN_ACCESS_TOKEN) throw new Error(`MAPMAKER_ACCESS_TOKEN must be at least ${MIN_ACCESS_TOKEN} characters (use a long random string).`);
   const dev = process.env.MAPMAKER_DEV_EDITOR_PORT ?? "5173";
+  const tools = process.env.MAPMAKER_TOOLS_TOKEN?.trim() || null;
+  if (tools && tools.length < MIN_ACCESS_TOKEN) throw new Error(`MAPMAKER_TOOLS_TOKEN must be at least ${MIN_ACCESS_TOKEN} characters (use a long random string).`);
   return {
     accessToken: token,
+    toolsToken: tools && tools !== token ? tools : null,
     devEditorPort: /^\d{2,5}$/.test(dev.trim()) ? Number(dev.trim()) : null,
     port,
     host: process.env.MAPMAKER_HOST ?? "127.0.0.1",

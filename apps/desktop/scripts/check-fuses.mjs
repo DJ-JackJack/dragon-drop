@@ -1,6 +1,6 @@
 // Checks the built program's Electron fuses (switches compiled into Dragon Drop.exe, set by package.json's build.electronFuses):
 // Node options and debugger arguments can't be used to run other code inside it, and it loads only its own checked app.asar.
-// RunAsNode stays on because the map server runs as a child process through ELECTRON_RUN_AS_NODE.
+// RunAsNode is off too: the map server is an Electron utility process (main.cjs startServer), not this program run as plain Node.
 // Usage: node scripts/check-fuses.mjs "release/win-unpacked/Dragon Drop.exe"
 import { createRequire } from "node:module";
 
@@ -11,7 +11,7 @@ const exe = process.argv[2];
 if (!exe) { console.error("usage: node scripts/check-fuses.mjs <path to Dragon Drop.exe>"); process.exit(2); }
 
 const WANT = {
-  RunAsNode: true,
+  RunAsNode: false,
   EnableNodeOptionsEnvironmentVariable: false,
   EnableNodeCliInspectArguments: false,
   EnableEmbeddedAsarIntegrityValidation: true,

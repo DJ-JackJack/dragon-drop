@@ -72,6 +72,16 @@ function cookieValue(header: string | undefined, name: string): string | undefin
   return undefined;
 }
 
+/** Does the request carry the map tools key (`Config.toolsToken`, as a Bearer header), or the access key itself? For the map tools and the hooks only. */
+export function toolsAuthorised(cfg: Config, req: IncomingMessage): boolean {
+  if (authorised(cfg, req)) return true;
+  const h = req.headers.authorization;
+  return !!cfg.toolsToken && !!h && h.startsWith("Bearer ") && sameSecret(h.slice(7).trim(), cfg.toolsToken);
+}
+
+/** The routes the map tools key opens: the map tools themselves and Claude Code's hooks (the assistant's own). Everything else needs the access key. */
+const TOOLS_ROUTES = new Set(["/mcp", "/api/claude-hook"]);
+
 /** Does the request carry the access key (as a Bearer header or the session cookie)? Always true when no key is set. */
 export function authorised(cfg: Config, req: IncomingMessage): boolean {
   if (!cfg.accessToken) return true;
@@ -91,7 +101,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
       const url = new URL(req.url ?? "/", "http://localhost");
       if (url.pathname.startsWith("/mcp") || url.pathname.startsWith("/api/")) {
         if (!policy.allowed(req)) return deny(res);
-        if (!authorised(cfg, req)) return unauthorised(res);
+        if (!(TOOLS_ROUTES.has(url.pathname) ? toolsAuthorised(cfg, req) : authorised(cfg, req))) return unauthorised(res);
       } else if (cfg.accessToken && url.searchParams.has("t") && policy.allowed(req)) {
         // Opening the editor with the key once (`/?t=<key>`) gives the browser or window the session cookie, then goes on to the same page without the key in its address.
         if (sameSecret(url.searchParams.get("t") ?? "", cfg.accessToken)) {

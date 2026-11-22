@@ -27,7 +27,7 @@ export async function start(overrides: Parameters<typeof loadConfig>[0] = {}) {
   await hub.ensureProject();
   if (cfg.assetsDir) {
     hub.assets = new AssetLibrary(cfg.assetsDir, cfg.cacheDir);
-    hub.assets.pictures = { decode: (b) => compute.decodePicture(b), thumbnail: (b, m) => compute.thumbnail(b, m) }; // (off the main thread)
+    hub.assets.pictures = { decode: (b) => compute.decodePicture(b), thumbnail: (b, m) => compute.thumbnail(b, m), shrink: (b, j) => compute.shrinkPicture(b, j) }; // (off the main thread)
     void hub.assets.scan().catch((e) => console.error("Couldn't scan the asset packs:", e)); // in the background: the server is usable meanwhile
   }
   const server = createAppServer(cfg, hub);
@@ -38,7 +38,8 @@ export async function start(overrides: Parameters<typeof loadConfig>[0] = {}) {
   return { cfg, hub, server };
 }
 
-const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+// (run directly, or started by the Windows app as a utility process, which says so with MAPMAKER_START: its process.argv doesn't name this file)
+const isMain = process.env.MAPMAKER_START === "1" || (Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href);
 if (isMain) {
   start().then(({ cfg, hub, server }) => {
     const url = `http://localhost:${cfg.port}`;
@@ -57,8 +58,10 @@ if (isMain) {
     };
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
-    // the desktop app starts this as a child process and asks it to save and stop this way (Windows has no gentle signals)
+    // the desktop app asks it to save and stop this way (Windows has no gentle signals): through the utility process's port, or (older ways of starting it) a child's IPC
     process.on("message", (m) => { if (m === "shutdown") void shutdown(); });
+    const parentPort = (process as unknown as { parentPort?: { on(ev: "message", cb: (e: { data: unknown }) => void): void } }).parentPort;
+    parentPort?.on("message", (e) => { if (e.data === "shutdown") void shutdown(); });
   }).catch((e) => {
     if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
       console.error(`Port ${loadConfig().port} is already in use. Is Dragon Drop already running? Set MAPMAKER_PORT in .env to use another port.`);
