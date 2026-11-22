@@ -19,6 +19,8 @@ export async function start(overrides: Parameters<typeof loadConfig>[0] = {}) {
     // rolling backups of the map being edited (MAPMAKER_AUTO_BACKUP_MINUTES=0 turns them off)
     autoBackupMs: Math.max(0, Number(process.env.MAPMAKER_AUTO_BACKUP_MINUTES ?? 15) || 0) * 60_000,
     autoBackupKeep: Math.max(1, Number(process.env.MAPMAKER_AUTO_BACKUP_KEEP ?? 6) || 6),
+    // the AI asks the DM before a risky action (tools risky.ts); MAPMAKER_ASK_BEFORE_RISKY=0 turns it off (for scripted tests only)
+    askBeforeRisky: process.env.MAPMAKER_ASK_BEFORE_RISKY !== "0",
   });
   hub.noise = new NoiseStore(cfg.cacheDir);
   await hub.ensureProject();

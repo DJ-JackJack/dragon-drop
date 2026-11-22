@@ -1,0 +1,19 @@
+name: A question
+description: How do I…? Is it possible to…? (The questions and answers page may already have it.)
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste your access key or an API key here**, and leave out anything of your world you'd rather keep private: this page is public.
+  - type: input
+    id: version
+    attributes:
+      label: Dragon Drop version
+      description: At the bottom of Settings (the gear in the top bar).
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true

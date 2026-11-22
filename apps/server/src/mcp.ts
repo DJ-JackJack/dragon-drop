@@ -1,21 +1,22 @@
 /**
  * MCP endpoint (Streamable HTTP, stateless) so Claude Code — including a Remote Control
- * session driven from your phone — can use the same map tools as the in-app chat.
+ * session driven from your phone — can use the same map tools as the in-app chat. `/mcp?tools=essentials` lists the smaller set
+ * with short instructions, for smaller models (tools essentials.ts); every tool still answers by name.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { MAPMAKER_INSTRUCTIONS, runTool, toolJsonSchemas } from "@mapmaker/tools";
+import { ESSENTIAL_INSTRUCTIONS, MAPMAKER_INSTRUCTIONS, type ToolSet, runTool, toolList } from "@mapmaker/tools";
 import type { Hub } from "./hub.ts";
 
-function buildServer(hub: Hub) {
+function buildServer(hub: Hub, set: ToolSet) {
   const server = new Server(
     { name: "dragon-drop", version: "0.1.0" },
-    { capabilities: { tools: {} }, instructions: MAPMAKER_INSTRUCTIONS },
+    { capabilities: { tools: {} }, instructions: set === "essentials" ? ESSENTIAL_INSTRUCTIONS : MAPMAKER_INSTRUCTIONS },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolJsonSchemas().map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema as { type: "object" } })),
+    tools: toolList(set).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema as { type: "object" } })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const r = await runTool(hub.toolContext("mcp"), req.params.name, req.params.arguments ?? {});
@@ -37,7 +38,8 @@ export async function handleMcp(hub: Hub, req: IncomingMessage, res: ServerRespo
     return;
   }
   const body = await readJsonBody(req);
-  const server = buildServer(hub);
+  const set: ToolSet = new URL(req.url ?? "/mcp", "http://localhost").searchParams.get("tools") === "essentials" ? "essentials" : "all";
+  const server = buildServer(hub, set);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

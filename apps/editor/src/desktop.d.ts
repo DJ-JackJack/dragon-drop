@@ -2,17 +2,23 @@
 interface DragonDropBridge {
   platform: string;
   version: string;
-  getSettings(): Promise<{ version: string; projectsDir: string; hasApiKey: boolean; port: number; defaultPort: number; autoUpdate: boolean; assetsDir: string | null; mcpUrl: string; mcpCommand: string; mcpCommandShown: string; mcpHeader: string; terminalCommand: string; assistant: { assistant: string | null; name: string | null; auto: boolean; file: string | null; hint: string }; logDir: string; encrypted: boolean } | null>;
+  getSettings(): Promise<{ version: string; projectsDir: string; hasApiKey: boolean; port: number; defaultPort: number; autoUpdate: boolean; assetsDir: string | null; mcpUrl: string; mcpCommand: string; mcpCommandShown: string; mcpHeader: string; terminalCommand: string; toolSet: "all" | "essentials"; phoneHost: string; assistant: { assistant: string | null; name: string | null; auto: boolean; file: string | null; hint: string }; logDir: string; encrypted: boolean } | null>;
   setApiKey(key: string): Promise<boolean>;
   chooseProjectsFolder(): Promise<string | null>;
   chooseAssetsFolder(): Promise<string | null>;
   clearAssetsFolder(): Promise<void>;
   openProjectsFolder(): Promise<void>;
+  /** Open a map's backups folder, or its own folder while it has no backups (`opened` says which). */
+  openBackups(id: string): Promise<{ ok: boolean; opened: "backups" | "map" | null }>;
+  /** The phone page's address (the PC's Tailscale name), "" for off. The server starts again; the answer is what was kept. */
+  setPhoneHost(host: string): Promise<string>;
   openLogs(): Promise<void>;
   /** Open the open-source licences file; ok is false when it isn't there (a developer build). */
   openLicences(): Promise<{ ok: boolean }>;
   openClaude(launch?: boolean): Promise<{ ok: boolean; reason?: string; workspace?: string; claudePath?: string }>;
   termStart(opts: { cols: number; rows: number; resume?: boolean }): Promise<{ ok: boolean; reason?: string; command?: string }>;
+  /** Show the assistant all the map tools or the smaller set (for smaller models). A change saves and ends the running terminal. */
+  setToolSet(set: "all" | "essentials"): Promise<"all" | "essentials">;
   /** Set what the terminal runs ("" is Claude Code). A valid change saves and ends the running terminal. */
   setTerminalCommand(text: string): Promise<{ ok: boolean; command: string }>;
   /** Run Claude Code's official installer visibly in the terminal panel; `onClaudeInstalled` reports how it went. */

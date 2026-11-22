@@ -20,7 +20,7 @@ import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
 import type { NoiseStore } from "./noiseStore.ts";
-import { PictureRefused, ProjectStore } from "./store.ts";
+import { PictureRefused, ProjectStore, plainLetters } from "./store.ts";
 
 export interface HubOptions {
   /**
@@ -30,6 +30,12 @@ export interface HubOptions {
    */
   autoBackupMs?: number;
   autoBackupKeep?: number;
+  /**
+   * Ask the DM before the AI does something risky (tools risky.ts): the question shows in every editor and phone page and the tool waits up to `askWaitMs`
+   * (default two minutes) for an answer. Off when missing (tests that call those tools with no editor open); the real server turns it on (main.ts).
+   */
+  askBeforeRisky?: boolean;
+  askWaitMs?: number;
 }
 
 /** "Auto 2026-11-18 14:05": the name of a rolling backup (local time, so it matches the clock the person is looking at). */
@@ -40,7 +46,7 @@ export function autoBackupName(d: Date): string {
 
 /** A level name as a piece of a file name: lower case letters, digits and hyphens ("Upper floor" is "upper-floor"). */
 function fileSlug(name: string): string {
-  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "level";
+  return plainLetters(name).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "level";
 }
 
 /** A level name made safe (no control characters, at most 60 characters), or null when nothing is left. */
@@ -1247,6 +1253,33 @@ export class Hub {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   }
 
+  /** Questions to the DM waiting for an answer (`askDm`), by id. */
+  private asks = new Map<string, { msg: Extract<ServerMsg, { t: "confirm" }>; settle: (a: "allowed" | "refused" | "timeout") => void }>();
+
+  /**
+   * Ask the DM before a risky action (tools risky.ts): every editor and phone page shows the question and the first answer counts. "nobody" when no editor or
+   * phone page is open to answer, "timeout" when none came in time. Without `askBeforeRisky` everything is allowed.
+   */
+  askDm(via: "chat" | "mcp", tool: string, text: string): Promise<"allowed" | "refused" | "timeout" | "nobody"> {
+    if (!this.opts.askBeforeRisky) return Promise.resolve("allowed");
+    if (![...this.clients].some((c) => c.readyState === c.OPEN)) return Promise.resolve("nobody");
+    const waitMs = this.opts.askWaitMs ?? 120_000;
+    const id = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const msg = { t: "confirm" as const, id, via, tool, text, waitMs };
+    return new Promise((resolve) => {
+      const settle = (a: "allowed" | "refused" | "timeout") => {
+        if (!this.asks.delete(id)) return;
+        clearTimeout(timer);
+        this.broadcast({ t: "confirm_done", id, answer: a });
+        resolve(a);
+      };
+      const timer = setTimeout(() => settle("timeout"), waitMs);
+      timer.unref?.();
+      this.asks.set(id, { msg, settle });
+      this.broadcast(msg);
+    });
+  }
+
   broadcast(msg: ServerMsg) {
     const s = JSON.stringify(msg);
     for (const c of this.clients) if (c.readyState === c.OPEN) c.send(s);
@@ -1282,7 +1315,12 @@ export class Hub {
     try {
       switch (msg.t) {
         case "hello":
-          return this.sendProject(ws);
+          await this.sendProject(ws);
+          for (const a of this.asks.values()) this.send(ws, a.msg); // a question still open shows on a page opened since
+          return;
+        case "confirm_answer":
+          this.asks.get(msg.id)?.settle(msg.allow ? "allowed" : "refused");
+          return;
         case "open_project":
           return this.openProject(msg.id);
         case "read_picture": {
@@ -1497,6 +1535,7 @@ export class Hub {
         if (via === "mcp") self.open?.agent.note(`Claude Code: ${r.label}`);
         return { seq: r.seq, label: r.label };
       },
+      confirm: (o) => self.askDm(via, o.tool, o.text),
       undo: () => self.session.undo(author),
       redo: () => self.session.redo(author),
       listProjects: () => self.projectsCache,

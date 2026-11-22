@@ -3,6 +3,7 @@
  * so the rail, the key handler and the shortcut sheet agree). The tool's full name is its accessible name; its tip and key are in the tooltip.
  */
 import { ToolIcon } from "./toolIcons.tsx";
+import { forAssistant } from "./assistantName.ts";
 
 export interface RailTool { id: string; label: string; key: string; tip: string }
 export interface RailGroup { name: string; tools: RailTool[] }
@@ -22,7 +23,7 @@ export function ToolRail({ groups, active, onPick, testId, names = true, onNames
           {g.tools.map((x) => (
             <button
               key={x.id} className={`rail-tool${active === x.id ? " on" : ""}`} aria-label={x.label} aria-pressed={active === x.id}
-              title={`${x.tip} (${x.key})`} onClick={() => onPick(x.id)} data-testid={testId?.(x.id)}
+              title={`${forAssistant(x.tip)} (${x.key})`} onClick={() => onPick(x.id)} data-testid={testId?.(x.id)}
             >
               <ToolIcon id={x.id} />
               <span className="rail-name">{SHORT[x.label] ?? x.label}</span>

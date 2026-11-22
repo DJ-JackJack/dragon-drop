@@ -180,6 +180,10 @@ async function startServer() {
     ...process.env, ELECTRON_RUN_AS_NODE: "1", MAPMAKER_NO_DOTENV: "1", MAPMAKER_HOST: "127.0.0.1",
     MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: settings.projectsDir, MAPMAKER_EDITOR_DIST: editorDir, MAPMAKER_ACCESS_TOKEN: settings.accessToken,
   };
+  // the phone page is reached only through an address the person chose in Settings (their Tailscale name); one set in the PC's environment for the
+  // developer setup is not taken, so the phone page stays off unless chosen here
+  delete env.MAPMAKER_ALLOWED_HOSTS;
+  if (settings.phoneHost) env.MAPMAKER_ALLOWED_HOSTS = settings.phoneHost;
   const key = getApiKey();
   if (key) env.ANTHROPIC_API_KEY = key;
   env.MAPMAKER_CACHE_DIR = path.join(app.getPath("userData"), "cache");
@@ -371,12 +375,12 @@ function writeClaudeWorkspace(claudePath) {
   fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
   // the files that hold the key go in the app-data folder; an earlier version left a copy in the workspace, which is taken out now
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
-  const ours = { type: "http", url: `http://127.0.0.1:${port}/mcp`, headers: { Authorization: `Bearer ${settings.accessToken}` } };
+  const ours = { type: "http", url: assistants.mcpAddress(port, settings.toolSet), headers: { Authorization: `Bearer ${settings.accessToken}` } };
   fs.writeFileSync(mcpConfigFile(), JSON.stringify({ mcpServers: { mapmaker: ours } }, null, 2), { mode: 0o600 });
   fs.writeFileSync(hookHeaderFile(), `Authorization: Bearer ${settings.accessToken}\n`, { mode: 0o600 });
   try { fs.unlinkSync(path.join(dir, "mapmaker.mcp.json")); } catch { /* not there */ }
   // the chosen assistant finds the map tools in its own project file (and no other assistant's file keeps our entry)
-  const assistant = assistants.syncAssistantConfigs(dir, { profile: assistants.profileFor(settings.terminalCommand), port, key: settings.accessToken });
+  const assistant = assistants.syncAssistantConfigs(dir, { profile: assistants.profileFor(settings.terminalCommand), port, key: settings.accessToken, tools: settings.toolSet });
   const another = assistant.assistant === "claude"; // Claude Code started by another program (typed, or `ollama launch claude`): it reads .mcp.json, and we pre-approve the server there
   // the same notes under each assistant's own file name
   for (const name of ["CLAUDE.md", "AGENTS.md", "GEMINI.md"]) {
@@ -638,13 +642,17 @@ ipcMain.handle("dd:settings", (e) => {
   if (!fromEditor(e)) return null;
   return {
     version: app.getVersion(), projectsDir: settings.projectsDir, hasApiKey: !!getApiKey(), port, defaultPort: DEFAULT_PORT, autoUpdate: settings.autoUpdate !== false, assetsDir: settings.assetsDir || null,
-    mcpUrl: `http://127.0.0.1:${port}/mcp`,
+    mcpUrl: assistants.mcpAddress(port, settings.toolSet),
     // the line for connecting Claude Code from the user's own terminal: with the access key to copy, and the same line with the key hidden to show
-    mcpCommand: `claude mcp add --transport http --scope user mapmaker http://127.0.0.1:${port}/mcp --header "Authorization: Bearer ${settings.accessToken}"`,
-    mcpCommandShown: `claude mcp add --transport http --scope user mapmaker http://127.0.0.1:${port}/mcp --header "Authorization: Bearer (your access key)"`,
+    mcpCommand: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer ${settings.accessToken}"`,
+    mcpCommandShown: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer (your access key)"`,
     logDir: path.dirname(logFile()), encrypted: safeStorage.isEncryptionAvailable(),
     mcpHeader: `Authorization: Bearer ${settings.accessToken}`, // other assistants send this with every request to the map tools
     terminalCommand: settings.terminalCommand || "",
+    // all the map tools, or the smaller set for smaller models (tools essentials.ts)
+    toolSet: settings.toolSet === "essentials" ? "essentials" : "all",
+    // the phone page's address, "" while it is off
+    phoneHost: settings.phoneHost || "",
     // whether the chosen assistant finds the map tools by itself, and what it needs from the person (Settings shows it)
     assistant: assistants.describe(assistants.profileFor(settings.terminalCommand)),
   };
@@ -662,6 +670,19 @@ ipcMain.handle("dd:set-terminal-command", (e, text) => {
     if (!wasAlive) sendToEditor("dd:term-exit", 0);
   }
   return { ok: true, command: cmd };
+});
+// which map tools the assistant is shown: a change rewrites its files and ends the running terminal, so the assistant starts again with the new list
+ipcMain.handle("dd:set-tool-set", (e, set) => {
+  if (!fromEditor(e)) return "all";
+  const next = set === "essentials" ? "essentials" : "all";
+  if (next !== (settings.toolSet === "essentials" ? "essentials" : "all")) {
+    if (next === "essentials") settings.toolSet = "essentials"; else delete settings.toolSet;
+    saveSettings();
+    const wasAlive = termAlive;
+    killTerminal();
+    if (!wasAlive) sendToEditor("dd:term-exit", 0);
+  }
+  return next;
 });
 ipcMain.handle("dd:set-api-key", async (e, key) => {
   if (!fromEditor(e)) return false;
@@ -700,6 +721,27 @@ ipcMain.handle("dd:clear-assets", async (e) => {
   await restartServer();
 });
 ipcMain.handle("dd:open-projects", (e) => { if (fromEditor(e)) void shell.openPath(settings.projectsDir); });
+// a map's backups folder (copies kept before a migration, removed pictures), or the map's own folder while it has none; only inside the maps folder
+ipcMain.handle("dd:open-backups", (e, id) => {
+  if (!fromEditor(e) || typeof id !== "string" || !/^[a-z0-9-]{1,80}$/.test(id)) return { ok: false, opened: null };
+  const dir = path.join(settings.projectsDir, id);
+  if (!fs.existsSync(path.join(dir, "project.json"))) return { ok: false, opened: null };
+  const backups = path.join(dir, "backups");
+  const has = fs.existsSync(backups);
+  void shell.openPath(has ? backups : dir);
+  return { ok: true, opened: has ? "backups" : "map" };
+});
+// the phone page's address (the PC's Tailscale name), or "" for off; the server starts again with it
+ipcMain.handle("dd:set-phone-host", async (e, text) => {
+  if (!fromEditor(e)) return settings.phoneHost || "";
+  const host = String(text ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
+  if (host && !/^[a-z0-9][a-z0-9.-]{0,250}$/.test(host)) return settings.phoneHost || "";
+  if (host === (settings.phoneHost || "")) return host;
+  if (host) settings.phoneHost = host; else delete settings.phoneHost;
+  saveSettings();
+  await restartServer();
+  return host;
+});
 ipcMain.handle("dd:open-claude", (e, opts) => {
   if (!fromEditor(e)) return { ok: false, reason: "not-allowed" };
   try { return openClaude(!(opts && opts.launch === false)); } catch (err) { return { ok: false, reason: String(err && err.message ? err.message : err) }; }
@@ -846,6 +888,17 @@ async function smokeTest() {
             if (other !== rel && readWs(other) !== null) return fatal(`with "${cmd}" chosen, ${other} is still in the workspace`);
           }
         }
+        // the smaller set of map tools: the chosen assistant's file points at ?tools=essentials, and back again
+        if ((await win.webContents.executeJavaScript(`window.dragonDrop.setToolSet("essentials")`)) !== "essentials") return fatal("setToolSet(essentials) was refused");
+        await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
+        if (!(readWs(".agents/mcp_config.json") || "").includes(`${url}?tools=essentials`)) return fatal("with the smaller tool set chosen, the assistant's file doesn't point at it");
+        if ((await win.webContents.executeJavaScript(`window.dragonDrop.setToolSet("all")`)) !== "all") return fatal("setToolSet(all) was refused");
+        await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
+        if ((readWs(".agents/mcp_config.json") || "").includes("?tools=")) return fatal("back to all the tools, the assistant's file still points at the smaller set");
+        // a map's backups folder: only an id of a map in the maps folder; and the phone page takes only a host name
+        const badOpen = await win.webContents.executeJavaScript(`window.dragonDrop.openBackups("../x")`);
+        if (!badOpen || badOpen.ok !== false) return fatal(`openBackups("../x") returned ${JSON.stringify(badOpen)}`);
+        if ((await win.webContents.executeJavaScript(`window.dragonDrop.setPhoneHost("bad host/with spaces")`)) !== "") return fatal("setPhoneHost took a name with spaces");
         const enabledNow = (() => { try { return JSON.parse(readWs(".claude/settings.json")).enabledMcpjsonServers; } catch { return null; } })();
         if (enabledNow !== undefined && (!Array.isArray(enabledNow) || enabledNow.filter((s) => s === "mapmaker").length > 1)) return fatal(`enabledMcpjsonServers is wrong: ${JSON.stringify(enabledNow)}`);
         if (process.platform === "win32") {

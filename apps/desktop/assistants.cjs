@@ -18,7 +18,8 @@ const path = require("node:path");
 /** The environment variable the terminal is started with. */
 const KEY_ENV = "DRAGON_DROP_KEY";
 const SERVER = "mapmaker";
-const OURS = /^http:\/\/127\.0\.0\.1:\d+\/mcp$/;
+// (the smaller set of map tools, for smaller models, is the same address with ?tools=essentials)
+const OURS = /^http:\/\/127\.0\.0\.1:\d+\/mcp(\?tools=essentials)?$/;
 
 /** What we know of each assistant. `auto` is false for ones we can only describe. */
 const ASSISTANTS = {
@@ -157,13 +158,19 @@ function describe(profile) {
 
 /**
  * Make the workspace folder `dir` say that `profile` (see profileFor) finds the map tools at http://127.0.0.1:<port>/mcp, and that no other assistant does.
+ * `tools` "essentials" points it at the smaller set of map tools (for smaller models).
  * Returns describe(profile).
  */
-function syncAssistantConfigs(dir, { profile, port, key }) {
-  const url = `http://127.0.0.1:${port}/mcp`;
+function syncAssistantConfigs(dir, { profile, port, key, tools }) {
+  const url = mcpAddress(port, tools);
   for (const [id, t] of Object.entries(JSON_TARGETS)) syncJson(path.join(dir, t.file), t.under, readsTarget(id, profile) ? t.entry(url, key) : null, t.secret);
   syncCodex(path.join(dir, ".codex", "config.toml"), profile === "codex" ? url : null);
   return describe(profile);
 }
 
-module.exports = { KEY_ENV, ASSISTANTS, profileFor, describe, syncAssistantConfigs, syncJson, syncCodex };
+/** The map tools address: all of them, or ("essentials") the smaller set for smaller models. */
+function mcpAddress(port, tools) {
+  return `http://127.0.0.1:${port}/mcp${tools === "essentials" ? "?tools=essentials" : ""}`;
+}
+
+module.exports = { KEY_ENV, ASSISTANTS, profileFor, describe, syncAssistantConfigs, syncJson, syncCodex, mcpAddress };

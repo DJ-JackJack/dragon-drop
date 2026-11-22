@@ -24,6 +24,7 @@ import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
 import { MAP_TOOLS } from "./mapTools.ts";
 import { decodeImage, encodeJpeg, prepareReference, toBase64 } from "./images.ts";
+import { refusal, riskOf } from "./risky.ts";
 import { define, fail, json, text } from "./toolKit.ts";
 
 export interface ToolContext {
@@ -112,6 +113,11 @@ export interface ToolContext {
   setSelection?(sel: Selection | null): void;
   /** Optional: copy a map (the open one unless `from` names another) under a new name, to change the copy; the copy is opened unless `open` is false. */
   duplicateMap?(o: { name: string; from?: string; open?: boolean }): Promise<ProjectInfo & { from: string }>;
+  /**
+   * Optional: ask the DM before a risky action (risky.ts): they answer in the editor or on the phone page. Without it (tests, contexts that only look) nothing is asked.
+   * "nobody": no editor or phone page is open to answer.
+   */
+  confirm?(o: { tool: string; text: string }): Promise<"allowed" | "refused" | "timeout" | "nobody">;
   /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. `level`: a battlemap's level (id or name) instead of its first. */
   peek?(map: string, level?: string): Promise<ToolContext>;
   /** Optional: how every map is linked to the others (core mapLinks.ts). */
@@ -979,7 +985,7 @@ export const TOOLS = [
       "Set hide_marker for a landmark the terrain already shows (a peak, a crater) so the marker doesn't cover it. " +
       "Only add places the user named or confirmed; don't invent canon.",
     schema: z.object({
-      name: z.string().min(1).max(80),
+      name: z.string().min(1).max(80).describe("Only a name the DM gave or confirmed: names are the DM's canon. If they didn't give one, don't make one up (not even when asked to name it): ask, or offer a few as proposals and wait; meanwhile a plain description is fine (\"Port town (unnamed)\")."),
       type: PlaceTypeSchema,
       x: z.number(), y: z.number(),
       notes: z.string().max(1000).optional(),
@@ -1049,7 +1055,7 @@ export const TOOLS = [
       "the text follows, such as a range's crest, a river or a coast (it reads left to right, centred on the line). " +
       "spread stretches the letters along the whole path (good for ranges).",
     schema: z.object({
-      text: z.string().min(1).max(60),
+      text: z.string().min(1).max(60).describe("Only a name the DM gave or confirmed: names are the DM's canon. If they didn't give one, don't make one up (not even when asked to name it): ask, or offer a few as proposals and wait."),
       kind: LabelKindSchema,
       x: z.number().optional(), y: z.number().optional(),
       path: z.array(XY).min(2).max(200).optional().describe("Points the text follows, in order"),
@@ -1768,6 +1774,14 @@ export async function runTool(ctx: ToolContext, name: string, input: unknown): P
   const parsed = tool.schema.safeParse(input ?? {});
   if (!parsed.success) {
     return { ...text(`Invalid input for ${name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`), isError: true };
+  }
+  // a risky action waits for the DM's OK, asked in code (risky.ts)
+  if (ctx.confirm) {
+    const what = await riskOf(ctx, name, parsed.data);
+    if (what) {
+      const answer = await ctx.confirm({ tool: name, text: what });
+      if (answer !== "allowed") return { ...text(refusal(answer, what)), isError: true };
+    }
   }
   try {
     return await (tool.run as (c: ToolContext, i: unknown) => Promise<ToolResult>)(ctx, parsed.data);

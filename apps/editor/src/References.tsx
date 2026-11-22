@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { type RefInfo, REFERENCE_PICTURE_ACCEPT, REFERENCE_PICTURE_MAX_BYTES } from "@mapmaker/core";
 import { ask, confirmBox } from "./dialogs.tsx";
 import { store } from "./store.ts";
+import { forAssistant } from "./assistantName.ts";
 
 const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const describe = (r: RefInfo) => `${r.w && r.h ? `${r.w} × ${r.h} px · ` : ""}${size(r.bytes)}`;
@@ -57,7 +58,7 @@ export function References({ refs, worldMap, addedAt, tracing, onTrace, onStopTr
         onChange={(e) => { if (e.target.files?.length) void store.addPictures([...e.target.files]); e.target.value = ""; }}
       />
       {refs.length === 0 ? (
-        <p className="muted">Sketches, maps and pictures for inspiration, for you and Claude to look at. Add one with the button, or drop or paste a picture anywhere in the window.</p>
+        <p className="muted">{forAssistant("Sketches, maps and pictures for inspiration, for you and Claude to look at. Add one with the button, or drop or paste a picture anywhere in the window.")}</p>
       ) : (
         <>
           <div className="ref-list">

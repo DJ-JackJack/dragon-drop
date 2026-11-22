@@ -1558,6 +1558,30 @@ try {
     await page.getByTestId("copied-from").waitFor({ state: "detached", timeout: 20000 });
   }
 
+  // the AI asks before a risky action: removing a named place through the map tools waits for the DM's answer in the editor (Don't allow, then Allow)
+  {
+    const post = (body) => fetch(`http://localhost:${port}/mcp`, {
+      method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${key}` }, body: JSON.stringify(body),
+    }).then((r) => r.json());
+    const mcp = async (name, args) => {
+      await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "e2e", version: "1" } } });
+      return (await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } })).result;
+    };
+    const made = await mcp("add_place", { name: "E2E Askton", type: "village", x: 40, y: 40 });
+    if (made.isError) fail(`add_place: ${JSON.stringify(made.content)}`);
+    const refused = mcp("remove_place", { place: "E2E Askton" });
+    await page.getByTestId("ask-box").getByText(/Remove the place "E2E Askton"/).waitFor({ timeout: 10000 });
+    await page.screenshot({ path: path.join(shots, "ask-box.png") });
+    await page.getByTestId("ask-refuse").click();
+    if (!(await refused).isError) fail("the place was removed although the DM said no");
+    await page.getByTestId("ask-box").waitFor({ state: "detached", timeout: 5000 });
+    const allowed = mcp("remove_place", { place: "E2E Askton" });
+    await page.getByTestId("ask-allow").click({ timeout: 10000 });
+    const done = await allowed;
+    if (done.isError) fail(`with the DM's OK the place wasn't removed: ${JSON.stringify(done.content)}`);
+    await page.getByTestId("ask-box").waitFor({ state: "detached", timeout: 5000 });
+  }
+
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);
   console.log(`E2E OK (screenshots in ${shots})`);
   await browser.close();

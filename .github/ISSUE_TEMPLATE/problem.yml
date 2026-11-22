@@ -1,0 +1,43 @@
+name: Something doesn't work
+description: Dragon Drop shows an error, won't start, or does something it shouldn't.
+labels: ["problem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. **Never paste your access key or an API key here**, and leave out anything of your world you'd rather keep private: this page is public.
+  - type: input
+    id: version
+    attributes:
+      label: Dragon Drop version
+      description: At the bottom of Settings (the gear in the top bar).
+      placeholder: "0.1.12"
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows
+      options: ["Windows 11", "Windows 10", "Not sure"]
+    validations:
+      required: true
+  - type: dropdown
+    id: assistant
+    attributes:
+      label: AI assistant (Settings → AI assistant)
+      options: ["Claude Code", "The chat in the window (API key)", "Codex", "Gemini CLI", "OpenCode", "Antigravity", "Muse Code", "Another (custom command)", "None / not involved"]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: The last lines of the log (if something failed)
+      description: Settings → Open logs. Copy the last 20 lines or so.
+      render: text

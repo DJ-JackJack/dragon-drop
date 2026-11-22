@@ -11,6 +11,7 @@ import { type Hit, drawFeatures, hitTest, loadLabelFonts } from "./drawFeatures.
 import { drawFurniture, viewUnit } from "./drawFurniture.ts";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { store } from "./store.ts";
+import { AskBox } from "./AskBox.tsx";
 import { withWaterLabels } from "./waterUi.ts";
 
 interface View { scale: number; ox: number; oy: number }
@@ -242,6 +243,7 @@ export function Viewer() {
           </div>
         )}
       </div>
+      <AskBox />
     </div>
   );
 }

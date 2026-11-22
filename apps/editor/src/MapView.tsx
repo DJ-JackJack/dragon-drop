@@ -7,6 +7,7 @@ import {
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
+import { forAssistant } from "./assistantName.ts";
 import { TraceBar } from "./TraceBar.tsx";
 import { CompareBar } from "./CompareMaps.tsx";
 import { compareCtl } from "./compare.ts";
@@ -1266,7 +1267,7 @@ function drawSelectionOverlay(
       const tx = v.ox + x0 * v.scale, ty = v.oy + y0 * v.scale - 6;
       ctx.font = "600 11px system-ui, sans-serif";
       ctx.textBaseline = "bottom";
-      const label = "Claude's edits are locked to this";
+      const label = forAssistant("Claude's edits are locked to this");
       const wdt = ctx.measureText(label).width + 12;
       ctx.fillStyle = "rgba(255, 215, 60, 0.95)";
       ctx.fillRect(tx, ty - 17, wdt, 17);

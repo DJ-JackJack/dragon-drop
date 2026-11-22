@@ -7,6 +7,7 @@ import {
 } from "@mapmaker/core";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { store } from "./store.ts";
+import { forAssistant } from "./assistantName.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 
@@ -204,7 +205,7 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         <label className="field">Climate
           <select value={preset ?? "own"} onChange={(e) => { const p = CITY_CLIMATES.find((x) => x.id === e.target.value); if (p) setCity({ climate: { temperature: p.temperature, moisture: p.moisture } }, `Climate: ${p.name}`); }} data-testid="city-climate">
             {CITY_CLIMATES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            {!preset && <option value="own">Its own (set by Claude)</option>}
+            {!preset && <option value="own">{forAssistant("Its own (set by Claude)")}</option>}
           </select>
         </label>
         <p className="muted">{CITY_CLIMATES.find((p) => p.id === preset)?.hint ?? `Temperature ${climate.temperature}, moisture ${climate.moisture} (0 to 1).`}</p>

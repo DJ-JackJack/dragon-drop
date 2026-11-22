@@ -231,6 +231,13 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .modal-back { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; z-index: 10; }
 .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; width: 360px; display: flex; flex-direction: column; gap: 10px; }
 .modal h2 { margin: 0 0 4px; font-size: 17px; }
+/* the AI assistant's question before a risky action (AskBox.tsx): above everything, also on the phone page */
+.ask-back { z-index: 40; padding: 16px; }
+.ask-box { width: min(420px, 100%); box-sizing: border-box; }
+/* a link that looks like a button (Settings → Help) */
+.button-link { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; color: inherit; text-decoration: none; font-size: 13px; }
+.button-link:hover { border-color: var(--accent, #d4af37); }
+.ask-what { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .modal label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #4a2323; border: 1px solid var(--error); padding: 8px 14px; border-radius: 8px; cursor: pointer; z-index: 20; }
 

@@ -50,6 +50,8 @@ export interface AppState {
   water: { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[] } | null;
   /** Valleys are being carved (the Carve valleys button waits). */
   carving: boolean;
+  /** The AI assistant's questions waiting for the DM's OK (tools risky.ts), oldest first, with when each arrived (AskBox.tsx). */
+  asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number }[];
 }
 
 function loadLockPref(): boolean {
@@ -60,7 +62,7 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false,
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false, asks: [],
 };
 
 /** The most pictures added in one go (a whole folder dropped by mistake shouldn't start hundreds of uploads). */
@@ -170,7 +172,7 @@ class Store {
       this.set({ connected: true, error: null });
     };
     ws.onclose = () => {
-      this.set({ connected: false });
+      this.set({ connected: false, asks: [] }); // (questions still open are sent again on reconnecting)
       const wait = Math.min(5000, 500 * 2 ** this.retry++);
       setTimeout(() => this.connect(), wait);
     };
@@ -218,6 +220,12 @@ class Store {
   }
   removeLevel(id: string) {
     this.send({ t: "level_remove", id });
+  }
+
+  /** The DM's answer to one of the AI assistant's questions. */
+  answerAsk(id: string, allow: boolean) {
+    this.send({ t: "confirm_answer", id, allow });
+    this.set({ asks: this.state.asks.filter((a) => a.id !== id) });
   }
 
   dismissError() {
@@ -348,6 +356,12 @@ class Store {
         break;
       case "duplicated":
         this.set({ pictureNote: { text: `"${m.name}" is a copy of "${m.from}", now open: change it, and compare it with the original from the Map panel. The original is left as it was.`, busy: false, at: Date.now(), ms: 9000 } });
+        break;
+      case "confirm":
+        if (!this.state.asks.some((a) => a.id === m.id)) this.set({ asks: [...this.state.asks, { id: m.id, via: m.via, tool: m.tool, text: m.text, waitMs: m.waitMs, at: Date.now() }] });
+        break;
+      case "confirm_done":
+        this.set({ asks: this.state.asks.filter((a) => a.id !== m.id) });
         break;
       case "river_drawn": {
         const mi = Math.round(m.lengthKm * 0.621371);

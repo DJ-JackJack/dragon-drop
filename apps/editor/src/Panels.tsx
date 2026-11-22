@@ -4,6 +4,7 @@ import { placeKind,
 } from "@mapmaker/core";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { type AppState, store } from "./store.ts";
+import { forAssistant } from "./assistantName.ts";
 import { SourceEditor, WaterEditor, deleteWaterThing } from "./WaterPanel.tsx";
 
 export const LABEL_KINDS: { id: LabelKind; label: string }[] = [
@@ -427,7 +428,7 @@ export function GroundLegend() {
           ))}
         </div>
       ))}
-      <p className="muted">Colours are typical: the real ground varies with the light and the land. Names come from the temperature, moisture and height of each spot, so a spot's mix is in what Claude reports when you select it.</p>
+      <p className="muted">Colours are typical: the real ground varies with the light and the land. Names come from the temperature, moisture and height of each spot, so a spot's mix is in what {forAssistant("Claude")} reports when you select it.</p>
     </details>
   );
 }

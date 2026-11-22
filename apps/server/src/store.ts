@@ -102,8 +102,14 @@ async function readHead(file: string, n: number): Promise<Uint8Array> {
   }
 }
 
+/** Letters a name keeps in a file name: accents dropped ("Ährenfeld" is "ahrenfeld"), and the letters that have no accent to drop spelled out. */
+const SPELLED: Record<string, string> = { "ß": "ss", "æ": "ae", "œ": "oe", "ø": "o", "ł": "l", "đ": "d", "ð": "d", "þ": "th", "ı": "i" };
+export function plainLetters(name: string): string {
+  return name.toLowerCase().normalize("NFKD").replace(/\p{M}+/gu, "").replace(/[ßæœøłđðþı]/g, (c) => SPELLED[c] ?? c);
+}
+
 export function slugify(name: string): string {
-  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "map";
+  return plainLetters(name).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "map";
 }
 
 /** Every file a checkpoint entry keeps. */

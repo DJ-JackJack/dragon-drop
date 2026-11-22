@@ -5,6 +5,7 @@
 import { BATTLE_TOOL_GROUPS } from "./Battle.tsx";
 import { CITY_TOOL_GROUPS } from "./cityUi.ts";
 import { TOOL_GROUPS } from "./toolDefs.ts";
+import { forAssistant } from "./assistantName.ts";
 
 const Key = ({ children }: { children: string }) => <kbd>{children}</kbd>;
 
@@ -36,7 +37,7 @@ export function ShortcutHelp({ battle, city = false, onClose }: { battle: boolea
 
         <fieldset>
           <legend>Editing</legend>
-          <Row keys={["Ctrl+Z"]} what="Undo (Claude's edits too)" />
+          <Row keys={["Ctrl+Z"]} what={forAssistant("Undo (Claude's edits too)")} />
           <Row keys={["Ctrl+Shift+Z", "Ctrl+Y"]} what="Redo" />
           <Row keys={["Shift + click"]} what="Select several: add something to the selection, or take it out" />
           <Row keys={battle || city ? ["Drag a box"] : ["Shift + drag a box"]} what={battle || city ? "With the Select tool, on bare ground: select everything inside the box (Shift adds to what is selected)" : "With the Select tool, on bare ground: select the places and labels inside the box"} />

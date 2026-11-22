@@ -44,14 +44,17 @@ On `main` already: Settings says what each AI assistant needs (and whether it is
 
 From `SELLING.md`, where each has its details:
 
+- [x] **The work Claude could do** (asked 2026-11-21, on the branch `selling-prep`, so 0.1.12 goes out as tested): the AI asks the DM before risky actions, in code; a smaller tool set for smaller models; `pnpm model-check` and `MODELS.md` (Claude Haiku and Sonnet, both tool sets); the chosen assistant's name in the editor's words; the phone page off unless chosen in Settings; Open backups folder; `FAQ.md`, Settings → Help and issue forms; a test with unusual folder names (and map folder names without broken accents); a new secret scan. *(2026-11-21)*
+
 - [ ] A licence for the code (the repository is public with no LICENSE file).
 - [ ] A name and trademark search for "Dragon Drop".
 - [ ] A short privacy policy.
 - [ ] Code signing, so Windows stops warning buyers.
 - [ ] Anthropic: email sales about the setup; accept the Commercial Terms for the shipping account.
 - [ ] itch.io's AI disclosure, answered honestly.
-- [ ] Other AI providers: which ones, where their keys live, their terms read; destructive actions confirmed in code; tools and instructions that suit smaller models; "AI assistant" wording where it isn't Claude.
-- [ ] Testing on Windows 10 and 11, OneDrive-redirected Documents, odd paths, low-spec PCs, antivirus; an FAQ and a place to ask for help.
+- [ ] Other AI providers: their terms read (the other items are done: see above).
+- [ ] Try local models with `pnpm model-check --driver openai` (needs a model downloaded, for example through Ollama; the person's call).
+- [ ] Testing on Windows 10, OneDrive-redirected Documents, low-spec PCs, antivirus (needs other PCs; Windows 11 and odd paths are done). Decide where buyers ask for help if the repository goes private.
 - [ ] Security: a second pair of eyes on the Electron side; a plan for vulnerability reports; keep Electron current.
 
 ## On GitHub (the person's)

@@ -226,3 +226,38 @@ describe("what the person has put in those files", () => {
     expect(read(dir, ".codex", "config.toml")).toBe(own);
   });
 });
+
+describe("the assistant's name in the editor's words", () => {
+  it("names every assistant Dragon Drop connects, and says \"the AI assistant\" for any other command", async () => {
+    const { assistantNameFor } = await import("../../editor/src/assistantName.ts");
+    for (const id of ["default", ...Object.keys(ASSISTANTS)]) expect(assistantNameFor(id), id).not.toBe("the AI assistant");
+    expect(assistantNameFor("default")).toBe("Claude");
+    expect(assistantNameFor("codex")).toBe("Codex");
+    expect(assistantNameFor(null)).toBe("the AI assistant");
+  });
+  it("swaps Claude (never Claude Code) for the chosen name, with a capital where a sentence starts", async () => {
+    const { forAssistant } = await import("../../editor/src/assistantName.ts");
+    expect(forAssistant("Lock Claude's edits to this area", "Codex")).toBe("Lock Codex's edits to this area");
+    expect(forAssistant("Claude can see this selection: say this.", "the AI assistant")).toBe("The AI assistant can see this selection: say this.");
+    expect(forAssistant("Use the Place tool, or ask Claude, to add places.", "the AI assistant")).toBe("Use the Place tool, or ask the AI assistant, to add places.");
+    expect(forAssistant("Start Claude Code first. Claude sees it.", "Gemini")).toBe("Start Claude Code first. Gemini sees it.");
+    expect(forAssistant("Undo (Claude's edits too)", "the AI assistant")).toBe("Undo (the AI assistant's edits too)");
+    expect(forAssistant("Lock Claude's edits", "Claude")).toBe("Lock Claude's edits");
+  });
+});
+
+describe("the smaller set of map tools (for smaller models)", () => {
+  it("points the chosen assistant at ?tools=essentials, and switching back or to another assistant replaces it", () => {
+    const dir = folder();
+    syncAssistantConfigs(dir, { profile: "gemini", port: 4747, key: KEY, tools: "essentials" });
+    expect(json(dir, ".gemini", "settings.json").mcpServers.mapmaker.httpUrl).toBe(`${URL4747}?tools=essentials`);
+    syncAssistantConfigs(dir, { profile: "gemini", port: 4747, key: KEY });
+    expect(json(dir, ".gemini", "settings.json").mcpServers.mapmaker.httpUrl).toBe(URL4747);
+    syncAssistantConfigs(dir, { profile: "codex", port: 4747, key: KEY, tools: "essentials" });
+    expect(read(dir, ".codex", "config.toml")).toContain(`url = "${URL4747}?tools=essentials"`);
+    // the essentials address is still recognised as ours: choosing another assistant takes it out of the others' files
+    syncAssistantConfigs(dir, { profile: "opencode", port: 4747, key: KEY, tools: "essentials" });
+    expect(existsSync(path.join(dir, ".codex", "config.toml")) ? read(dir, ".codex", "config.toml") : "").not.toContain("127.0.0.1");
+    expect(json(dir, "opencode.json").mcp.mapmaker.url).toBe(`${URL4747}?tools=essentials`);
+  });
+});

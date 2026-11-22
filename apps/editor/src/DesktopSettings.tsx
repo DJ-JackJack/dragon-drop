@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { type AssetStatus, fetchAssetStatus } from "./assetsApi.ts";
 import { useClaudeLauncher } from "./ClaudeButton.tsx";
 import { ASSISTANT_NEEDS_CHECKED, ASSISTANT_PRESETS as PRESETS } from "./assistantPresets.ts";
+import { refreshAssistantName } from "./assistantName.ts";
+import { HELP_LINKS } from "./helpLinks.ts";
 
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
@@ -12,6 +14,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [phone, setPhone] = useState<string | null>(null);
   const refresh = () => bridge.getSettings().then(setS).catch(() => {});
   useEffect(() => { void refresh(); }, []);
 
@@ -79,6 +82,24 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
         </fieldset>
 
         <fieldset disabled={!!busy}>
+          <legend>Phone page</legend>
+          <p className="muted">A view-only page of the map for your phone, reached through Tailscale (a private network between your own devices). It is off until you enter your PC's Tailscale name here, as <code>tailscale serve status</code> shows it (like my-pc.tail1234.ts.net). The setup guide's section 7 has the steps.</p>
+          <label className="field">Tailscale name
+            <input type="text" value={phone ?? s?.phoneHost ?? ""} placeholder="off" spellCheck={false} onChange={(e) => setPhone(e.target.value)} data-testid="phone-host" />
+          </label>
+          <div className="row end">
+            <button className="primary" disabled={phone === null || phone.trim() === (s?.phoneHost ?? "")} data-testid="phone-host-save"
+              onClick={() => void run("Restarting…", async () => { await bridge.setPhoneHost(phone ?? ""); setPhone(null); })}>Save</button>
+          </div>
+          {!!s?.phoneHost && (
+            <>
+              <p className="muted" data-testid="phone-on">On: open <b>https://{s.phoneHost}/view</b> on your phone, with Tailscale switched on there. The first time, use the link below: it holds your access key, so the phone is let in and remembers it. Send it only to your own phone.</p>
+              <div className="row end"><button onClick={() => void navigator.clipboard.writeText(`https://${s.phoneHost}/view?t=${encodeURIComponent((s.mcpHeader ?? "").replace(/^Authorization: Bearer /, ""))}`)} data-testid="phone-link-copy">Copy the phone link</button></div>
+            </>
+          )}
+        </fieldset>
+
+        <fieldset disabled={!!busy}>
           <legend>Asset library</legend>
           <p className="muted" style={{ wordBreak: "break-all" }} data-testid="assets-dir">{s?.assetsDir ?? "Not set. Choose the folder that holds your assets (folders of pictures, .zip files or asset packs, in any mix); they are read where they are and never copied."}</p>
           {assets?.configured && (
@@ -121,9 +142,16 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
           </label>
           <div className="row end">
             <button className="primary" disabled={shownCmd === (s?.terminalCommand ?? "")} data-testid="terminal-command-save"
-              onClick={() => void bridge.setTerminalCommand(shownCmd).then((r) => { setTermError(r.ok ? null : "That command can't be used (too long, or it has control characters)."); setTermCmd(null); return refresh(); })}>Save</button>
+              onClick={() => void bridge.setTerminalCommand(shownCmd).then((r) => { setTermError(r.ok ? null : "That command can't be used (too long, or it has control characters)."); setTermCmd(null); refreshAssistantName(); return refresh(); })}>Save</button>
           </div>
           {termError && <p className="error-text">{termError}</p>}
+          <label className="field">Map tools
+            <select value={s?.toolSet ?? "all"} onChange={(e) => void bridge.setToolSet(e.target.value === "essentials" ? "essentials" : "all").then(refresh)} data-testid="tool-set">
+              <option value="all">All of them (best for Claude, Codex, Gemini and other large models)</option>
+              <option value="essentials">A smaller set, for smaller or local models</option>
+            </select>
+          </label>
+          {s?.toolSet === "essentials" && <p className="muted" data-testid="tool-set-note">The assistant sees about 40 map tools instead of about 155, with shorter instructions: everyday work on world maps, battlemaps and city maps fits in a much smaller model. Changing this ends the running session.</p>}
           {!!s?.terminalCommand && (
             <p className="muted" data-testid="assistant-status">
               {s.assistant?.auto
@@ -155,6 +183,16 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
           <p className="muted">For Claude Code, the Open Claude Code button sets everything up for you. To use it from your own terminal instead (it must be running), run this once in PowerShell (not inside Claude Code; type /exit first if you are):</p>
           <code className="copyline" data-testid="mcp-command">{s?.mcpCommandShown ?? ""}</code>
           <div className="row end"><button onClick={() => void navigator.clipboard.writeText(cmd)}>Copy</button></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Help</legend>
+          <p className="muted">They open in your web browser. When you ask, say which version of Dragon Drop you have (below) and include the last lines of the logs if something failed. Never paste your access key or an API key.</p>
+          <div className="row">
+            <a className="button-link" href={HELP_LINKS.faq} target="_blank" rel="noreferrer" data-testid="help-faq">Questions and answers</a>
+            <a className="button-link" href={HELP_LINKS.ask} target="_blank" rel="noreferrer" data-testid="help-ask">Ask a question or report a problem</a>
+            <a className="button-link" href={HELP_LINKS.guide} target="_blank" rel="noreferrer">Setup guide</a>
+          </div>
         </fieldset>
 
         {error && <p className="error-text">{error}</p>}

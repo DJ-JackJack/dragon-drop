@@ -4,14 +4,16 @@
  */
 import { Children, type ReactNode, useEffect, useRef, useState } from "react";
 import { ToolIcon } from "./toolIcons.tsx";
+import { forAssistant, useAssistantName } from "./assistantName.ts";
 
 /** `tool`: the tool in use, named at the start of the bar when it has no settings (so the bar is never an empty strip). */
 export function ToolBar({ children, hint, tool }: { children?: ReactNode; hint?: string; tool?: { id: string; name: string } }) {
+  const ai = useAssistantName();
   const empty = Children.toArray(children).length === 0;
   return (
     <div className="toolbar" data-testid="toolbar">
       <div className="tb-row">{empty && tool ? <span className="tb-tool" data-testid="toolbar-tool"><ToolIcon id={tool.id} /> {tool.name}</span> : children}</div>
-      <p className={`tool-hint${hint ? "" : " empty"}`} data-testid={hint ? "tool-hint" : undefined}>{hint ?? ""}</p>
+      <p className={`tool-hint${hint ? "" : " empty"}`} data-testid={hint ? "tool-hint" : undefined}>{hint ? forAssistant(hint, ai) : ""}</p>
     </div>
   );
 }

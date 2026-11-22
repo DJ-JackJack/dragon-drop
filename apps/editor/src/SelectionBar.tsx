@@ -3,6 +3,7 @@
  * (which types the question into the Claude Code terminal, with a pointer to the selection, when Claude is idle).
  */
 import { useEffect, useState } from "react";
+import { forAssistant, useAssistantName } from "./assistantName.ts";
 import { type Features, type Selection, describeSelection, selectionShape } from "@mapmaker/core";
 
 export interface AskResult {
@@ -22,6 +23,7 @@ export function SelectionBar({ selection, lock, lockPref, features, kmPerPx, can
   onLockPref: (on: boolean) => void;
   onAsk: (text: string, selection: string, locked: boolean) => Promise<AskResult>;
 }) {
+  const ai = useAssistantName();
   const [text, setText] = useState("");
   const [note, setNote] = useState<AskResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,9 +51,9 @@ export function SelectionBar({ selection, lock, lockPref, features, kmPerPx, can
         <button className="ghost" onClick={onClear} title="Clear the selection (Esc)" data-testid="selection-clear">Clear</button>
       </div>
       {hasShape && (
-        <label className="check sel-lock" title="While this is on, anything Claude changes on the terrain is kept inside the area (with a soft edge), and it can't move or add places, labels, roads or regions outside it. Your own brushes are never held.">
+        <label className="check sel-lock" title={forAssistant("While this is on, anything Claude changes on the terrain is kept inside the area (with a soft edge), and it can't move or add places, labels, roads or regions outside it. Your own brushes are never held.", ai)}>
           <input type="checkbox" data-testid="selection-lock" checked={lockPref} onChange={(e) => onLockPref(e.target.checked)} />
-          {lock ? "Claude's edits are locked to this area" : "Lock Claude's edits to this area"}
+          {forAssistant(lock ? "Claude's edits are locked to this area" : "Lock Claude's edits to this area", ai)}
         </label>
       )}
       {canAsk ? (
@@ -63,7 +65,7 @@ export function SelectionBar({ selection, lock, lockPref, features, kmPerPx, can
           <button type="submit" disabled={!text.trim() || busy} data-testid="selection-ask-send">Ask Claude</button>
         </form>
       ) : (
-        <p className="muted sel-hint">Claude can see this selection. In Claude Code, say &ldquo;this&rdquo; or &ldquo;my selection&rdquo;.</p>
+        <p className="muted sel-hint">{forAssistant("Claude can see this selection: say \u201cthis\u201d or \u201cmy selection\u201d.", ai)}</p>
       )}
       {note && <div className={`sel-note ${note.ok ? "ok" : "bad"}`} data-testid="selection-note">{note.message}</div>}
     </div>

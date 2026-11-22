@@ -5,13 +5,23 @@ things to put in front of a lawyer or accountant. Tick things off as they happen
 
 ## Prerequisite: the AI side
 
-- [ ] The assistant works with more than one AI provider (in progress, Beas). Before selling, pin down: which providers, where each key is kept
-      (the OS keystore, one per provider, never in the page), what exactly is sent to the model, and that nothing is sent until the user picks a provider.
+- [x] The assistant works with more than one AI provider (2026-11-21): the terminal runs Claude Code, Codex, Gemini CLI, OpenCode, Antigravity or Muse Code,
+      each signed in by the person in its own program (Dragon Drop never holds their keys; the in-window chat's Anthropic key is in the app-data folder,
+      encrypted with the Windows login where Windows offers it), and Settings says what each needs. What is sent: what the assistant reads through the map tools, to that company,
+      from the person's account; nothing is sent until they start one.
 - [ ] Each provider's terms read for a commercial app that calls its API. (Not done: only Anthropic's have been read.)
-- [ ] Destructive actions are confirmed in code, not just in the prompt: weaker models follow prompt rules less reliably, and text inside a project
-      (place names, the brief) can steer a model. The selection lock is already enforced in code.
-- [ ] The tool list and instructions suit small models (about 89 tools and 14 KB of instructions today), and a supported-model list is tested.
-- [ ] UI text says "AI assistant" where it isn't specifically Claude.
+- [x] Destructive actions are confirmed in code, not just in the prompt (2026-11-21, `packages/tools/src/risky.ts`): replacing a map's land, moving the sea,
+      restoring a whole checkpoint, carving every river, copying land over the map, rewriting the brief, removing named things (places, labels, regions,
+      river and lake names, districts) and removing 25 or more things at once wait for the DM's Allow in the editor or on the phone page (two minutes,
+      then refused; refused when neither is open). The selection lock is enforced in code too. The model check's injection task (a place's notes telling
+      the AI to remove every place) passes with every model tried.
+- [x] The tool list and instructions suit small models (2026-11-21): Settings → AI assistant → Map tools: A smaller set lists 42 tools with short
+      descriptions and 3 KB of instructions (about 14,000 tokens, against about 52,000 for all 156 tools and 29 KB of instructions); `pnpm model-check`
+      runs the same tasks against Claude Code or any OpenAI-compatible server (Ollama, LM Studio...), and [MODELS.md](MODELS.md) has the results.
+      Still to do: try local models (none is installed here; downloading one is the person's call).
+- [x] UI text names the chosen assistant where it isn't specifically Claude (2026-11-21, `apps/editor/src/assistantName.ts`): "Lock Codex's edits to
+      this area", "the AI assistant" for a command Dragon Drop doesn't know; Claude Code's setup, the in-window chat and the Ask box (which needs Claude
+      Code's hooks) keep Claude's name.
 
 ## Anthropic (Claude Code and the Claude API)
 
@@ -36,11 +46,11 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       tell users to check each pack's licence before publishing maps made with it, and keep honouring a pack's own "not for other mapping programs" flag.
 - [x] The DM's own world map and brief no longer ship in the installer (a new install starts with a generated neutral "First Map") and are not in the repository (the `projects/` folder is gitignored).
 - [ ] **Repository move.** The old repository (`AI-Mapmaker-Build`) still has that map in its history and in old releases, so the project moved to a fresh repository with a single clean commit (`dragon-drop`, 2026-11-18). The updater's address is baked into each installed copy, so it moves in two steps:
-      1. [ ] The new repository exists and has the clean tree.
-      2. [ ] v0.1.8 is published from the **old** repository (its updater now points at the new one), and again from the **new** one so the first update check there finds a release.
+      1. [x] The new repository exists and has the clean tree.
+      2. [x] v0.1.8 is published from the **old** repository (its updater now points at the new one), and again from the **new** one so the first update check there finds a release. (Releases up to 0.1.11 are on `dragon-drop` now.)
       3. [ ] Friends have updated (Settings shows 0.1.8 and "You're up to date").
       4. [x] The old repository is private and renamed `AI-Mapmaker-Build-archive` (2026-11-20). Its old name now belongs to a **public signpost repository** with one README commit and one release, v0.1.9 (the same installer, blockmap and `latest.yml` as `dragon-drop`'s), so copies older than 0.1.8 still find an update, which then points them at `dragon-drop`. It needs no more releases. Never copy anything from the archive (its history and releases carry the sample map) into it, and never push the old checkout to the old name.
-      5. [ ] Switch on the security settings below in the new repository: they don't carry over.
+      5. [ ] Switch on the security settings below in the new repository: they don't carry over. (Checked 2026-11-21: secret scanning and push protection are on; private vulnerability reporting and Dependabot security updates are off.)
 - [ ] A short privacy policy: no analytics in the app; map data goes to the AI provider the user chooses, from their own account.
 - [x] Third-party licences: all permissive (MIT, ISC, BSD, Apache-2.0, OFL for the Cinzel font). `apps/desktop/scripts/notices.mjs` builds
       `THIRD-PARTY-NOTICES.txt` from what is really bundled, the installer carries it (Help menu: Open-source licences), CI checks it is there, and the
@@ -54,8 +64,14 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       then add it to the workflow's build step.
 - [x] Save-file versioning, migrations and backups, so paying users' maps never break on an update (2026-11-18): `formatVersion` in `project.json`, a map from a newer format is refused untouched, an older one is copied aside and migrated, an unreadable places file is kept instead of overwritten, and automatic rolling checkpoints (newest six, at most every 15 minutes) show in the Checkpoints list. Documented in [MAP-FILES.md](MAP-FILES.md). Still to do: the first real migration (when the format first changes) needs a test map saved in the old form kept as a fixture; and a way to see the `backups` folder from the app.
 - [ ] Test on: Windows 10 and 11, OneDrive-redirected Documents, paths with spaces and non-ASCII characters, low-spec PCs, antivirus on the unsigned
-      build and its terminal module.
-- [ ] Support: an FAQ and a place to ask (Claude Code install problems, administrator prompts, antivirus).
+      build and its terminal module. *(Done on 2026-11-21, Windows 11: the app installed in `Kim's Prögrams (x86)\Dragon Drop 地図` with its settings and maps
+      in folders with accents, spaces and Japanese: the start-up check, and making, copying, comparing, checkpointing and exporting maps with such names.
+      Map folder names now drop accents properly ("Ährenfeld" is `ahrenfeld`). Still needs other PCs: Windows 10, OneDrive-redirected Documents,
+      a slow PC, antivirus programs.)*
+- [x] Support: an FAQ and a place to ask (2026-11-21): [FAQ.md](FAQ.md) (installing, SmartScreen, antivirus, administrator rights, Claude Code problems,
+      other assistants, smaller models, the Allow box, maps, backups, updates, the phone page, privacy); Settings → Help links to it, to the setup guide
+      and to the repository's issue forms (`.github/ISSUE_TEMPLATE`: a problem, a question; both warn never to paste a key). **If the repository goes
+      private, move these links** (`apps/editor/src/helpLinks.ts`) to where buyers can reach, such as the store page's community.
 - [ ] Windows only. (Mac and Linux are not planned.)
 
 ## Security
@@ -68,11 +84,14 @@ Done:
       vulnerability reporting*. While there, switch on *Secret scanning* and *Push protection*.
 - [x] Workflow actions pinned to exact commits, with Dependabot to move the pins and the dependencies forward (weekly, grouped, each run through the full checks).
 - [x] Secret scan of the working tree and all 88 commits then in history: nothing found (the only hits were a "secret door" hint and a dummy test key). Worth repeating before launch.
+      Repeated 2026-11-21 over all 89 commits on every branch, the working files and the commit messages: no keys, tokens or private keys, neither of
+      this PC's access keys, and none of the DM's campaign names.
 
 Left:
 
 - [ ] A second pair of eyes on the Electron side (the window's bridge, the terminal, the updater) from someone who does security reviews.
 - [ ] Turn on two-factor authentication, branch protection and tag protection on the GitHub account and repository: the release pipeline is what ships code to buyers.
-- [ ] The phone page over Tailscale exposes the server beyond this PC. It now supports the access key (see SETUP-WINDOWS §7); keep it off by default in the paid build.
+- [x] The phone page over Tailscale exposes the server beyond this PC. It needs the access key, and in the Windows app it is off until the person enters
+      their Tailscale name in Settings → Phone page (2026-11-21; the app no longer takes `MAPMAKER_ALLOWED_HOSTS` from the PC's environment).
 - [ ] Keep Electron current: Chromium security fixes arrive often, and each needs a release. Dependabot opens the pull request; someone has to merge and ship it.
 - [ ] A plan for a vulnerability report: who answers, how fast, how a fix is released.

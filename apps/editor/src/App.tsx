@@ -25,6 +25,8 @@ import { ShortcutHelp } from "./ShortcutHelp.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { useAssist } from "./useAssist.ts";
 import { ask, confirmBox, DialogHost, notice } from "./dialogs.tsx";
+import { AskBox } from "./AskBox.tsx";
+import { capital, forAssistant, useAssistantName } from "./assistantName.ts";
 import { regionSummary } from "./drawRegions.ts";
 import { ClimatePanel, ExtrasPanel, GridPanel, GroundLegend, Inspector } from "./Panels.tsx";
 import { type AppState, store } from "./store.ts";
@@ -50,6 +52,7 @@ function mapHasLand(): boolean {
 
 export function App() {
   const s = useSyncExternalStore(store.subscribe, store.getState);
+  useAssistantName(); // (the words that name the assistant follow a change in Settings)
   const [tool, setTool] = useState<Tool>("pan");
   const [brush, setBrush] = useState<Brush>({ radius: 12, strength: 0.5 });
   const [showGrid, setShowGrid] = useState(false);
@@ -424,7 +427,7 @@ export function App() {
           <section>
             <h3>Places</h3>
             <div className="places" data-testid="places">
-              {s.features.places.length === 0 && <p className="muted">Use the Place tool, or ask Claude, to add named places.</p>}
+              {s.features.places.length === 0 && <p className="muted">{forAssistant("Use the Place tool, or ask Claude, to add named places.")}</p>}
               {[...s.features.places].sort((a, b) => a.name.localeCompare(b.name)).map((p) => (
                 <button key={p.id} className={`place-row ${selectedId === p.id ? "on" : ""}`} onClick={() => { onSelect(p.id); setTool("select"); }}>
                   <span>{p.name}</span><span className="muted">{placeKind(p.type).name}</span>
@@ -478,6 +481,12 @@ export function App() {
               <button onClick={() => { void ask("Name this checkpoint:", `Checkpoint ${s.checkpoints.length + 1}`, "Save").then((n) => { if (n) store.send({ t: "checkpoint_save", name: n }); }); }}>
                 Save checkpoint
               </button>
+              {window.dragonDrop && s.meta && (
+                <button className="ghost" data-testid="open-backups" title="Copies kept before an update changed how the map is stored, and pictures you removed. Opens the map's own folder while there are none."
+                  onClick={() => { const id = s.meta!.id; void window.dragonDrop!.openBackups(id).then((r) => { if (r.ok && r.opened === "map") void notice("This map has no backups folder yet: its own folder is open instead. Its checkpoints are listed here."); }); }}>
+                  Open backups folder
+                </button>
+              )}
             </div>
           </section>
 
@@ -489,7 +498,7 @@ export function App() {
               {s.changes.length === 0 && <p className="muted">No changes yet.</p>}
               {[...s.changes].reverse().map((c) => (
                 <div key={`${c.seq}-${c.kind}-${c.time}`} className={`hist ${c.kind}`}>
-                  <span className={`who ${c.author}`}>{c.author === "user" ? "You" : c.author === "claude" ? "Claude" : "System"}</span>
+                  <span className={`who ${c.author}`}>{c.author === "user" ? "You" : c.author === "claude" ? capital(forAssistant("Claude")) : "System"}</span>
                   <span className="what">{c.label}</span>
                 </div>
               ))}
@@ -520,12 +529,13 @@ export function App() {
       {s.pictureNote && !s.error && <div className="toast info" data-testid="picture-note">{s.pictureNote.text}</div>}
       {dropping && (
         <div className="drop-overlay" data-testid="drop-overlay">
-          <div><b>Drop to add to References</b><span>{PICTURE_RULE}. Claude can look at it, and on a world map you can turn a sketch into terrain.</span></div>
+          <div><b>Drop to add to References</b><span>{PICTURE_RULE}. {forAssistant("Claude can look at it, and on a world map you can turn a sketch into terrain.")}</span></div>
         </div>
       )}
       {s.error && (
         <div className="toast" onClick={() => store.dismissError()}>{s.error} <span className="muted">(click to dismiss)</span></div>
       )}
+      <AskBox />
     </div>
   );
 }
