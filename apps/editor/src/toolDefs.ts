@@ -12,7 +12,7 @@ export const TOOL_GROUPS: { name: string; tools: ToolDef[] }[] = [
   { name: "Terrain", tools: [
     { id: "raise", label: "Raise", key: "R", tip: "Paint terrain upward" },
     { id: "lower", label: "Lower", key: "L", tip: "Paint terrain downward" },
-    { id: "smooth", label: "Smooth", key: "S", tip: "Soften bumps and sharp edges" },
+    { id: "smooth", label: "Smooth", key: "S", tip: "Soften bumps and sharp edges. Raise Reach to soften a wide straight step in the land" },
     { id: "flatten", label: "Flatten", key: "F", tip: "Level terrain to the height where the stroke starts" },
     { id: "land", label: "Land", key: "A", tip: "Push the coastline out: paint new low land into the sea" },
     { id: "water", label: "Water", key: "W", tip: "Pull the coastline in: paint sea over land" },

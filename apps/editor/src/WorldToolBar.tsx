@@ -1,5 +1,5 @@
 /** The world map's tool bar: the settings of the tool in use, and what to do next with it. */
-import { type LabelKind, type LineKind, type PlaceType, type RiverSize, placeKind } from "@mapmaker/core";
+import { type LabelKind, type LineKind, type PlaceType, type RiverSize, MAX_SMOOTH_REACH_PX, placeKind } from "@mapmaker/core";
 import { RIVER_SIZE_NAMES } from "./WaterPanel.tsx";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { LABEL_KINDS } from "./Panels.tsx";
@@ -115,6 +115,13 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
             <span>Strength <b>{Math.round(brush.strength * 100)}%</b></span>
             <input type="range" min={5} max={100} value={Math.round(brush.strength * 100)} onChange={(e) => onBrush({ ...brush, strength: Number(e.target.value) / 100 })} />
           </label>
+          {tool === "smooth" && (
+            <label className="slider" title="How far the smoothing reaches. Raise it to soften a wide straight step or terrace in the land: it is spread into a slope about this wide. The coast stays where it is.">
+              <span>Reach <b>{(brush.reach ?? 0) >= 2 ? `${brush.reach} px` : "near"}</b></span>
+              <input type="range" min={1} max={MAX_SMOOTH_REACH_PX} value={Math.max(1, brush.reach ?? 1)} data-testid="smooth-reach"
+                onChange={(e) => onBrush({ ...brush, reach: Number(e.target.value) })} />
+            </label>
+          )}
         </>
       )}
     </ToolBar>

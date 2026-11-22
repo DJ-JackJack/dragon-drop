@@ -9,7 +9,9 @@ things to put in front of a lawyer or accountant. Tick things off as they happen
       each signed in by the person in its own program (Dragon Drop never holds their keys; the in-window chat's Anthropic key is in the app-data folder,
       encrypted with the Windows login where Windows offers it), and Settings says what each needs. What is sent: what the assistant reads through the map tools, to that company,
       from the person's account; nothing is sent until they start one.
-- [ ] Each provider's terms read for a commercial app that calls its API. (Not done: only Anthropic's have been read.)
+- [x] Each provider's terms read for a commercial app (2026-11-22): [AI-PROVIDERS.md](AI-PROVIDERS.md). Low risk for OpenAI, Gemini with an API key,
+      Meta, OpenCode and Ollama. **Google's Antigravity terms forbid using it with products Google doesn't provide**, and Google has suspended
+      accounts over other tools; recommended: take it out of Settings' choices before selling and ask Google in writing (the person decides).
 - [x] Destructive actions are confirmed in code, not just in the prompt (2026-11-21, `packages/tools/src/risky.ts`): replacing a map's land, moving the sea,
       restoring a whole checkpoint, carving every river, copying land over the map, rewriting the brief, removing named things (places, labels, regions,
       river and lake names, districts) and removing 25 or more things at once wait for the DM's Allow in the editor or on the phone page (two minutes,
@@ -51,11 +53,13 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       3. [ ] Friends have updated (Settings shows 0.1.8 and "You're up to date").
       4. [x] The old repository is private and renamed `AI-Mapmaker-Build-archive` (2026-11-20). Its old name now belongs to a **public signpost repository** with one README commit and one release, v0.1.9 (the same installer, blockmap and `latest.yml` as `dragon-drop`'s), so copies older than 0.1.8 still find an update, which then points them at `dragon-drop`. It needs no more releases. Never copy anything from the archive (its history and releases carry the sample map) into it, and never push the old checkout to the old name.
       5. [ ] Switch on the security settings below in the new repository: they don't carry over. (Checked 2026-11-21: secret scanning and push protection are on; private vulnerability reporting and Dependabot security updates are off.)
-- [ ] A short privacy policy: no analytics in the app; map data goes to the AI provider the user chooses, from their own account.
+- [ ] A short privacy policy: no analytics in the app; map data goes to the AI provider the user chooses, from their own account. Drafted
+      2026-11-22: [PRIVACY.md](PRIVACY.md) (a contact address and what itch.io shows sellers still to fill in).
 - [x] Third-party licences: all permissive (MIT, ISC, BSD, Apache-2.0, OFL for the Cinzel font). `apps/desktop/scripts/notices.mjs` builds
       `THIRD-PARTY-NOTICES.txt` from what is really bundled, the installer carries it (Help menu: Open-source licences), CI checks it is there, and the
       build stops on a copyleft or unknown licence.
-- [ ] itch.io AI disclosure answered honestly; say on the page that the maps are procedurally painted, not generated images.
+- [ ] itch.io AI disclosure answered honestly; say on the page that the maps are procedurally painted, not generated images. Drafted 2026-11-22
+      with the page text: [STORE-PAGE.md](STORE-PAGE.md).
 
 ## Technical
 
@@ -85,7 +89,8 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
 - [x] Support: an FAQ and a place to ask (2026-11-21): [FAQ.md](FAQ.md) (installing, SmartScreen, antivirus, administrator rights, Claude Code problems,
       other assistants, smaller models, the Allow box, maps, backups, updates, the phone page, privacy); Settings → Help links to it, to the setup guide
       and to the repository's issue forms (`.github/ISSUE_TEMPLATE`: a problem, a question; both warn never to paste a key). **If the repository goes
-      private, move these links** (`apps/editor/src/helpLinks.ts`) to where buyers can reach, such as the store page's community.
+      private, move these links** (`apps/editor/src/helpLinks.ts`) to where buyers can reach, such as the store page's community. The whole move
+      is planned in [GOING-PRIVATE.md](GOING-PRIVATE.md).
 - [ ] Windows only. (Mac and Linux are not planned.)
 
 ## Security
@@ -108,4 +113,5 @@ Left:
 - [x] The phone page over Tailscale exposes the server beyond this PC. It needs the access key, and in the Windows app it is off until the person enters
       their Tailscale name in Settings → Phone page (2026-11-21; the app no longer takes `MAPMAKER_ALLOWED_HOSTS` from the PC's environment).
 - [ ] Keep Electron current: Chromium security fixes arrive often, and each needs a release. Dependabot opens the pull request; someone has to merge and ship it.
-- [ ] A plan for a vulnerability report: who answers, how fast, how a fix is released.
+- [x] A plan for a vulnerability report: who answers, how fast, how a fix is released (2026-11-22): `SECURITY.md` promises a reply in 7 days, a
+      verdict in 14 and a fix for a serious problem in 30; `RELEASING.md` has the steps, and when an Electron update has to be released.

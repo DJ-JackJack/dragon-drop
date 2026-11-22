@@ -78,7 +78,7 @@ Yes, through Tailscale (a free private network between your own devices). Enter 
 **Settings → Open logs** opens the log files: include the last lines when you ask for help. If another program uses port 4747, Dragon Drop picks another port by itself.
 
 **What does Dragon Drop send over the internet?**
-Nothing of its own: it has no analytics or tracking. Your maps stay on your PC. When you use an AI assistant, what it reads of your map goes to that assistant's company, from your own account. Update checks ask GitHub (or itch.io) whether there is a new version.
+Nothing of its own: it has no analytics or tracking. Your maps stay on your PC. When you use an AI assistant, what it reads of your map goes to that assistant's company, from your own account. Update checks ask GitHub whether there is a new version (a copy from itch.io leaves that to the itch app). The [privacy policy](PRIVACY.md) has the details.
 
 **Which asset packs can I use?**
 Folders of pictures, .zip files and asset packs made for other map programs (see [FORMATS.md](FORMATS.md)). Dragon Drop reads them where they are and never copies them. Check each pack's licence before you publish maps made with it.

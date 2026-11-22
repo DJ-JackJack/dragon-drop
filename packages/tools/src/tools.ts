@@ -12,6 +12,7 @@ import {
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
   type LakeShape, type NamedWater, type RiverNet, type LinkedMap, COPYABLE, copyFeaturesFrom, copyHeightsFrom, heightsFromState, mapTransform,
+  MAX_SMOOTH_REACH_PX,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -661,7 +662,8 @@ export const TOOLS = [
       "Brush-style edit inside a shape with a soft edge. raise/lower by amount_m; smooth by strength; flatten toward target_m " +
       "(default: elevation at the shape centre); set to target_m; roughen adds noise of amount_m; land pushes the coast out " +
       "(sea becomes low land); water pulls it in (land becomes shallow sea, deeper toward the middle by amount_m, default 120). To cut a bay or a channel use water, not lower or set: " +
-      "lowering land far below the sea leaves an abyss beside the shore.",
+      "lowering land far below the sea leaves an abyss beside the shore. Plain smooth only softens a few pixels; to soften a wide straight step or terrace " +
+      "(old flat land left by an earlier edit) give smooth a reach_px about as wide as the step, over an area that covers it with room to spare.",
     schema: z.object({
       mode: z.enum(["raise", "lower", "smooth", "flatten", "set", "roughen", "land", "water"]),
       shape: Shape,
@@ -669,12 +671,16 @@ export const TOOLS = [
       target_m: z.number().optional(),
       strength: z.number().min(0).max(1).optional(),
       falloff: z.number().min(0).max(1).optional().describe("Soft edge as a fraction of the shape size (default 0.5)"),
+      reach_px: z.number().min(2).max(MAX_SMOOTH_REACH_PX).optional().describe(
+        "smooth only: how far it reaches (map px). A sharp step or ridge is spread over about this width, and hills narrower than it are flattened too. Default: the brush's own few pixels."),
+      keep_coast: z.boolean().optional().describe("smooth with reach_px only: keep land above and sea below the sea level, so the coast stays put (default true)"),
       seed: seedSchema,
     }),
     async run(ctx, i) {
+      if ((i.reach_px !== undefined || i.keep_coast !== undefined) && i.mode !== "smooth") return fail("reach_px and keep_coast are for mode smooth only.");
       const r = ctx.execute({ op: "sculpt", params: {
         mode: i.mode, shape: normShape(i.shape), amountM: i.amount_m, targetM: i.target_m,
-        strength: i.strength, falloff: i.falloff, seed: i.seed ?? randSeed(),
+        strength: i.strength, falloff: i.falloff, reachPx: i.reach_px, keepCoast: i.keep_coast, seed: i.seed ?? randSeed(),
       } });
       return json({ change: r.seq, done: r.label });
     },

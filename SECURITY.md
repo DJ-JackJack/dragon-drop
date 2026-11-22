@@ -10,8 +10,16 @@ Please report it privately, not in a public issue:
 1. Open the repository's **Security** tab and choose **Report a vulnerability** (GitHub's private vulnerability reporting).
 2. Say what you found, how to reproduce it, which version you tested (Settings shows it), and what you think an attacker could do.
 
-You'll get an acknowledgement, and a fix or a plan once the problem is understood. Please give a reasonable time to fix it before telling
-anyone else; reporters are credited in the release notes if they want to be. This is a small project: there is no bug bounty.
+This is a small project with one maintainer, and there is no bug bounty. What happens next:
+
+- **Within 7 days**: a reply saying the report arrived, and whether it is understood or more is needed.
+- **Within 14 days**: whether it is accepted as a security problem, and how serious it is.
+- **A fix**: for a serious problem (someone else could reach your maps or your PC, or the access key could leak), a new version within 30 days,
+  sooner if it is being used against people. Lesser problems are fixed in the next normal release.
+- The fix is released as an ordinary update (the in-app updater and the itch app bring it), and the details are published once it has been
+  out for about two weeks, so that most copies have updated first. Reporters are credited in the release notes if they want to be.
+
+Please give that time before telling anyone else.
 
 ## What is in scope
 

@@ -298,7 +298,77 @@ export interface SculptParams {
   strength?: number;
   /** 0..1 fraction of the shape's size used as a soft edge. */
   falloff?: number;
+  /**
+   * Smooth only: how far the smoothing reaches, in map px. Missing (or under 2): the brush's own few pixels, as it always was. Wider, it spreads a
+   * sharp step or ridge over about this width, so a straight step tens of pixels across becomes a slope; hills narrower than it are flattened too.
+   */
+  reachPx?: number;
+  /** Smooth with a reach only: keep every cell on its side of the sea level, so the coast stays where it is (default true). */
+  keepCoast?: boolean;
   seed?: number;
+}
+
+/** The widest reach a smoothing may have (map px): wider than this is a different job (copy the land again, or restore an area). */
+export const MAX_SMOOTH_REACH_PX = 128;
+
+/**
+ * A wide blur of a box of heights: three box blurs of radius r one after the other (close to a Gaussian whose spread is about r),
+ * along the rows and then the columns, with running sums so it costs the same whatever r is. Edges repeat their last cell.
+ */
+export function wideBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
+  const a = Float32Array.from(src);
+  const b = new Float32Array(src.length);
+  const col = new Float64Array(w); // (the columns' running sums: the vertical blur goes row by row, which keeps it in the cache)
+  const inv = 1 / (2 * r + 1);
+  for (let pass = 0; pass < 3; pass++) {
+    // along the rows: a into b
+    for (let y = 0; y < h; y++) {
+      const row = y * w, last = row + w - 1;
+      let sum = 0;
+      for (let k = -r; k <= r; k++) sum += a[row + Math.min(w - 1, Math.max(0, k))];
+      for (let x = 0; x < w; x++) {
+        b[row + x] = sum * inv;
+        const add = x + r + 1 < w ? row + x + r + 1 : last;
+        const sub = x - r > 0 ? row + x - r : row;
+        sum += a[add] - a[sub];
+      }
+    }
+    // along the columns: b back into a
+    col.fill(0);
+    for (let k = -r; k <= r; k++) {
+      const row = Math.min(h - 1, Math.max(0, k)) * w;
+      for (let x = 0; x < w; x++) col[x] += b[row + x];
+    }
+    for (let y = 0; y < h; y++) {
+      const row = y * w, add = Math.min(h - 1, y + r + 1) * w, sub = Math.max(0, y - r) * w;
+      for (let x = 0; x < w; x++) {
+        a[row + x] = col[x] * inv;
+        col[x] += b[add + x] - b[sub + x];
+      }
+    }
+  }
+  return a;
+}
+
+/** The smooth brush with a reach: blur a box around the shape widely, then blend the blurred heights in by the shape's weight. */
+function smoothWide(doc: MapDoc, rect: Rect, weight: Float32Array, reachPx: number, strength: number, keepCoast: boolean): Rect {
+  const { w: W, h: H, data } = doc.height;
+  const r = Math.max(1, Math.round(Math.min(MAX_SMOOTH_REACH_PX, reachPx) / 2));
+  const ctx = clipRect(expandRect(rect, 3 * r + 1), W, H) as Rect; // (the blur reads this far beyond the shape)
+  const blurred = wideBlur(doc.height.copyRect(ctx), ctx.w, ctx.h, r);
+  const sea = doc.meta.seaLevel;
+  const blend = 0.35 + 0.65 * strength;
+  for (let y = 0; y < rect.h; y++) {
+    for (let x = 0; x < rect.w; x++) {
+      const wgt = weight[y * rect.w + x];
+      if (wgt <= 0) continue;
+      const i = (rect.y + y) * W + rect.x + x;
+      let v = blurred[(rect.y + y - ctx.y) * ctx.w + rect.x + x - ctx.x];
+      if (keepCoast) v = data[i] >= sea ? Math.max(v, sea + 1) : Math.min(v, sea - 1);
+      data[i] = lerp(data[i], v, wgt * blend);
+    }
+  }
+  return rect;
 }
 
 function shapeCentre(s: Shape, W: number, H: number): Point {
@@ -323,6 +393,7 @@ export function sculpt(doc: MapDoc, p: SculptParams): Rect | null {
     }
   }
 
+  if (p.mode === "smooth" && (p.reachPx ?? 0) >= 2) return smoothWide(doc, rect, weight, p.reachPx as number, strength, p.keepCoast ?? true);
   if (p.mode === "smooth") {
     const passes = 1 + Math.round(strength * 4);
     for (let pass = 0; pass < passes; pass++) {

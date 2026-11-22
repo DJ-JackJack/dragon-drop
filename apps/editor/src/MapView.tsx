@@ -37,6 +37,8 @@ const isBrush = (t: Tool): t is BrushTool => ["raise", "lower", "smooth", "flatt
 export interface Brush {
   radius: number; // map px
   strength: number; // 0..1
+  /** Smooth brush only: how far the smoothing reaches, map px (under 2: the brush's own few pixels, as before). */
+  reach?: number;
 }
 
 interface Props {
@@ -756,8 +758,9 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     if (!isBrush(t)) return;
     const mode: SculptMode = t;
     const amount = t === "land" || t === "water" ? 40 + b.strength * 200 : 15 + b.strength * 400; // metres per dab
+    const reach = t === "smooth" && (b.reach ?? 0) >= 2 ? { reachPx: b.reach } : {}; // (a wide reach softens steps; the coast stays where it is)
     store.send({ t: "cmd", cmd: { op: "sculpt", params: {
-      mode, shape: { type: "circle", x: mx, y: my, r: b.radius }, amountM: amount, strength: b.strength, falloff: 0.6, targetM: target,
+      mode, shape: { type: "circle", x: mx, y: my, r: b.radius }, amountM: amount, strength: b.strength, falloff: 0.6, targetM: target, ...reach,
     } } });
   }
 
