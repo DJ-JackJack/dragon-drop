@@ -72,8 +72,11 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
         a save gave up after a second and wasn't tried again until the next edit. Now a save waits out a hold of up to about 10 s, two saves of
         a map never overlap, and a failed save tries again by itself (2 s, then longer, up to a minute). Tested with 2 s and 5 s holds.
       - **Antivirus**: Windows Defender (real-time protection on, Dragon Drop's folders not excluded) has never flagged the installed app, the
-        test copies or the builds on this PC, and a scan of the installed app and a fresh build found nothing. Other antivirus programs: not
-        tried. Uploading the installer to a multi-scanner site would cover them (the person's call).
+        test copies or the builds on this PC, and a scan of the installed app and a fresh build found nothing. Other antivirus programs: the
+        public 0.1.11 installer (sha256 `ebdc05f9…2f25`, from its GitHub release link) was scanned on VirusTotal on 2026-11-22: 0 of 67
+        engines flagged it (Microsoft, Kaspersky, Bitdefender, Avast, AVG, McAfee, Norton/Symantec, Malwarebytes, Sophos and the rest); 2 timed
+        out and 5 (mostly phone scanners) can't read an installer. Scan the final signed installer once more before the store page goes live
+        (an upload is shared with security companies: never upload a private test build).
       - **A slow PC**: this PC is a 4-core Ryzen 3. The browser test passes on 2 cores (`E2E_CORES=2`), and on 2 cores with the page 4 times
         slower (`E2E_CPU_SLOWDOWN=4`): 176, 216 and 283 s. A 2048 x 2048 world map opens and is painted in 11.5 s here, 23.5 s on 2 cores, 30 s
         on 2 cores with the page 4 times slower; the server uses 370 to 540 MB.
