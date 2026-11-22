@@ -1057,16 +1057,16 @@ export class Hub {
    * Another map read from its saved files without opening it: the open map, the editors and Claude's edits stay where they are. The open map itself is its live state.
    * The last two looked at are kept, with their climate and rivers once worked out (on the compute thread).
    */
-  async peekMap(ref: string): Promise<{ id: string; name: string; doc: MapDoc; derived: () => Promise<Derived | null>; live: boolean }> {
+  async peekMap(ref: string, level?: string): Promise<{ id: string; name: string; doc: MapDoc; derived: () => Promise<Derived | null>; live: boolean }> {
     const info = await this.findMap(ref);
     const op = this.open;
     if (op && op.id === info.id) return { id: op.id, name: op.session.doc.meta.name, doc: op.session.doc, derived: () => this.refreshDerived(op, true), live: true };
-    const key = `${info.id}:${info.updatedAt}`;
-    let p = this.peeks.get(info.id);
+    const key = `${info.id}:${info.updatedAt}:${level ?? ""}`, slot = `${info.id}:${level ?? ""}`;
+    let p = this.peeks.get(slot);
     if (!p || p.key !== key) {
-      p = { key, doc: await this.store.peek(info.id) };
-      this.peeks.delete(info.id);
-      this.peeks.set(info.id, p);
+      p = { key, doc: await this.store.peek(info.id, level) };
+      this.peeks.delete(slot);
+      this.peeks.set(slot, p);
       while (this.peeks.size > 2) this.peeks.delete(this.peeks.keys().next().value!);
     }
     const entry = p, doc = p.doc;
@@ -1111,9 +1111,9 @@ export class Hub {
   private pictureCache = new Map<string, Uint8Array>();
 
   /** Any map as a picture (its style, no labels), for comparing: the open map's own, or another map's read only. */
-  async mapPicture(id: string, maxPx: number, encode: (img: RGBAImage) => Uint8Array): Promise<Uint8Array> {
-    const p = await this.peekMap(id);
-    const key = p.live ? `${p.id}:live:${this.open?.contentVersion}:${maxPx}` : `${p.id}:${p.doc.meta.updatedAt}:${maxPx}`;
+  async mapPicture(id: string, maxPx: number, encode: (img: RGBAImage) => Uint8Array, level?: string): Promise<Uint8Array> {
+    const p = await this.peekMap(id, level);
+    const key = p.live ? `${p.id}:live:${this.open?.contentVersion}:${maxPx}` : `${p.id}:${p.doc.meta.updatedAt}:${level ?? ""}:${maxPx}`;
     const hit = this.pictureCache.get(key);
     if (hit) return hit;
     const { img, rivers } = await this.renderDoc(p.doc, p.derived);
@@ -1640,8 +1640,8 @@ export class Hub {
         return r;
       },
       checkpointHeights: async (name) => (await self.store.readCheckpoint(id(), name))?.data ?? null,
-      peek: async (map) => {
-        const p = await self.peekMap(map);
+      peek: async (map, level) => {
+        const p = await self.peekMap(map, level);
         return p.live ? ctx : self.peekContext(ctx, p);
       },
     };

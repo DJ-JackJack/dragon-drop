@@ -1045,6 +1045,9 @@ describe("maps that know about each other", () => {
     expect(hub.session.doc.meta.copiedFrom?.id).toBe(sceneId);
     const burnt = JSON.parse(((await raw("compare_maps", { map: sceneId })).content as { text: string }[])[0].text);
     expect(burnt.differences[0]).toMatch(/^Before: Test Scene \(the original\)\. After: Test Scene burnt \(the copy\)\./);
+    // ... and compares the upper level with the original's upper level, not with its first: nothing is different yet
+    expect(burnt.level).toBeTruthy();
+    expect(burnt.differences.join(" ")).toMatch(/Nothing on the two maps is different/);
 
     // the editor's compare view: where the original lies over the copy, and its picture
     await call("open_project", { id: copy.as.id });

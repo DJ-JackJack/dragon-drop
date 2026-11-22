@@ -117,7 +117,8 @@ export function createAppServer(cfg: Config, hub: Hub) {
       if (pj) {
         const max = Math.min(4096, Math.max(256, Number(url.searchParams.get("max") ?? 2048)));
         try {
-          const bytes = await hub.mapPicture(pj[1], max, (img) => encodeJpeg(img, 88, 16_000_000));
+          const level = url.searchParams.get("level") ?? undefined; // a battlemap's level (id), from the editor's compare view
+          const bytes = await hub.mapPicture(pj[1], max, (img) => encodeJpeg(img, 88, 16_000_000), level && level.length <= 80 ? level : undefined);
           res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" }).end(bytes);
         } catch (e) {
           res.writeHead(404, { "content-type": "text/plain" }).end((e as Error).message);

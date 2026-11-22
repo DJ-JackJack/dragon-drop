@@ -3,7 +3,8 @@
  * (GET /api/projects/<id>/picture.jpg, drawn in its own style) is laid over the open map where it lies on it (the server works that out: `compare_with` → `compare`,
  * core mapLinks.ts): a copy exactly over its original, a detail map over its area of the world map, a battlemap over its spot of a city. Two ways to look: Fade (the other
  * map see-through over this one) and Swipe (the other map on the left of a line, this one on the right; the slider moves the line). Maps that aren't linked can only be
- * shown side by side (CompareMaps.tsx). Nothing is changed or saved: it is only a view, and it ends when another map is opened.
+ * shown side by side (CompareMaps.tsx). Nothing is changed or saved: it is only a view, and it ends when another map is opened. On a battlemap with levels the other
+ * map's picture is of the level with the same id as the one on screen (a copy has its original's levels), and it is fetched again when the level changes.
  *
  * The views call `draw` at the end of their drawing, and set `redraw` so the picture can redraw them when it arrives.
  */
@@ -58,6 +59,8 @@ class CompareController {
     if (!this.hooked) {
       this.hooked = true;
       store.onCompare((m) => this.placed(m));
+      // another level on screen: the other map's same level
+      store.subscribe(() => { if (this.state.id && !this.state.waiting && this.levelNow() !== this.loadedLevel) this.load(this.state.id); });
       // an error while waiting is the server saying it can't compare them (the error itself is shown by the editor)
       store.subscribe(() => { if (this.state.waiting && store.getState().error) this.stop(); });
     }
@@ -84,12 +87,22 @@ class CompareController {
   }
   setAmount(a: number) { this.set({ amount: Math.max(0, Math.min(1, a)) }); }
 
-  /** A map's picture address (a fresh one each time a comparison starts, so a changed map isn't shown as it was). */
-  pictureUrl(id: string, max = 2048) { return `/api/projects/${id}/picture.jpg?max=${max}&v=${this.started}`; }
+  /** A map's picture address (a fresh one each time a comparison starts, so a changed map isn't shown as it was), of the level on screen when the open map has levels. */
+  pictureUrl(id: string, max = 2048) {
+    const level = this.levelNow();
+    return `/api/projects/${id}/picture.jpg?max=${max}&v=${this.started}${level ? `&level=${encodeURIComponent(level)}` : ""}`;
+  }
   private started = Date.now();
+  private loadedLevel = "";
+  /** The open battlemap's level on screen, when it has more than one ("" otherwise). */
+  private levelNow(): string {
+    const lv = store.getState().levels;
+    return lv && lv.levels.length > 1 ? lv.active : "";
+  }
 
   private load(id: string) {
     this.started = Date.now();
+    this.loadedLevel = this.levelNow();
     const url = this.pictureUrl(id);
     this.imgFor = url;
     const img = new Image();

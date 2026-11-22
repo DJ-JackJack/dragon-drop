@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import {
-  type Features, type LinkedMap, type MapDoc, type RGBAImage, type Rect, cropScale, distanceAcross, drawLabel, drawRivers, mapDifferences, mapKindOf, mapSize, mapTransform, reliefPicture,
+  type Features, type LinkedMap, type MapDoc, type RGBAImage, type Rect, cropScale, isBattle, distanceAcross, drawLabel, drawRivers, mapDifferences, mapKindOf, mapSize, mapTransform, reliefPicture,
   pointOnMap, rectOnMap, unitMetres, unitName,
 } from "@mapmaker/core";
 import type { ToolContext } from "./tools.ts";
@@ -157,7 +157,11 @@ export const MAP_TOOLS = [
     }),
     async run(ctx, i) {
       if (!ctx.linkedMaps || !ctx.peek) return fail("Comparing maps isn't available here.");
-      const ca = await contextFor(ctx, i.with), cb = await ctx.peek(i.map);
+      const ca = await contextFor(ctx, i.with);
+      // on a battlemap with levels, the same level of the other map (a copy has the original's levels), else its first
+      const level = ca === ctx && isBattle(ca.session().doc) && ctx.levels ? ctx.levels.list() : null;
+      const onLevel = level && level.levels.length > 1 ? level.levels.find((l) => l.id === level.active) : undefined;
+      const cb = await ctx.peek(i.map, onLevel?.id);
       const a = ca.session().doc, b = cb.session().doc;
       if (a.meta.id === b.meta.id) return fail("That is the same map twice: give two different maps.");
       const maps = await ctx.linkedMaps();
@@ -182,6 +186,7 @@ export const MAP_TOOLS = [
         a: { id: a.meta.id, name: a.meta.name, kind: mapKindOf(a.meta), area: { ...ra, units: unitName(a.meta) } },
         b: { id: b.meta.id, name: b.meta.name, kind: mapKindOf(b.meta), area: { x: r1(rb.x), y: r1(rb.y), w: r1(rb.w), h: r1(rb.h), units: unitName(b.meta) } },
         linked: t ? (t.how.length ? t.how : ["the same map"]) : ["not linked: each is shown whole"],
+        ...(onLevel && { level: `${onLevel.name}: the level of the same id on the other map, or its first level if it has none` }),
         ...(land && { land_share_a: land.shareA, land_share_b: land.shareB, coast_match: land.match }),
         differences: diff ? [reading, ...diff.words] : !sameKind ? [`Different kinds of map (${mapKindOf(a.meta)} and ${mapKindOf(b.meta)}): compared by picture only.`] : ["Not the same area at the same scale: compared by picture only (copies and maps of the same size are compared point by point)."],
       };

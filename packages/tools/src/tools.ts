@@ -112,8 +112,8 @@ export interface ToolContext {
   setSelection?(sel: Selection | null): void;
   /** Optional: copy a map (the open one unless `from` names another) under a new name, to change the copy; the copy is opened unless `open` is false. */
   duplicateMap?(o: { name: string; from?: string; open?: boolean }): Promise<ProjectInfo & { from: string }>;
-  /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. */
-  peek?(map: string): Promise<ToolContext>;
+  /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. `level`: a battlemap's level (id or name) instead of its first. */
+  peek?(map: string, level?: string): Promise<ToolContext>;
   /** Optional: how every map is linked to the others (core mapLinks.ts). */
   linkedMaps?(): Promise<Map<string, LinkedMap>>;
   /** Optional (world maps): drain one lake (core drainLakeAt, on the compute thread): at a point or a named lake; one edit. */

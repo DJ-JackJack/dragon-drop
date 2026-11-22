@@ -206,8 +206,16 @@ export class ProjectStore {
   }
 
   /** A map read only to look at (another map than the open one): an older one is brought up to date in memory only, and nothing on disk is touched. */
-  async peek(id: string): Promise<MapDoc> {
+  async peek(id: string, level?: string): Promise<MapDoc> {
     if (!(await this.exists(id))) throw new Error(`There is no map "${id}".`);
+    // a battlemap's level (id or name): read from levels.json without setting anything aside (looking never writes); a level it doesn't have reads as its first
+    const lf = path.join(this.dir(id), "levels.json");
+    if (level && existsSync(lf)) {
+      let levels: LevelsFile | null = null;
+      try { levels = cleanLevels(JSON.parse(await readFile(lf, "utf8"))); } catch { /* unreadable: the first level */ }
+      const l = levels?.levels.find((x) => x.id === level) ?? levels?.levels.find((x) => x.name.toLowerCase() === level.toLowerCase());
+      if (levels && l && l.id !== levels.levels[0].id) return this.loadLevel(id, levels, l.id);
+    }
     return this.loadAt(this.dir(id), id, false);
   }
 
