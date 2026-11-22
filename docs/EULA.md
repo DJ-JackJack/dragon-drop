@@ -1,6 +1,7 @@
 # Dragon Drop licence agreement (EULA)
 
-> **Draft, 2026-11-22, for a lawyer to check. Not legal advice, and not in use yet.** Fill in the `[...]` places. Questions for the lawyer
+> **Draft, 2026-11-22. Not legal advice, and not in use yet.** Fill in the `[...]` places. A plain agreement like this is what many small
+> sellers use; if free legal help can be had (a law school clinic, a volunteer lawyers' group for creative people), the questions to ask
 > are at the end. Once approved it goes on the store page, inside the program (next to the open-source licences) and, if wanted, in the
 > installer (electron-builder's `nsis.license` shows a page the buyer must accept).
 
@@ -55,7 +56,7 @@ new one.
 ## 7. Refunds
 
 Purchases are made through itch.io, which handles payment and refunds. [Our policy: for example, "If Dragon Drop doesn't run on your PC,
-ask within 14 days of buying and we'll refund you." Decide with the lawyer, and check the consumer rights below.] Your rights under consumer
+ask within 14 days of buying and we'll refund you." Decide it, and check the consumer rights below.] Your rights under consumer
 law are not affected.
 
 ## 8. No warranty
@@ -94,7 +95,7 @@ The privacy policy explains what Dragon Drop sends and to whom: [link].
 
 ---
 
-## Questions for the lawyer
+## Questions for legal help, if you can get it
 
 1. **Consumers in the EU and UK** have a 14-day right to withdraw from a purchase, which for digital content can end once the download starts
    if they agreed to that. Does itch.io's checkout cover this, or does this agreement need wording for it?

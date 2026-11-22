@@ -1,7 +1,8 @@
 # Selling Dragon Drop: what is done and what is left
 
 A working checklist, written 2026-11-18 when selling on itch.io (Windows only) was first being considered. It is not legal advice: the legal items are
-things to put in front of a lawyer or accountant. Tick things off as they happen.
+things to put in front of a lawyer or accountant, or (since 2026-11-22: the person can't pay one) free help where it can be had: a
+small-business adviser, a law school clinic, a volunteer lawyers' group. `CHECKLIST.md` sorts what is left by what it costs. Tick things off as they happen.
 
 ## Prerequisite: the AI side
 
@@ -44,9 +45,9 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
 - [ ] Choose the entity and get an accountant's view (sole proprietor or company; sales tax and VAT on itch.io: check how itch handles them now).
 - [ ] Licence: the repository is public with no LICENSE file (all rights reserved by default, but anyone can read and fork it). Decide: private repo,
       or public but proprietary. Write an EULA: users own their maps, disclaimers, refunds, no warranty. *(EULA drafted 2026-11-22 with questions
-      for the lawyer: [EULA.md](EULA.md).)*
+      for legal help: [EULA.md](EULA.md).)*
 - [ ] Trademark and name search for "Dragon Drop" (USPTO, EUIPO, itch.io, Steam) before building the brand. **A first pass, 2026-11-22**
-      (not a lawyer's search):
+      (not a professional search):
       - **Products already called Dragon Drop**: "Dragon Drop: Tabletop Multi-tool" by MAMMOTH (2020, free, early access: 3D world maps and
         dungeons, tokens, fog of war, players watching on their phones; its Steam page now says unavailable and its website doesn't answer
         properly), **the closest clash, because it is a map tool for tabletop games**; "Dragon Drop" by Cloudy Games LLC, a party game on Steam
@@ -55,15 +56,15 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
         for machine learning and language understanding), and DRAGON DROP registered by Cloudy Games LLC for T-shirts (serial 97350187, class 25).
         Cloudy Games' application for "downloadable video game software" (class 9, serial 99071146) is abandoned, as are older ones by Big Fish
         Games (class 9 and 41) and others. No live US registration for software or games.
-      - **EU and UK**: not checked (TMview wouldn't run here); the lawyer's search covers them.
-      - **What it means** (for the lawyer to confirm): nothing registered blocks the name for software in the US, but two products already
+      - **EU and UK**: not checked (TMview wouldn't run here); free to check on TMview (tmdn.org/tmview) in a browser; a professional search covers them.
+      - **What it means** (for a professional search to confirm, if one can be had): nothing registered blocks the name for software in the US, but two products already
         carry it, one of them a tabletop map tool and one sold on itch.io by a company that has registered the name for merchandise. A longer
         or different name would avoid confusion and complaints; decide before the store page, the cover image and any registration.
       - **Working title** (chosen 2026-11-22): **Dragon Drop: The Busy GM's Cartographer**. The subtitle tells it apart from the other two and says
         who it is for. Weighed and left out: "DM" (Wizards of the Coast holds a US "Dungeon Master" mark and applied for "Dungeon Masters" in
         2026; "GM" also covers other games), and "Mapwright" (already the name of several map projects, one of them a fantasy RPG map app and
         one a tool that makes maps for tabletop games). "Cartographer" is an everyday word, also used in the name of a long-established fantasy
-        map program; nothing found is called "Busy GM". For the lawyer to check with the rest.
+        map program; nothing found is called "Busy GM". For a professional search to check with the rest.
 - [ ] "Foundry VTT", "Universal VTT" and "D&D" only as "compatible with" wording. *(Checked 2026-11-22 across the app, the tools, the guides and the
       store page: two other virtual tabletops were named in the battlemap Export dialog and the export tool's description, now "virtual tabletops
       that read Universal VTT files"; no "D&D" anywhere a buyer sees. Left as they are: the Universal VTT file ending `.dd2vtt`, which is how
@@ -80,7 +81,7 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       5. [ ] Switch on the security settings below in the new repository: they don't carry over. (Checked 2026-11-21: secret scanning and push protection are on; private vulnerability reporting and Dependabot security updates are off.)
 - [ ] A short privacy policy: no analytics in the app; map data goes to the AI provider the user chooses, from their own account. Drafted
       2026-11-22: [PRIVACY.md](PRIVACY.md), in the usual sections, with what itch.io shows sellers filled in (the seller's name, a contact address,
-      how long records are kept and the transfer wording still to fill in, with a lawyer).
+      how long records are kept and the transfer wording still to fill in).
 - [x] Third-party licences: all permissive (MIT, ISC, BSD, Apache-2.0, OFL for the Cinzel font). `apps/desktop/scripts/notices.mjs` builds
       `THIRD-PARTY-NOTICES.txt` from what is really bundled, the installer carries it (Help menu: Open-source licences), CI checks it is there, and the
       build stops on a copyleft or unknown licence.

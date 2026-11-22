@@ -1,8 +1,8 @@
 # Dragon Drop privacy policy
 
 > **Draft, 2026-11-22, not yet published.** Laid out in the usual sections of a privacy policy (who is responsible, what is collected, why,
-> who receives it, transfers, how long, your rights, security, children, changes, contact). Fill in the `[...]` places and have a lawyer look
-> at it before it goes on the store page. Each statement about the program was checked against the code on 2026-11-22 (what it connects to,
+> who receives it, transfers, how long, your rights, security, children, changes, contact). Fill in the `[...]` places before it goes on the
+> store page, and have free legal help look at it if you can get it. Each statement about the program was checked against the code on 2026-11-22 (what it connects to,
 > what it stores and where). If the app starts sending anything new, this page has to change in the same release.
 
 *Last changed: [date it goes live]*
@@ -76,11 +76,11 @@ Dragon Drop itself connects to the internet only for these things. Except where 
 ## 7. Transfers outside your country
 
 itch.io is in the United States, so purchase details are handled there. [Where the seller is, and how transfers from the EU or UK are
-covered, for example by itch.io's own safeguards: check with the lawyer.]
+covered, for example by itch.io's own safeguards: ask free legal help if you can get it.]
 
 ## 8. How long we keep it
 
-- **Purchase records**: as long as tax and accounting law requires where we are [for example 6 or 7 years: check with the accountant], then
+- **Purchase records**: as long as tax and accounting law requires where we are [for example 6 or 7 years: a free small-business adviser can say], then
   deleted.
 - **Messages to us**: until your question is answered, and [12 months] after, in case it comes up again; then deleted.
 - What stays on your PC is yours to keep or delete. Uninstalling Dragon Drop leaves your maps in `Documents\Dragon Drop`.

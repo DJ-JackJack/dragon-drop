@@ -20,7 +20,7 @@ The release workflow does **not** put this copy on the public GitHub Release: it
 
 ## Payments and taxes (from itch.io's creator docs, read 2026-11-22)
 
-Not tax advice: show this to the accountant.
+Not tax advice: show this to whoever helps with your taxes (a free small-business adviser, or an accountant).
 
 - **Two payment modes** (account settings). **"Collected by itch.io, paid later"** (recommended): itch.io is the seller of record, is liable
   for chargebacks, always collects VAT and pays it, offers buyers every payment method, and makes the tax forms after **one tax interview** on
@@ -30,7 +30,7 @@ Not tax advice: show this to the accountant.
   chargebacks, and you collect and pay VAT yourself (itch.io can collect it for you).
 - **itch.io's share** is set by the seller ("open revenue sharing", 0% to 100%); the default is 10%. PayPal and Stripe each charge about
   $0.30 + 2.9% a purchase.
-- **US sales tax**: itch.io's docs don't say how it is handled. Ask the accountant.
+- **US sales tax**: itch.io's docs don't say how it is handled. Ask a small-business adviser.
 - **Refunds**: itch.io handles them. Its terms let buyers ask when the program can't run, can't be reached or doesn't match the page; for
   technical problems buyers are asked to contact the seller first.
 - **What sellers see of a buyer**: email address, name, IP address, country code and transaction IDs (and a billing address for EU purchases
