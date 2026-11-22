@@ -16,6 +16,12 @@
 5. **Build minutes**: public repositories build for free. Private ones get a monthly allowance on the free plan, and Windows builds count double.
    A run of the checks is about 2 minutes on Linux and about 8 on Windows, so about 18 minutes of allowance per push, release or Dependabot
    pull request. That fits the free allowance at the current pace, but check GitHub's billing page: GitHub changed how it counts this in 2026.
+   **Stored build files count too, and they are the bigger problem**: a private account gets 0.5 GB of Actions storage free, and every run keeps
+   an installer and an itch copy (about 270 MB together) for 30 days. On 2026-11-22 `dragon-drop` held 114 of them, about 15.7 GB (free while
+   public). The old repository showed what happens: it went private on 2026-11-20 holding 8.5 GB of build files, and GitHub warned two days later
+   that the free 0.5 GB was used up and the rest would be billed. **Before going private**: set `retention-days` in
+   `.github/workflows/desktop.yml` to 1 for the installer (only the same run's jobs need it) and about 7 for the itch copy (long enough to push
+   a release to itch.io), and delete the old build files (Actions, each run's Artifacts, or `gh api -X DELETE` on each one).
 6. **Old releases**: the public release pages of 0.1.8 onwards disappear with the repository. The **signpost** repository (the old name,
    public) keeps its one release, v0.1.9, with a free installer anyone can download. That copy updates to `dragon-drop`, which then fails as in 1.
 
