@@ -46,10 +46,15 @@ From `SELLING.md`, where each has its details:
 
 - [x] **The work Claude could do** (asked 2026-11-21, on the branch `selling-prep`, so 0.1.12 goes out as tested): the AI asks the DM before risky actions, in code; a smaller tool set for smaller models; `pnpm model-check` and `MODELS.md` (Claude Haiku and Sonnet, both tool sets); the chosen assistant's name in the editor's words; the phone page off unless chosen in Settings; Open backups folder; `FAQ.md`, Settings → Help and issue forms; a test with unusual folder names (and map folder names without broken accents); a new secret scan. *(2026-11-21)*
 
-- [ ] A licence for the code (the repository is public with no LICENSE file).
-- [ ] A name and trademark search for "Dragon Drop".
+- [ ] A licence agreement for buyers (an EULA: they own their maps, no warranty, refunds, the AI assistant is a separate service). A licence for the code is only needed while the repository is public (it has no LICENSE file). *(Claude can draft the EULA for a lawyer to check.)*
+- [ ] A name and trademark search for "Dragon Drop". *(Claude can do a first pass of the public databases and stores; a lawyer's search is the real one.)*
+- [ ] The business side: sole proprietor or company, and an accountant's view of tax (how itch.io handles sales tax and VAT now).
+- [ ] The itch.io page itself: price and whether there is a demo, payouts and tax forms, butler logged in, the screenshots (on generated maps, `STORE-PAGE.md`), a contact email for buyers and for privacy and security reports, who made the app icon.
+- [ ] "Compatible with" wording only: Foundry VTT, Universal VTT and tabletop RPGs named only that way, and no other map program named, in the app, the docs and the store page (`SELLING.md`, Legal and business).
+- [ ] Before going private: build files kept 1 day (the installer) and 7 days (the itch copy) instead of 30, and the old ones deleted (`GOING-PRIVATE.md`, point 5).
+- [ ] Just before launch: re-read Anthropic's legal page (it changes), repeat the secret scan, and scan the final signed installer (below).
 - [ ] A short privacy policy. *(Drafted 2026-11-22: `docs/PRIVACY.md`, checked against what the app really sends. The person fills in a contact address and what itch.io shows sellers, then approves it.)*
-- [ ] Code signing, so Windows stops warning buyers.
+- [ ] Code signing, so Windows stops warning buyers. *(Claude can find which option you qualify for and what it costs, and prepare the build step; buying it and the identity check are yours.)*
 - [ ] Anthropic: email sales about the setup; accept the Commercial Terms for the shipping account.
 - [ ] itch.io's AI disclosure, answered honestly. *(Drafted 2026-11-22 with the store page text: `docs/STORE-PAGE.md`. Honest answer: Yes, for code, text and the place markers; the maps are painted by the program, not generated images.)*
 - [x] Other AI providers: their terms read (2026-11-22, `docs/AI-PROVIDERS.md`). OpenAI, Gemini with an API key, Meta, OpenCode and Ollama look fine. **Google's Antigravity terms forbid using it with other companies' products, and Google has suspended accounts over it.**
@@ -64,7 +69,7 @@ From `SELLING.md`, where each has its details:
 ## On GitHub (the person's)
 
 - [x] The Dependabot pull request #1 (merge after a release). *(2026-11-21: merged)*
-- [ ] Repository security settings: Dependabot alerts and security updates, private vulnerability reporting.
+- [ ] Repository security settings: Dependabot alerts and security updates, private vulnerability reporting. *(Checked 2026-11-22: secret scanning and push protection are on; private vulnerability reporting and Dependabot security updates are still off.)*
 - [ ] Two-factor sign-in on the account; branch and tag protection when wanted (it would also stop Claude pushing).
 
 ## Done
