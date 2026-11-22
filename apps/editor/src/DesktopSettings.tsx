@@ -8,12 +8,6 @@ import { HELP_LINKS } from "./helpLinks.ts";
 
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
-/**
- * Takes out the map tools connection an earlier version's command made in Claude Code (it held the access key itself; since 0.1.13 the command holds the
- * map tools key). The old one goes on working: this is only to swap it for the safer key. (Claude Code's own help: `claude mcp remove [-s scope] <name>`.)
- */
-const MCP_REMOVE = "claude mcp remove --scope user mapmaker";
-
 export function DesktopSettings({ onClose }: { onClose: () => void }) {
   const bridge = window.dragonDrop!;
   const [s, setS] = useState<Settings | null>(null);
@@ -166,8 +160,8 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
           {termError && <p className="error-text">{termError}</p>}
           <label className="field">Map tools
             <select value={s?.toolSet ?? "all"} onChange={(e) => void bridge.setToolSet(e.target.value === "essentials" ? "essentials" : "all").then(refresh)} data-testid="tool-set">
-              <option value="all">All of them (best for Claude, Codex, Gemini and other large models)</option>
-              <option value="essentials">A smaller set, for smaller or local models</option>
+              <option value="all" title="Best for Claude, Codex, Gemini and other large models">All of them (for large models)</option>
+              <option value="essentials">A smaller set (for small or local models)</option>
             </select>
           </label>
           {s?.toolSet === "essentials" && <p className="muted" data-testid="tool-set-note">The assistant sees about 40 map tools instead of about 155, with shorter instructions: everyday work on world maps, battlemaps and city maps fits in a much smaller model. Changing this ends the running session.</p>}
@@ -202,12 +196,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
           <p className="muted">For Claude Code, the Open Claude Code button sets everything up for you. To use it from your own terminal instead (it must be running), run this once in PowerShell (not inside Claude Code; type /exit first if you are):</p>
           <code className="copyline" data-testid="mcp-command">{s?.mcpCommandShown ?? ""}</code>
           <div className="row end"><button onClick={() => void navigator.clipboard.writeText(cmd)} title="Copies the command with your map tools key. Paste it into PowerShell once.">Copy</button></div>
-          <div className="key-note" data-testid="mcp-key-note">
-            <p><b>Changed in 0.1.13:</b> this command now carries a <b>map tools key</b> instead of your access key. It opens the map tools and nothing else, so a command the assistant runs can't answer the Allow box for you.</p>
-            <p>Connected Claude Code from your own terminal with an earlier version's command? It still works, but it holds your full access key. To swap it for the safer key, run this in PowerShell first, then the command above:</p>
-            <code className="copyline" data-testid="mcp-remove-command">{MCP_REMOVE}</code>
-            <div className="row end"><button onClick={() => void navigator.clipboard.writeText(MCP_REMOVE)} title="Copies the command that takes out the connection an earlier version's command made">Copy</button></div>
-          </div>
+          <p className="muted" data-testid="mcp-key-note">The command and the header carry your <b>map tools key</b>: it opens the map tools and nothing else, so a command the assistant runs can't answer the Allow box for you.</p>
         </fieldset>
 
         <fieldset>

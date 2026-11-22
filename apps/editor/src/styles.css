@@ -396,12 +396,7 @@ button { transition: border-color 0.12s, background 0.12s; }
 .toast.info { border-color: var(--accent); }
 .mapview-note { background: rgba(34, 28, 10, 0.95); border-color: #8b7a3c; }
 .swatch.on { border-color: var(--gold-hi); box-shadow: 0 0 0 1px #000 inset, 0 0 8px rgba(212, 175, 55, 0.5); }
-code.copyline { display: block; padding: 8px 10px; font-size: 12px; word-break: break-all; user-select: all; border: 1px solid #2a2822; }
-/* a note about something that changed (Settings: the map tools key since 0.1.13): set off from the text around it by a gold edge */
-.key-note { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 4px; }
-.key-note p { margin: 0; font-size: 12.5px; color: var(--text); }
-.key-note p b { color: var(--gold-hi); }
-.viewer-bar { background: linear-gradient(180deg, #151518, #0d0d10); border-bottom-color: rgba(212, 175, 55, 0.28); }
+code.copyline { display: block; padding: 8px 10px; font-size: 12px; word-break: break-all; user-select: all; border: 1px solid #2a2822; }.viewer-bar { background: linear-gradient(180deg, #151518, #0d0d10); border-bottom-color: rgba(212, 175, 55, 0.28); }
 .viewer-title { color: var(--gold-hi); letter-spacing: 0.06em; }
 .viewer-card b { color: var(--gold-hi); }
 .viewer-bar button.on { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); color: #17130a; border-color: var(--gold-hi); }

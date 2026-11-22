@@ -43,8 +43,8 @@ Say yes. It is Dragon Drop's own workspace folder (Documents\Dragon Drop\Claude)
 **The assistant asks me to Allow or Don't allow something.**
 Some actions wait for your OK before they happen: replacing a map's land, moving the sea level, putting the whole map back from a checkpoint, carving every river, rewriting the brief, removing a named place, label, region, river or lake name, and removing many things at once. Answer in the box (in the window, or on the phone page). With no answer within two minutes, nothing is done.
 
-**Claude Code in my own terminal lost the map tools, or Settings says its command changed.**
-If you connected Claude Code yourself with the command in **Settings → AI assistant** (not through Dragon Drop's own terminal panel), run `claude mcp remove --scope user mapmaker` in PowerShell, then copy the command from Settings and run it. You need this after **Make a new access key** (the old key stops working). After updating to 0.1.13 the old connection still works, but it holds your full access key: the same two steps swap it for the map tools key, which opens the map tools and nothing else. The terminal panel inside Dragon Drop needs nothing: it is set up again each time it starts.
+**Claude Code in my own terminal lost the map tools.**
+If you connected Claude Code yourself with the command in **Settings → AI assistant** (not through Dragon Drop's own terminal panel), it stops working after **Make a new access key**. Run `claude mcp remove --scope user mapmaker` in PowerShell, then copy the command from Settings again and run it. The terminal panel inside Dragon Drop needs nothing: it is set up again each time it starts.
 
 **Can I use a smaller or local model?**
 Yes, with an assistant that can talk to one (OpenCode, for example), and **Settings → AI assistant → Map tools: A smaller set**. The assistant then sees about 40 map tools with short instructions, which fits a model with about 32,000 tokens of context or more. A model that can't read pictures can't look at the map; it works from the lists and summaries instead. [MODELS.md](MODELS.md) lists the models that have been tried and how they did.
