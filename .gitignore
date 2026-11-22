@@ -9,3 +9,5 @@ test-results/
 .cache/
 # every map, brief and chat is the author's own work and stays on their machine: nothing under projects/ is ever committed
 projects/
+# store screenshots (docs/STORE-PAGE.md): uploaded to itch.io, not kept in the repository
+store-screenshots/

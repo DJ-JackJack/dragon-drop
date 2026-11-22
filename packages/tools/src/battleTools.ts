@@ -510,7 +510,7 @@ export const BATTLE_TOOLS = [
     name: "export_battlemap",
     description:
       "Write the battlemap as a file for a virtual tabletop into the project's exports folder: 'uvtt' (Universal VTT .dd2vtt: image, walls, doors and lights in one file, " +
-      "for the Universal Battlemap Importer in Foundry, Roll20, Fantasy Grounds and others; the format has no see-through wall or secret door, so windows, invisible walls and secret doors are written as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
+      "for the Universal Battlemap Importer in Foundry and other virtual tabletops that read Universal VTT files; the format has no see-through wall or secret door, so windows, invisible walls and secret doors are written as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
       "'key' (the numbered notes of every level as a Markdown list, for the DM; notes are never in the picture). " +
       "A battlemap with several levels: the Foundry scene holds every level (one picture each, stairs and holes included); 'png' and 'uvtt' are of one level, named with it (level: its id or name, default the one being worked on). " +
       "The Foundry scene was tried in Foundry v14 (levels, walls, doors, window, lights, stairs and floors came through); the Universal VTT file was tried with the Universal Battlemap Importer (walls, doors and lights came through). " +

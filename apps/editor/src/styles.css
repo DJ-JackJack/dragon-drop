@@ -35,7 +35,7 @@ button {
 button:hover:not(:disabled) { border-color: var(--accent); background: #212127; }
 button:disabled { opacity: 0.45; cursor: default; }
 button.ghost { background: transparent; }
-button.primary, button.send { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); color: #17130a; border-color: var(--gold-hi); font-weight: 600; }
+button.primary, button.send, a.button-link.primary { background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo)); color: #17130a; border-color: var(--gold-hi); font-weight: 600; }
 button.primary:hover:not(:disabled), button.send:hover:not(:disabled) { background: linear-gradient(180deg, #ffe590, #c99a25); }
 button.stop { background: var(--error); color: #fff; border-color: var(--error); }
 select, input, textarea {

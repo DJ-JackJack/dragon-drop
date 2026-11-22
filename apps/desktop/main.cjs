@@ -593,6 +593,17 @@ function ptySelfTest() {
 }
 
 // ---------------------------------------------------------------- updates (from GitHub Releases, for the installed app)
+/**
+ * "The move" (docs/GOING-PRIVATE.md): the address of Dragon Drop's new store page, set in the last release made while the code repository is
+ * public. A copy from the GitHub release page then stops asking GitHub (which will be private) and Settings → Updates says where Dragon Drop
+ * is now, with a link; the copy keeps working as it is. Empty: not moved. (A development run can try it with DRAGON_DROP_MOVED_TO.)
+ */
+const MOVED_TO = "";
+const movedTo = () => {
+  const url = MOVED_TO || (!app.isPackaged && process.env.DRAGON_DROP_MOVED_TO) || "";
+  return /^https:\/\/\S+$/.test(url) ? url : "";
+};
+
 let autoUpdater = null;
 let updateState = { status: "idle", version: null, message: "", channel: CHANNEL };
 
@@ -602,6 +613,10 @@ function setUpdate(patch) {
 
 function setupUpdater() {
   if (CHANNEL === "itch") { setUpdate({ status: "unavailable", message: "This copy is updated by the itch app, not by Dragon Drop." }); return; } // (electron-updater is never even loaded)
+  if (movedTo()) {
+    setUpdate({ status: "moved", movedTo: movedTo(), message: "Dragon Drop has moved: new versions come from its new page. This copy keeps working as it is, and your maps stay where they are." });
+    return;
+  }
   if (!app.isPackaged || SMOKE) { setUpdate({ status: "unavailable", message: "Updates are only checked in the installed app." }); return; }
   try {
     ({ autoUpdater } = require("electron-updater"));

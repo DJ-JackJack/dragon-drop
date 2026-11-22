@@ -1,6 +1,6 @@
 # Selling on itch.io (Windows)
 
-Every CI run makes a copy of the program for itch.io and keeps it for 30 days as an artifact called **Dragon-Drop-itch-windows**
+Every CI run makes a copy of the program for itch.io and keeps it for 7 days as an artifact called **Dragon-Drop-itch-windows**
 (Actions, open the run, Artifacts). It is the same program as the installer with two differences:
 
 - `resources/channel.json` says `{"channel":"itch"}`, which turns the in-app updater off. The itch app brings updates; Settings says so and
@@ -17,6 +17,26 @@ The release workflow does **not** put this copy on the public GitHub Release: it
    an AI. Answer honestly and say so on the page.
 4. Say plainly on the page that the AI assistant needs the buyer's own account with an AI provider (separate cost) and that the editor
    works without it.
+
+## Payments and taxes (from itch.io's creator docs, read 2026-11-22)
+
+Not tax advice: show this to the accountant.
+
+- **Two payment modes** (account settings). **"Collected by itch.io, paid later"** (recommended): itch.io is the seller of record, is liable
+  for chargebacks, always collects VAT and pays it, offers buyers every payment method, and makes the tax forms after **one tax interview** on
+  itch.io (it asks for a tax number such as an SSN, EIN or local number; without one, 30% is held back, less where a US tax treaty applies).
+  Money is in US dollars, can be paid out by PayPal or Payoneer once at least $5 is available, becomes available 7 days after a purchase, and a
+  payout is reviewed for 7 to 14 days. **"Direct to you"**: you are the seller of record through your own PayPal or Stripe, liable for
+  chargebacks, and you collect and pay VAT yourself (itch.io can collect it for you).
+- **itch.io's share** is set by the seller ("open revenue sharing", 0% to 100%); the default is 10%. PayPal and Stripe each charge about
+  $0.30 + 2.9% a purchase.
+- **US sales tax**: itch.io's docs don't say how it is handled. Ask the accountant.
+- **Refunds**: itch.io handles them. Its terms let buyers ask when the program can't run, can't be reached or doesn't match the page; for
+  technical problems buyers are asked to contact the seller first.
+- **What sellers see of a buyer**: email address, name, IP address, country code and transaction IDs (and a billing address for EU purchases
+  when it is collected). itch.io allows them only for records and bookkeeping, and the email only for news about that purchase; adding buyers
+  to a mailing list needs their consent. The privacy policy says so.
+- **Unclaimed money**: earnings left more than 12 months are charged 10% a month (itch.io's terms).
 
 ## Each release
 

@@ -33,8 +33,8 @@ interface DragonDropBridge {
   termKill(): Promise<void>;
   onTermData(cb: (data: string) => void): () => void;
   onTermExit(cb: (code: number) => void): () => void;
-  getUpdateState(): Promise<{ status: string; version: string | null; message: string; channel?: string } | null>;
-  checkForUpdates(): Promise<{ status: string; version: string | null; message: string; channel?: string } | null>;
+  getUpdateState(): Promise<{ status: string; version: string | null; message: string; channel?: string; movedTo?: string } | null>;
+  checkForUpdates(): Promise<{ status: string; version: string | null; message: string; channel?: string; movedTo?: string } | null>;
   installUpdate(): Promise<void>;
   setAutoUpdate(on: boolean): Promise<boolean>;
 }

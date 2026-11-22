@@ -36,7 +36,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
     return () => { alive = false; window.clearInterval(t); };
   }, []);
   const [copied, setCopied] = useState(false);
-  const [upd, setUpd] = useState<{ status: string; version: string | null; message: string; channel?: string } | null>(null);
+  const [upd, setUpd] = useState<{ status: string; version: string | null; message: string; channel?: string; movedTo?: string } | null>(null);
   useEffect(() => {
     let alive = true;
     const poll = () => bridge.getUpdateState().then((u) => { if (alive) setUpd(u); }).catch(() => {});
@@ -120,10 +120,11 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
         <fieldset>
           <legend>Updates</legend>
           <p className="muted" data-testid="update-message">Dragon Drop {s?.version ?? bridge.version}. {upd?.message || ""}</p>
-          {upd?.channel !== "itch" && <label className="check"><input type="checkbox" checked={s?.autoUpdate ?? true} onChange={(e) => void bridge.setAutoUpdate(e.target.checked).then(refresh)} /> Check for updates automatically</label>}
+          {upd?.channel !== "itch" && upd?.status !== "moved" && <label className="check"><input type="checkbox" checked={s?.autoUpdate ?? true} onChange={(e) => void bridge.setAutoUpdate(e.target.checked).then(refresh)} /> Check for updates automatically</label>}
           <div className="row end">
             {upd?.status === "ready" && <button className="primary" onClick={() => void bridge.installUpdate()} data-testid="update-install">Restart to update</button>}
-            {upd?.channel !== "itch" && <button onClick={() => void bridge.checkForUpdates().then(setUpd)} disabled={upd?.status === "checking" || upd?.status === "downloading" || upd?.status === "unavailable"} data-testid="update-check">Check now</button>}
+            {upd?.status === "moved" && upd.movedTo && <a className="button-link primary" href={upd.movedTo} target="_blank" rel="noreferrer" data-testid="update-moved">Open the new page</a>}
+            {upd?.channel !== "itch" && upd?.status !== "moved" && <button onClick={() => void bridge.checkForUpdates().then(setUpd)} disabled={upd?.status === "checking" || upd?.status === "downloading" || upd?.status === "unavailable"} data-testid="update-check">Check now</button>}
           </div>
         </fieldset>
 

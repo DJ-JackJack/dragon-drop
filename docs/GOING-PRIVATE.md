@@ -1,7 +1,8 @@
 # Going private: the plan
 
 > **Draft, 2026-11-22**, for the person to decide on. Making the `dragon-drop` repository private before selling is the plan; this is what
-> breaks when it happens, and the order that avoids leaving anyone stuck. Nothing here has been done.
+> breaks when it happens, and the order that avoids leaving anyone stuck. Prepared 2026-11-22 (nothing switched on yet): build files are
+> kept 1 and 7 days, `pnpm help-repo` makes the help repository's pages, and the move release needs only two addresses filled in (below).
 
 ## What stops working the moment it is private
 
@@ -19,9 +20,9 @@
    **Stored build files count too, and they are the bigger problem**: a private account gets 0.5 GB of Actions storage free, and every run keeps
    an installer and an itch copy (about 270 MB together) for 30 days. On 2026-11-22 `dragon-drop` held 114 of them, about 15.7 GB (free while
    public). The old repository showed what happens: it went private on 2026-11-20 holding 8.5 GB of build files, and GitHub warned two days later
-   that the free 0.5 GB was used up and the rest would be billed. **Before going private**: set `retention-days` in
-   `.github/workflows/desktop.yml` to 1 for the installer (only the same run's jobs need it) and about 7 for the itch copy (long enough to push
-   a release to itch.io), and delete the old build files (Actions, each run's Artifacts, or `gh api -X DELETE` on each one).
+   that the free 0.5 GB was used up and the rest would be billed. **Done 2026-11-22**: `retention-days` in `.github/workflows/desktop.yml` is 1 for the installer (only the same
+   run's jobs need it) and 7 for the itch copy (long enough to push a release to itch.io). **Still to do before going private**: delete the old
+   build files (Actions, each run's Artifacts, or `gh api -X DELETE` on each one); the ones made before the change keep their 30 days.
 6. **Old releases**: the public release pages of 0.1.8 onwards disappear with the repository. The **signpost** repository (the old name,
    public) keeps its one release, v0.1.9, with a free installer anyone can download. That copy updates to `dragon-drop`, which then fails as in 1.
 
@@ -47,11 +48,18 @@
 
 ## The order
 
-1. **Set up the new help place** (the help repository or the itch community) and put the guides and the privacy policy there.
+1. **Set up the new help place** (the help repository or the itch community) and put the guides and the privacy policy there. For a help
+   repository: create it on GitHub (public), then `pnpm help-repo <a folder> --repo https://github.com/<name>/dragon-drop-help --store
+   <the itch page>` writes its pages (the questions and answers, the setup guide without the parts for running from the code, map files,
+   formats, models, privacy policy, licence agreement, security page, a README and the issue forms) with every link moved off the code
+   repository; it stops if one is left. Read them through, commit them there, and switch on private vulnerability reporting in that
+   repository. Run it again whenever a guide changes.
 2. **Release one last public version, "the move", from the public repository.** In it:
-   - Settings → Updates on a GitHub copy says that Dragon Drop has moved to itch.io, with the link, and no longer checks GitHub (so no error
-     message once the repository is private). The program keeps working as it is.
-   - Settings → Help points at the new help place (`apps/editor/src/helpLinks.ts`; the issue forms' `config.yml` moves with them).
+   - Settings → Updates on a GitHub copy says that Dragon Drop has moved, with a button to the new page, and no longer checks GitHub (so no
+     error message once the repository is private). The program keeps working as it is. **Ready: set `MOVED_TO` in `apps/desktop/main.cjs`
+     to the itch page's address** (tried 2026-11-22 in a development run with `DRAGON_DROP_MOVED_TO`).
+   - Settings → Help points at the new help place. **Ready: set `HELP_REPO` in `apps/editor/src/helpLinks.ts`** (or, for the itch community,
+     put its addresses in `HELP_LINKS`). The issue forms' `config.yml` is moved by `pnpm help-repo`.
    - The questions and answers say where updates come from now.
    - `SECURITY.md` says where to report from now on.
 3. **Wait** until the person's own copy and the friends' copies show that version (Settings → Updates), and give friends their itch keys.

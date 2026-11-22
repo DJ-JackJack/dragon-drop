@@ -34,16 +34,36 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
 - "Preinstalling or running Claude Code in your products" needs you to accept Anthropic's Commercial Terms, with the binary unmodified and no paying
   for or reselling usage on users' behalf.
 - Don't offer Claude.ai login yourself. Don't put Claude or Anthropic in the product name or logo; "runs Claude Code" in plain text is fine.
-- [ ] Email Anthropic (contact sales) describing the setup and keep the answer.
+- [ ] Email Anthropic describing the setup and keep the answer. The email is drafted: [ANTHROPIC-EMAIL.md](ANTHROPIC-EMAIL.md). (Re-read
+      2026-11-22: the page's rules haven't changed. Its "contact sales" link now leads to a page saying the sales team only takes large deals,
+      so the draft says where else to send it.)
 - [ ] Accept the Commercial Terms for the account that ships the product.
 
 ## Legal and business
 
 - [ ] Choose the entity and get an accountant's view (sole proprietor or company; sales tax and VAT on itch.io: check how itch handles them now).
 - [ ] Licence: the repository is public with no LICENSE file (all rights reserved by default, but anyone can read and fork it). Decide: private repo,
-      or public but proprietary. Write an EULA: users own their maps, disclaimers, refunds, no warranty.
-- [ ] Trademark and name search for "Dragon Drop" (USPTO, EUIPO, itch.io, Steam) before building the brand.
-- [ ] "Foundry VTT", "Universal VTT" and "D&D" only as "compatible with" wording. Other programs' names and logos don't appear in the app, its store page or its screenshots:
+      or public but proprietary. Write an EULA: users own their maps, disclaimers, refunds, no warranty. *(EULA drafted 2026-11-22 with questions
+      for the lawyer: [EULA.md](EULA.md).)*
+- [ ] Trademark and name search for "Dragon Drop" (USPTO, EUIPO, itch.io, Steam) before building the brand. **A first pass, 2026-11-22**
+      (not a lawyer's search):
+      - **Products already called Dragon Drop**: "Dragon Drop: Tabletop Multi-tool" by MAMMOTH (2020, free, early access: 3D world maps and
+        dungeons, tokens, fog of war, players watching on their phones; its Steam page now says unavailable and its website doesn't answer
+        properly), **the closest clash, because it is a map tool for tabletop games**; "Dragon Drop" by Cloudy Games LLC, a party game on Steam
+        (2022, $4.99) **and on itch.io**; "Dragon Drop" by Squish Studios, a puzzle game on Steam (2017, $3.99).
+      - **US trademarks** (USPTO search, 2026-11-22): live: DRAGON DROP registered by Sorcero, Inc. (reg. 6503554, class 42: a software platform
+        for machine learning and language understanding), and DRAGON DROP registered by Cloudy Games LLC for T-shirts (serial 97350187, class 25).
+        Cloudy Games' application for "downloadable video game software" (class 9, serial 99071146) is abandoned, as are older ones by Big Fish
+        Games (class 9 and 41) and others. No live US registration for software or games.
+      - **EU and UK**: not checked (TMview wouldn't run here); the lawyer's search covers them.
+      - **What it means** (for the lawyer to confirm): nothing registered blocks the name for software in the US, but two products already
+        carry it, one of them a tabletop map tool and one sold on itch.io by a company that has registered the name for merchandise. A longer
+        or different name would avoid confusion and complaints; decide before the store page, the cover image and any registration.
+- [ ] "Foundry VTT", "Universal VTT" and "D&D" only as "compatible with" wording. *(Checked 2026-11-22 across the app, the tools, the guides and the
+      store page: two other virtual tabletops were named in the battlemap Export dialog and the export tool's description, now "virtual tabletops
+      that read Universal VTT files"; no "D&D" anywhere a buyer sees. Left as they are: the Universal VTT file ending `.dd2vtt`, which is how
+      that format is known and what importers expect; `CONTROLS.md` and `RESEARCH.md` name other map programs and stay internal (`pnpm
+      help-repo` doesn't copy them); the Foundry test results name Foundry's game system.)* Other programs' names and logos don't appear in the app, its store page or its screenshots:
       the asset library is described in general terms (folders of pictures, zip files and asset packs). We read the user's own assets in place and never ship any;
       tell users to check each pack's licence before publishing maps made with it, and keep honouring a pack's own "not for other mapping programs" flag.
 - [x] The DM's own world map and brief no longer ship in the installer (a new install starts with a generated neutral "First Map") and are not in the repository (the `projects/` folder is gitignored).
@@ -54,18 +74,22 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       4. [x] The old repository is private and renamed `AI-Mapmaker-Build-archive` (2026-11-20). Its old name now belongs to a **public signpost repository** with one README commit and one release, v0.1.9 (the same installer, blockmap and `latest.yml` as `dragon-drop`'s), so copies older than 0.1.8 still find an update, which then points them at `dragon-drop`. It needs no more releases. Never copy anything from the archive (its history and releases carry the sample map) into it, and never push the old checkout to the old name.
       5. [ ] Switch on the security settings below in the new repository: they don't carry over. (Checked 2026-11-21: secret scanning and push protection are on; private vulnerability reporting and Dependabot security updates are off.)
 - [ ] A short privacy policy: no analytics in the app; map data goes to the AI provider the user chooses, from their own account. Drafted
-      2026-11-22: [PRIVACY.md](PRIVACY.md) (a contact address and what itch.io shows sellers still to fill in).
+      2026-11-22: [PRIVACY.md](PRIVACY.md), in the usual sections, with what itch.io shows sellers filled in (the seller's name, a contact address,
+      how long records are kept and the transfer wording still to fill in, with a lawyer).
 - [x] Third-party licences: all permissive (MIT, ISC, BSD, Apache-2.0, OFL for the Cinzel font). `apps/desktop/scripts/notices.mjs` builds
       `THIRD-PARTY-NOTICES.txt` from what is really bundled, the installer carries it (Help menu: Open-source licences), CI checks it is there, and the
       build stops on a copyleft or unknown licence.
 - [ ] itch.io AI disclosure answered honestly; say on the page that the maps are procedurally painted, not generated images. Drafted 2026-11-22
-      with the page text: [STORE-PAGE.md](STORE-PAGE.md).
+      with the page text, laid out field by field as itch.io's edit page asks: [STORE-PAGE.md](STORE-PAGE.md). Payments and taxes on itch.io:
+      [ITCH.md](ITCH.md).
 
 ## Technical
 
 - [x] itch.io copy with the in-app updater off, made by every CI run (see [ITCH.md](ITCH.md)).
 - [ ] **Code signing.** The installer is unsigned, so SmartScreen warns buyers. Get a certificate (or Microsoft's signing service if you qualify),
-      then add it to the workflow's build step.
+      then add it to the workflow's build step. *(Researched and prepared 2026-11-22: [SIGNING.md](SIGNING.md). Microsoft's Artifact Signing
+      is from $9.99 a month but takes individuals only in the US and Canada; elsewhere a company, or an individual certificate with cloud
+      signing (about $129 a year plus the signing service). The build signs by itself once the secrets are added; until then nothing changes.)*
 - [x] Save-file versioning, migrations and backups, so paying users' maps never break on an update (2026-11-18): `formatVersion` in `project.json`, a map from a newer format is refused untouched, an older one is copied aside and migrated, an unreadable places file is kept instead of overwritten, and automatic rolling checkpoints (newest six, at most every 15 minutes) show in the Checkpoints list. Documented in [MAP-FILES.md](MAP-FILES.md). Still to do: the first real migration (when the format first changes) needs a test map saved in the old form kept as a fixture. (The `backups` folder can be opened from the app: the Map panel's History, **Open backups folder**, 2026-11-21.)
 - [ ] Test on: Windows 10 and 11, OneDrive-redirected Documents, paths with spaces and non-ASCII characters, low-spec PCs, antivirus on the unsigned
       build and its terminal module. *(Done on 2026-11-21, Windows 11: the app installed in `Kim's Prögrams (x86)\Dragon Drop 地図` with its settings and maps
@@ -109,6 +133,8 @@ Done:
 Left:
 
 - [ ] A second pair of eyes on the Electron side (the window's bridge, the terminal, the updater) from someone who does security reviews.
+      Claude's own review (2026-11-22) is the starting point: [SECURITY-REVIEW.md](SECURITY-REVIEW.md). It switched off two ways of running
+      other code inside the program (Electron fuses, checked by every build) and lists what is left.
 - [ ] Turn on two-factor authentication, branch protection and tag protection on the GitHub account and repository: the release pipeline is what ships code to buyers.
 - [x] The phone page over Tailscale exposes the server beyond this PC. It needs the access key, and in the Windows app it is off until the person enters
       their Tailscale name in Settings → Phone page (2026-11-21; the app no longer takes `MAPMAKER_ALLOWED_HOSTS` from the PC's environment).

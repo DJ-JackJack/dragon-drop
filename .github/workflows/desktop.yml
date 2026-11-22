@@ -25,7 +25,9 @@ jobs:
     permissions:
       contents: write # only used to publish a Release for version tags
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: "false" # no code-signing certificate yet
+      CSC_IDENTITY_AUTO_DISCOVERY: "false" # no certificate in the runner's store; signing, when set up, goes through Microsoft's Artifact Signing
+      # Code signing (docs/SIGNING.md) is on only when the SIGN_ENDPOINT repository secret exists; without it the build is unsigned, as before.
+      SIGNING: ${{ secrets.SIGN_ENDPOINT != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -46,7 +48,35 @@ jobs:
           npm version $v --no-git-tag-version --allow-same-version
       - name: Build the installer
         working-directory: apps/desktop
-        run: npm run dist
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SIGN_ENDPOINT: ${{ secrets.SIGN_ENDPOINT }}
+          SIGN_ACCOUNT: ${{ secrets.SIGN_ACCOUNT }}
+          SIGN_PROFILE: ${{ secrets.SIGN_PROFILE }}
+          SIGN_PUBLISHER: ${{ secrets.SIGN_PUBLISHER }}
+        run: |
+          $sign = @()
+          if ($env:SIGNING -eq "true") {
+            foreach ($n in "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "SIGN_ACCOUNT", "SIGN_PROFILE", "SIGN_PUBLISHER") {
+              if (-not [Environment]::GetEnvironmentVariable($n)) { throw "code signing is set up but the $n secret is missing (docs/SIGNING.md)" }
+            }
+            # electron-builder signs the program and the installer through Artifact Signing, and fails the build if anything is left unsigned
+            $sign = @(
+              "-c.win.azureSignOptions.publisherName=$env:SIGN_PUBLISHER",
+              "-c.win.azureSignOptions.endpoint=$env:SIGN_ENDPOINT",
+              "-c.win.azureSignOptions.codeSigningAccountName=$env:SIGN_ACCOUNT",
+              "-c.win.azureSignOptions.certificateProfileName=$env:SIGN_PROFILE",
+              "-c.forceCodeSigning=true"
+            )
+            Write-Host "Signing with Artifact Signing as $env:SIGN_PUBLISHER"
+          } else {
+            Write-Host "No signing secrets: the build is unsigned"
+          }
+          npm run dist -- @sign
+          if ($LASTEXITCODE -ne 0) { throw "the build failed" }
       - name: List what was built
         working-directory: apps/desktop
         shell: pwsh
@@ -56,6 +86,18 @@ jobs:
           # the licences must travel with the program: ours (all the packages we bundle) and Electron's (Chromium, Node)
           foreach ($f in @(".\release\win-unpacked\resources\THIRD-PARTY-NOTICES.txt", ".\release\win-unpacked\LICENSES.chromium.html")) {
             if (-not (Test-Path $f)) { throw "missing from the installer: $f" }
+          }
+          # the program's built-in switches (package.json build.electronFuses; docs/SECURITY-REVIEW.md)
+          node scripts/check-fuses.mjs ".\release\win-unpacked\Dragon Drop.exe"
+          if ($LASTEXITCODE -ne 0) { throw "the program's fuses are not as they should be" }
+          # when signing is set up, the program (which the itch copy is made from) and the installer must carry a valid signature
+          if ($env:SIGNING -eq "true") {
+            $files = @(".\release\win-unpacked\Dragon Drop.exe") + (Get-ChildItem .\release\Dragon-Drop-Setup-*.exe | ForEach-Object FullName)
+            foreach ($f in $files) {
+              $sig = Get-AuthenticodeSignature $f
+              Write-Host "$f : $($sig.Status) ($($sig.SignerCertificate.Subject))"
+              if ($sig.Status -ne "Valid") { throw "not validly signed: $f" }
+            }
           }
       - name: Smoke test the unpacked app (starts the server, loads the editor)
         working-directory: apps/desktop
@@ -108,13 +150,15 @@ jobs:
           name: Dragon-Drop-itch-windows
           path: apps/desktop/release/Dragon-Drop-itch-windows.zip
           if-no-files-found: error
-          retention-days: 30
+          # long enough to push a release to itch.io; stored build files count against a private account's 0.5 GB (docs/GOING-PRIVATE.md)
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Dragon-Drop-Windows-installer
           path: apps/desktop/release/Dragon-Drop-Setup-*.exe
           if-no-files-found: error
-          retention-days: 30
+          # only this run's older-windows job needs it (a release's installer is on the release page)
+          retention-days: 1
       - name: Publish the release (version tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
