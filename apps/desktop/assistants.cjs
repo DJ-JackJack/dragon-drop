@@ -7,9 +7,12 @@
 // Two assistants can read the same file: Muse Code reads Claude Code's .mcp.json (tried with Muse Code 1.4.25: in a folder it trusts, outside a git
 // repository too, with the key from the environment), so that file's `users` are both.
 //
-// The access key is not written into those files where the assistant can read it from the environment instead: the terminal is started with it in
-// DRAGON_DROP_KEY and the files name the variable. (Documents often syncs to the cloud, and the key should not travel with it.) Antigravity can't do that,
-// so while it is chosen its file holds the key; it is removed again when another assistant is chosen.
+// The access key is never written into those files: the terminal is started with it in DRAGON_DROP_KEY and the files name the variable. (Documents
+// often syncs to the cloud, and the key should not travel with it.)
+//
+// Antigravity CLI is no longer connected (from 0.1.13): Google's terms for it forbid using it "in connection with products not provided by" Google, and
+// Google has suspended accounts over other tools (docs/AI-PROVIDERS.md). `agy` is now a command we don't know, like any other. Earlier versions wrote its
+// file holding the key, so that file is still cleaned of our entry (RETIRED_TARGETS).
 //
 // Pure Node (no Electron), so it is tested on its own: see test/assistants.test.mjs.
 const fs = require("node:fs");
@@ -26,7 +29,6 @@ const ASSISTANTS = {
   claude: { name: "Claude Code" },
   codex: { name: "Codex", hint: "Codex asks once whether to trust the folder it starts in. Say yes, so it can read the map tools." },
   gemini: { name: "Gemini CLI" },
-  antigravity: { name: "Antigravity CLI", hint: "Antigravity can't read the key from the environment, so its config file in your workspace folder holds the key while it is chosen." },
   opencode: { name: "OpenCode" },
   muse: { name: "Muse Code", hint: "Muse Code asks once whether to trust the folder it starts in. Say yes, so it can read the map tools." },
 };
@@ -45,7 +47,7 @@ function words(command) {
   return out;
 }
 
-const BY_PROGRAM = { claude: "claude", codex: "codex", gemini: "gemini", agy: "antigravity", antigravity: "antigravity", opencode: "opencode", muse: "muse" };
+const BY_PROGRAM = { claude: "claude", codex: "codex", gemini: "gemini", opencode: "opencode", muse: "muse" };
 
 /**
  * Which assistant a start command runs: "default" for an empty command (Claude Code, started by Dragon Drop with the map tools given on its command line),
@@ -74,15 +76,16 @@ const JSON_TARGETS = {
     file: path.join(".gemini", "settings.json"), under: ["mcpServers"],
     entry: (url) => ({ httpUrl: url, headers: { Authorization: bearerVar("$", "") } }),
   },
-  antigravity: {
-    file: path.join(".agents", "mcp_config.json"), under: ["mcpServers"], secret: true,
-    entry: (url, key) => ({ serverUrl: url, headers: { Authorization: `Bearer ${key}` } }),
-  },
   opencode: {
     file: "opencode.json", under: ["mcp"],
     entry: (url) => ({ type: "remote", url, oauth: false, headers: { Authorization: bearerVar("{env:", "}") } }),
   },
 };
+
+/** Files earlier versions wrote for assistants no longer connected: our entry is only ever taken out of them (Antigravity's held the access key). */
+const RETIRED_TARGETS = [
+  { file: path.join(".agents", "mcp_config.json"), under: ["mcpServers"] },
+];
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const isOurs = (e) => isObject(e) && [e.url, e.httpUrl, e.serverUrl].some((u) => typeof u === "string" && OURS.test(u));
@@ -91,7 +94,7 @@ const isOurs = (e) => isObject(e) && [e.url, e.httpUrl, e.serverUrl].some((u) =>
  * Put `entry` into (or, with null, take our entry out of) the object at `under` in a JSON file. Returns true when the file was left as the person had it.
  * Nothing is touched when the file isn't valid JSON or the shape isn't what we expect.
  */
-function syncJson(file, under, entry, secret) {
+function syncJson(file, under, entry, secret, keepDir) {
   let cfg = null;
   try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (!e || e.code !== "ENOENT") return; }
   if (cfg !== null && !isObject(cfg)) return;
@@ -113,7 +116,8 @@ function syncJson(file, under, entry, secret) {
     // tidy up what only we needed: an empty servers object, and the file if nothing else is in it
     for (let i = chain.length - 1; i > 0; i--) if (Object.keys(chain[i]).length === 0) delete chain[i - 1][under[i - 1]];
     if (Object.keys(root).length === 0) {
-      try { fs.unlinkSync(file); fs.rmdirSync(path.dirname(file)); } catch { /* already gone, or the folder holds other things */ }
+      // (its own folder goes too when that is empty, such as .gemini, but never the workspace folder itself)
+      try { fs.unlinkSync(file); if (path.resolve(path.dirname(file)) !== path.resolve(keepDir ?? "\0")) fs.rmdirSync(path.dirname(file)); } catch { /* already gone, or the folder holds other things */ }
       return;
     }
   }
@@ -163,7 +167,8 @@ function describe(profile) {
  */
 function syncAssistantConfigs(dir, { profile, port, key, tools }) {
   const url = mcpAddress(port, tools);
-  for (const [id, t] of Object.entries(JSON_TARGETS)) syncJson(path.join(dir, t.file), t.under, readsTarget(id, profile) ? t.entry(url, key) : null, t.secret);
+  for (const [id, t] of Object.entries(JSON_TARGETS)) syncJson(path.join(dir, t.file), t.under, readsTarget(id, profile) ? t.entry(url, key) : null, t.secret, dir);
+  for (const t of RETIRED_TARGETS) syncJson(path.join(dir, t.file), t.under, null, false, dir);
   syncCodex(path.join(dir, ".codex", "config.toml"), profile === "codex" ? url : null);
   return describe(profile);
 }

@@ -47,7 +47,7 @@ drafts say "a lawyer" or "an accountant", read "free help, if you can get it". N
 
 ### 1. Free (or a few dollars), and needed before selling
 
-- [ ] **Decide about Antigravity**: recommended, take it out of Settings' choices before selling and ask Google in writing (`AI-PROVIDERS.md`). Also add a line to OpenCode's choice: don't connect it with a Claude or Google AI subscription.
+- [x] **Decide about Antigravity** *(2026-11-22: taken out. No Settings choice, no project file written, and the file earlier versions wrote, which held the access key, is cleaned of our entry. OpenCode's choice now warns not to connect a Claude or Google AI subscription.)*
 - [ ] **The name.** Working title chosen 2026-11-22: **"Dragon Drop: The Busy GM's Cartographer"**. The first check is in `SELLING.md`: **two products are already called Dragon Drop** (a free tabletop map tool from 2020, and a party game on Steam and itch.io whose maker registered the name for T-shirts); no live US trademark for software or games. Still to do, free: the EU and UK check on TMview (tmdn.org/tmview, a few minutes in a browser). A proper search is in group 2.
 - [ ] **The privacy policy** (`PRIVACY.md`, drafted from what the app really sends, in the usual sections): fill in your name, a contact address and how long purchase records are kept (as long as tax law asks; a free adviser can say how long), then approve it.
 - [ ] **The licence agreement** (`EULA.md`): fill in your name, your state and the refund promise, then approve it. A plain agreement like this is what many small sellers use.

@@ -27,8 +27,6 @@ describe("which assistant a start command runs", () => {
     expect(profileFor("codex")).toBe("codex");
     expect(profileFor('"C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd" --full-auto')).toBe("codex");
     expect(profileFor("gemini")).toBe("gemini");
-    expect(profileFor("agy")).toBe("antigravity");
-    expect(profileFor("antigravity")).toBe("antigravity");
     expect(profileFor("opencode")).toBe("opencode");
     expect(profileFor("OpenCode.exe")).toBe("opencode");
     expect(profileFor("muse")).toBe("muse");
@@ -52,6 +50,8 @@ describe("which assistant a start command runs", () => {
 
   it("says null for anything else, so nothing is written and the person adds the map tools themselves", () => {
     for (const c of ["npx something", "ollama run llama3", "ollama launch other", "python -m foo", "echo codex", "constructor", "toString"]) expect(profileFor(c)).toBeNull();
+    // Antigravity is no longer connected (Google's terms forbid its use with other companies' products): it is a command like any other
+    for (const c of ["agy", "antigravity", "C:\\Tools\\agy.exe --print"]) expect(profileFor(c)).toBeNull();
   });
 });
 
@@ -95,14 +95,21 @@ describe("the files written for each assistant", () => {
     expect(json(dir, ".mcp.json").mcpServers.mapmaker).toEqual({ type: "http", url: URL4747, headers: { Authorization: "Bearer ${" + KEY_ENV + "}" } });
   });
 
-  it("Antigravity: .agents/mcp_config.json with serverUrl, holding the key itself (it can't read the environment)", () => {
-    const dir = folder();
-    const r = sync(dir, "antigravity");
-    expect(r.hint).toMatch(/key/);
-    expect(json(dir, ".agents", "mcp_config.json").mcpServers.mapmaker).toEqual({ serverUrl: URL4747, headers: { Authorization: `Bearer ${KEY}` } });
+  it("Antigravity's file from an earlier version (it held the key) loses our entry, whatever is chosen, and keeps the person's own", () => {
+    for (const p of ["default", "claude", null]) {
+      const dir = folder();
+      put(dir, ".agents/mcp_config.json", { mcpServers: { mapmaker: { serverUrl: URL4747, headers: { Authorization: `Bearer ${KEY}` } }, theirs: { serverUrl: "https://example.test/mcp" } } });
+      sync(dir, p);
+      expect(json(dir, ".agents", "mcp_config.json"), String(p)).toEqual({ mcpServers: { theirs: { serverUrl: "https://example.test/mcp" } } });
+      expect(read(dir, ".agents", "mcp_config.json")).not.toContain(KEY);
+    }
+    const alone = folder();
+    put(alone, ".agents/mcp_config.json", { mcpServers: { mapmaker: { serverUrl: URL4747, headers: { Authorization: `Bearer ${KEY}` } } } });
+    sync(alone, profileFor("agy"));
+    expect(files(alone)).toEqual([]); // (only ours was in it: the file and its folder go)
   });
 
-  it("the key is in no file for any assistant but Antigravity", () => {
+  it("the key is in no file for any assistant", () => {
     for (const p of ["default", "claude", "codex", "gemini", "opencode", "muse"]) {
       const dir = folder();
       sync(dir, p);
@@ -130,7 +137,7 @@ describe("the files written for each assistant", () => {
 describe("switching assistants", () => {
   it("takes our entry out of every other assistant's file, and the files and folders that then hold nothing", () => {
     const dir = folder();
-    for (const p of ["claude", "codex", "muse", "gemini", "opencode", "antigravity"]) {
+    for (const p of ["claude", "codex", "muse", "gemini", "opencode"]) {
       sync(dir, p);
       const here = files(dir);
       // only the chosen assistant's file is there

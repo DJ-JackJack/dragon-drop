@@ -884,21 +884,20 @@ async function smokeTest() {
           if (!customBuf.includes("DD_CUSTOM_OK")) await new Promise((r) => setTimeout(r, 500));
         }
         if (!customBuf.includes("DD_CUSTOM_OK")) return fatal(`the custom start command's output never showed: ${JSON.stringify(customBuf.slice(0, 200))}`);
-        // a command that isn't a known assistant gets no config file; the known ones each get their own, and never the access key (unless it can't read the environment)
+        // a command that isn't a known assistant gets no config file; the known ones each get their own, and never the access key
         const wsDir = custom.workspace;
         const readWs = (rel) => { try { return fs.readFileSync(path.join(wsDir, rel), "utf8"); } catch { return null; } };
         for (const rel of [".mcp.json", ".codex/config.toml", ".gemini/settings.json", "opencode.json", ".agents/mcp_config.json"]) {
           if (readWs(rel) !== null) return fatal(`a start command that isn't a known assistant left ${rel} in the workspace`);
         }
         const url = `http://127.0.0.1:${port}/mcp`;
-        for (const [cmd, rel] of [["ollama launch claude", ".mcp.json"], ["codex", ".codex/config.toml"], ["gemini", ".gemini/settings.json"], ["opencode", "opencode.json"], ["agy", ".agents/mcp_config.json"]]) {
+        for (const [cmd, rel] of [["ollama launch claude", ".mcp.json"], ["codex", ".codex/config.toml"], ["gemini", ".gemini/settings.json"], ["opencode", "opencode.json"]]) {
           const sc = await win.webContents.executeJavaScript(`window.dragonDrop.setTerminalCommand(${JSON.stringify(cmd)})`);
           if (!sc || sc.ok !== true) return fatal(`setTerminalCommand(${cmd}) returned ${JSON.stringify(sc)}`);
           await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)"); // (writes the workspace files without starting anything)
           const text = readWs(rel);
           if (text === null || !text.includes(url)) return fatal(`with "${cmd}" chosen, ${rel} should carry the map tools: ${text}`);
-          const holdsKey = text.includes(settings.accessToken);
-          if (holdsKey !== (cmd === "agy")) return fatal(`with "${cmd}" chosen, ${rel} ${holdsKey ? "holds" : "should hold"} the access key`);
+          if (text.includes(settings.accessToken)) return fatal(`with "${cmd}" chosen, ${rel} holds the access key`);
           for (const other of [".mcp.json", ".codex/config.toml", ".gemini/settings.json", "opencode.json", ".agents/mcp_config.json"]) {
             if (other !== rel && readWs(other) !== null) return fatal(`with "${cmd}" chosen, ${other} is still in the workspace`);
           }
@@ -906,10 +905,12 @@ async function smokeTest() {
         // the smaller set of map tools: the chosen assistant's file points at ?tools=essentials, and back again
         if ((await win.webContents.executeJavaScript(`window.dragonDrop.setToolSet("essentials")`)) !== "essentials") return fatal("setToolSet(essentials) was refused");
         await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
-        if (!(readWs(".agents/mcp_config.json") || "").includes(`${url}?tools=essentials`)) return fatal("with the smaller tool set chosen, the assistant's file doesn't point at it");
+        // (OpenCode is the assistant chosen last above)
+        if (!(readWs("opencode.json") || "").includes(`${url}?tools=essentials`)) return fatal("with the smaller tool set chosen, the assistant's file doesn't point at it");
         if ((await win.webContents.executeJavaScript(`window.dragonDrop.setToolSet("all")`)) !== "all") return fatal("setToolSet(all) was refused");
         await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
-        if ((readWs(".agents/mcp_config.json") || "").includes("?tools=")) return fatal("back to all the tools, the assistant's file still points at the smaller set");
+        const back = readWs("opencode.json") || "";
+        if (!back.includes(url) || back.includes("?tools=")) return fatal("back to all the tools, the assistant's file doesn't point at all of them");
         // a map's backups folder: only an id of a map in the maps folder; and the phone page takes only a host name
         const badOpen = await win.webContents.executeJavaScript(`window.dragonDrop.openBackups("../x")`);
         if (!badOpen || badOpen.ok !== false) return fatal(`openBackups("../x") returned ${JSON.stringify(badOpen)}`);

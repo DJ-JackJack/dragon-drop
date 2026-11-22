@@ -6,7 +6,7 @@
  */
 import { useSyncExternalStore } from "react";
 
-const SHORT: Record<string, string> = { default: "Claude", claude: "Claude", codex: "Codex", gemini: "Gemini", antigravity: "Antigravity", opencode: "OpenCode", muse: "Muse" };
+const SHORT: Record<string, string> = { default: "Claude", claude: "Claude", codex: "Codex", gemini: "Gemini", opencode: "OpenCode", muse: "Muse" };
 const GENERIC = "the AI assistant";
 
 /** The short name for what the desktop app says the terminal runs (its `assistant` id), or the generic words. */

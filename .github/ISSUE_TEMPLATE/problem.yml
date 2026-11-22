@@ -25,7 +25,7 @@ body:
     id: assistant
     attributes:
       label: AI assistant (Settings → AI assistant)
-      options: ["Claude Code", "The chat in the window (API key)", "Codex", "Gemini CLI", "OpenCode", "Antigravity", "Muse Code", "Another (custom command)", "None / not involved"]
+      options: ["Claude Code", "The chat in the window (API key)", "Codex", "Gemini CLI", "OpenCode", "Muse Code", "Another (custom command)", "None / not involved"]
     validations:
       required: true
   - type: textarea

@@ -37,7 +37,7 @@ Each task took 6 to 19 seconds.
 
 - **Opus** wasn't run through the check. It has done all the map work in Dragon Drop so far, through Claude Code.
 - **Local models** (through Ollama, LM Studio or llama.cpp): none is installed on the PC where this was run, and downloading one is several gigabytes. Run `pnpm model-check --driver openai --base-url http://localhost:11434/v1 --model <name> --tools essentials` and add the results here. The `openai` driver was checked against a scripted stand-in server only. Expect a model to need about 32,000 tokens of context for the smaller set. A text-only model can't see the map's pictures, so it works from the lists and summaries instead.
-- **Codex, Gemini CLI, OpenCode, Antigravity and Muse Code** were checked connecting to the map tools (`docs/SETUP-WINDOWS.md` §6b), not with these tasks. Codex, Gemini and OpenCode can be driven the same way: an `openai` run against the company's own API (it uses the person's API credit), or the assistant's own non-interactive mode.
+- **Codex, Gemini CLI, OpenCode and Muse Code** were checked connecting to the map tools (`docs/SETUP-WINDOWS.md` §6b), not with these tasks. Codex, Gemini and OpenCode can be driven the same way: an `openai` run against the company's own API (it uses the person's API credit), or the assistant's own non-interactive mode.
 
 ## Running it
 

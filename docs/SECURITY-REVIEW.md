@@ -65,8 +65,9 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   support, so it is left on. Switch it off if a reviewer prefers.
 - **R5. The access key is stored unencrypted** in the app-data folder (`settings.json`, and the window's cookie). Only programs running as the
   same Windows user can read it, and those can already do anything that user can. Fine as it is.
-- **R6. Antigravity's project file holds the key** in the Documents workspace, because Antigravity can't read it from the environment. Only
-  when Antigravity is chosen (and `AI-PROVIDERS.md` recommends taking it out).
+- **R6. Fixed 2026-11-22: no workspace file holds the key any more.** Antigravity's file held it (Antigravity can't read it from the
+  environment); Antigravity was taken out for its terms (`AI-PROVIDERS.md`), and Dragon Drop now takes its entry out of the file an earlier
+  version wrote (`RETIRED_TARGETS` in `assistants.cjs`).
 - **R7. Claude Code's workspace pre-approves the map tools** (`mcp__mapmaker` in `.claude/settings.json`), so ordinary edits don't ask:
   every edit can be undone, and the risky ones ask in Dragon Drop itself.
 

@@ -52,7 +52,7 @@ Dragon Drop itself connects to the internet only for these things. Except where 
 - **An AI assistant, if you use one.** This is the only way your map's content leaves your PC, and only while you use it.
   - **The in-window chat** sends your messages, the pictures you attach, and what Claude reads of your map (pictures of the map, lists of
     places and labels, the brief) to Anthropic, using your own API key.
-  - **An assistant in the terminal panel** (Claude Code, Codex, Gemini CLI, OpenCode, Antigravity CLI, Muse Code or another you choose) is a
+  - **An assistant in the terminal panel** (Claude Code, Codex, Gemini CLI, OpenCode, Muse Code or another you choose) is a
     separate program from its own company, signed in with your own account. It sends what it reads, through the map tools and from its
     workspace folder, to its company.
 

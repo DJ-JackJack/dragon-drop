@@ -26,7 +26,7 @@ That works. OneDrive sometimes holds a map's file while it uploads it; Dragon Dr
 **What do I need for the AI part?**
 One of these:
 - **Claude Code**: Dragon Drop installs it for you (the **Set up Claude Code** button), and you sign in with your own Claude account. It needs a paid Claude plan (Pro, Max, Team or Enterprise) or an Anthropic Console account: the free plan doesn't include Claude Code.
-- **Another assistant** (Codex, Gemini CLI, OpenCode, Antigravity, Muse Code): choose it in **Settings → AI assistant**. Settings says what each one needs and whether it is paid for separately.
+- **Another assistant** (Codex, Gemini CLI, OpenCode, Muse Code): choose it in **Settings → AI assistant**. Settings says what each one needs and whether it is paid for separately. (Antigravity CLI isn't offered: Google's terms for it forbid using it with other companies' products, and Google has suspended accounts over that.)
 - **The chat in the window**: it uses an API key from console.anthropic.com, which you enter in Settings. Using it costs API credit.
 
 You can make maps without any AI too: every tool works by hand.

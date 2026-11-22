@@ -6,13 +6,14 @@ small-business adviser, a law school clinic, a volunteer lawyers' group. `CHECKL
 
 ## Prerequisite: the AI side
 
-- [x] The assistant works with more than one AI provider (2026-11-21): the terminal runs Claude Code, Codex, Gemini CLI, OpenCode, Antigravity or Muse Code,
+- [x] The assistant works with more than one AI provider (2026-11-21): the terminal runs Claude Code, Codex, Gemini CLI, OpenCode or Muse Code (Antigravity too until 2026-11-22: see below),
       each signed in by the person in its own program (Dragon Drop never holds their keys; the in-window chat's Anthropic key is in the app-data folder,
       encrypted with the Windows login where Windows offers it), and Settings says what each needs. What is sent: what the assistant reads through the map tools, to that company,
       from the person's account; nothing is sent until they start one.
 - [x] Each provider's terms read for a commercial app (2026-11-22): [AI-PROVIDERS.md](AI-PROVIDERS.md). Low risk for OpenAI, Gemini with an API key,
       Meta, OpenCode and Ollama. **Google's Antigravity terms forbid using it with products Google doesn't provide**, and Google has suspended
-      accounts over other tools; recommended: take it out of Settings' choices before selling and ask Google in writing (the person decides).
+      accounts over other tools. **Taken out 2026-11-22** (the person's decision): no Settings choice, no project file written, and the file earlier versions
+      wrote (it held the access key) cleaned of our entry. OpenCode's choice warns not to connect a Claude or Google AI subscription.
 - [x] Destructive actions are confirmed in code, not just in the prompt (2026-11-21, `packages/tools/src/risky.ts`): replacing a map's land, moving the sea,
       restoring a whole checkpoint, carving every river, copying land over the map, rewriting the brief, removing named things (places, labels, regions,
       river and lake names, districts) and removing 25 or more things at once wait for the DM's Allow in the editor or on the phone page (two minutes,

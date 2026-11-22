@@ -177,7 +177,7 @@ Claude Code can use the same map tools through the `.mcp.json` file in this fold
 - Claude sees each map preview it renders. Whether the image also shows on your phone depends on the app. To watch the map itself change, open the phone map page alongside the chat (next section).
 - Everything Claude does from your phone appears in the editor's History and chat as **Claude Code: …**, and can be undone.
 
-## 6b. Using another AI assistant (Codex, Gemini CLI, OpenCode, Antigravity, Muse Code)
+## 6b. Using another AI assistant (Codex, Gemini CLI, OpenCode, Muse Code)
 
 The terminal on the right runs Claude Code by default. In **Settings → AI assistant** you can pick another command-line assistant, or type any start command. For the assistants Dragon Drop knows, it connects the map tools for you: there is nothing to copy and paste. You still sign into the assistant yourself the first time it starts (its own sign-in, and its own cost).
 
@@ -188,7 +188,6 @@ The terminal on the right runs Claude Code by default. In **Settings → AI assi
 | **Codex** | `.codex/config.toml` | Codex asks once whether to trust the folder: say yes, or it ignores the map tools |
 | **Gemini CLI** | `.gemini/settings.json` | It asks once to trust the folder. It also needs your own API key |
 | **OpenCode** | `opencode.json` | |
-| **Antigravity CLI** | `.agents/mcp_config.json` | Needs the access key written into its file (see below) |
 | **Muse Code** (Meta) | `.mcp.json`, the same file as Claude Code's | Muse asks once whether to trust the folder: say yes, or it ignores the map tools. Install it from Meta first |
 | **Anything else** | Nothing | Add the address and header shown in Settings in that assistant's own settings |
 
@@ -198,15 +197,14 @@ The terminal on the right runs Claude Code by default. In **Settings → AI assi
 |---|---|---|
 | **Claude Code** | No | A paid Claude plan (Pro, Max or Ultra: the same subscription as the Claude app; Team and Enterprise too), or an Anthropic Console account billed by use. The free Claude plan doesn't include it. |
 | **Codex** | Yes | Sign in with a ChatGPT account: every ChatGPT plan includes it, the free one too, with usage limits that depend on the plan. An OpenAI API key, billed by use, works as well. |
-| **Antigravity CLI** | Yes | A personal Google account (a weekly allowance). Google AI Pro or Ultra give much more; Workspace accounts don't get these plans. |
-| **Gemini CLI** | No | A Gemini API key from Google AI Studio, billed by use (or a business Gemini Code Assist licence). Since June 2026 a personal Google sign-in and the Google AI Pro and Ultra plans no longer work in Gemini CLI: they moved to Antigravity CLI, the free Google option. |
-| **OpenCode** | Partly | The program is free and open source; the AI comes from what you connect: a few free models from OpenCode itself, OpenCode's paid plans, an API key, or a ChatGPT Plus/Pro or GitHub Copilot account you already have. |
+| **Gemini CLI** | No | A Gemini API key from Google AI Studio, billed by use (or a business Gemini Code Assist licence). Since June 2026 a personal Google sign-in and the Google AI Pro and Ultra plans no longer work in Gemini CLI. |
+| **OpenCode** | Partly | The program is free and open source; the AI comes from what you connect: a few free models from OpenCode itself, OpenCode's paid plans, an API key, or a ChatGPT Plus/Pro or GitHub Copilot account you already have. Don't connect a Claude or Google AI subscription to it: Anthropic and Google forbid using those in other tools and have suspended accounts over it. |
 | **Muse Code** (Meta) | No | Its own account at dev.meta.ai: a Muse Code subscription (Accounts Center, Subscriptions, Muse Code) or pay as you go with a Meta API key. A Muse app plan doesn't include it. |
 | **… via Ollama** | Local models: yes | Runs on Ollama's models instead of the company's: free local models on your own PC (a good coding model needs a strong graphics card), or Ollama's cloud models with an Ollama account (pay as you go, or a monthly plan). |
 
 The files go in the Claude workspace folder (`Documents\Dragon Drop\Claude`). Choosing another assistant takes Dragon Drop's entry out of the others' files, and everything else you put in them stays. A file Dragon Drop can't read as valid is left alone.
 
-Your access key is handed to the assistant in the environment (a variable called `DRAGON_DROP_KEY`) and kept out of those files, because Documents is often synced to the cloud. The exception is Antigravity, which can't read it from the environment: while it is chosen, its file holds the key, and the file is removed when you choose something else.
+Your access key is handed to the assistant in the environment (a variable called `DRAGON_DROP_KEY`) and kept out of those files, because Documents is often synced to the cloud. **Antigravity CLI isn't connected any more** (from version 0.1.13): Google's terms for it forbid using it with other companies' products, and Google has suspended accounts over that. Dragon Drop no longer writes its file, and it takes its own entry out of the one an earlier version wrote (that file held your access key). For Google's models, use Gemini CLI with an API key.
 
 Dragon Drop does not turn off the assistant's own questions: Codex, Gemini CLI, Muse Code and the others still ask before using a tool, as they normally do.
 
