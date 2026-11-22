@@ -66,8 +66,19 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
 - [ ] Test on: Windows 10 and 11, OneDrive-redirected Documents, paths with spaces and non-ASCII characters, low-spec PCs, antivirus on the unsigned
       build and its terminal module. *(Done on 2026-11-21, Windows 11: the app installed in `Kim's Prögrams (x86)\Dragon Drop 地図` with its settings and maps
       in folders with accents, spaces and Japanese: the start-up check, and making, copying, comparing, checkpointing and exporting maps with such names.
-      Map folder names now drop accents properly ("Ährenfeld" is `ahrenfeld`). Still needs other PCs: Windows 10, OneDrive-redirected Documents,
-      a slow PC, antivirus programs.)*
+      Map folder names now drop accents properly ("Ährenfeld" is `ahrenfeld`).)* The person has no other PCs, so the rest was covered from this one
+      (2026-11-21):
+      - **OneDrive and antivirus** hold a file while they read it, and Windows then refuses to replace it. Tried with a real hold on a 2048 map:
+        a save gave up after a second and wasn't tried again until the next edit. Now a save waits out a hold of up to about 10 s, two saves of
+        a map never overlap, and a failed save tries again by itself (2 s, then longer, up to a minute). Tested with 2 s and 5 s holds.
+      - **Antivirus**: Windows Defender (real-time protection on, Dragon Drop's folders not excluded) has never flagged the installed app, the
+        test copies or the builds on this PC, and a scan of the installed app and a fresh build found nothing. Other antivirus programs: not
+        tried. Uploading the installer to a multi-scanner site would cover them (the person's call).
+      - **A slow PC**: this PC is a 4-core Ryzen 3. The browser test passes on 2 cores (`E2E_CORES=2`), and on 2 cores with the page 4 times
+        slower (`E2E_CPU_SLOWDOWN=4`): 176, 216 and 283 s. A 2048 x 2048 world map opens and is painted in 11.5 s here, 23.5 s on 2 cores, 30 s
+        on 2 cores with the page 4 times slower; the server uses 370 to 540 MB.
+      - **Windows 10**: a GitHub job installs the installer on Windows Server 2022 (the oldest Windows GitHub offers, a generation between 10
+        and 11) and runs the installed app's start-up check. Windows 10 itself: not tried. Microsoft ended its support in October 2025.
 - [x] Support: an FAQ and a place to ask (2026-11-21): [FAQ.md](FAQ.md) (installing, SmartScreen, antivirus, administrator rights, Claude Code problems,
       other assistants, smaller models, the Allow box, maps, backups, updates, the phone page, privacy); Settings → Help links to it, to the setup guide
       and to the repository's issue forms (`.github/ISSUE_TEMPLATE`: a problem, a question; both warn never to paste a key). **If the repository goes

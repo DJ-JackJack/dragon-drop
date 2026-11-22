@@ -1,7 +1,8 @@
 // End-to-end smoke test: real server + built editor + headless Chromium.
 // Uses a throwaway copy of the projects folder so your maps are never touched.
 // Run: pnpm build && pnpm e2e        (needs Playwright installed)
-import { spawn } from "node:child_process";
+// A slow PC: E2E_CORES=2 keeps this test, the server and the browser on two processor cores (Windows), E2E_CPU_SLOWDOWN=4 makes the editor's page four times slower.
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -10,6 +11,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+if (process.env.E2E_CORES && process.platform === "win32") {
+  // (set on this process before the server and the browser start: they inherit it)
+  const mask = (1 << Math.max(1, Math.min(16, Number(process.env.E2E_CORES) || 2))) - 1;
+  spawnSync("powershell", ["-NoProfile", "-Command", `(Get-Process -Id ${process.pid}).ProcessorAffinity = ${mask}`], { stdio: "ignore" });
+  console.log(`Slow PC: ${process.env.E2E_CORES} cores`);
+}
 const { chromium } = require("playwright");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const port = 47900 + Math.floor(Math.random() * 90);
@@ -88,6 +95,10 @@ const browser = await chromium.launch();
 let failShot = async () => {};
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  if (process.env.E2E_CPU_SLOWDOWN) {
+    await (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.E2E_CPU_SLOWDOWN) });
+    console.log(`Slow PC: the page runs ${process.env.E2E_CPU_SLOWDOWN} times slower`);
+  }
   // The Map panel shows one tab at a time (Map, History). For the long walk through the editor below every tab body is shown at once, as the old single column was; one step checks the tabs themselves. The Assets panel is given room of its own so it does not shrink to nothing among them.
   await page.addInitScript(() => {
     const show = () => { const st = document.createElement("style"); st.id = "e2e-show-all-tabs"; st.textContent = ".tab-off { display: contents !important; } .side-body > .assets-panel { flex: none !important; min-height: 700px !important; }"; document.head.append(st); };

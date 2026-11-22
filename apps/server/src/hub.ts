@@ -74,6 +74,9 @@ interface OpenProject {
   agent: ChatAgent;
   saveTimer: NodeJS.Timeout | null;
   dirty: boolean;
+  /** The saves of this map, one after another (`saveNow`), and how many have failed in a row (a failed save is tried again by itself, later each time). */
+  saving: Promise<void>;
+  saveFailures: number;
   /** When the last rolling backup was taken (ms since 1970; 0 = none yet). */
   lastAutoBackup: number;
   /** Climate, coast distances, lakes and rivers, and the content version they match. */
@@ -237,7 +240,7 @@ export class Hub {
       const saved = await this.store.readJson<ChatState>(id, "chat.json");
       const agent = new ChatAgent(this.agentHost(id), this.modelCall, saved ?? undefined);
       const op: OpenProject = {
-        id, session, levels, runtime, levelsDirty: false, agent, saveTimer: null, dirty: false, lastAutoBackup: await this.store.lastAutoCheckpointTime(id),
+        id, session, levels, runtime, levelsDirty: false, agent, saveTimer: null, dirty: false, saving: Promise.resolve(), saveFailures: 0, lastAutoBackup: await this.store.lastAutoCheckpointTime(id),
         derived: null, derivedVersion: -1, deriving: null, derivingVersion: -1, contentVersion: 0, derivedTimer: null,
         regionsKey: JSON.stringify([doc.features?.regions ?? [], resolveRiverSources(doc.features)]),
         metaKey: JSON.stringify([doc.meta.seaLevel, doc.meta.climate, doc.meta.style]),
@@ -1172,7 +1175,14 @@ export class Hub {
     }, 1500);
   }
 
-  private async saveNow(op: OpenProject) {
+  /** Save what changed, after any save of this map still being written (so two never write the same files at once). */
+  private saveNow(op: OpenProject): Promise<void> {
+    const next = op.saving.then(() => this.writeChanges(op));
+    op.saving = next.catch(() => {});
+    return next;
+  }
+
+  private async writeChanges(op: OpenProject) {
     if (!op.dirty) return;
     op.dirty = false;
     // claimed before the first await: an edit made while this is being written marks its level again
@@ -1185,6 +1195,7 @@ export class Hub {
         else await this.store.saveLevel(op.id, op.levels, r.id, r.session.doc);
       }
       if (levelsFile) await this.store.writeLevels(op.id, levelsFile);
+      op.saveFailures = 0;
       if (this.open === op) this.broadcast({ t: "saved", auto: true }); // (the editors' bottom bar says so)
       this.broadcast({ t: "projects", projects: await this.store.list() });
       void this.maybeAutoBackup(op);
@@ -1194,6 +1205,9 @@ export class Hub {
       for (const r of pending) r.dirty = true;
       if (levelsFile) op.levelsDirty = true;
       op.dirty = true;
+      // try again by itself (another program may still hold a file): after 2 s, then longer each time, up to a minute; an edit meanwhile saves sooner
+      op.saveFailures++;
+      if (!op.saveTimer) op.saveTimer = setTimeout(() => { op.saveTimer = null; void this.saveNow(op); }, Math.min(60_000, 2000 * 2 ** Math.min(5, op.saveFailures - 1)));
     }
   }
 

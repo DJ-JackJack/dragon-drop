@@ -400,7 +400,7 @@ export class ProjectStore {
       await mkdir(to, { recursive: true });
       for (const e of await readdir(from, { withFileTypes: true })) {
         const r = rel ? `${rel}/${e.name}` : e.name;
-        if (skip.has(r) || e.name.endsWith(".tmp")) continue;
+        if (skip.has(r) || e.name.endsWith(".tmp") || /\.tmp-\d+(-\d+)?$/.test(e.name)) continue;
         if (e.isDirectory()) await copyTree(r);
         else if (e.isFile()) await copyFile(path.join(from, e.name), path.join(to, e.name));
       }
@@ -674,16 +674,26 @@ export class ProjectStore {
   }
 }
 
-async function atomicWrite(file: string, data: string | Uint8Array) {
-  const tmp = `${file}.tmp-${process.pid}`;
+/**
+ * How long to wait between tries when a file can't be replaced because another program holds it: a listing of the checkpoints for a few milliseconds, a
+ * virus scanner or OneDrive (syncing Documents) for seconds while it reads a big map. About 10 s in all; the waits don't hold up anything else.
+ */
+export const REPLACE_WAITS_MS = [15, 30, 60, 120, 250, 500, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
+let tmpCount = 0;
+
+export async function atomicWrite(file: string, data: string | Uint8Array) {
+  const tmp = `${file}.tmp-${process.pid}-${++tmpCount}`; // (its own name, so two writes of one file never share a temporary file)
   await writeFile(tmp, data);
-  // On Windows a rename over a file that something is reading at that moment (a listing of the checkpoints, a virus scanner) fails with EPERM/EBUSY/EACCES for a few milliseconds:
-  // try again a few times before giving up (an automatic backup was silently lost to this in the tests).
+  // On Windows a rename over a file that another program has open fails with EPERM/EBUSY/EACCES until it lets go: try again for a while (an automatic
+  // backup was lost to a short hold in the tests; OneDrive and virus scanners hold a big map for seconds), and leave no temporary file behind
   for (let attempt = 0; ; attempt++) {
     try { await rename(tmp, file); return; } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
-      if (attempt >= 8 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw e;
-      await new Promise((r) => setTimeout(r, 15 * (attempt + 1)));
+      if (attempt >= REPLACE_WAITS_MS.length || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) {
+        await rm(tmp, { force: true }).catch(() => {});
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, REPLACE_WAITS_MS[attempt]));
     }
   }
 }

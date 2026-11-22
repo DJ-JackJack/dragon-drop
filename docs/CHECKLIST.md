@@ -54,7 +54,8 @@ From `SELLING.md`, where each has its details:
 - [ ] itch.io's AI disclosure, answered honestly.
 - [ ] Other AI providers: their terms read (the other items are done: see above).
 - [ ] Try local models with `pnpm model-check --driver openai` (needs a model downloaded, for example through Ollama; the person's call).
-- [ ] Testing on Windows 10, OneDrive-redirected Documents, low-spec PCs, antivirus (needs other PCs; Windows 11 and odd paths are done). Decide where buyers ask for help if the repository goes private.
+- [x] Testing beyond this PC, covered from it because the person has no other PCs (2026-11-21): files held by OneDrive or antivirus (saves now wait and retry), Defender scans, a slow PC (2 cores, a 4x slower page), and a GitHub job on an older Windows (Server 2022). Not tried: Windows 10 itself, other antivirus programs (a multi-scanner upload of the installer would cover them: the person's call).
+- [ ] Decide where buyers ask for help if the repository goes private.
 - [ ] Security: a second pair of eyes on the Electron side; a plan for vulnerability reports; keep Electron current.
 
 ## On GitHub (the person's)

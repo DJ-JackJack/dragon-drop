@@ -13,8 +13,13 @@ The unsigned installer, and the small terminal program Dragon Drop uses to run y
 **Do I need administrator rights?**
 No. Dragon Drop installs for your Windows user only, and so does Claude Code's installer.
 
-**Which Windows?**
-Windows 10 or 11. There is no Mac or Linux version.
+**Which Windows, and what kind of PC?**
+Windows 11 is what Dragon Drop is tried on. Windows 10 should work: the automatic checks also install and start it on an older Windows (Server 2022). But nobody has tried it on Windows 10 itself. There is no Mac or Linux version.
+
+On a 4-core PC, a full-size world map (2048 × 2048) opens and is painted in about 12 seconds the first time; with only 2 cores it takes about 25 to 30 seconds. Dragon Drop itself uses about half a gigabyte of memory with a map that size open.
+
+**My Documents folder is in OneDrive.**
+That works. OneDrive sometimes holds a map's file while it uploads it; Dragon Drop then waits for it and saves a moment later. Big maps change often, so you may prefer a maps folder outside OneDrive: **Settings → Your maps → Change…**.
 
 ## The AI assistant
 

@@ -124,3 +124,28 @@ jobs:
             apps/desktop/release/Dragon-Drop-Setup-*.exe.blockmap
             apps/desktop/release/latest.yml
           generate_release_notes: true
+
+  older-windows:
+    # Nobody here has a Windows 10 PC to try it on: this is the oldest Windows GitHub offers (Server 2022, a generation between Windows 10 and 11).
+    name: The installed app on an older Windows (Server 2022)
+    needs: windows-installer
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Dragon-Drop-Windows-installer
+          path: installer
+      - name: Install the installer silently, then smoke test the installed app
+        shell: pwsh
+        run: |
+          [System.Environment]::OSVersion.VersionString
+          $setup = Get-ChildItem .\installer\Dragon-Drop-Setup-*.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S" -Wait
+          Start-Sleep -Seconds 3
+          Get-Process "Dragon Drop" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $found = Get-ChildItem (Join-Path $env:LOCALAPPDATA "Programs") -Recurse -Depth 2 -Filter "Dragon Drop.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $found) { throw "installed program not found" }
+          $out = Join-Path $env:RUNNER_TEMP "smoke-installed.txt"
+          $p = Start-Process -FilePath $found.FullName -ArgumentList "--smoke-test" -PassThru -Wait -Environment @{ DRAGON_DROP_SMOKE_OUT = $out }
+          if (Test-Path $out) { Get-Content $out }
+          if ($p.ExitCode -ne 0) { throw "installed smoke test exit code $($p.ExitCode)" }
