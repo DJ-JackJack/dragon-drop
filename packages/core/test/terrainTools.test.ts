@@ -1,7 +1,7 @@
 // The land tools made after the failed rebuild: hills and rings on new land, ranges that change along their length with spurs, erosion held to an area keeping peaks,
 // draining one lake, copying land from another map, putting back an area from an older state, and one undo step for land, things and climate together.
 import { describe, expect, it } from "vitest";
-import { MapSession, addLandmass, addMountainRange, computeFlow, copyFeaturesFrom, copyHeightsFrom, createDoc, drainLakeAt, erodeTerrainWithin, heightsFromState } from "../src/index.ts";
+import { MapSession, addLandmass, addMountainRange, computeFlow, copyFeaturesFrom, copyHeightsFrom, createDoc, drainLakeAt, erodeTerrainWithin, heightsFromState, reliefPicture } from "../src/index.ts";
 
 const W = 192;
 const ocean = () => { const d = createDoc({ id: "t", name: "T", width: W, height: W, kmPerPx: 2 }); d.height.data.fill(-200); d.meta.seaLevel = 0; return d; };
@@ -123,5 +123,18 @@ describe("copying land and things, and putting back an area", () => {
     expect(d.meta.climate?.moistureBias).toBe(0.3);
     expect(d.features?.places ?? []).toHaveLength(0);
     expect(d.height.data[0]).toBe(-200);
+  });
+});
+
+describe("relief pictures show the lakes", () => {
+  it("paints the lake cells blue and leaves the rest", () => {
+    const d = ocean();
+    addLandmass(d, { shape: { type: "circle", x: 96, y: 96, r: 60 }, heightM: 300, seed: 3 });
+    const lakes = new Uint8Array(W * W);
+    lakes[96 * W + 96] = 1;
+    const plain = reliefPicture(d), withLake = reliefPicture(d, lakes), o = (96 * W + 96) * 4, p = (96 * W + 90) * 4;
+    expect(withLake.data[o + 2]).toBeGreaterThan(withLake.data[o] + 40);
+    expect(plain.data[o + 2]).toBeLessThan(plain.data[o + 1]); // land: greener than blue
+    expect([...withLake.data.subarray(p, p + 4)]).toEqual([...plain.data.subarray(p, p + 4)]);
   });
 });

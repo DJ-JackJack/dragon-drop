@@ -798,7 +798,7 @@ describe("river sources and the water check", () => {
     expect(hydro.sources[0]).toMatchObject({ drawn: true, reaches: "sea" });
     expect(hydro.sources[0].lengthKm).toBeGreaterThan(300);
     expect(Array.isArray(hydro.notes)).toBe(true);
-    expect((await call("list_river_sources"))[0]).toMatchObject({ river_drawn: true, reaches: "sea" });
+    expect((await call("list_river_sources"))[0]).toMatchObject({ makes_a_river: true, reaches: "sea" });
 
     // the source follows its place
     await call("update_place", { place: "Test Falls", x: 60, y: 80 });
@@ -1034,9 +1034,17 @@ describe("maps that know about each other", () => {
     // a battlemap with two levels copies with both
     await call("add_level", { where: "above" });
     await hub.flush();
+    const sceneId = hub.activeId;
     const scene2 = await call("duplicate_map", { name: "Test Scene burnt", open: false });
     const lv = await hub.store.readLevels(scene2.as.id);
     expect(lv.levels).toHaveLength(2);
+    // the copy opened on its upper level knows its own name and its original (a level's files held the original's)
+    expect(lv.active).not.toBe(lv.levels[0].id);
+    await call("open_project", { id: scene2.as.id });
+    expect((await call("get_map_summary")).name).toBe("Test Scene burnt");
+    expect(hub.session.doc.meta.copiedFrom?.id).toBe(sceneId);
+    const burnt = JSON.parse(((await raw("compare_maps", { map: sceneId })).content as { text: string }[])[0].text);
+    expect(burnt.differences[0]).toMatch(/^Before: Test Scene \(the original\)\. After: Test Scene burnt \(the copy\)\./);
 
     // the editor's compare view: where the original lies over the copy, and its picture
     await call("open_project", { id: copy.as.id });

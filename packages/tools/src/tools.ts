@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
   MI_PER_KM, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
-  clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, renderFull,
+  clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, reliefPicture, renderFull,
   isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle, type StreetKind,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
@@ -296,6 +296,12 @@ async function renderMap(ctx: ToolContext): Promise<{ img: RGBAImage; rivers: Ri
   return ctx.render ? ctx.render() : { img: renderFull(ctx.session().doc), rivers: [] };
 }
 
+/** The map in plain relief whatever its style, with its lakes, and its rivers to draw as lines (`relief: true`). */
+export async function reliefMap(ctx: ToolContext): Promise<{ img: RGBAImage; rivers: RiverPath[] }> {
+  const d = await ctx.derived?.();
+  return { img: reliefPicture(ctx.session().doc, d?.lakes), rivers: d?.rivers ?? [] };
+}
+
 export type ToolContent =
   | { type: "text"; text: string }
   | { type: "image"; mediaType: "image/jpeg"; data: string };
@@ -419,7 +425,7 @@ export const TOOLS = [
         focus = selectionFocusRect(s.doc, sel);
         if (!focus) return fail(sel ? "The selection isn't on the map any more." : "Nothing is selected. Ask the DM to select a place or area (Select tool), or give a region.");
       }
-      const { img: full, rivers } = i.relief ? { img: renderFull({ ...s.doc, meta: { ...s.doc.meta, style: "relief" } }), rivers: (await ctx.derived?.())?.rivers ?? [] } : await renderMap(ctx);
+      const { img: full, rivers } = i.relief ? await reliefMap(ctx) : await renderMap(ctx);
       const region = focus ?? i.region ?? { x: 0, y: 0, w: full.w, h: full.h };
       const { img, scale } = cropScale(full, region, i.max_size ?? 1024);
       drawRivers(img, region, scale, rivers);
@@ -438,7 +444,7 @@ export const TOOLS = [
       const jpg = encodeJpeg(img);
       const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
       const note = `Preview of ${focus ? `the DM's selection (region x${region.x} y${region.y} ${region.w}x${region.h})` : i.region ? `region x${region.x} y${region.y} ${region.w}x${region.h}` : "the whole map"}` +
-        ` (${s.doc.meta.width}x${s.doc.meta.height} px, ${s.doc.meta.kmPerPx} km/px, ${s.doc.meta.style ?? "painted"} style); image ${img.w}x${img.h}` +
+        ` (${s.doc.meta.width}x${s.doc.meta.height} px, ${s.doc.meta.kmPerPx} km/px, ${i.relief ? "drawn in plain relief" : `${s.doc.meta.style ?? "painted"} style`}); image ${img.w}x${img.h}` +
         (step ? `, grid every ${step} map px` : "") + (outline ? ", the DM's selected area outlined in gold" : "") + traced + `. Change #${s.seq}.`;
       return { content: [{ type: "text", text: note }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
     },
@@ -923,7 +929,7 @@ export const TOOLS = [
       const rr = i.ref_region ?? { x: 0, y: 0, w: ref.w, h: ref.h };
       const a = cropScale(ref, rr, half).img;
       const doc = ctx.session().doc;
-      const { img: full, rivers } = i.relief ? { img: renderFull({ ...doc, meta: { ...doc.meta, style: "relief" } }), rivers: (await ctx.derived?.())?.rivers ?? [] } : await renderMap(ctx);
+      const { img: full, rivers } = i.relief ? await reliefMap(ctx) : await renderMap(ctx);
       if (i.overlay) {
         const mr = i.map_region ?? { x: 0, y: 0, w: full.w, h: full.h };
         const mapped = cropScale(full, mr, (i.max_size ?? 1400) - 20);
@@ -1302,7 +1308,9 @@ export const TOOLS = [
 
   define({
     name: "list_river_sources",
-    description: "Every river source: where it is, its size, and (once the rivers are worked out) how long its river is and where it ends.",
+    description: "Every river source: where it is, its size, and (once the rivers are worked out) whether its water makes a river big enough to show on the map (makes_a_river), " +
+      "how long that river is and where it ends. drawn_course is the line it was drawn along with draw_river (kept from version 0.1.12); a source without it was placed with add_river_source " +
+      "or drawn before then, and its river follows the land.",
     schema: z.object({}),
     async run(ctx) {
       const f = featuresOf(ctx);
@@ -1317,7 +1325,7 @@ export const TOOLS = [
         const rep = at ? hydro?.sources[j++] : undefined;
         return { id: s.id, river: s.name ?? null, place: s.placeId ? at && "name" in at ? at.name : "(its place was removed)" : null, at: at ? { x: Math.round(at.x), y: Math.round(at.y) } : null, size: s.size, notes: s.notes ?? null,
           ...(s.course && { drawn_course: s.course }),
-          ...(rep && { river_drawn: rep.drawn, length_km: rep.lengthKm, reaches: rep.reaches, mouth: rep.mouth }) };
+          ...(rep && { makes_a_river: rep.drawn, length_km: rep.lengthKm, reaches: rep.reaches, mouth: rep.mouth }) };
       }));
     },
   }),

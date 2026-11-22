@@ -6,7 +6,7 @@ import type { WebSocket } from "ws";
 import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
   type ClaudeState, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
-  PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleRoofRects, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, renderFull, routeWaypoints,
+  PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleRoofRects, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, paintLakes, renderFull, routeWaypoints,
   type BattleExportFormat, battleKey, foundryConnectorProblems, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
   type BattleLevel, type LevelsFile, MAX_LEVELS, defaultLevels, levelsByHeight, newLevelId, newLevelName, nextLevelElevation,
@@ -1036,7 +1036,7 @@ export class Hub {
     }
     const d = await derived();
     if (!d) throw new Error("The map's climate and rivers couldn't be computed.");
-    if ((doc.meta.style ?? "painted") === "relief") return { img: renderFull(doc), rivers: d.rivers };
+    if ((doc.meta.style ?? "painted") === "relief") return { img: paintLakes(renderFull(doc), d.lakes), rivers: d.rivers };
     const data = await this.compute.paint(doc, d);
     return { img: { w: doc.height.w, h: doc.height.h, data }, rivers: [] }; // (the painted style has its rivers in the picture)
   }
@@ -1098,9 +1098,10 @@ export class Hub {
       if (op.dirty) throw new Error("The map couldn't be saved just now, so it can't be copied yet. Try again in a moment.");
     }
     const name = o.name.trim() || `${src.name} (copy)`;
-    const at = new Date().toISOString();
+    const now = new Date(), at = now.toISOString();
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; // the person's own date, not UTC's
     const id = await this.store.duplicate(src.id, name, { copiedFrom: { id: src.id, name: src.name, at } },
-      `---\n\n*A copy of **${src.name}** (project \`${src.id}\`), made ${at.slice(0, 10)} to change it: the brief above is the original's. Record here what is different in this version.*`);
+      `---\n\n*A copy of **${src.name}** (project \`${src.id}\`), made ${day} to change it: the brief above is the original's. Record here what is different in this version.*`);
     this.broadcast({ t: "projects", projects: await this.store.list() });
     if (o.open !== false) await this.openProject(id);
     const info = (await this.store.list()).find((p) => p.id === id)!;

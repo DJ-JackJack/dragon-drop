@@ -251,7 +251,11 @@ export class ProjectStore {
 
   /** A level other than the first (the first is `load`). */
   async loadLevel(id: string, levels: LevelsFile, levelId: string): Promise<MapDoc> {
-    return this.loadAt(this.levelDir(id, levels, levelId), id, false);
+    const doc = await this.loadAt(this.levelDir(id, levels, levelId), id, false);
+    // the map's name and links are its own (the first level's): a level's files can hold older ones (a copy of the map, a renamed map)
+    const own = JSON.parse(await readFile(path.join(this.dir(id), "project.json"), "utf8")) as MapMeta;
+    doc.meta = { ...doc.meta, name: own.name, copiedFrom: own.copiedFrom, origin: own.origin, parent: own.parent };
+    return doc;
   }
 
   async saveLevel(id: string, levels: LevelsFile, levelId: string, doc: MapDoc): Promise<void> {

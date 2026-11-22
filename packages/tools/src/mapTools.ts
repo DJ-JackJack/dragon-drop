@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import {
-  type Features, type LinkedMap, type MapDoc, type RGBAImage, type Rect, cropScale, distanceAcross, drawLabel, drawRivers, mapDifferences, mapKindOf, mapSize, mapTransform, renderFull,
+  type Features, type LinkedMap, type MapDoc, type RGBAImage, type Rect, cropScale, distanceAcross, drawLabel, drawRivers, mapDifferences, mapKindOf, mapSize, mapTransform, reliefPicture,
   pointOnMap, rectOnMap, unitMetres, unitName,
 } from "@mapmaker/core";
 import type { ToolContext } from "./tools.ts";
@@ -50,10 +50,27 @@ async function pointOf(c: ToolContext, p: { x?: number; y?: number; place?: stri
   return "";
 }
 
+/**
+ * With no area asked for, the part of the first map that the other covers too, so both pictures show the same place: a detail map's area of its world map, the whole map for a
+ * copy. An area smaller than a sixteenth of the first map (a battlemap's spot on a world map is a fraction of a pixel) is widened round its middle to that, inside the map.
+ */
+export function overlapOn(ma: LinkedMap, mb: LinkedMap, sa: { w: number; h: number }, sb: { w: number; h: number }, maps: ReadonlyMap<string, LinkedMap>): Rect {
+  const whole = { x: 0, y: 0, w: sa.w, h: sa.h };
+  const b = rectOnMap(mb, ma, { x: 0, y: 0, w: sb.w, h: sb.h }, maps);
+  if (!b) return whole;
+  const x0 = Math.max(0, b.x), y0 = Math.max(0, b.y), x1 = Math.min(sa.w, b.x + b.w), y1 = Math.min(sa.h, b.y + b.h);
+  if (x1 <= x0 || y1 <= y0) return whole;
+  const min = Math.min(sa.w, sa.h) / 16, w = Math.max(min, x1 - x0), h = Math.max(min, y1 - y0);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const x = Math.min(Math.max(0, cx - w / 2), sa.w - w), y = Math.min(Math.max(0, cy - h / 2), sa.h - h);
+  return { x, y, w, h };
+}
+
 /** A map's picture, the area `r` of it (its units), at most `maxPx` across, with its name written in the corner. */
 async function pictureOf(c: ToolContext, r: Rect, maxPx: number, title: string, relief = false): Promise<RGBAImage> {
   const doc = c.session().doc;
-  const full = relief ? { img: renderFull({ ...doc, meta: { ...doc.meta, style: "relief" } }), rivers: (await c.derived?.())?.rivers ?? [] } : c.render ? await c.render() : null;
+  const lakeRiv = relief ? await c.derived?.() : undefined;
+  const full = relief ? { img: reliefPicture(doc, lakeRiv?.lakes), rivers: lakeRiv?.rivers ?? [] } : c.render ? await c.render() : null;
   if (!full) throw new Error("Pictures of maps aren't available here.");
   const size = mapSize(doc.meta), k = full.img.w / size.w;
   const px = { x: Math.max(0, r.x * k), y: Math.max(0, r.y * k), w: Math.min(full.img.w, r.w * k), h: Math.min(full.img.h, r.h * k) };
@@ -147,7 +164,7 @@ export const MAP_TOOLS = [
       const ma: LinkedMap = maps.get(a.meta.id) ?? a.meta, mb: LinkedMap = maps.get(b.meta.id) ?? b.meta;
       const t = mapTransform(ma, mb, maps);
       const sa = mapSize(a.meta), sb = mapSize(b.meta);
-      const ra = i.region ?? { x: 0, y: 0, w: sa.w, h: sa.h };
+      const ra = i.region ?? (t ? overlapOn(ma, mb, sa, sb, maps) : { x: 0, y: 0, w: sa.w, h: sa.h });
       const rb = t ? rectOnMap(ma, mb, ra, maps)! : { x: 0, y: 0, w: sb.w, h: sb.h };
       const half = Math.floor((i.max_size ?? 1400) / 2) - 4;
       const relief = !!i.relief && mapKindOf(a.meta) === "world" && mapKindOf(b.meta) === "world";

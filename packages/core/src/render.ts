@@ -129,6 +129,23 @@ export interface RGBAImage {
   data: Uint8ClampedArray;
 }
 
+/** Lakes on a plain relief picture of a whole map (one pixel a map px, as `renderFull` makes it): `lakes` is the worked-out lake mask (`Derived.lakes`). Keeps a little of the shading under the water. */
+export function paintLakes(img: RGBAImage, lakes: Uint8Array | undefined): RGBAImage {
+  if (!lakes || lakes.length !== img.w * img.h) return img;
+  const d = img.data;
+  for (let i = 0; i < lakes.length; i++) {
+    if (!lakes[i]) continue;
+    const o = i * 4, lum = (d[o] + d[o + 1] + d[o + 2]) / 3, k = 0.85 + 0.15 * Math.min(1.3, lum / 150);
+    d[o] = Math.min(255, 96 * k); d[o + 1] = Math.min(255, 140 * k); d[o + 2] = Math.min(255, 186 * k);
+  }
+  return img;
+}
+
+/** A whole world map in plain relief whatever its style, with its lakes (`Derived.lakes`): the picture for judging the shape of the land and its water. */
+export function reliefPicture(doc: MapDoc, lakes?: Uint8Array): RGBAImage {
+  return paintLakes(renderFull({ ...doc, meta: { ...doc.meta, style: "relief" } }), lakes);
+}
+
 export function renderFull(doc: MapDoc, opts: RenderOptions = {}): RGBAImage {
   const { w, h } = doc.height;
   const data = new Uint8ClampedArray(w * h * 4);
