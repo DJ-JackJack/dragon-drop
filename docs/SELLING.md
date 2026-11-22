@@ -59,6 +59,11 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       - **What it means** (for the lawyer to confirm): nothing registered blocks the name for software in the US, but two products already
         carry it, one of them a tabletop map tool and one sold on itch.io by a company that has registered the name for merchandise. A longer
         or different name would avoid confusion and complaints; decide before the store page, the cover image and any registration.
+      - **Working title** (chosen 2026-11-22): **Dragon Drop: The Busy GM's Cartographer**. The subtitle tells it apart from the other two and says
+        who it is for. Weighed and left out: "DM" (Wizards of the Coast holds a US "Dungeon Master" mark and applied for "Dungeon Masters" in
+        2026; "GM" also covers other games), and "Mapwright" (already the name of several map projects, one of them a fantasy RPG map app and
+        one a tool that makes maps for tabletop games). "Cartographer" is an everyday word, also used in the name of a long-established fantasy
+        map program; nothing found is called "Busy GM". For the lawyer to check with the rest.
 - [ ] "Foundry VTT", "Universal VTT" and "D&D" only as "compatible with" wording. *(Checked 2026-11-22 across the app, the tools, the guides and the
       store page: two other virtual tabletops were named in the battlemap Export dialog and the export tool's description, now "virtual tabletops
       that read Universal VTT files"; no "D&D" anywhere a buyer sees. Left as they are: the Universal VTT file ending `.dd2vtt`, which is how

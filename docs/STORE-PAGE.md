@@ -16,7 +16,7 @@
 
 | Field | What to put |
 |---|---|
-| **Title** | Dragon Drop *(see `SELLING.md`, the name check: two other products already use this name)* |
+| **Title** | **Dragon Drop: The Busy GM's Cartographer** (the working title, chosen 2026-11-22: the subtitle sets it apart from the two other products called Dragon Drop and says who it is for; "GM", not "DM", which Wizards of the Coast's "Dungeon Master" mark is close to, and which leaves out other games' game masters. A lawyer checks "Dragon Drop" itself first: `SELLING.md`, the name check.) |
 | **Project URL** | `[your-itch-name].itch.io/dragon-drop` (made from the title; can be changed) |
 | **Short description or tagline** | the line under "Short description" below |
 | **Classification** | Tools |
