@@ -8,6 +8,12 @@ import { HELP_LINKS } from "./helpLinks.ts";
 
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
+/**
+ * Takes out the map tools connection an earlier version's command made in Claude Code (it held the access key itself; since 0.1.13 the command holds the
+ * map tools key). The old one goes on working: this is only to swap it for the safer key. (Claude Code's own help: `claude mcp remove [-s scope] <name>`.)
+ */
+const MCP_REMOVE = "claude mcp remove --scope user mapmaker";
+
 export function DesktopSettings({ onClose }: { onClose: () => void }) {
   const bridge = window.dragonDrop!;
   const [s, setS] = useState<Settings | null>(null);
@@ -186,16 +192,22 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               Port {s.defaultPort} is already used by another program (most likely an older copy of this app still running, such as a <code>pnpm start</code> window), so this one is using {s.port}. Close the other one and reopen Dragon Drop to get back to {s.defaultPort}; the command below uses the right number either way.
             </p>
           )}
-          <p className="muted">Map tools address, for an assistant Dragon Drop doesn't connect by itself, sent with the header below (it holds your access key):</p>
+          <p className="muted">Map tools address, for an assistant Dragon Drop doesn't connect by itself, sent with the header below (it holds your map tools key, which opens the map tools and nothing else):</p>
           <code className="copyline" data-testid="mcp-url">{s?.mcpUrl ?? ""}</code>
-          <code className="copyline" data-testid="mcp-header">Authorization: Bearer (your access key)</code>
+          <code className="copyline" data-testid="mcp-header">Authorization: Bearer (your map tools key)</code>
           <div className="row end">
             <button onClick={() => void navigator.clipboard.writeText(s?.mcpUrl ?? "")}>Copy address</button>
-            <button onClick={() => void navigator.clipboard.writeText(s?.mcpHeader ?? "")}>Copy header</button>
+            <button onClick={() => void navigator.clipboard.writeText(s?.mcpHeader ?? "")} title="Copies the header with your map tools key. It opens the map tools only: not the rest of Dragon Drop, and not the Allow box.">Copy header</button>
           </div>
           <p className="muted">For Claude Code, the Open Claude Code button sets everything up for you. To use it from your own terminal instead (it must be running), run this once in PowerShell (not inside Claude Code; type /exit first if you are):</p>
           <code className="copyline" data-testid="mcp-command">{s?.mcpCommandShown ?? ""}</code>
-          <div className="row end"><button onClick={() => void navigator.clipboard.writeText(cmd)}>Copy</button></div>
+          <div className="row end"><button onClick={() => void navigator.clipboard.writeText(cmd)} title="Copies the command with your map tools key. Paste it into PowerShell once.">Copy</button></div>
+          <div className="key-note" data-testid="mcp-key-note">
+            <p><b>Changed in 0.1.13:</b> this command now carries a <b>map tools key</b> instead of your access key. It opens the map tools and nothing else, so a command the assistant runs can't answer the Allow box for you.</p>
+            <p>Connected Claude Code from your own terminal with an earlier version's command? It still works, but it holds your full access key. To swap it for the safer key, run this in PowerShell first, then the command above:</p>
+            <code className="copyline" data-testid="mcp-remove-command">{MCP_REMOVE}</code>
+            <div className="row end"><button onClick={() => void navigator.clipboard.writeText(MCP_REMOVE)} title="Copies the command that takes out the connection an earlier version's command made">Copy</button></div>
+          </div>
         </fieldset>
 
         <fieldset>

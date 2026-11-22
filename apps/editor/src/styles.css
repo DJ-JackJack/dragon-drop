@@ -335,7 +335,9 @@ button.danger { color: var(--error); }
 .mapview-note { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 10px; padding: 7px 12px; font-size: 13px; color: #f1ead4; background: rgba(48, 40, 18, 0.94); border: 1px solid #8b7a3c; border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); max-width: 80%; }
 .mapview-note button { white-space: nowrap; }
 .modal.wide { width: 440px; }
-.modal fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.modal fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* (a fieldset grows to its widest unbreakable child: a dropdown with a long choice made the Settings dialog scroll sideways and cut off every line's start) */
+.modal fieldset select, .modal fieldset input { max-width: 100%; min-width: 0; }
 .modal legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
 .modal label.radio { flex-direction: row; align-items: flex-start; gap: 8px; color: var(--text); font-size: 13.5px; }
 .modal label.radio input { margin-top: 3px; }
@@ -395,6 +397,10 @@ button { transition: border-color 0.12s, background 0.12s; }
 .mapview-note { background: rgba(34, 28, 10, 0.95); border-color: #8b7a3c; }
 .swatch.on { border-color: var(--gold-hi); box-shadow: 0 0 0 1px #000 inset, 0 0 8px rgba(212, 175, 55, 0.5); }
 code.copyline { display: block; padding: 8px 10px; font-size: 12px; word-break: break-all; user-select: all; border: 1px solid #2a2822; }
+/* a note about something that changed (Settings: the map tools key since 0.1.13): set off from the text around it by a gold edge */
+.key-note { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 4px; }
+.key-note p { margin: 0; font-size: 12.5px; color: var(--text); }
+.key-note p b { color: var(--gold-hi); }
 .viewer-bar { background: linear-gradient(180deg, #151518, #0d0d10); border-bottom-color: rgba(212, 175, 55, 0.28); }
 .viewer-title { color: var(--gold-hi); letter-spacing: 0.06em; }
 .viewer-card b { color: var(--gold-hi); }

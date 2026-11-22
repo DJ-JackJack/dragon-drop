@@ -874,6 +874,13 @@ async function takeShots(base) {
   await win.webContents.executeJavaScript(`document.querySelector('[data-testid="settings-button"]')?.click()`);
   await new Promise((r) => setTimeout(r, 800));
   fs.writeFileSync(`${base}-settings.png`, (await win.webContents.capturePage()).toPNG());
+  // the AI assistant section, further down (the map tools key and its note)
+  await win.webContents.executeJavaScript(`document.querySelector('[data-testid="mcp-key-note"]')?.scrollIntoView({ block: "center" })`);
+  await new Promise((r) => setTimeout(r, 400));
+  fs.writeFileSync(`${base}-settings-assistant.png`, (await win.webContents.capturePage()).toPNG());
+  // (nothing in the Settings dialog may be wider than it: a sideways scrollbar there once hid the start of every line)
+  const wide = await win.webContents.executeJavaScript(`(() => { const m = document.querySelector('[data-testid="desktop-settings"]'); return m ? m.scrollWidth - m.clientWidth : 0; })()`);
+  if (wide > 1) console.warn(`The Settings dialog is ${wide} px wider than its window: something in it doesn't wrap.`);
 }
 
 async function smokeTest() {
