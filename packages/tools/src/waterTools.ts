@@ -51,6 +51,29 @@ function insidePoint(l: LakeShape): [number, number] {
 
 export const WATER_TOOLS = [
   define({
+    name: "drain_lake",
+    description:
+      "Drain one lake (or any closed hollow) the DM doesn't want: give a point on it (map px; check_hydrology gives a point in every lake) or a named lake. " +
+      "mode outlet cuts a way out through its lowest rim (a small gorge, so the water runs off), fill raises it into a shallow bowl that holds no lake, auto (default) cuts unless " +
+      "that would go deeper than max_cut_m (default 350) and then fills. The same as new maps get. One edit that undo takes back. Use it for a lake trapped inside a closed ring of " +
+      "mountains, or left in a hollow by an edit; never for a lake the DM wants.",
+    schema: z.object({
+      x: z.number().optional(), y: z.number().optional(),
+      lake: z.string().optional().describe("A named lake (its name or id) instead of a point"),
+      mode: z.enum(["auto", "outlet", "fill"]).optional(),
+      max_cut_m: z.number().positive().max(5000).optional().describe("The deepest an outlet may cut, metres (default 350; outlet mode allows up to 2000 unless given)"),
+    }),
+    async run(ctx, i) {
+      if (!ctx.drainLake) return fail("Draining lakes isn't available here.");
+      const r = await ctx.drainLake({ x: i.x, y: i.y, lake: i.lake, mode: i.mode, maxCutM: i.max_cut_m });
+      return json({
+        change: r.change, done: r.done === "outlet" ? `an outlet was cut through its rim (up to ${r.cutM} m deep)` : "it was raised into a shallow bowl that holds no lake",
+        lake_cells: r.cells, lake_depth_m: r.depthM, area: r.rect, note: "The rivers are worked out again in a moment: check_hydrology to see where its water goes now.",
+      });
+    },
+  }),
+
+  define({
     name: "draw_river",
     description:
       "Make a river run along a course: give the line (map px) from where it starts to where it ends (the sea, a lake, or open land). The rivers are still worked out from the land and the rain, " +

@@ -367,6 +367,8 @@ export interface RiverSource {
   y?: number;
   size: RiverSize;
   notes?: string;
+  /** A river drawn by hand (riverDraw.ts): the course it was drawn along, from this source down (map px). The channel is in the land; this only remembers the line. */
+  course?: [number, number][];
 }
 
 /** The sources that can be located (a source whose place was removed is skipped), ready for the hydrology. */

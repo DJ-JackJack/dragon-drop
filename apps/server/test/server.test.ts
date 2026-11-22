@@ -1054,6 +1054,83 @@ describe("maps that know about each other", () => {
   }, 90000);
 });
 
+describe("the tools for rebuilding and mending a map", () => {
+  it("copies land and settings from another map, puts an area back, drains a lake, erodes keeping a peak, reads everything back", async () => {
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORT}/mcp`)));
+    const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = await raw(name, args);
+      expect(r.isError, `${name}: ${JSON.stringify(r.content).slice(0, 400)}`).toBeFalsy();
+      return JSON.parse((r.content as { text: string }[])[0].text);
+    };
+    // the original: an island with hills, a range with a massif and spurs, a place, a region, a drawn river, its own climate
+    const orig = (await call("create_map", { name: "Test Original", width: 256, height: 256, km_per_px: 4, template: "ocean" })).created.id as string;
+    await call("add_landmass", { shape: { type: "circle", x: 128, y: 128, r: 90 }, height_m: 300, relief: 0.6, seed: 5 });
+    await call("add_mountain_range", { path: [[70, 110], [128, 100], [190, 110]], width_px: 8, heights_m: [800, 3200, 800], widths_px: [5, 10, 5], spurs: 0.6, seed: 6 });
+    await call("add_place", { name: "Mill", type: "village", x: 120, y: 160 });
+    await call("add_climate_region", { name: "Wet", shape: { type: "rect", x: 60, y: 140, w: 50, h: 40 }, moisture: 0.9 });
+    await call("set_climate", { moisture_bias: 0.8, wind: "east" });
+    const drawn = await call("draw_river", { points: [[128, 112], [128, 170], [128, 225]], size: "river" });
+    expect(drawn.length_km).toBeGreaterThan(0);
+    await hub.flush();
+    // read back exactly
+    const sum = await call("get_map_summary");
+    expect(sum.climate).toMatchObject({ moistureBias: 0.8, wind: "east" });
+    const regions = await call("list_climate_regions", { outlines: true });
+    expect(regions[0].outline.length).toBeGreaterThanOrEqual(4);
+    const sources = await call("list_river_sources");
+    expect(sources[0].drawn_course.length).toBeGreaterThan(5);
+    const water = await call("check_hydrology");
+    expect(JSON.stringify(water)).not.toMatch(/"outline"/);
+    const pv = await raw("render_preview", { relief: true, max_size: 300 });
+    expect((pv.content as { type: string }[]).some((b) => b.type === "image")).toBe(true);
+
+    // a new map of the same size, built from the original's own land and settings
+    await call("create_map", { name: "Test Rebuilt", width: 256, height: 256, km_per_px: 4, template: "ocean" });
+    const copied = await call("copy_from_map", { map: "Test Original", what: ["terrain", "climate", "regions", "places", "sources"] });
+    expect(copied.terrain_cells).toBeGreaterThan(5000);
+    expect(copied).toMatchObject({ places: 1, regions: 1, sources: 1, climate: "copied" });
+    expect(hub.session.doc.meta.climate).toMatchObject({ moistureBias: 0.8 });
+    const cmp = await raw("compare_maps", { map: "Test Original", overlay: true });
+    const facts = JSON.parse((cmp.content as { text: string }[])[0].text);
+    expect(facts.coast_match).toBeGreaterThan(0.99);
+    expect((cmp.content as { type: string }[]).filter((b) => b.type === "image")).toHaveLength(2);
+    expect(await raw("copy_from_map", { map: "Test Original", what: ["terrain"], area: { type: "circle", x: 128, y: 128, r: 10 } })).toMatchObject({ isError: false });
+
+    // a mistake, put back from a checkpoint in one area only
+    await call("save_checkpoint", { name: "Before the mistake" });
+    const before = new Float32Array(hub.session.doc.height.data);
+    await call("sculpt", { mode: "raise", shape: { type: "circle", x: 80, y: 180, r: 12 }, amount_m: 900 });
+    await call("sculpt", { mode: "raise", shape: { type: "circle", x: 190, y: 180, r: 12 }, amount_m: 900 });
+    await call("restore_area", { checkpoint: "Before the mistake", area: { type: "circle", x: 80, y: 180, r: 30 } });
+    const h = hub.session.doc.height.data;
+    expect(h[180 * 256 + 80]).toBeCloseTo(before[180 * 256 + 80], 2);
+    expect(h[180 * 256 + 190]).toBeGreaterThan(before[180 * 256 + 190] + 300); // (the other one stays)
+
+    // a range closed on itself traps a lake; drain it
+    await call("add_mountain_range", { path: [[150, 150], [175, 150], [175, 175], [150, 175], [150, 150]], width_px: 5, peak_m: 1500, roughness: 0, seed: 9 });
+    let lake = null as null | { x: number; y: number };
+    for (let i = 0; i < 40 && !lake; i++) {
+      const w = await call("check_hydrology");
+      lake = (w.every_lake as { x: number; y: number }[]).find((l) => Math.abs(l.x - 162) < 12 && Math.abs(l.y - 162) < 12) ?? null;
+      if (!lake) await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(lake, "the closed ring of mountains holds a lake").not.toBeNull();
+    const dr = await call("drain_lake", { x: lake!.x, y: lake!.y });
+    expect(dr.lake_cells).toBeGreaterThan(10);
+    expect(await raw("drain_lake", { x: 5, y: 5 })).toMatchObject({ isError: true }); // (open sea: no lake)
+
+    // erosion in an area keeping the massif's peak
+    const peakBefore = Math.max(...hub.session.doc.height.data);
+    await call("erode", { passes: 2, area: { type: "rect", x: 60, y: 60, w: 140, h: 120 }, keep_above_m: 2500 });
+    expect(Math.max(...hub.session.doc.height.data)).toBeCloseTo(peakBefore, 1);
+    void orig;
+    await call("open_project", { id: "test-world" });
+    await client.close();
+  }, 120000);
+});
+
 describe("selection and the edit lock", () => {
   it("shares the DM's selection with Claude, locks Claude's edits to it, and lets only the DM change a locked selection", async () => {
     const client = new Client({ name: "test", version: "1.0.0" });

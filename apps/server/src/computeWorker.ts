@@ -13,7 +13,7 @@ parentPort!.on("message", ({ id, job }: { id: number; job: Job }) => {
     // (map data hands its buffers back; the picture reader's answer is a plain object, copied)
     const transfer = value === null || job.op === "read" || job.op === "read_as" ? []
       : job.op === "city" ? [(value as RGBAImage).data.buffer as ArrayBuffer]
-      : job.op === "carve" ? [(value as CarveResult).heights.buffer as ArrayBuffer]
+      : job.op === "carve" || job.op === "drain" ? [(value as CarveResult).heights.buffer as ArrayBuffer]
       : value instanceof Uint8ClampedArray || value instanceof Float32Array ? [value.buffer as ArrayBuffer]
       : derivedBuffers(value as Derived);
     parentPort!.postMessage({ id, ok: true, value }, transfer);

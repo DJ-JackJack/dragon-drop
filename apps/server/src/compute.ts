@@ -6,7 +6,7 @@ import { Worker } from "node:worker_threads";
 import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
-  type CarveOptions, type CarveResult, type RiverPath, carveValleys,
+  type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
 
@@ -35,6 +35,8 @@ export interface MapCompute {
   readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer>;
   /** Valleys carved along these rivers (core carve.ts): new heights, the map itself is not changed. */
   carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult>;
+  /** One lake drained (core terrainDrain.ts drainLakeAt): the new heights of the whole map and what was done; the map itself is not changed. */
+  drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }): Promise<DrainLakeResult & { heights: Float32Array }>;
   close(): Promise<void>;
 }
 
@@ -64,7 +66,8 @@ export type Job =
   | { op: "read"; key: string; bytes: Uint8Array; opts: ReaderOptions }
   | { op: "read_as"; key: string; bytes: Uint8Array; job: ReadJob }
   | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> }
-  | { op: "carve"; W: number; H: number; heights: Float32Array; meta: MapMeta; rivers: RiverPath[]; opts: CarveOptions };
+  | { op: "carve"; W: number; H: number; heights: Float32Array; meta: MapMeta; rivers: RiverPath[]; opts: CarveOptions }
+  | { op: "drain"; W: number; H: number; heights: Float32Array; meta: MapMeta; x: number; y: number; opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number } };
 
 const same = (n: { W: number; H: number; seed: number } | null, W: number, H: number, seed: number) => !!n && n.W === W && n.H === H && n.seed >>> 0 === seed >>> 0;
 
@@ -104,8 +107,9 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | null {
     if (job.op === "carve") return carveValleys(job.heights, job.W, job.H, job.meta.seaLevel, job.rivers, job.opts);
+    if (job.op === "drain") { const h = job.heights.slice(); return { ...drainLakeAt(h, job.W, job.H, job.meta.seaLevel, job.x, job.y, job.opts), heights: h }; }
     if (job.op === "city") {
       const tiles = job.roofTiles;
       return renderCity({ meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features }, { maxSize: job.maxSize, ...(tiles && { tileFor: (a: string) => tiles[a] ?? null }) }).img;
@@ -183,6 +187,10 @@ export class InlineCompute implements MapCompute {
   }
   async carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions) {
     return this.runner.run({ op: "carve", ...snapshot(doc), rivers, opts }) as CarveResult;
+  }
+
+  async drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }) {
+    return this.runner.run({ op: "drain", ...snapshot(doc), x, y, opts }) as DrainLakeResult & { heights: Float32Array };
   }
   async close() {}
 }
@@ -286,6 +294,12 @@ export class WorkerCompute implements MapCompute {
   readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer> {
     if (this.painter.dead) return this.inline.readPictureAs(key, bytes, job);
     return this.painter.call<ReadAnswer>({ op: "read_as", key, bytes, job }, [bytes.buffer as ArrayBuffer]);
+  }
+
+  drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }): Promise<DrainLakeResult & { heights: Float32Array }> {
+    if (this.painter.dead) return this.inline.drain(doc, x, y, opts);
+    const s = snapshot(doc);
+    return this.painter.call<DrainLakeResult & { heights: Float32Array }>({ op: "drain", ...s, x, y, opts }, [s.heights.buffer as ArrayBuffer]);
   }
 
   carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult> {

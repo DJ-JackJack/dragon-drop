@@ -7,6 +7,7 @@
  */
 import { dilate, erode, removeSmall } from "./fields.ts";
 import { Simplex2D, smoothstep } from "./noise.ts";
+import { type Rect, type Shape, clipRect, expandRect, shapeBounds, shapeSize, signedDistance } from "./geom.ts";
 
 const D8X = [-1, 0, 1, -1, 1, -1, 0, 1];
 const D8Y = [-1, -1, -1, 0, 0, 1, 1, 1];
@@ -365,6 +366,34 @@ export interface ErodeParams {
   strength?: number;
   /** Number of erosion passes (default 4). */
   passes?: number;
+  /** Only inside this area (with a soft edge inside it): nothing outside it changes. */
+  area?: Shape;
+  /** Land higher than this (metres above the sea) keeps its height: a named peak stays as tall as it was. */
+  keepAboveM?: number;
+}
+
+/**
+ * Erode (see erodeTerrain), held to an area and keeping the heights above `keepAboveM`: the whole map is eroded (water needs the whole map to know where it runs), then
+ * everything outside the area, and the land above the kept height, is put back (blending across a soft edge). Returns the box that may have changed.
+ */
+export function erodeTerrainWithin(h: Float32Array, W: number, H: number, seaLevel: number, p: ErodeParams): Rect {
+  if (!p.area && p.keepAboveM === undefined) { erodeTerrain(h, W, H, seaLevel, p); return { x: 0, y: 0, w: W, h: H }; }
+  const pre = h.slice();
+  erodeTerrain(h, W, H, seaLevel, p);
+  const box = p.area ? clipRect(expandRect(shapeBounds(p.area, W, H), 1), W, H) : { x: 0, y: 0, w: W, h: H };
+  const feather = p.area ? Math.max(2, Math.min(40, shapeSize(p.area, W, H) * 0.1)) : 0, keep = p.keepAboveM;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (h[i] === pre[i]) continue;
+    let w = 1;
+    if (p.area) {
+      const inBox = box && x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
+      w = inBox ? smoothstep(0, feather, signedDistance(p.area, x + 0.5, y + 0.5)) : 0;
+    }
+    if (keep !== undefined && w > 0) w *= 1 - smoothstep(keep - 150, keep, pre[i] - seaLevel);
+    h[i] = w >= 1 ? h[i] : w <= 0 ? pre[i] : pre[i] + (h[i] - pre[i]) * w;
+  }
+  return box ?? { x: 0, y: 0, w: 0, h: 0 };
 }
 
 /**

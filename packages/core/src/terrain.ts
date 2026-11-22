@@ -5,7 +5,7 @@
 import type { MapDoc } from "./doc.ts";
 import { type LakeAmount, drainTerrain } from "./terrainDrain.ts";
 import {
-  type Point, type Rect, type Shape, clipRect, expandRect, shapeBounds, shapeSize, signedDistance, distToPolyline,
+  type Point, type Rect, type Shape, clipRect, expandRect, rectUnion, shapeBounds, shapeSize, signedDistance, distToPolyline,
 } from "./geom.ts";
 import { Simplex2D, clamp, lerp, mulberry32, smoothstep, subSeed } from "./noise.ts";
 
@@ -146,29 +146,46 @@ export interface AddLandmassParams {
   heightM?: number;
   /** 0 = smooth coast, 1 = very ragged coast. */
   coastRoughness?: number;
+  /**
+   * 0..1 how much the land rises and falls inside: 0 (the default, as before) is a gently domed plain at about heightM; more gives rolling uplands, hills and dales
+   * (up to about twice heightM in places), so the land has character before any mountains are added.
+   */
+  relief?: number;
+  /** A ring of land this many px wide along the shape's outline instead of the whole shape (an atoll, a crater rim, a ring of islands round an inner sea). */
+  ringPx?: number;
   seed: number;
 }
 
-/** Raise new land (an island or peninsula) inside a shape, with a ragged coast and a shallow shelf. */
+/** Raise new land (an island or peninsula) inside a shape (or a ring along its outline), with a ragged coast and a shallow shelf. */
 export function addLandmass(doc: MapDoc, p: AddLandmassParams): Rect | null {
   const { w: W, h: H, data } = doc.height;
   const sea = doc.meta.seaLevel;
-  const size = Math.max(4, shapeSize(p.shape, W, H));
+  const ring = p.ringPx && p.ringPx > 0 ? Math.max(2, p.ringPx) : 0;
+  const size = ring ? Math.max(4, ring) : Math.max(4, shapeSize(p.shape, W, H));
   const rough = clamp(p.coastRoughness ?? 0.5, 0, 1);
+  const relief = clamp(p.relief ?? 0, 0, 1);
   const heightM = p.heightM ?? 250;
   const shelf = size * 0.35 + 6;
-  const rect = clipRect(expandRect(shapeBounds(p.shape, W, H), shelf + size * rough * 0.3 + 2), W, H);
+  const rect = clipRect(expandRect(shapeBounds(p.shape, W, H), shelf + size * rough * 0.3 + 2 + ring / 2), W, H);
   if (!rect) return null;
   const n = new Simplex2D(subSeed(p.seed, 11));
   const m = new Simplex2D(subSeed(p.seed, 12));
+  const hills = new Simplex2D(subSeed(p.seed, 13)), broad = new Simplex2D(subSeed(p.seed, 14)), girth = new Simplex2D(subSeed(p.seed, 15));
+  const big = Math.max(4, shapeSize(p.shape, W, H));
   for (let y = rect.y; y < rect.y + rect.h; y++) {
     for (let x = rect.x; x < rect.x + rect.w; x++) {
       const i = y * W + x;
       const warp = n.fbm(x, y, Math.max(8, size * 0.45), 5) * size * 0.32 * rough;
-      const sd = signedDistance(p.shape, x, y) + warp;
+      const raw = signedDistance(p.shape, x, y);
+      // a ring is wider in places and narrows to necks (or breaks into islands, when the coast is ragged) in others, never an even band
+      const half = ring ? (ring / 2) * Math.max(0.1, 1 + (0.25 + 0.35 * rough) * girth.fbm(x, y, Math.max(8, big * 0.45), 2) * 1.5) : 0;
+      const sd = (ring ? half - Math.abs(raw) : raw) + warp;
       if (sd > 0) {
         const t = smoothstep(0, size * 0.5, sd);
-        const target = sea + 8 + heightM * (0.25 + 0.75 * t) * (0.85 + 0.3 * m.fbm(x, y, size * 0.3, 4));
+        // the land's own rise and fall: broad uplands and lowlands, and hills on them (none when relief is 0, as before)
+        const up = relief ? 1 + relief * 0.9 * broad.fbm(x, y, big * 0.45, 3) : 1;
+        const hill = relief ? relief * heightM * 1.5 * t * Math.max(0, hills.ridged(x, y, Math.max(4, big * 0.09), 5) - 0.3) : 0;
+        const target = sea + 8 + heightM * (0.25 + 0.75 * t) * (0.85 + 0.3 * m.fbm(x, y, size * 0.3, 4)) * Math.max(0.3, up) + hill;
         if (data[i] < target) data[i] = lerp(data[i], target, smoothstep(0, 3, sd));
       } else if (sd > -shelf) {
         const t = -sd / shelf;
@@ -187,24 +204,53 @@ export interface MountainRangeParams {
   peakM?: number;
   /** 0..1 how jagged / broken the crest is. */
   roughness?: number;
+  /** The crest height at each point of the path (metres added; between points it changes smoothly): a range that rises to a massif and falls away. Default peakM everywhere. */
+  heightsM?: number[];
+  /** The half-width at each point of the path (px): broad in the middle, narrow at the ends. Default widthPx everywhere. */
+  widthsPx?: number[];
+  /** 0..1 how many side ridges (spurs) branch off the range: lower, narrower, falling away from the crest. Default 0. */
+  spurs?: number;
   seed: number;
 }
 
-/** Add a mountain range along a polyline: ridged crest, varying height, foothills. */
+/** The nearest point of a polyline to (x, y): its distance, and which segment (k, t along it). */
+function nearestOnPath(x: number, y: number, pts: Point[]): { d: number; k: number; t: number } {
+  if (pts.length === 1) return { d: Math.hypot(x - pts[0][0], y - pts[0][1]), k: 0, t: 0 };
+  let best = { d: Infinity, k: 0, t: 0 };
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const [ax, ay] = pts[k], [bx, by] = pts[k + 1], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1e-9;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)), d = Math.hypot(ax + t * dx - x, ay + t * dy - y);
+    if (d < best.d) best = { d, k, t };
+  }
+  return best;
+}
+
+/** Add a mountain range along a polyline: ridged crest, varying height, foothills; optionally a height and width that change along it, and spurs. */
 export function addMountainRange(doc: MapDoc, p: MountainRangeParams): Rect | null {
   const { w: W, h: H, data } = doc.height;
-  const wpx = Math.max(1.5, p.widthPx);
-  const peak = p.peakM ?? 2800;
+  const n0 = p.path.length;
+  const per = (vals: number[] | undefined, dflt: number) => (vals && vals.length === n0 ? vals : null) ?? Array.from({ length: n0 }, () => dflt);
+  const peaks = per(p.heightsM, p.peakM ?? 2800);
+  const widths = per(p.widthsPx, p.widthPx).map((w) => Math.max(1.5, w));
+  const wmax = Math.max(...widths);
   const rough = clamp(p.roughness ?? 0.6, 0, 1);
-  const rect = clipRect(expandRect(shapeBounds({ type: "stroke", points: p.path, r: 0 }, W, H), wpx * 3 + 4), W, H);
+  let rect = clipRect(expandRect(shapeBounds({ type: "stroke", points: p.path, r: 0 }, W, H), wmax * 3 + 4), W, H);
   if (!rect) return null;
   const n = new Simplex2D(subSeed(p.seed, 21));
   const r = new Simplex2D(subSeed(p.seed, 22));
   const a = new Simplex2D(subSeed(p.seed, 23));
+  const vary = !!p.heightsM || !!p.widthsPx;
   for (let y = rect.y; y < rect.y + rect.h; y++) {
     for (let x = rect.x; x < rect.x + rect.w; x++) {
+      let wpx = widths[0], peak = peaks[0], dd: number;
+      if (vary) {
+        const near = nearestOnPath(x, y, p.path), k2 = Math.min(n0 - 1, near.k + 1);
+        wpx = widths[near.k] + (widths[k2] - widths[near.k]) * near.t;
+        peak = peaks[near.k] + (peaks[k2] - peaks[near.k]) * near.t;
+        dd = near.d;
+      } else dd = distToPolyline(x, y, p.path);
       const warp = n.fbm(x, y, wpx * 2, 3) * wpx * 0.45;
-      const d = distToPolyline(x, y, p.path) + warp;
+      const d = dd + warp;
       if (d > wpx * 3) continue;
       const core = Math.exp(-((d / wpx) ** 2));
       const foot = Math.exp(-((d / (wpx * 2.2)) ** 2)) * 0.18;
@@ -212,6 +258,28 @@ export function addMountainRange(doc: MapDoc, p: MountainRangeParams): Rect | nu
       const along = 0.55 + 0.45 * smoothstep(-0.35, 0.35, a.fbm(x, y, wpx * 4, 3));
       const crest = (1 - rough * 0.65) + rough * 0.65 * ridge;
       data[y * W + x] += peak * (core * crest * along + foot * (0.5 + 0.5 * ridge));
+    }
+  }
+  // spurs: side ridges branching off the crest, alternately left and right, lower and narrower, falling away from it
+  const spurs = clamp(p.spurs ?? 0, 0, 1);
+  if (spurs > 0 && n0 >= 2) {
+    let len = 0;
+    for (let k = 1; k < n0; k++) len += Math.hypot(p.path[k][0] - p.path[k - 1][0], p.path[k][1] - p.path[k - 1][1]);
+    const count = Math.round(spurs * len / Math.max(4, wmax * 2.5));
+    const rnd = mulberry32(subSeed(p.seed, 24));
+    for (let s = 0; s < count; s++) {
+      // where along the range, and its height, width and heading there
+      const at = ((s + 0.5 + (rnd() - 0.5) * 0.6) / count) * len;
+      let walked = 0, k = 0;
+      while (k < n0 - 2 && walked + Math.hypot(p.path[k + 1][0] - p.path[k][0], p.path[k + 1][1] - p.path[k][1]) < at) { walked += Math.hypot(p.path[k + 1][0] - p.path[k][0], p.path[k + 1][1] - p.path[k][1]); k++; }
+      const [ax, ay] = p.path[k], [bx, by] = p.path[k + 1], seg = Math.hypot(bx - ax, by - ay) || 1, t = Math.max(0, Math.min(1, (at - walked) / seg));
+      const ox = ax + (bx - ax) * t, oy = ay + (by - ay) * t, w = widths[k] + (widths[k + 1] - widths[k]) * t, pk = peaks[k] + (peaks[k + 1] - peaks[k]) * t;
+      const side = s % 2 ? 1 : -1, ang = Math.atan2(by - ay, bx - ax) + side * (Math.PI / 2 - 0.35 + rnd() * 0.5);
+      const reach = w * (2.6 + rnd() * 2.4), bend = (rnd() - 0.5) * 0.6;
+      const mid: Point = [ox + Math.cos(ang) * reach * 0.5, oy + Math.sin(ang) * reach * 0.5];
+      const tip: Point = [ox + Math.cos(ang + bend) * reach, oy + Math.sin(ang + bend) * reach];
+      const sr = addMountainRange(doc, { path: [[ox, oy], mid, tip], widthPx: w * 0.5, heightsM: [pk * 0.55, pk * 0.4, pk * 0.15], widthsPx: [w * 0.55, w * 0.45, w * 0.3], roughness: rough, seed: subSeed(p.seed, 100 + s) });
+      if (sr) rect = rectUnion(rect, sr);
     }
   }
   return rect;

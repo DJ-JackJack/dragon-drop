@@ -11,7 +11,7 @@ import {
   type AddLandmassParams, type GenerateTerrainParams, type MountainRangeParams, type SculptParams,
   addLandmass, addMountainRange, generateTerrain, sculpt,
 } from "./terrain.ts";
-import { type ErodeParams, erodeTerrain } from "./hydrology.ts";
+import { type ErodeParams, erodeTerrainWithin } from "./hydrology.ts";
 import { type PaintFloorParams, MATERIALS, isBattle, paintFloor } from "./battle.ts";
 import { type Features, type FeaturesPatch, applyFeaturesPatch, describeFeaturesPatch, emptyFeatures } from "./features.ts";
 import { type EditLock, type SelectionMask, featuresOutsideLock, selectionMask } from "./selection.ts";
@@ -37,7 +37,7 @@ export type Command =
   | { op: "features"; patch: FeaturesPatch; label?: string }
   | { op: "replace_heights"; data: Float32Array; label?: string }
   /** New heights for one box (`data` is rect.w * rect.h, row by row), with features changed in the same step if given: one undo step for both (a drawn river's channel and its source). */
-  | { op: "patch_heights"; rect: Rect; data: Float32Array; features?: FeaturesPatch; label?: string };
+  | { op: "patch_heights"; rect: Rect | null; data: Float32Array; features?: FeaturesPatch; meta?: Pick<Partial<MapMeta>, "climate">; label?: string };
 
 export type Author = "user" | "claude" | "system";
 
@@ -162,8 +162,7 @@ export class MapSession {
       case "sculpt": rect = sculpt(this.doc, cmd.params); break;
       case "paint_floor": rect = paintFloor(this.doc, cmd.params); break;
       case "erode":
-        erodeTerrain(hf.data, hf.w, hf.h, this.doc.meta.seaLevel, cmd.params);
-        rect = { x: 0, y: 0, w: hf.w, h: hf.h };
+        rect = erodeTerrainWithin(hf.data, hf.w, hf.h, this.doc.meta.seaLevel, cmd.params);
         break;
       case "set_sea_level":
         this.doc.meta.seaLevel = cmd.levelM;
@@ -196,11 +195,15 @@ export class MapSession {
         rect = { x: 0, y: 0, w: hf.w, h: hf.h };
         break;
       case "patch_heights": {
+        // (no box: only the features and settings change, still one step with them)
         const r = cmd.rect;
-        if (r.x < 0 || r.y < 0 || r.w < 1 || r.h < 1 || r.x + r.w > hf.w || r.y + r.h > hf.h || cmd.data.length !== r.w * r.h) throw new Error("patch_heights: the box doesn't fit the map");
-        for (let y = 0; y < r.h; y++) hf.data.set(cmd.data.subarray(y * r.w, (y + 1) * r.w), (r.y + y) * hf.w + r.x);
-        rect = { ...r };
+        if (r) {
+          if (r.x < 0 || r.y < 0 || r.w < 1 || r.h < 1 || r.x + r.w > hf.w || r.y + r.h > hf.h || cmd.data.length !== r.w * r.h) throw new Error("patch_heights: the box doesn't fit the map");
+          for (let y = 0; y < r.h; y++) hf.data.set(cmd.data.subarray(y * r.w, (y + 1) * r.w), (r.y + y) * hf.w + r.x);
+          rect = { ...r };
+        }
         if (cmd.features) { this.doc.features = applyFeaturesPatch(featuresBefore, cmd.features); featuresChanged = true; }
+        if (cmd.meta) Object.assign(this.doc.meta, cmd.meta);
         break;
       }
     }
@@ -215,7 +218,7 @@ export class MapSession {
       return { seq: this.seq, rect, label: lbl };
     }
 
-    const metaChanged = cmd.op === "set_sea_level" || cmd.op === "set_meta" || cmd.op === "restore";
+    const metaChanged = cmd.op === "set_sea_level" || cmd.op === "set_meta" || cmd.op === "restore" || (cmd.op === "patch_heights" && !!cmd.meta);
     this.seq++;
     const entry: UndoEntry = {
       seq: this.seq, author, label: lbl, rect,
@@ -254,6 +257,7 @@ export class MapSession {
         return;
       case "patch_heights":
       case "features": {
+        if (cmd.op === "patch_heights" && cmd.meta?.climate) throw new LockedEditError("would change the climate settings for the whole map");
         const patch = cmd.op === "features" ? cmd.patch : cmd.features;
         if (!patch) return;
         const out = featuresOutsideLock(patch, this.doc.features ?? emptyFeatures(), lock);

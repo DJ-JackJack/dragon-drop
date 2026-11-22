@@ -49,6 +49,7 @@ export * from "./carve.ts";
 export * from "./riverDraw.ts";
 export * from "./mapLinks.ts";
 export * from "./mapDiff.ts";
+export * from "./mapCopy.ts";
 export * from "./cityBattle.ts";
 export * from "./cityPlan.ts";
 export * from "./cityWorld.ts";

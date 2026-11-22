@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import {
-  type Features, type LinkedMap, type MapDoc, type RGBAImage, type Rect, cropScale, distanceAcross, drawLabel, drawRivers, mapDifferences, mapKindOf, mapSize, mapTransform,
+  type Features, type LinkedMap, type MapDoc, type RGBAImage, type Rect, cropScale, distanceAcross, drawLabel, drawRivers, mapDifferences, mapKindOf, mapSize, mapTransform, renderFull,
   pointOnMap, rectOnMap, unitMetres, unitName,
 } from "@mapmaker/core";
 import type { ToolContext } from "./tools.ts";
@@ -51,9 +51,9 @@ async function pointOf(c: ToolContext, p: { x?: number; y?: number; place?: stri
 }
 
 /** A map's picture, the area `r` of it (its units), at most `maxPx` across, with its name written in the corner. */
-async function pictureOf(c: ToolContext, r: Rect, maxPx: number, title: string): Promise<RGBAImage> {
+async function pictureOf(c: ToolContext, r: Rect, maxPx: number, title: string, relief = false): Promise<RGBAImage> {
   const doc = c.session().doc;
-  const full = c.render ? await c.render() : null;
+  const full = relief ? { img: renderFull({ ...doc, meta: { ...doc.meta, style: "relief" } }), rivers: (await c.derived?.())?.rivers ?? [] } : c.render ? await c.render() : null;
   if (!full) throw new Error("Pictures of maps aren't available here.");
   const size = mapSize(doc.meta), k = full.img.w / size.w;
   const px = { x: Math.max(0, r.x * k), y: Math.max(0, r.y * k), w: Math.min(full.img.w, r.w * k), h: Math.min(full.img.h, r.h * k) };
@@ -62,6 +62,35 @@ async function pictureOf(c: ToolContext, r: Rect, maxPx: number, title: string):
   drawLabel(img, title, 6, 6, 1, true);
   return img;
 }
+
+/**
+ * Land and sea of two linked world maps over an area of the first (`f` turns its px into the other's): each one's share of land, how well they match (land in both over land in
+ * either), and (`maxPx` > 0) a picture of it: grey-green land in both, blue sea in both, red land only in the first, orange land only in the other.
+ */
+function landMatch(a: MapDoc, b: MapDoc, r: Rect, f: { s: number; x: number; y: number }, maxPx: number): { shareA: number; shareB: number; match: number; img?: RGBAImage } {
+  const W = a.height.w, bw = b.height.w, bh = b.height.h, ha = a.height.data, hb = b.height.data, seaA = a.meta.seaLevel, seaB = b.meta.seaLevel;
+  const x0 = Math.max(0, Math.floor(r.x)), y0 = Math.max(0, Math.floor(r.y)), x1 = Math.min(W, Math.ceil(r.x + r.w)), y1 = Math.min(a.height.h, Math.ceil(r.y + r.h));
+  const w = x1 - x0, h = y1 - y0, kinds = new Uint8Array(Math.max(0, w * h));
+  let la = 0, lb = 0, both = 0, either = 0, n = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const bx = Math.floor(f.s * (x + 0.5) + f.x), by = Math.floor(f.s * (y + 0.5) + f.y);
+    if (bx < 0 || by < 0 || bx >= bw || by >= bh) continue;
+    const A = ha[y * W + x] > seaA, B = hb[by * bw + bx] > seaB;
+    n++; if (A) la++; if (B) lb++; if (A && B) both++; if (A || B) either++;
+    kinds[(y - y0) * w + (x - x0)] = A && B ? 1 : A ? 2 : B ? 3 : 4;
+  }
+  const out: { shareA: number; shareB: number; match: number; img?: RGBAImage } = { shareA: r3(la / Math.max(1, n)), shareB: r3(lb / Math.max(1, n)), match: r3(either ? both / either : 1) };
+  if (maxPx > 0 && w > 0 && h > 0) {
+    const COL: Record<number, [number, number, number]> = { 0: [30, 30, 34], 1: [126, 146, 104], 2: [214, 70, 52], 3: [240, 176, 52], 4: [44, 74, 122] };
+    const full: RGBAImage = { w, h, data: new Uint8ClampedArray(w * h * 4) };
+    for (let i = 0; i < kinds.length; i++) { const c = COL[kinds[i]]; full.data[i * 4] = c[0]; full.data[i * 4 + 1] = c[1]; full.data[i * 4 + 2] = c[2]; full.data[i * 4 + 3] = 255; }
+    const img = cropScale(full, { x: 0, y: 0, w, h }, maxPx).img;
+    drawLabel(img, `land in both / sea in both / only ${a.meta.name} (red) / only ${b.meta.name} (orange)`, 6, 6, 1, true);
+    out.img = img;
+  }
+  return out;
+}
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 function sideBySide(a: RGBAImage, b: RGBAImage): RGBAImage {
   const gap = 8, w = a.w + gap + b.w, h = Math.max(a.h, b.h);
@@ -98,12 +127,16 @@ export const MAP_TOOLS = [
       "For a map and its copy (before and after) or two maps of the same kind and size, it lists every difference: the land (raised, lowered, coast moved) on world maps; floors on battlemaps, ground on city maps; and, matched by id, places, labels, roads, " +
       "climate regions, river sources, walls and doors, lights, objects, roofs, notes, buildings, streets, city walls and districts (added, removed, moved, changed). " +
       "Linked maps of different scales (a detail map and its world map, a battlemap or city made from a spot) are lined up: the pictures show the same area of each. Unlinked maps are shown whole. " +
-      "region: an area of the first map (its units: map px, squares or metres).",
+      "region: an area of the first map (its units: map px, squares or metres). For two world maps that are linked it also gives each one's share of land and how well the coasts " +
+      "match (coast_match: land in both / land in either, 1 = the same), and overlay: true adds a third picture of land and sea: grey-green land in both, blue sea in both, red land only in " +
+      "the first map, orange land only in the other. relief: true draws both in plain relief (the shape of the land, whatever the style and climate).",
     schema: z.object({
       map: z.string().describe("The other map (id or name)"),
       with: z.string().optional().describe("The first map (id or name); default the open map"),
       region: Region.optional().describe("Only this area of the first map, in its units"),
       max_size: z.number().int().min(512).max(1568).optional().describe("Width of the side-by-side picture (default 1400)"),
+      overlay: z.boolean().optional().describe("World maps: add a picture of where land and sea differ (default false)"),
+      relief: z.boolean().optional().describe("World maps: draw both in plain relief (default false)"),
     }),
     async run(ctx, i) {
       if (!ctx.linkedMaps || !ctx.peek) return fail("Comparing maps isn't available here.");
@@ -117,7 +150,9 @@ export const MAP_TOOLS = [
       const ra = i.region ?? { x: 0, y: 0, w: sa.w, h: sa.h };
       const rb = t ? rectOnMap(ma, mb, ra, maps)! : { x: 0, y: 0, w: sb.w, h: sb.h };
       const half = Math.floor((i.max_size ?? 1400) / 2) - 4;
-      const [pa, pb] = [await pictureOf(ca, ra, half, `A: ${a.meta.name}`), await pictureOf(cb, rb, half, `B: ${b.meta.name}`)];
+      const relief = !!i.relief && mapKindOf(a.meta) === "world" && mapKindOf(b.meta) === "world";
+      const [pa, pb] = [await pictureOf(ca, ra, half, `A: ${a.meta.name}`, relief), await pictureOf(cb, rb, half, `B: ${b.meta.name}`, relief)];
+      const land = t && mapKindOf(a.meta) === "world" && mapKindOf(b.meta) === "world" ? landMatch(a, b, ra, t.f, i.overlay ? half * 2 : 0) : null;
       const sameKind = mapKindOf(a.meta) === mapKindOf(b.meta);
       // a copy and its original read as before and after, whichever of the two is open; any other pair reads from the first map to the other
       const bIsOriginal = a.meta.copiedFrom?.id === b.meta.id;
@@ -130,11 +165,13 @@ export const MAP_TOOLS = [
         a: { id: a.meta.id, name: a.meta.name, kind: mapKindOf(a.meta), area: { ...ra, units: unitName(a.meta) } },
         b: { id: b.meta.id, name: b.meta.name, kind: mapKindOf(b.meta), area: { x: r1(rb.x), y: r1(rb.y), w: r1(rb.w), h: r1(rb.h), units: unitName(b.meta) } },
         linked: t ? (t.how.length ? t.how : ["the same map"]) : ["not linked: each is shown whole"],
+        ...(land && { land_share_a: land.shareA, land_share_b: land.shareB, coast_match: land.match }),
         differences: diff ? [reading, ...diff.words] : !sameKind ? [`Different kinds of map (${mapKindOf(a.meta)} and ${mapKindOf(b.meta)}): compared by picture only.`] : ["Not the same area at the same scale: compared by picture only (copies and maps of the same size are compared point by point)."],
       };
       const jpg = encodeJpeg(sideBySide(pa, pb));
-      const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
-      return { content: [{ type: "text", text: JSON.stringify(facts, null, 1) }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
+      const pics = [jpg, ...(land?.img ? [encodeJpeg(land.img)] : [])];
+      const display = ctx.savePreview ? await Promise.all(pics.map((p) => ctx.savePreview!(p))) : undefined;
+      return { content: [{ type: "text", text: JSON.stringify(facts, null, 1) }, ...pics.map((p) => ({ type: "image" as const, mediaType: "image/jpeg" as const, data: toBase64(p) }))], display };
     },
   }),
 

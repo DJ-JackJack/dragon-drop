@@ -11,7 +11,7 @@ import {
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
-  type LakeShape, type NamedWater, type RiverNet, type LinkedMap,
+  type LakeShape, type NamedWater, type RiverNet, type LinkedMap, COPYABLE, copyFeaturesFrom, copyHeightsFrom, heightsFromState, mapTransform,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -116,6 +116,10 @@ export interface ToolContext {
   peek?(map: string): Promise<ToolContext>;
   /** Optional: how every map is linked to the others (core mapLinks.ts). */
   linkedMaps?(): Promise<Map<string, LinkedMap>>;
+  /** Optional (world maps): drain one lake (core drainLakeAt, on the compute thread): at a point or a named lake; one edit. */
+  drainLake?(o: { x?: number; y?: number; lake?: string; mode?: "auto" | "outlet" | "fill"; maxCutM?: number }): Promise<{ change: number; done: "outlet" | "filled" | "none"; cells: number; depthM: number; cutM: number; rect: Rect }>;
+  /** Optional: a checkpoint's heights (to put back the land of an area as it was then), or null when there is no such checkpoint. */
+  checkpointHeights?(name: string): Promise<Float32Array | null>;
 }
 
 /** Places and labels on a preview (bitmap font: placement check, not the final lettering). */
@@ -381,10 +385,12 @@ function changeLine(c: ChangeEntry) {
 export const TOOLS = [
   define({
     name: "get_map_summary",
-    description: "Size, real-world scale, sea level, elevation range, land fraction and latest change number of the open map.",
+    description: "Size, real-world scale, sea level, elevation range, land fraction and latest change number of the open map; on a world map also its style and every climate setting (as set_climate takes them), the grid and the map extras, to read them back exactly.",
     schema: z.object({}),
     async run(ctx) {
-      return json(summary(ctx));
+      const doc = ctx.session().doc;
+      if (isBattle(doc) || isCity(doc)) return json(summary(ctx));
+      return json({ ...summary(ctx), style: doc.meta.style ?? "painted", climate: climateOf(doc), ...(doc.meta.grid && { grid: doc.meta.grid }), ...(doc.meta.furniture && { furniture: doc.meta.furniture }) });
     },
   }),
 
@@ -403,6 +409,7 @@ export const TOOLS = [
         .describe("Temporary labelled points drawn on this preview only"),
       selection: z.boolean().optional().describe("Crop to what the DM has selected (the area with a margin, or a window round a point or feature). The selected area's outline is drawn in gold on every preview."),
       trace: z.boolean().optional().describe("Draw the trace picture (get_trace_picture) half see-through over the map, to compare with it or redraw from it (default false)"),
+      relief: z.boolean().optional().describe("Draw the land in plain relief (heights and shading only, with the rivers as lines), whatever the map's style: to judge the shape of the land before the climate and ground are right (default false)"),
     }),
     async run(ctx, i) {
       const s = ctx.session();
@@ -412,7 +419,7 @@ export const TOOLS = [
         focus = selectionFocusRect(s.doc, sel);
         if (!focus) return fail(sel ? "The selection isn't on the map any more." : "Nothing is selected. Ask the DM to select a place or area (Select tool), or give a region.");
       }
-      const { img: full, rivers } = await renderMap(ctx);
+      const { img: full, rivers } = i.relief ? { img: renderFull({ ...s.doc, meta: { ...s.doc.meta, style: "relief" } }), rivers: (await ctx.derived?.())?.rivers ?? [] } : await renderMap(ctx);
       const region = focus ?? i.region ?? { x: 0, y: 0, w: full.w, h: full.h };
       const { img, scale } = cropScale(full, region, i.max_size ?? 1024);
       drawRivers(img, region, scale, rivers);
@@ -588,16 +595,21 @@ export const TOOLS = [
 
   define({
     name: "add_landmass",
-    description: "Raise new land (island, peninsula, land bridge) inside a shape, with a natural ragged coast and a shallow shelf around it.",
+    description:
+      "Raise new land (island, peninsula, land bridge) inside a shape, with a natural ragged coast and a shallow shelf around it. " +
+      "relief gives the land its own rise and fall (rolling uplands, hills and dales) instead of a gently domed plain: use 0.4 to 0.7 for land with character before any mountains. " +
+      "ring_px makes a ring of land that wide along the shape's outline instead (an atoll, a crater rim, a ring of islands round an inner sea).",
     schema: z.object({
       shape: Shape,
       height_m: z.number().min(5).max(3000).optional().describe("Typical inland elevation above sea level (default 250)"),
       coast_roughness: z.number().min(0).max(1).optional().describe("0 smooth .. 1 very ragged (default 0.5)"),
+      relief: z.number().min(0).max(1).optional().describe("0 a gently domed plain (default) .. 1 strongly hilly (up to about twice height_m in places)"),
+      ring_px: z.number().positive().max(400).optional().describe("A ring of land this wide (map px) along the shape's outline, instead of the whole shape"),
       seed: seedSchema,
     }),
     async run(ctx, i) {
       const r = ctx.execute({ op: "add_landmass", params: {
-        shape: normShape(i.shape), heightM: i.height_m, coastRoughness: i.coast_roughness, seed: i.seed ?? randSeed(),
+        shape: normShape(i.shape), heightM: i.height_m, coastRoughness: i.coast_roughness, relief: i.relief, ringPx: i.ring_px, seed: i.seed ?? randSeed(),
       } });
       return json({ change: r.seq, done: r.label });
     },
@@ -607,17 +619,25 @@ export const TOOLS = [
     name: "add_mountain_range",
     description:
       "Add a mountain range along a path (polyline of map-pixel points): ridged crest with peaks and passes, plus foothills. " +
-      "width_px is the half-width of the high core; foothills extend about twice as far.",
+      "width_px is the half-width of the high core; foothills extend about twice as far. heights_m and widths_px (one per path point) let it rise to a massif and fall away, " +
+      "broad in the middle and narrow at the ends; spurs adds side ridges falling away from the crest. Heights are ADDED to the land. A range that closes on itself traps a lake " +
+      "inside it: leave a gap, or drain_lake afterwards.",
     schema: z.object({
       path: z.array(XY).min(1),
       width_px: z.number().positive().max(200),
       peak_m: z.number().min(100).max(8000).optional().describe("Highest crest elevation added, metres (default 2800)"),
       roughness: z.number().min(0).max(1).optional().describe("0 smooth crest .. 1 jagged (default 0.6)"),
+      heights_m: z.array(z.number().min(0).max(9000)).optional().describe("The crest height added at each path point (same count as path): changes smoothly between them"),
+      widths_px: z.array(z.number().positive().max(200)).optional().describe("The half-width at each path point (same count as path)"),
+      spurs: z.number().min(0).max(1).optional().describe("0 none (default) .. 1 many side ridges"),
       seed: seedSchema,
     }),
     async run(ctx, i) {
+      const n = i.path.length;
+      if (i.heights_m && i.heights_m.length !== n) return fail(`heights_m needs one height for each of the ${n} path points.`);
+      if (i.widths_px && i.widths_px.length !== n) return fail(`widths_px needs one width for each of the ${n} path points.`);
       const r = ctx.execute({ op: "add_mountain_range", params: {
-        path: pts(i.path), widthPx: i.width_px, peakM: i.peak_m, roughness: i.roughness, seed: i.seed ?? randSeed(),
+        path: pts(i.path), widthPx: i.width_px, peakM: i.peak_m, roughness: i.roughness, heightsM: i.heights_m, widthsPx: i.widths_px, spurs: i.spurs, seed: i.seed ?? randSeed(),
       } });
       return json({ change: r.seq, done: r.label });
     },
@@ -628,7 +648,8 @@ export const TOOLS = [
     description:
       "Brush-style edit inside a shape with a soft edge. raise/lower by amount_m; smooth by strength; flatten toward target_m " +
       "(default: elevation at the shape centre); set to target_m; roughen adds noise of amount_m; land pushes the coast out " +
-      "(sea becomes low land); water pulls it in (land becomes shallow sea).",
+      "(sea becomes low land); water pulls it in (land becomes shallow sea, deeper toward the middle by amount_m, default 120). To cut a bay or a channel use water, not lower or set: " +
+      "lowering land far below the sea leaves an abyss beside the shore.",
     schema: z.object({
       mode: z.enum(["raise", "lower", "smooth", "flatten", "set", "roughen", "land", "water"]),
       shape: Shape,
@@ -728,14 +749,72 @@ export const TOOLS = [
     name: "erode",
     description:
       "Weather the terrain with river erosion: carves valleys, sharpens ridges and makes new mountains look natural. " +
-      "Affects the whole map (undoable). Good after adding ranges by hand or with add_mountain_range.",
+      "The whole map, or only an area (with a soft edge inside it; nothing outside changes); keep_above_m keeps the land higher than that as tall as it is " +
+      "(a named peak's height stays). Undoable. Good after adding ranges by hand or with add_mountain_range.",
     schema: z.object({
       strength: z.number().min(0.05).max(1).optional().describe("Per-pass strength (default 0.5)"),
       passes: z.number().int().min(1).max(12).optional().describe("More passes = deeper valleys (default 4)"),
+      area: Shape.optional().describe("Only inside this area (default the whole map)"),
+      keep_above_m: z.number().min(0).optional().describe("Land higher than this (m above the sea) keeps its height"),
     }),
     async run(ctx, i) {
-      const r = ctx.execute({ op: "erode", params: { strength: i.strength, passes: i.passes } });
+      const area = i.area && i.area.type !== "all" ? normShape(i.area) : undefined;
+      const r = ctx.execute({ op: "erode", params: { strength: i.strength, passes: i.passes, ...(area && { area }), ...(i.keep_above_m !== undefined && { keepAboveM: i.keep_above_m }) } });
       return json({ change: r.seq, done: r.label });
+    },
+  }),
+
+  define({
+    name: "restore_area",
+    description:
+      "Put back the land of an area as it was in a checkpoint (list_checkpoints), blended in across a soft edge: undo a wrong mountain range or a bad edit in one place " +
+      "without restoring the whole map. Only the heights change (places, labels and the rest stay as they are now). One edit that undo takes back.",
+    schema: z.object({
+      checkpoint: z.string().describe("The checkpoint's name"),
+      area: Shape.describe("Where to put the land back (map pixels)"),
+    }),
+    async run(ctx, i) {
+      if (!ctx.checkpointHeights) return fail("Checkpoints aren't available here.");
+      const old = await ctx.checkpointHeights(i.checkpoint);
+      if (!old) return fail(`No checkpoint named "${i.checkpoint}". list_checkpoints lists them.`);
+      const doc = ctx.session().doc, hf = doc.height;
+      const r = heightsFromState(hf.data, old, hf.w, hf.h, i.area.type === "all" ? undefined : normShape(i.area));
+      if (!r) return text("Nothing to put back: the land there is already as it was in that checkpoint.");
+      const res = ctx.execute({ op: "patch_heights", rect: r.rect, data: r.data, label: `Put back the land of an area from "${i.checkpoint}"` });
+      return json({ change: res.seq, cells_changed: r.changed, area: r.rect, note: "render_preview to look; check_hydrology if the water may have changed." });
+    },
+  }),
+
+  define({
+    name: "copy_from_map",
+    description:
+      "Copy from another map into the open world map: its land (terrain: the heights, keeping their height above the sea), its climate settings, its climate regions, places, " +
+      "labels, roads and borders (lines), river sources and river and lake names. The two must lie over each other: a copy and its original, two maps of the same size, " +
+      "or a detail map and its world map (resampled through the link). area (map px of the open map) copies only what is inside it, the land blended in across a soft edge. " +
+      "Things keep their ids, so copying again replaces them. One edit that undo takes back. Use it to start a rebuild from the original's own land instead of redrawing it by eye.",
+    schema: z.object({
+      map: z.string().describe("The map to copy from (id or name)"),
+      what: z.array(z.enum(COPYABLE)).min(1).describe("What to copy: terrain, climate, regions, places, labels, lines, sources, water_names"),
+      area: Shape.optional().describe("Only inside this area of the open map (default everything)"),
+    }),
+    async run(ctx, i) {
+      if (!ctx.peek || !ctx.linkedMaps) return fail("Copying from another map isn't available here.");
+      const doc = ctx.session().doc;
+      if (isBattle(doc) || isCity(doc)) return fail("copy_from_map is for world maps; to copy a battlemap or city map, use duplicate_map.");
+      const other = await ctx.peek(i.map), src = other.session().doc;
+      if (src.meta.id === doc.meta.id) return fail("That is the open map itself.");
+      if (isBattle(src) || isCity(src)) return fail(`${src.meta.name} isn't a world map.`);
+      const maps = await ctx.linkedMaps();
+      const t = mapTransform(maps.get(doc.meta.id) ?? doc.meta, maps.get(src.meta.id) ?? src.meta, maps);
+      if (!t) return fail(`${src.meta.name} and ${doc.meta.name} don't lie over each other (not the same size, and neither was made from the other), so their positions can't be matched.`);
+      const area = i.area && i.area.type !== "all" ? normShape(i.area) : undefined;
+      const heights = i.what.includes("terrain") ? copyHeightsFrom(src, doc, t.f, area) : null;
+      const inv = { s: 1 / t.f.s, x: -t.f.x / t.f.s, y: -t.f.y / t.f.s };
+      const { patch, counts } = copyFeaturesFrom(src.features, inv, i.what.filter((w) => w !== "terrain" && w !== "climate"), area);
+      const climate = i.what.includes("climate") ? { climate: structuredClone(src.meta.climate ?? {}) } : undefined;
+      if (!heights && !Object.keys(counts).length && !climate) return text("Nothing to copy: nothing of those kinds is there (or the land is already the same).");
+      const res = ctx.execute({ op: "patch_heights", rect: heights?.rect ?? null, data: heights?.data ?? new Float32Array(0), ...(Object.keys(counts).length && { features: patch }), ...(climate && { meta: climate }), label: `Copy ${i.what.join(", ")} from ${src.meta.name}` });
+      return json({ change: res.seq, from: src.meta.name, linked: t.how.length ? t.how : ["the same frame"], terrain_cells: heights?.changed ?? 0, ...counts, ...(climate && { climate: "copied" }), note: "render_preview to look; the rivers are worked out again in a moment." });
     },
   }),
 
@@ -825,12 +904,15 @@ export const TOOLS = [
     name: "compare_to_reference",
     description:
       "Side-by-side image: a reference image (left) next to the current map (right), optionally cropped on either side, " +
-      "to check how closely the map follows a sketch or inspiration.",
+      "to check how closely the map follows a sketch or inspiration. overlay: true lays the reference (its crop stretched to the map's crop) half see-through over the map instead, " +
+      "so a coast or a range that is off shows as a double line. relief: true draws the map in plain relief (the shape of the land, whatever the style and climate).",
     schema: z.object({
       name: z.string().describe("Reference image name (see list_references)"),
       ref_region: Region.optional().describe("Crop of the reference, in the reference image's pixels"),
       map_region: Region.optional().describe("Crop of the map, in map pixels"),
       max_size: z.number().int().min(512).max(1568).optional().describe("Total width of the comparison image (default 1400)"),
+      overlay: z.boolean().optional().describe("The reference half see-through over the map, instead of side by side (default false)"),
+      relief: z.boolean().optional().describe("The map in plain relief (default false)"),
     }),
     async run(ctx, i) {
       const bytes = await ctx.readRef(i.name);
@@ -840,7 +922,26 @@ export const TOOLS = [
       const half = Math.floor((i.max_size ?? 1400) / 2) - 6;
       const rr = i.ref_region ?? { x: 0, y: 0, w: ref.w, h: ref.h };
       const a = cropScale(ref, rr, half).img;
-      const { img: full, rivers } = await renderMap(ctx);
+      const doc = ctx.session().doc;
+      const { img: full, rivers } = i.relief ? { img: renderFull({ ...doc, meta: { ...doc.meta, style: "relief" } }), rivers: (await ctx.derived?.())?.rivers ?? [] } : await renderMap(ctx);
+      if (i.overlay) {
+        const mr = i.map_region ?? { x: 0, y: 0, w: full.w, h: full.h };
+        const mapped = cropScale(full, mr, (i.max_size ?? 1400) - 20);
+        drawRivers(mapped.img, mr, mapped.scale, rivers);
+        const m = mapped.img, rs = cropScale(ref, rr, Math.max(m.w, m.h) * 2).img;
+        // the reference stretched to the map's crop, half see-through
+        for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+          const sx = Math.min(rs.w - 1, Math.floor((x / m.w) * rs.w)), sy = Math.min(rs.h - 1, Math.floor((y / m.h) * rs.h)), o = (y * m.w + x) * 4, q = (sy * rs.w + sx) * 4;
+          for (let c = 0; c < 3; c++) m.data[o + c] = (m.data[o + c] + rs.data[q + c]) / 2;
+        }
+        drawGrid(m, mr, mapped.scale);
+        const jpgO = encodeJpeg(m);
+        const shown = ctx.savePreview ? [await ctx.savePreview(jpgO)] : undefined;
+        return { content: [
+          { type: "text", text: `${i.name} ${i.ref_region ? `crop x${rr.x} y${rr.y} ${rr.w}x${rr.h}` : "(whole)"} laid half see-through over the map ${i.map_region ? `region x${mr.x} y${mr.y} ${mr.w}x${mr.h}` : "(whole)"}, with the grid in map px.` },
+          { type: "image", mediaType: "image/jpeg", data: toBase64(jpgO) },
+        ], display: shown };
+      }
       const mr = i.map_region ?? { x: 0, y: 0, w: full.w, h: full.h };
       const mapped = cropScale(full, mr, half);
       drawRivers(mapped.img, mr, mapped.scale, rivers);
@@ -1095,15 +1196,15 @@ export const TOOLS = [
 
   define({
     name: "list_climate_regions",
-    description: "Every climate region with its climate, border, owner and outline bounds.",
-    schema: z.object({}),
-    async run(ctx) {
+    description: "Every climate region with its climate, border, owner and outline bounds; with outlines: true, the whole outline (every point, map px), to read a region back exactly.",
+    schema: z.object({ outlines: z.boolean().optional().describe("Include every region's whole outline (default false: bounds only)") }),
+    async run(ctx, i) {
       const rs = featuresOf(ctx).regions ?? [];
       if (!rs.length) return text("No climate regions yet.");
       return json(rs.map((r) => {
         const xs = r.polygon.map((p) => p[0]), ys = r.polygon.map((p) => p[1]);
-        const { polygon: _p, ...rest } = r;
-        return { ...rest, points: r.polygon.length, bounds: { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } };
+        const { polygon, ...rest } = r;
+        return { ...rest, points: r.polygon.length, bounds: { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }, ...(i.outlines && { outline: polygon }) };
       }));
     },
   }),
@@ -1215,6 +1316,7 @@ export const TOOLS = [
         const at = where(s);
         const rep = at ? hydro?.sources[j++] : undefined;
         return { id: s.id, river: s.name ?? null, place: s.placeId ? at && "name" in at ? at.name : "(its place was removed)" : null, at: at ? { x: Math.round(at.x), y: Math.round(at.y) } : null, size: s.size, notes: s.notes ?? null,
+          ...(s.course && { drawn_course: s.course }),
           ...(rep && { river_drawn: rep.drawn, length_km: rep.lengthKm, reaches: rep.reaches, mouth: rep.mouth }) };
       }));
     },
@@ -1224,12 +1326,15 @@ export const TOOLS = [
     name: "check_hydrology",
     description:
       "Explain the map's water: how many rivers and how long, where they end, what each lake drains into, how much of the river length runs through hollows or very dry land, and what each river source feeds. " +
-      "Use it after changing terrain, climate or river sources, and when the user asks whether the rivers and lakes make sense.",
-    schema: z.object({}),
-    async run(ctx) {
+      "Use it after changing terrain, climate or river sources, and when the user asks whether the rivers and lakes make sense. Every lake is listed with a point in it and its size; " +
+      "outlines: true adds each lake's whole shore (long).",
+    schema: z.object({ outlines: z.boolean().optional().describe("Include every lake's shore outline (default false)") }),
+    async run(ctx, i) {
       const d = await ctx.derived?.();
       if (!d?.hydro) return fail("The climate and rivers haven't been worked out yet (or this isn't a world map). Try again in a moment.");
-      return json({ ...d.hydro, notes: hydroNotes(d.hydro) });
+      const { shapes, ...rest } = d.hydro;
+      const lakes_all = i.outlines ? shapes : shapes.map(({ outline: _o, ...l }) => ({ ...l, x: Math.round(l.x), y: Math.round(l.y) }));
+      return json({ ...rest, every_lake: lakes_all, notes: hydroNotes(d.hydro) });
     },
   }),
 
@@ -1603,7 +1708,7 @@ const WORLD_ONLY = new Set([
   "list_labels", "add_climate_region", "update_climate_region", "remove_climate_region", "list_climate_regions", "set_map_furniture", "set_grid", "route_road",
   "add_line", "update_line", "remove_line", "list_lines", "export_gazetteer", "find_straits", "add_strait_reefs", "add_coast_reefs",
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
-  "get_selection", "select_area", "clear_selection", ...WATER_TOOL_NAMES,
+  "get_selection", "select_area", "clear_selection", "restore_area", "copy_from_map", ...WATER_TOOL_NAMES,
 ]);
 const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES, ...CITY_NAME_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);

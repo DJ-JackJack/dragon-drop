@@ -971,10 +971,43 @@ export class Hub {
     const doc = op.session.doc, hf = doc.height, size: RiverSize = o.size && o.size in RIVER_SIZE_SHARE ? o.size : "river";
     const c = riverChannel(hf.data, hf.w, hf.h, doc.meta.seaLevel, o.points, { size, kmPerPx: doc.meta.kmPerPx });
     if ("error" in c) throw new Error(c.error);
-    const src: RiverSource = { id: newFeatureId("s"), x: c.start[0], y: c.start[1], size, ...(o.name && { name: o.name }), ...(o.notes && { notes: o.notes }) };
+    // (the course is remembered on the source, at most 300 points, so it can be read back and drawn again)
+    const every = Math.max(1, Math.ceil(c.course.length / 300));
+    const course = c.course.filter((_, k) => k % every === 0 || k === c.course.length - 1);
+    const src: RiverSource = { id: newFeatureId("s"), x: c.start[0], y: c.start[1], size, course, ...(o.name && { name: o.name }), ...(o.notes && { notes: o.notes }) };
     const words = size === "major" ? "major river" : size === "great" ? "great river" : size;
     const res = op.session.execute({ op: "patch_heights", rect: c.rect, data: c.data, features: { upsertSources: [src] }, label: `Draw a ${words}${o.name ? ` (${o.name})` : ""}` }, author);
     return { change: res.seq, source: src.id, start: c.start, end: c.end, reversed: c.reversed, lengthKm: c.lengthKm, deepestM: c.deepestM, lowered: c.lowered };
+  }
+
+  /**
+   * Drain one lake (core terrainDrain.ts drainLakeAt, on the compute thread): at a point, or a named lake. An outlet is cut through its lowest rim (mode "outlet"), or it is
+   * raised into a shallow bowl that holds no lake (mode "fill"); "auto" cuts unless that would go very deep or far. One edit that Undo takes back.
+   */
+  async drainLake(o: { x?: number; y?: number; lake?: string; mode?: "auto" | "outlet" | "fill"; maxCutM?: number }, author: Author) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    if (!isWorld(op.session.doc)) throw new Error("Lakes are drained on world maps.");
+    if (op.session.inTransaction) op.session.commit();
+    let x = o.x, y = o.y, what = "";
+    if (o.lake) {
+      const d = await this.refreshDerived(op, true), v = this.waterView(op), q = o.lake.trim().toLowerCase();
+      const w = v?.named.find((n) => n.kind === "lake" && (n.id === o.lake || n.name.toLowerCase() === q));
+      const shape = w?.lake !== undefined ? d?.hydro?.shapes[w.lake] : undefined;
+      if (!w) throw new Error(`No lake is named "${o.lake}". list_waters lists the named lakes; or give x and y.`);
+      if (!shape) throw new Error(`${w.name} isn't found at its spot now (the land or the rain changed).`);
+      x = shape.x; y = shape.y; what = w.name;
+    }
+    if (x === undefined || y === undefined) throw new Error("Say which lake: x and y on it (map px), or a lake's name.");
+    const doc = op.session.doc;
+    const r = await this.compute.drain(doc, x, y, { mode: o.mode, maxCutM: o.maxCutM });
+    if (this.open !== op) throw new Error("Another map was opened meanwhile.");
+    if (r.done === "none" || !r.rect) throw new Error(o.mode === "outlet" ? "No way out of that hollow could be cut within the limit: try a bigger max_cut_m, or mode fill." : `There is no lake or closed hollow at (${Math.round(x)}, ${Math.round(y)}): check_hydrology lists the lakes, with a point in each.`);
+    const { rect } = r, W = doc.height.w, data = new Float32Array(rect.w * rect.h);
+    for (let yy = 0; yy < rect.h; yy++) data.set(r.heights.subarray((rect.y + yy) * W + rect.x, (rect.y + yy) * W + rect.x + rect.w), yy * rect.w);
+    const label = `${r.done === "outlet" ? "Drain" : "Fill"} the lake ${what || `at (${Math.round(x)}, ${Math.round(y)})`}`;
+    const res = op.session.execute({ op: "patch_heights", rect, data, label }, author);
+    return { change: res.seq, done: r.done, cells: r.cells, depthM: r.depthM, cutM: r.cutM, rect };
   }
 
   private derivedFrame(op: OpenProject): ArrayBuffer {
@@ -1600,6 +1633,12 @@ export class Hub {
         return info;
       },
       linkedMaps: () => self.linkedMaps(),
+      drainLake: async (o) => {
+        const r = await self.drainLake(o, author);
+        if (via === "mcp") self.open?.agent.note(`Claude Code: ${r.done === "outlet" ? "drained" : "filled"} a lake`);
+        return r;
+      },
+      checkpointHeights: async (name) => (await self.store.readCheckpoint(id(), name))?.data ?? null,
       peek: async (map) => {
         const p = await self.peekMap(map);
         return p.live ? ctx : self.peekContext(ctx, p);
@@ -1641,6 +1680,7 @@ export class Hub {
       selection: () => ({ selection: null, lock: false, view: null }),
       setSelection: refuse,
       saveCheckpoint: undefined, restoreCheckpoint: undefined, carveValleys: undefined, drawRiver: undefined, createRegional: undefined, levels: undefined, exportBattle: undefined,
+      drainLake: undefined, checkpointHeights: undefined, duplicateMap: undefined,
       readCityPicture: undefined, readCityStreets: undefined, readCityWater: undefined, paintCityCells: undefined, createBattleHere: undefined, createCityHere: undefined, createBattleFromCity: undefined,
     };
   }

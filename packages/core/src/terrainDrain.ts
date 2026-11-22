@@ -29,6 +29,8 @@ export interface DrainResult {
 }
 
 const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+/** How deep the last outlet cut (metres), for the report. */
+let lastCut = 0;
 
 /** Min-heap of cells by cost. */
 class Heap {
@@ -92,7 +94,7 @@ function hollows(h: Float32Array, W: number, H: number, sea: number, label: Int3
  * Give a hollow an outlet: the way out of it that needs the least cutting (searched from its lowest cell to lower ground outside it), cut down to just below the lowest cell,
  * with gently rising sides. Returns false when that would cut deeper or longer than MAX_CUT_*: the hollow is then left for filling.
  */
-function breach(h: Float32Array, W: number, H: number, sea: number, label: Int32Array, o: Hollow): boolean {
+function breach(h: Float32Array, W: number, H: number, sea: number, label: Int32Array, o: Hollow, limits = { cutM: MAX_CUT_M, cells: MAX_CUT_CELLS }): boolean {
   const pitH = h[o.pit], cost = new Map<number, number>(), from = new Map<number, number>(), heap = new Heap();
   cost.set(o.pit, 0); heap.push(o.pit, 0);
   let end = -1, visited = 0;
@@ -114,7 +116,8 @@ function breach(h: Float32Array, W: number, H: number, sea: number, label: Int32
   path.reverse();
   let maxCut = 0;
   for (let k = 0; k < path.length; k++) maxCut = Math.max(maxCut, h[path[k]] - (pitH - 0.05 * k));
-  if (maxCut > MAX_CUT_M || path.length > MAX_CUT_CELLS) return false;
+  if (maxCut > limits.cutM || path.length > limits.cells) return false;
+  lastCut = maxCut;
   // cut the channel, falling a little all the way, and let its sides rise gently from it (a small valley, not a slot)
   for (let k = 0; k < path.length; k++) {
     const c = path[k], z = Math.min(h[c], pitH - 0.05 * k);
@@ -169,4 +172,43 @@ export function drainTerrain(h: Float32Array, W: number, H: number, sea: number,
   }
   res.after = hollows(h, W, H, sea, label).filter((o) => o.depth > LAKE_DEPTH).length;
   return res;
+}
+
+export interface DrainLakeResult {
+  /** What was done: an outlet cut through the rim, the hollow raised into a shallow bowl, or nothing (no lake or hollow there). */
+  done: "outlet" | "filled" | "none";
+  /** How big and deep the hollow was (cells, metres), and how deep the outlet had to cut (metres). */
+  cells: number;
+  depthM: number;
+  cutM: number;
+  /** The box that changed (null when nothing did). */
+  rect: { x: number; y: number; w: number; h: number } | null;
+}
+
+/**
+ * Drain one lake (or any closed hollow) at a point, in place: an outlet is cut through the lowest way out of it (mode "outlet", or "auto" first), or it is raised into a
+ * shallow bowl too shallow to hold a lake (mode "fill", or "auto" when the outlet would cut deeper than `maxCutM` or further than 90 cells). The same as new maps get
+ * (drainTerrain), for one lake the DM or Claude points at: a lake trapped by a closed ring of mountains, a hollow left by an edit.
+ */
+export function drainLakeAt(h: Float32Array, W: number, H: number, sea: number, x: number, y: number, o: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number } = {}): DrainLakeResult {
+  const label = new Int32Array(W * H), all = hollows(h, W, H, sea, label);
+  let id = -1;
+  const cx = Math.round(x), cy = Math.round(y);
+  for (let r = 0; r <= 4 && id < 0; r++) for (let dy = -r; dy <= r && id < 0; dy++) for (let dx = -r; dx <= r && id < 0; dx++) {
+    const X = cx + dx, Y = cy + dy;
+    if (X >= 0 && Y >= 0 && X < W && Y < H && label[Y * W + X] >= 0) id = label[Y * W + X];
+  }
+  if (id < 0) return { done: "none", cells: 0, depthM: 0, cutM: 0, rect: null };
+  const hol = all[id], before = h.slice(), mode = o.mode ?? "auto";
+  let done: DrainLakeResult["done"] = "none";
+  lastCut = 0;
+  if (mode !== "fill" && breach(h, W, H, sea, label, hol, mode === "outlet" ? { cutM: o.maxCutM ?? 2000, cells: 600 } : { cutM: o.maxCutM ?? MAX_CUT_M, cells: MAX_CUT_CELLS })) done = "outlet";
+  else if (mode !== "outlet") {
+    const f = (hol as Hollow & { f?: Float32Array }).f!, k = Math.min(1, FILL_BOWL_M / Math.max(1e-6, hol.depth));
+    for (const c of hol.cells) h[c] = Math.max(h[c], f[c] - (f[c] - h[c]) * k);
+    done = "filled";
+  }
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let i = 0; i < h.length; i++) if (h[i] !== before[i]) { const X = i % W, Y = (i / W) | 0; if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; }
+  return { done: x1 < 0 ? "none" : done, cells: hol.cells.length, depthM: Math.round(hol.depth), cutM: Math.round(done === "outlet" ? lastCut : 0), rect: x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 } };
 }
