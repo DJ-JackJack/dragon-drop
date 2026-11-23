@@ -41,7 +41,7 @@ The free claude.ai plan doesn't include it. Upgrade the plan, or use the chat in
 Say yes. It is Dragon Drop's own workspace folder (Documents\Dragon Drop\Claude), and the assistant reads the map tools' settings from it only once it trusts it.
 
 **The assistant asks me to Allow or Don't allow something.**
-Some actions wait for your OK before they happen: replacing a map's land, moving the sea level, putting the whole map back from a checkpoint, carving every river, rewriting the brief, removing a named place, label, region, river or lake name, and removing many things at once. Answer in the box (in the window, or on the phone page). With no answer within two minutes, nothing is done.
+Some actions wait for your OK before they happen: replacing a map's land, moving the sea level, putting the whole map back from a checkpoint, carving every river, rewriting the brief, removing a named place, label, region, river or lake name, and removing many things at once. Answer in the box in the Dragon Drop window. With no answer within two minutes, nothing is done.
 
 **Claude Code in my own terminal lost the map tools.**
 If you connected Claude Code yourself with the command in **Settings → AI assistant** (not through Dragon Drop's own terminal panel), it stops working after **Make a new access key**. Run `claude mcp remove --scope user mapmaker` in PowerShell, then copy the command from Settings again and run it. The terminal panel inside Dragon Drop needs nothing: it is set up again each time it starts.
@@ -73,13 +73,13 @@ A map saved by a newer Dragon Drop can't be opened by an older one: update Drago
 
 Rivers aren't drawn one by one: they come from the land and the rain, so they can't be deleted like a road. In the Map panel's **Climate**, slide **Rivers** toward few, tick **Dry land has few rivers** (an older map's deserts can look too wet without it; new maps have it on), or tick **No rivers from the rain** for none at all. A river from a river source, or one drawn with the Rivers tool, still flows, so a desert can keep its one great river. The AI assistant can do the same for you.
 
-## Updates, the phone page and the rest
+## Updates and the rest
 
 **How do I update?**
 **Settings → Updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
 
 **Can I see the map on my phone?**
-Yes, through Tailscale (a free private network between your own devices). Enter your PC's Tailscale name in **Settings → Phone page**; the setup guide's section 7 has the steps. It is off until you do.
+No. Dragon Drop only answers your own PC, so nothing on your network or the internet can reach your maps. You can still talk to Claude from your phone with Claude Code's Remote Control (the setup guide, section 6); the map itself changes in the Dragon Drop window on your PC.
 
 **Dragon Drop won't start, or shows an error.**
 **Settings → Open logs** opens the log files: include the last lines when you ask for help. If another program uses port 4747, Dragon Drop picks another port by itself.

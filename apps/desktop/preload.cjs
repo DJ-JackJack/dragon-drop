@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld("dragonDrop", {
   clearAssetsFolder: () => ipcRenderer.invoke("dd:clear-assets"),
   openProjectsFolder: () => ipcRenderer.invoke("dd:open-projects"),
   openBackups: (id) => ipcRenderer.invoke("dd:open-backups", String(id ?? "")),
-  setPhoneHost: (host) => ipcRenderer.invoke("dd:set-phone-host", String(host ?? "")),
   newAccessKey: () => ipcRenderer.invoke("dd:new-access-key"),
   openLogs: () => ipcRenderer.invoke("dd:open-logs"),
   openLicences: () => ipcRenderer.invoke("dd:open-licences"),

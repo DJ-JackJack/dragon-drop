@@ -100,7 +100,6 @@ Everything also works by hand, without any AI.
 
 ### Also
 - Shared undo, automatic saves and checkpoints, and backups before anything risky.
-- A phone page that follows the map live, through your own private network (Tailscale), for checking the map from the table.
 
 ### How it was made
 Dragon Drop's code and wording were written with an AI coding assistant, directed, tested and reviewed by its developer. The maps are painted

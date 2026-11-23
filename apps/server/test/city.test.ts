@@ -113,12 +113,12 @@ describe("the file format of a city", () => {
     expect(readdirSync(path.join(dir, "town", "backups")).some((n) => n.startsWith("before-format-2"))).toBe(true);
   });
 
-  it("gives the phone page a picture of the city", async () => {
+  it("gives a picture of the city (the compare view's)", async () => {
     const { hub } = fresh();
     await ok(hub, "create_city", { name: "Town", width_m: 300, height_m: 200 });
     await ok(hub, "add_buildings", { buildings: [{ x: 100, y: 100, w: 30, h: 20, colour: "#cc2222" }] });
-    const jpg = await hub.renderJpeg("town", 600, (img) => encodeJpeg(img));
-    const img = decodeImage(jpg!)!;
+    const jpg = await hub.mapPicture("town", 600, (img) => encodeJpeg(img));
+    const img = decodeImage(jpg)!;
     expect([img.w, img.h]).toEqual([600, 400]);
     await hub.close();
   });
@@ -246,7 +246,7 @@ describe("a city is its own kind of map", () => {
     await ok(hub, "add_buildings", { buildings: [{ x: 50, y: 50, w: 8, h: 8 }] });
     const sent: (string | Buffer)[] = [];
     const ws = { readyState: 1, OPEN: 1, send: (d: string | Buffer) => sent.push(d), on() {}, close() {} } as never;
-    await hub.addClient(ws, {});
+    await hub.addClient(ws);
     const project = sent.map((m) => (typeof m === "string" ? (JSON.parse(m) as ServerMsg) : null)).find((m) => m?.t === "project") as Extract<ServerMsg, { t: "project" }>;
     expect(project.meta.kind).toBe("city");
     expect(project.meta.city).toEqual({ widthM: 300, heightM: 200, cellM: 1 });

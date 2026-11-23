@@ -32,7 +32,7 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   browser, and only `http(s)` ones); pop-ups are refused; every permission request (camera, microphone, location, notifications...) is refused
   but clipboard writing and full screen.
 - **The bridge** (`preload.cjs` → `ipcMain`): every handler checks that the call comes from the editor's own address (`fromEditor`), and the
-  inputs are checked: a map id against a pattern before opening its backups folder, the phone address against a host-name pattern, the API
+  inputs are checked: a map id against a pattern before opening its backups folder, the API
   key's length, the start command's length and control characters. Folders are chosen in Windows' own dialog, never from the page.
 - **The page can't run foreign code**: the editor sets no raw HTML anywhere (no `dangerouslySetInnerHTML`, `innerHTML`, `document.write`), map
   text is shown through React, which escapes it; the Content-Security-Policy allows only the program's own scripts (no inline script) and
@@ -41,14 +41,14 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   a sandbox; asset pictures likewise. *(Until 2026-11-22 an `.html` or `.svg` file in a map's `refs` folder was sent as a page, with no policy:
   found in the adversarial review.)* The bridge also refuses any page under `/api/` (`fromEditor`).
 - **The server**: on 127.0.0.1 only, Host and Origin checked first, then the access key on every `/api`, `/mcp` and `/ws` request (compared in
-  constant time); the window's cookie is HttpOnly and SameSite=Strict; the phone page is off until the person turns it on. (Tested by the
+  constant time); the window's cookie is HttpOnly and SameSite=Strict; nothing from outside this PC is let in (the phone page was taken out 2026-11-23). (Tested by the
   smoke test: a request without the key gets 401.)
 - **Installing Claude Code**: the command is fixed in the code (Anthropic's official installer), shown running in the panel; the page can
   start it but can't choose what runs.
 - **Claude Code's hooks** post to the server and get an empty answer (a hook's output can reach Claude). The key travels in a header file in
   the app-data folder, never in the Documents workspace (a test scans the workspace for it).
 - **The terminal** never types on its own unless Claude Code's hooks say it is idle, and then only the one line the person asked to send.
-- **Assistants and risky actions**: removing or replacing things waits for the person's Allow in the editor or on the phone (a prompt
+- **Assistants and risky actions**: removing or replacing things waits for the person's Allow in the editor (a prompt
   injection in a place's notes, telling the AI to delete every place, is in the model check and is stopped).
 
 ## Found in the adversarial review (2026-11-22) and fixed

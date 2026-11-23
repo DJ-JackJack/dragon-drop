@@ -96,7 +96,7 @@ export const EDIT_MESSAGES = new Set([
 
 export type ClientMsg =
   | { t: "hello" }
-  /** The DM's answer to a `confirm` question (from the editor or the phone page). */
+  /** The DM's answer to a `confirm` question (from an editor). */
   | { t: "confirm_answer"; id: string; allow: boolean }
   | { t: "open_project"; id: string }
   /** The city picture reader: read buildings out of the city's trace picture (all in metres; the answer is `picture_read`, to this editor only; nothing is added until it accepts). */
@@ -204,11 +204,11 @@ export type ServerMsg =
   | { t: "picture_read"; what?: "buildings" | "streets" | "water"; buildings?: { points: [number, number][]; look: RoofStyle }[]; streets?: { points: [number, number][]; width: number; kind: StreetKind }[]; water?: { runs: { material: number; runs: number[] }[]; cells: number }; skipped?: { small: number; large: number }; alreadyThere?: number; error?: string }
   /** A map was deleted: its name, and where its folder now is. */
   | { t: "map_deleted"; name: string; folder: string }
-  /** New derived layers are ready (sent to every client; "lite" clients get no binary frames). */
+  /** New derived layers are ready (sent to every client), or a battlemap or city changed. */
   | { t: "derived_ready"; projectId: string; version: number }
   /**
    * World maps: the named rivers and lakes as the water is now (waterNames.ts), sent after the rivers are worked out and whenever a name changes: the labels to draw,
-   * each name's river or lake, and (not to the phone page) every lake's shore, for the River tool. `head` and `lake` refer to the rivers of the latest derived frame.
+   * each name's river or lake, and every lake's shore, for the River tool. `head` and `lake` refer to the rivers of the latest derived frame.
    */
   | { t: "water"; projectId: string; labels: MapLabel[]; named: NamedWater[]; lakes?: LakeShape[] }
   /** Valleys were carved (the answer to `carve_valleys`): how many cells were lowered, how deep the deepest cut is (m), and how much delta land was made. */
@@ -222,7 +222,7 @@ export type ServerMsg =
   | { t: "compare"; id: string; name: string; kind: string; rect: Rect | null; how: string[] }
   /** A river was drawn (the answer to `draw_river`): its new source, how long it is, how it ends, the deepest cut through high ground (m), and whether the line was turned round. */
   | { t: "river_drawn"; source: string; lengthKm: number; end: "sea" | "land" | "edge"; deepestM: number; reversed: boolean }
-  /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor and phone page until answered (`confirm_done`). via: the API chat or an assistant through the map tools. `map`: the name of the map (and level) it is about, which may not be the one on screen. */
+  /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor until answered (`confirm_done`). via: the API chat or an assistant through the map tools. `map`: the name of the map (and level) it is about, which may not be the one on screen. */
   | { t: "confirm"; id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; map?: string }
   /** That question is settled (answered here or elsewhere, or no answer in time). */
   | { t: "confirm_done"; id: string; answer: "allowed" | "refused" | "timeout" | "nobody" }

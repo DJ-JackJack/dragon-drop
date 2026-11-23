@@ -1,6 +1,6 @@
 /**
  * Labels and place markers drawn with real type (Cinzel) on a 2D canvas.
- * Used by the editor view, PNG export and the phone viewer.
+ * Used by the editor view and the PNG export.
  */
 import {
   type Features, LABEL_SIZE, type LineKind, type MapLabel, type MapLine, type NamePos, PLACE_SIZE, type Place, type PlaceType, PLACE_KINDS, chaikin, drawPlaceIcon, placeKind, labelText,

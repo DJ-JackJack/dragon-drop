@@ -55,7 +55,10 @@ let restarting = false;
 // ---------------------------------------------------------------- settings
 function loadSettings() {
   settingsFile = path.join(app.getPath("userData"), "settings.json");
-  try { settings = JSON.parse(fs.readFileSync(settingsFile, "utf8")); } catch (e) {
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+    delete settings.phoneHost; // (the phone page of 0.1.12 and before is gone: Dragon Drop answers only this PC)
+  } catch (e) {
     settings = {};
     // a damaged file is kept aside rather than written over (it still says where the maps are)
     if (!(e && e.code === "ENOENT")) { try { fs.renameSync(settingsFile, `${settingsFile.replace(/\.json$/, "")}.unreadable-${Date.now()}.json`); } catch { /* can't move it: it is replaced */ } }
@@ -197,9 +200,6 @@ async function startServer() {
     MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: settings.projectsDir, MAPMAKER_EDITOR_DIST: editorDir, MAPMAKER_ACCESS_TOKEN: settings.accessToken,
     MAPMAKER_TOOLS_TOKEN: settings.toolsToken,
   };
-  // the phone page is reached only through an address the person chose in Settings (their Tailscale name); one set in the PC's environment for the
-  // developer setup is not taken, so the phone page stays off unless chosen here
-  if (settings.phoneHost) env.MAPMAKER_ALLOWED_HOSTS = settings.phoneHost;
   const key = getApiKey();
   if (key) env.ANTHROPIC_API_KEY = key;
   env.MAPMAKER_CACHE_DIR = path.join(app.getPath("userData"), "cache");
@@ -713,12 +713,9 @@ ipcMain.handle("dd:settings", (e) => {
     mcpCommandShown: `claude mcp add --transport http --scope user mapmaker ${assistants.mcpAddress(port, settings.toolSet)} --header "Authorization: Bearer (your map tools key)"`,
     logDir: path.dirname(logFile()), encrypted: safeStorage.isEncryptionAvailable(),
     mcpHeader: `Authorization: Bearer ${settings.toolsToken}`, // other assistants send this with every request to the map tools (the map tools key)
-    phoneKey: settings.accessToken, // (the phone link: the phone page is an editor, so it needs the access key itself)
     terminalCommand: settings.terminalCommand || "",
     // all the map tools, or the smaller set for smaller models (tools essentials.ts)
     toolSet: settings.toolSet === "essentials" ? "essentials" : "all",
-    // the phone page's address, "" while it is off
-    phoneHost: settings.phoneHost || "",
     // whether the chosen assistant finds the map tools by itself, and what it needs from the person (Settings shows it)
     assistant: assistants.describe(assistants.profileFor(settings.terminalCommand)),
   };
@@ -797,18 +794,7 @@ ipcMain.handle("dd:open-backups", (e, id) => {
   void shell.openPath(has ? backups : dir);
   return { ok: true, opened: has ? "backups" : "map" };
 });
-// the phone page's address (the PC's Tailscale name), or "" for off; the server starts again with it
-ipcMain.handle("dd:set-phone-host", async (e, text) => {
-  if (!fromEditor(e)) return settings.phoneHost || "";
-  const host = String(text ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
-  if (host && !/^[a-z0-9][a-z0-9.-]{0,250}$/.test(host)) return settings.phoneHost || "";
-  if (host === (settings.phoneHost || "")) return host;
-  if (host) settings.phoneHost = host; else delete settings.phoneHost;
-  saveSettings();
-  await restartServer();
-  return host;
-});
-// a new access key (Settings): the old one stops working everywhere (a lost phone, a link sent to the wrong place); the server starts again with it,
+// a new access key (Settings): the old one stops working everywhere (a key that got out); the server starts again with it,
 // the window gets its new cookie, and the assistant's files are written again with it
 ipcMain.handle("dd:new-access-key", async (e) => {
   if (!fromEditor(e)) return false;
@@ -883,7 +869,7 @@ async function takeShots(base) {
   await new Promise((r) => setTimeout(r, 400));
   fs.writeFileSync(`${base}-settings-assistant.png`, (await win.webContents.capturePage()).toPNG());
   // every other tab
-  for (const tab of ["maps", "phone", "help"]) {
+  for (const tab of ["maps", "key", "help"]) {
     await win.webContents.executeJavaScript(`document.querySelector('[data-testid="settings-tab-${tab}"]')?.click()`);
     await new Promise((r) => setTimeout(r, 300));
     fs.writeFileSync(`${base}-settings-${tab}.png`, (await win.webContents.capturePage()).toPNG());
@@ -1024,10 +1010,10 @@ async function smokeTest() {
         await win.webContents.executeJavaScript("window.dragonDrop.openClaude(false)");
         const back = readWs("opencode.json") || "";
         if (!back.includes(url) || back.includes("?tools=")) return fatal("back to all the tools, the assistant's file doesn't point at all of them");
-        // a map's backups folder: only an id of a map in the maps folder; and the phone page takes only a host name
+        // a map's backups folder: only an id of a map in the maps folder
         const badOpen = await win.webContents.executeJavaScript(`window.dragonDrop.openBackups("../x")`);
         if (!badOpen || badOpen.ok !== false) return fatal(`openBackups("../x") returned ${JSON.stringify(badOpen)}`);
-        if ((await win.webContents.executeJavaScript(`window.dragonDrop.setPhoneHost("bad host/with spaces")`)) !== "") return fatal("setPhoneHost took a name with spaces");
+        if (await win.webContents.executeJavaScript(`typeof window.dragonDrop.setPhoneHost`) !== "undefined") return fatal("the phone page's setting is still there");
         const enabledNow = (() => { try { return JSON.parse(readWs(".claude/settings.json")).enabledMcpjsonServers; } catch { return null; } })();
         if (enabledNow !== undefined && (!Array.isArray(enabledNow) || enabledNow.filter((s) => s === "mapmaker").length > 1)) return fatal(`enabledMcpjsonServers is wrong: ${JSON.stringify(enabledNow)}`);
         if (process.platform === "win32") {

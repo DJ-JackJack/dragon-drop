@@ -51,9 +51,6 @@ describe("serving the editor", () => {
     expect(csp).not.toContain("unsafe-eval");
     expect(csp).toContain(`ws://127.0.0.1:${PORT}`);
     expect(r.headers["x-content-type-options"]).toBe("nosniff");
-    const phone = await get("/view");
-    expect(phone.body).toContain("EDITOR");
-    expect(phone.headers["content-security-policy"]).toBe(csp);
   });
 
   it("serves assets, and refuses to walk out of the editor folder (including into a folder that shares its name's start)", async () => {

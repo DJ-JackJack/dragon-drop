@@ -1,7 +1,7 @@
 /**
  * The names on a city map, drawn with real type (Cinzel) on a 2D canvas: a named street's name along the street (in the stretch of it that is in view, turned to read left to
  * right, only once the street is wide enough on screen to hold it), a named building's name over it (once it is big enough on screen, never over another name), then the
- * city's labels (districts, water, landmarks: the world map's labels in metres, drawn by drawFeatures). Used by the city view, its picture export and the phone page.
+ * city's labels (districts, water, landmarks: the world map's labels in metres, drawn by drawFeatures). Used by the city view and its picture export.
  */
 import type { Features, MapLabel, MapStreet } from "@mapmaker/core";
 import { districtCentre, polygonCentroid } from "@mapmaker/core";

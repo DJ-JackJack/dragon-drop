@@ -1,6 +1,6 @@
 /**
  * Districts on a city map (`features.districts`): an outline in metres with a name and a colour, drawn as a faint tint with a dashed border, its name in big spaced capitals
- * at its middle (the editor, the export, the phone page and Claude's previews). A district is the DM's: its name is canon (only names they gave or confirmed).
+ * at its middle (the editor, the export and Claude's previews). A district is the DM's: its name is canon (only names they gave or confirmed).
  */
 import type { CitySpec } from "./city.ts";
 import type { MapDistrict } from "./features.ts";

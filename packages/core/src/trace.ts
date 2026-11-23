@@ -1,7 +1,7 @@
 /**
  * The trace picture: one of the map's reference pictures laid over the map, see-through, so the DM (or Claude) can redraw a map found
  * elsewhere on top of it. It is a layout aid, not part of the map: it is kept with the map (in its features, one per battlemap level) so
- * it stays where it was put, but no export, preview or phone page draws it unless asked to.
+ * it stays where it was put, but no export or preview draws it unless asked to.
  *
  * Where it lies: a picture pixel (u, v) (from its top-left corner) is at map point (x, y) + R(rotation) * (u * scale, v * scale), in map
  * px on a world map and in squares on a battlemap. Rotation is in degrees, clockwise on screen (y runs down).

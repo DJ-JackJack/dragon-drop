@@ -1,6 +1,6 @@
 /**
  * The AI assistant's question before a risky action (tools risky.ts): "Claude wants to: Remove the place "Gate Town"", with Allow and Don't allow. Shown in the
- * editor and on the phone page; the first answer from either counts, and the server takes the question away everywhere (`confirm_done`). After the wait runs out
+ * editor; the first answer from any counts, and the server takes the question away everywhere (`confirm_done`). After the wait runs out
  * the assistant is told nothing was done.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";

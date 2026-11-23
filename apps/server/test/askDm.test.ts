@@ -1,4 +1,4 @@
-// The AI asks the DM before a risky action (tools risky.ts, Hub.askDm): asked in the open editors and phone pages, answered in any; refused with no answer, no page, or a no.
+// The AI asks the DM before a risky action (tools risky.ts, Hub.askDm): asked in the open editors, answered in any; refused with no answer, no editor, or a no.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -37,10 +37,10 @@ afterAll(async () => {
 const textOf = (r: unknown) => ((r as { content: { text?: string }[] }).content[0]?.text ?? "");
 const places = () => hub.session.doc.features?.places.map((p) => p.name) ?? [];
 
-/** An editor (or phone page) that answers every question with `allow`, or never (null). */
+/** An editor that answers every question with `allow`, or never (null). */
 function page(allow: boolean | null): Promise<{ ws: WebSocket; asked: ServerMsg[]; done: ServerMsg[] }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?lite=1`);
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
     const asked: ServerMsg[] = [], done: ServerMsg[] = [];
     ws.on("message", (data, bin) => {
       if (bin) return;
@@ -54,11 +54,11 @@ function page(allow: boolean | null): Promise<{ ws: WebSocket; asked: ServerMsg[
 }
 
 describe("asking the DM before a risky action", () => {
-  it("does what isn't risky without asking, and refuses a risky one when no editor or phone page is open", async () => {
+  it("does what isn't risky without asking, and refuses a risky one when no editor is open", async () => {
     expect((await client.callTool({ name: "add_place", arguments: { name: "Ashford", type: "village", x: 64, y: 64 } })).isError).toBe(false);
     const r = await client.callTool({ name: "remove_place", arguments: { place: "Ashford" } });
     expect(r.isError).toBe(true);
-    expect(textOf(r)).toMatch(/needs the DM's OK in the Dragon Drop window .* neither is open: Remove the place "Ashford"/);
+    expect(textOf(r)).toMatch(/needs the DM's OK in the Dragon Drop window, and it isn't open: Remove the place "Ashford"/);
     expect(places()).toContain("Ashford");
   });
 

@@ -250,7 +250,7 @@ const CORNERS: { id: Corner; label: string }[] = [
   { id: "bottom-left", label: "Bottom left" }, { id: "bottom-right", label: "Bottom right" },
 ];
 
-/** Title, scale bar, compass and frame. They show on the map, the phone page and in exports. Each change is undoable. */
+/** Title, scale bar, compass and frame. They show on the map and in exports. Each change is undoable. */
 export function ExtrasPanel({ meta }: { meta: MapMeta }) {
   const f: MapFurniture = meta.furniture ?? {};
   const [title, setTitle] = useState(f.title ?? "");

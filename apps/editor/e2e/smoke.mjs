@@ -1064,28 +1064,6 @@ try {
     await page.waitForTimeout(500);
   }
 
-  // the phone viewer: server render + labels, places list, place card
-  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  phone.on("pageerror", (e) => errors.push(String(e)));
-  phone.on("console", blocked);
-  await phone.goto(`http://localhost:${port}/view?t=${key}`);
-  await phone.getByText(/^Updated/).waitFor({ timeout: 20000 });
-  await phone.waitForTimeout(500);
-  const viewerColours = await phone.evaluate(() => {
-    const c = document.querySelector('[data-testid="viewer-canvas"]');
-    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-    const seen = new Set();
-    for (let i = 0; i < d.length; i += 4 * 997) seen.add(`${d[i] >> 4},${d[i + 1] >> 4},${d[i + 2] >> 4}`);
-    return seen.size;
-  });
-  if (viewerColours < 20) fail(`viewer looks blank (${viewerColours} colours)`);
-  await phone.screenshot({ path: path.join(shots, "e2e-5-viewer.png") });
-  await phone.getByRole("button", { name: "Places", exact: true }).click();
-  await phone.getByTestId("viewer-places").getByText("Test Harbour").click();
-  await phone.getByTestId("viewer-card").getByText("Test Harbour").waitFor({ timeout: 5000 });
-  await phone.waitForTimeout(400);
-  await phone.screenshot({ path: path.join(shots, "e2e-6-viewer-place.png") });
-
   // The map is painted in a worker: a brush stroke comes back as painted pixels, and Undo paints the old land back (the climate catches up a few seconds later)
   {
     await page.bringToFront();
@@ -1162,7 +1140,7 @@ try {
   {
     await page.bringToFront();
     const serverSel = () => page.evaluate(() => new Promise((resolve) => {
-      const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?lite=1`);
+      const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
       ws.onmessage = (ev) => { if (typeof ev.data !== "string") return; const m = JSON.parse(ev.data); if (m.t === "selection") { ws.close(); resolve(m); } };
       setTimeout(() => { ws.close(); resolve(null); }, 5000);
     }));
@@ -1484,18 +1462,9 @@ try {
     await page.locator(".main.rail-icons").waitFor({ state: "detached", timeout: 5000 });
     await page.getByRole("button", { name: /Fit/ }).click(); // (the Objects list moved the view onto the street: the clicks below expect the whole city)
     await page.waitForTimeout(300);
-    // the phone page shows the city (its picture drawn on the server's compute thread) with a Names switch instead of Places, and picks up an edit
-    await phone.goto(`http://localhost:${port}/view`);
-    await phone.getByText(/^Updated/).waitFor({ timeout: 20000 });
-    await phone.getByRole("button", { name: "Names", exact: true }).waitFor({ timeout: 5000 });
-    if (await phone.getByRole("button", { name: "Places", exact: true }).count()) fail("the phone page offers Places on a city map");
-    const phoneLook = () => phone.evaluate(() => { const c = document.querySelector('[data-testid="viewer-canvas"]'); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let h = 0; for (let i = 0; i < d.length; i += 4 * 101) h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0; return h; });
-    const shownBefore = await phoneLook();
     await page.getByTestId("ctool-building").click();
     await page.mouse.click(cx(540), cy(40));
     await status(/20 buildings/);
-    await phone.waitForFunction(async (h) => { const c = document.querySelector('[data-testid="viewer-canvas"]'); const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let x = 0; for (let i = 0; i < d.length; i += 4 * 101) x = (x * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) >>> 0; return x !== h; }, shownBefore, { timeout: 20000 });
-    await phone.screenshot({ path: path.join(shots, "e2e-5f-city-phone.png") });
     await page.bringToFront();
     await page.screenshot({ path: path.join(shots, "e2e-5-city.png") });
     // a battlemap of part of the city: a box dragged with Battlemap here and named opens as a battlemap made from the city, which leads back to it

@@ -20,8 +20,6 @@ export interface Config {
   starterDir: string | null;
   /** Where indexes and thumbnails are cached. */
   cacheDir: string;
-  /** Extra Host values allowed to talk to the server (e.g. a Tailscale name), besides localhost. */
-  extraHosts: string[];
   /**
    * A secret that every request to /api, /mcp and /ws must carry (as `Authorization: Bearer <key>` or as the session cookie the editor gets by opening
    * `/?t=<key>` once), or null for none. The desktop app always sets one; the developer setup is open unless MAPMAKER_ACCESS_TOKEN is set.
@@ -57,9 +55,6 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     assetsDir: process.env.MAPMAKER_ASSETS_DIR?.trim() ? path.resolve(process.env.MAPMAKER_ASSETS_DIR.trim()) : null,
     starterDir: starterDir(),
     cacheDir: path.resolve(process.env.MAPMAKER_CACHE_DIR ?? path.join(REPO_ROOT, ".cache")),
-    // tolerate pasted URLs: "https://pc.tailnet.ts.net/" -> "pc.tailnet.ts.net"
-    extraHosts: (process.env.MAPMAKER_ALLOWED_HOSTS ?? "").split(",")
-      .map((s) => s.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).filter(Boolean),
     ...overrides,
   };
 }

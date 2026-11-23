@@ -26,9 +26,8 @@ const MIME: Record<string, string> = {
 export function accessPolicy(cfg: Config) {
   // (the developer setup's editor, `pnpm dev`, is served by Vite on its own port; the Windows app turns that port off)
   const ports = [cfg.port, ...(cfg.devEditorPort ? [cfg.devEditorPort] : [])];
-  const names = ["localhost", "127.0.0.1", "[::1]", ...cfg.extraHosts.map((h) => h.toLowerCase())];
-  // extra hosts (e.g. a private Tailscale name) may also arrive without a port (HTTPS on 443)
-  const hosts = [...names.flatMap((n) => ports.map((p) => `${n}:${p}`)), ...cfg.extraHosts.map((h) => h.toLowerCase())];
+  // (only this PC: nothing on the network or the internet is let in, whatever the environment says)
+  const hosts = ["localhost", "127.0.0.1", "[::1]"].flatMap((n) => ports.map((p) => `${n}:${p}`));
   const origins = hosts.flatMap((h) => [`http://${h}`, `https://${h}`]);
   return {
     hosts,
@@ -106,8 +105,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
         // Opening the editor with the key once (`/?t=<key>`) gives the browser or window the session cookie, then goes on to the same page without the key in its address.
         if (sameSecret(url.searchParams.get("t") ?? "", cfg.accessToken)) {
           url.searchParams.delete("t");
-          const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
-          res.writeHead(302, { location: url.pathname + url.search, "cache-control": "no-store", "set-cookie": `${SESSION_COOKIE}=${cfg.accessToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${secure}` }).end();
+          res.writeHead(302, { location: url.pathname + url.search, "cache-control": "no-store", "set-cookie": `${SESSION_COOKIE}=${cfg.accessToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000` }).end();
           return;
         }
       }
@@ -115,14 +113,6 @@ export function createAppServer(cfg: Config, hub: Hub) {
       if (url.pathname === "/api/health") return sendJson(res, { ok: true, project: hub.activeId, apiKeyConfigured: apiKeyConfigured() });
       if (url.pathname === "/api/claude-hook") return await handleClaudeHook(hub, req, res);
       if (url.pathname === "/api/noise") return await handleNoise(hub, url, req, res);
-      const rj = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/render\.jpg$/);
-      if (rj) {
-        const max = pictureSide(url.searchParams.get("max"));
-        const bytes = await hub.renderJpeg(rj[1], max, (img) => encodeJpeg(img, 88, 16_000_000));
-        if (!bytes) return void res.writeHead(404, { "content-type": "text/plain" }).end("Not the open project");
-        res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-cache" }).end(bytes);
-        return;
-      }
       // any map as a picture in its style (the editor's compare view): the open map, or another one read only
       const pj = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/picture\.jpg$/);
       if (pj) {
@@ -196,7 +186,7 @@ export function createAppServer(cfg: Config, hub: Hub) {
         void hub.handleClient(ws, msg);
       });
       // (if the projects folder can't be read just now, say so by closing this socket: a rejection nobody handles would stop the whole server)
-      hub.addClient(ws, { lite: url.searchParams.get("lite") === "1" }).catch(() => { try { ws.close(1011, "The server could not read your projects."); } catch { /* it is gone already */ } });
+      hub.addClient(ws).catch(() => { try { ws.close(1011, "The server could not read your projects."); } catch { /* it is gone already */ } });
     });
   });
 

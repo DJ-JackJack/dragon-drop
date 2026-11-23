@@ -157,14 +157,10 @@ class Store {
     for (const cb of this.patchListeners) cb(r, why);
   }
 
-  /** lite: JSON only (no heightmap or climate frames) - for the phone viewer. */
-  private lite = false;
-
-  connect(lite = this.lite) {
-    this.lite = lite;
+  connect() {
     if (this.ws && this.ws.readyState <= WebSocket.OPEN) return; // already connecting/connected (StrictMode runs effects twice)
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws${lite ? "?lite=1" : ""}`);
+    const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onopen = () => {
@@ -376,10 +372,6 @@ class Store {
       }
       case "map_deleted":
         this.set({ pictureNote: { text: `"${m.name}" was deleted. Its folder is kept in your maps folder, under "Deleted maps", if you ever want it back.`, busy: false, at: Date.now(), ms: 9000 } });
-        break;
-      case "derived_ready":
-        // lite clients get no derived frames; this is their cue that the map changed
-        if (this.lite && m.projectId === this.state.meta?.id) this.set({ derivedVersion: this.state.derivedVersion + 1 });
         break;
       case "features":
         this.set({ features: m.features });

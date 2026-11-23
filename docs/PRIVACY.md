@@ -62,8 +62,6 @@ Dragon Drop itself connects to the internet only for these things. Except where 
   Google may use prompts sent with a free Gemini API key. Check the settings of the account you sign in with.
 - **Installing Claude Code**: the **Set up Claude Code** button runs Anthropic's own installer, which downloads Claude Code from Anthropic.
 - **Links** in Settings → Help open in your web browser, on the site they point to.
-- **The phone page**: off until you turn it on. It goes through Tailscale, your own private network between your own devices, and needs your
-  access key. We have no part in that connection.
 
 ## 6. Who we share personal information with
 
@@ -96,7 +94,7 @@ within one month. If you are in the EU or UK and unhappy with our answer, you ca
 ## 10. Security
 
 We keep the little personal information we have in [where: for example the itch.io dashboard and one email account protected by a strong
-password and two-factor sign-in]. In the program, the local server only answers this PC (and your phone, if you turned on the phone page),
+password and two-factor sign-in]. In the program, the local server only answers this PC,
 and every request must carry an access key made for your install.
 
 ## 11. Children

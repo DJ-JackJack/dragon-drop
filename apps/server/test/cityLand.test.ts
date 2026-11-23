@@ -301,11 +301,11 @@ describe("names on a city through Claude's tools", () => {
   });
 });
 
-describe("a city on the phone page", () => {
-  it("gets a fresh picture after an edit (drawn on the compute thread)", async () => {
+describe("a city's picture", () => {
+  it("is drawn fresh after an edit (on the compute thread)", async () => {
     const { hub } = fresh();
-    const info = await ok(hub, "create_city", { name: "Phone Town", width_m: 200, height_m: 150 });
-    const jpeg = () => hub.renderJpeg(info.created.id, 512, (img) => encodeJpeg(img, 88, 16_000_000));
+    const info = await ok(hub, "create_city", { name: "Picture Town", width_m: 200, height_m: 150 });
+    const jpeg = () => hub.mapPicture(info.created.id, 512, (img) => encodeJpeg(img, 88, 16_000_000));
     const before = await jpeg();
     expect(before).toBeTruthy();
     await ok(hub, "add_buildings", { buildings: [{ x: 100, y: 75, w: 30, h: 20 }] });

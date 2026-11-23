@@ -6,7 +6,7 @@
 
 **What it makes**
 
-- **World and regional maps**: terrain you sculpt or generate, Painted Relief and plain relief styles, rivers and lakes from the terrain, a climate model, erosion, named places, curved labels, roads, borders, climate regions, map furniture, a hex or square grid, and a detailed regional map of any area. A view-only **phone page** (`/view`, private over Tailscale) follows your edits live.
+- **World and regional maps**: terrain you sculpt or generate, Painted Relief and plain relief styles, rivers and lakes from the terrain, a climate model, erosion, named places, curved labels, roads, borders, climate regions, map furniture, a hex or square grid, and a detailed regional map of any area.
 - **Battlemaps**: floors, rooms (round, polygon or cave-shaped, with walls traced automatically), thick stone walls with soft shadows, wooden doors, windows, secret doors, objects, and lights with **line-of-sight shadows**, a **light level** (bright, dawn, dusk, dim, night, dark) with shaded areas such as a dim indoors, and a numbered **key** of room notes. Make one from a spot on a world map, bring in your own **assets** (folders of pictures, zip files or asset packs; read in place, never copied), and export a Universal VTT file or a Foundry scene.
 - **Claude Code inside the app**: the right-hand panel is a terminal running Claude Code with the map tools already connected (your Claude subscription, no API key needed). In a browser, the same panel is a chat that uses an API key.
 
@@ -26,7 +26,7 @@ copy .env.example .env     # then add your ANTHROPIC_API_KEY for the in-app chat
 pnpm start                 # opens http://localhost:4747
 ```
 
-The full guide covers prerequisites, the editor, Remote Control and the map page on your phone, and troubleshooting: **[docs/SETUP-WINDOWS.md](docs/SETUP-WINDOWS.md)**.
+The full guide covers prerequisites, the editor, Remote Control and troubleshooting: **[docs/SETUP-WINDOWS.md](docs/SETUP-WINDOWS.md)**.
 
 ## Two ways to talk to Claude
 

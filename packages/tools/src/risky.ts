@@ -1,7 +1,7 @@
 /**
  * What the AI assistant asks the DM about before doing it: replacing a whole map's land, moving the sea, putting a whole map back from a checkpoint, carving every
  * river, rewriting the brief, removing named things (places, labels, climate regions, river and lake names, districts: the DM's canon), and removing many things
- * at once. The DM answers in the editor or on the phone page (`ToolContext.confirm`; the hub's `askDm`). It is asked in code, not left to the instructions,
+ * at once. The DM answers in the editor (`ToolContext.confirm`; the hub's `askDm`). It is asked in code, not left to the instructions,
  * because a smaller model may not follow them, and text inside a map (a place's notes, the brief) could steer one. Most of these can be undone; the DM decides.
  *
  * `riskOf` gives the question as a plain sentence that starts with a verb ("Remove the place "Gate Town""), or null when the call needs no answer.
@@ -133,5 +133,5 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
 export function refusal(answer: "refused" | "timeout" | "nobody", what: string): string {
   if (answer === "refused") return `The DM said no to this: ${what}. Don't try it another way: ask them what they want instead.`;
   if (answer === "timeout") return `This needs the DM's OK and they didn't answer in time: ${what}. Nothing was changed. Ask them in words, then try again when they're there.`;
-  return `This needs the DM's OK in the Dragon Drop window (or on its phone page), and neither is open: ${what}. Nothing was changed.`;
+  return `This needs the DM's OK in the Dragon Drop window, and it isn't open: ${what}. Nothing was changed.`;
 }

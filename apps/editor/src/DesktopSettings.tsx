@@ -1,4 +1,4 @@
-/** Settings for the desktop app, in tabs: the AI assistant (and the chat's API key), the maps and asset folders, the phone page and access key, and help and updates. */
+/** Settings for the desktop app, in tabs: the AI assistant (and the chat's API key), the maps and asset folders, the access key, and help and updates. */
 import { useEffect, useState } from "react";
 import { type AssetStatus, fetchAssetStatus } from "./assetsApi.ts";
 import { useClaudeLauncher } from "./ClaudeButton.tsx";
@@ -9,11 +9,11 @@ import { HELP_LINKS } from "./helpLinks.ts";
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
 /** The Settings tabs, in order. It always opens on the first: setting up the AI assistant is what people come for most. */
-type SettingsTab = "ai" | "maps" | "phone" | "help";
+type SettingsTab = "ai" | "maps" | "key" | "help";
 export const SETTINGS_TABS: readonly (readonly [SettingsTab, string])[] = [
   ["ai", "AI assistant"],
   ["maps", "Maps and assets"],
-  ["phone", "Phone and key"],
+  ["key", "Access key"],
   ["help", "Help and updates"],
 ];
 
@@ -24,7 +24,6 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [phone, setPhone] = useState<string | null>(null);
   const refresh = () => bridge.getSettings().then(setS).catch(() => {});
   useEffect(() => { void refresh(); }, []);
 
@@ -179,28 +178,10 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
               </div>
             </fieldset>
           </div>
-          <div role="tabpanel" id="settings-phone" aria-labelledby="settings-tab-phone" className={tab === "phone" ? "settings-panel" : "settings-panel tab-off"} data-testid="settings-panel-phone">
-            <fieldset disabled={!!busy}>
-              <legend>Phone page</legend>
-              <p className="muted">A view-only page of the map for your phone, reached through Tailscale (a private network between your own devices). It is off until you enter your PC's Tailscale name here, as <code>tailscale serve status</code> shows it (like my-pc.tail1234.ts.net). The setup guide's section 7 has the steps.</p>
-              <label className="field">Tailscale name
-                <input type="text" value={phone ?? s?.phoneHost ?? ""} placeholder="off" spellCheck={false} onChange={(e) => setPhone(e.target.value)} data-testid="phone-host" />
-              </label>
-              <div className="row end">
-                <button className="primary" disabled={phone === null || phone.trim() === (s?.phoneHost ?? "")} data-testid="phone-host-save"
-                  onClick={() => void run("Restarting…", async () => { await bridge.setPhoneHost(phone ?? ""); setPhone(null); })}>Save</button>
-              </div>
-              {!!s?.phoneHost && (
-                <>
-                  <p className="muted" data-testid="phone-on">On: open <b>https://{s.phoneHost}/view</b> on your phone, with Tailscale switched on there. The first time, use the link below: it holds your access key, so the phone is let in and remembers it. Send it only to your own phone.</p>
-                  <div className="row end"><button onClick={() => void navigator.clipboard.writeText(`https://${s.phoneHost}/view?t=${encodeURIComponent(s.phoneKey ?? "")}`)} data-testid="phone-link-copy">Copy the phone link</button></div>
-                </>
-              )}
-            </fieldset>
-
+          <div role="tabpanel" id="settings-key" aria-labelledby="settings-tab-key" className={tab === "key" ? "settings-panel" : "settings-panel tab-off"} data-testid="settings-panel-key">
             <fieldset disabled={!!busy}>
               <legend>Access key</legend>
-              <p className="muted">Everything that talks to Dragon Drop (this window, the AI assistant's map tools, the phone page) carries a secret key, so other programs and web pages can't. If the phone link went somewhere it shouldn't, or a phone with it was lost, make a new key: the old one stops working everywhere. The phone then needs the new link, and an assistant you connected yourself, outside this window, needs its command again.</p>
+              <p className="muted">Everything that talks to Dragon Drop (this window and the AI assistant's map tools) carries a secret key, so other programs and web pages on this PC can't. Dragon Drop only answers this PC: nothing on your network or the internet can reach it. If you think the key got out (you pasted the map tools command somewhere public), make a new one: the old one stops working everywhere, and an assistant you connected yourself, outside this window, needs its command again.</p>
               <div className="row end">
                 <button data-testid="new-access-key"
                   onClick={() => { if (!sureKey) { setSureKey(true); return; } void run("Making a new key…", async () => { await bridge.newAccessKey(); setSureKey(false); }); }}>

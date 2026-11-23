@@ -1,4 +1,4 @@
-/** Title banner, scale bar, compass rose and frame, drawn over a map (editor view, phone page and exports). */
+/** Title banner, scale bar, compass rose and frame, drawn over a map (editor view and exports). */
 import { type Corner, type MapFurniture, DEFAULT_FURNITURE, hasFurniture, scaleBarFor } from "@mapmaker/core";
 
 const INK = "#17171c";

@@ -101,7 +101,7 @@ export const WATER_TOOLS = [
     name: "name_water",
     description:
       "Name a river or a lake, or rename one. Only a name the DM gave or confirmed (names are canon). The rivers are worked out from the land and the rain, so a river's name is pinned to a spot on it " +
-      "and follows that river when the land changes; the name is drawn along the river (or in the lake's middle) on the map, the phone page and exports. " +
+      "and follows that river when the land changes; the name is drawn along the river (or in the lake's middle) on the map and in exports. " +
       "To name: x, y in map px on the river (within 6 px) or inside the lake; list_waters gives a point on each of the biggest unnamed rivers and lakes, and get_selection the DM's selected point. " +
       "Below a junction the bigger river keeps its name, so a tributary's name ends where it joins. To rename: water (the name or id) and the new name; with x, y as well it moves to that spot.",
     schema: z.object({

@@ -110,20 +110,21 @@ function connect(): Promise<{ ws: WebSocket; msgs: ServerMsg[]; frames: ReturnTy
   });
 }
 
-describe("phone access settings", () => {
-  it("accepts a pasted Tailscale URL in MAPMAKER_ALLOWED_HOSTS", async () => {
+describe("who may talk to the server", () => {
+  it("answers only this PC, whatever the environment says (the phone page and its outside address are gone)", async () => {
     const { accessPolicy } = await import("../src/http.ts");
     const prev = process.env.MAPMAKER_ALLOWED_HOSTS;
-    process.env.MAPMAKER_ALLOWED_HOSTS = " https://My-PC.tail1234.ts.net/ , other.ts.net";
+    process.env.MAPMAKER_ALLOWED_HOSTS = "my-pc.tail1234.ts.net"; // (an old setting: ignored)
     try {
-      const cfg = loadConfig({ port: 4747 });
-      expect(cfg.extraHosts).toEqual(["My-PC.tail1234.ts.net", "other.ts.net"]);
-      const pol = accessPolicy(cfg);
+      const pol = accessPolicy(loadConfig({ port: 4747, devEditorPort: null }));
       const req = (host: string, origin?: string) => ({ headers: { host, ...(origin ? { origin } : {}) } }) as unknown as http.IncomingMessage;
-      expect(pol.allowed(req("my-pc.tail1234.ts.net"))).toBe(true);
-      expect(pol.allowed(req("my-pc.tail1234.ts.net", "https://my-pc.tail1234.ts.net"))).toBe(true);
-      expect(pol.allowed(req("my-pc.tail1234.ts.net", "https://evil.example"))).toBe(false);
+      expect(pol.allowed(req("127.0.0.1:4747"))).toBe(true);
+      expect(pol.allowed(req("localhost:4747", "http://localhost:4747"))).toBe(true);
+      expect(pol.allowed(req("my-pc.tail1234.ts.net"))).toBe(false);
+      expect(pol.allowed(req("my-pc.tail1234.ts.net", "https://my-pc.tail1234.ts.net"))).toBe(false);
+      expect(pol.allowed(req("192.168.1.20:4747"))).toBe(false);
       expect(pol.allowed(req("evil.example"))).toBe(false);
+      expect(pol.allowed(req("127.0.0.1:4747", "https://evil.example"))).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.MAPMAKER_ALLOWED_HOSTS;
       else process.env.MAPMAKER_ALLOWED_HOSTS = prev;
@@ -306,7 +307,7 @@ describe("M1 tools and derived layers", () => {
     c.ws.close();
   });
 
-  it("places and labels: tools, sync to editors, gazetteer, preview, phone render endpoint", async () => {
+  it("places and labels: tools, sync to editors, gazetteer, preview, the map's picture", async () => {
     const c = await connect();
     await c.wait(() => c.msgs.some((m) => m.t === "project"));
     const client = new Client({ name: "test", version: "1.0.0" });
@@ -357,10 +358,11 @@ describe("M1 tools and derived layers", () => {
     expect(hub.session.doc.features!.regions).toHaveLength(1);
     await call("remove_climate_region", { region: "Test Frost" });
     await client.close();
-    const img = await fetch(`http://127.0.0.1:${PORT}/api/projects/test-world/render.jpg?max=300`);
+    const img = await fetch(`http://127.0.0.1:${PORT}/api/projects/test-world/picture.jpg?max=300`);
     expect(img.headers.get("content-type")).toBe("image/jpeg");
     expect((await img.arrayBuffer()).byteLength).toBeGreaterThan(1000);
-    expect((await fetch(`http://127.0.0.1:${PORT}/api/projects/nope/render.jpg`)).status).toBe(404);
+    expect((await fetch(`http://127.0.0.1:${PORT}/api/projects/nope/picture.jpg`)).status).toBe(404);
+    expect((await fetch(`http://127.0.0.1:${PORT}/api/projects/test-world/render.jpg`)).headers.get("content-type")).not.toBe("image/jpeg"); // (the phone page's picture is gone)
     c.ws.close();
   });
 });
@@ -1447,10 +1449,10 @@ describe("battlemaps", () => {
     const zip = new Uint8Array(await (await fetch(`${base}/foundry`)).arrayBuffer());
     expect(String.fromCharCode(zip[0], zip[1])).toBe("PK");
     expect((await fetch(`http://127.0.0.1:${PORT}/api/projects/test-world/export/png`)).status).toBe(404); // not the open project
-    // the phone page's picture works for a battlemap too (walls, doors and lights baked in)
-    const phone = await fetch(`http://127.0.0.1:${PORT}/api/projects/test-cellar/render.jpg?max=512`);
-    expect(phone.headers.get("content-type")).toBe("image/jpeg");
-    expect(Array.from(new Uint8Array(await phone.arrayBuffer()).subarray(0, 2))).toEqual([0xff, 0xd8]);
+    // the map's picture works for a battlemap too (walls, doors and lights baked in)
+    const pic = await fetch(`http://127.0.0.1:${PORT}/api/projects/test-cellar/picture.jpg?max=512`);
+    expect(pic.headers.get("content-type")).toBe("image/jpeg");
+    expect(Array.from(new Uint8Array(await pic.arrayBuffer()).subarray(0, 2))).toEqual([0xff, 0xd8]);
     const saved = await call("export_battlemap", { format: "uvtt" });
     expect(saved.saved_to).toContain("test-cellar/exports/test-cellar.dd2vtt");
 
@@ -1571,9 +1573,9 @@ describe("the access key", () => {
     // a wrong key gives no cookie
     const bad = await fetch(`${base}/?t=not-the-key-not-the-key-nope`, { redirect: "manual" });
     expect(bad.headers.get("set-cookie")).toBeNull();
-    const ok = await fetch(`${base}/view?t=${KEY}&x=1`, { redirect: "manual" });
+    const ok = await fetch(`${base}/?t=${KEY}&x=1`, { redirect: "manual" });
     expect(ok.status).toBe(302);
-    expect(ok.headers.get("location")).toBe("/view?x=1"); // (the key is not left in the address)
+    expect(ok.headers.get("location")).toBe("/?x=1"); // (the key is not left in the address)
     const cookie = ok.headers.get("set-cookie") ?? "";
     expect(cookie).toMatch(/^dd_session=/);
     expect(cookie).toContain("HttpOnly");

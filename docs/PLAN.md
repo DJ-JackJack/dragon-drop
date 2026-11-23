@@ -71,7 +71,6 @@ flowchart LR
   CC -- "MCP over HTTP (localhost)" --> SRV
   PHONE <-. "Remote Control" .-> CC
   SRV -. "render if no tab open" .-> HL
-  PHONE -. "read-only viewer (private tunnel)" .-> SRV
 ```
 
 1. **The server owns the document.** Your brushes and my tool calls are the *same* command objects: serialisable, undoable, and tagged with who made them. That gives shared undo, named checkpoints, and `get_changes_since` so I can see what you changed by hand.
@@ -79,7 +78,7 @@ flowchart LR
 3. **The same tools over MCP** at `http://localhost:<port>/mcp`. The repo's `.mcp.json` registers it, so any Claude Code session in the project folder has the map tools. That includes a Remote Control session you drive from your phone, which runs on your Claude subscription rather than the API.
 4. **Shared memory across both ways in.** Each project keeps a `brief.md` (decisions so far) and a `gazetteer.json` (named places with coordinates and notes). Both Claudes read and update them through tools, so a phone session and a desk session don't lose context.
 5. **One renderer, used everywhere.** The PixiJS renderer serves the editor, previews and exports. A headless Chromium copy covers previews when no tab is open (for example on the go).
-6. **Phone viewing.** A read-only `/view` page served by the map server, reachable privately from your phone through Tailscale or a similar tunnel. Previews also appear in the chat itself.
+6. ~~**Phone viewing.** A read-only `/view` page served by the map server, reachable privately from your phone through Tailscale or a similar tunnel.~~ *(Taken out 2026-11-23: not needed, and it relied on a third-party app. The server answers only this PC.)* Previews also appear in the chat itself.
 
 **Stack:** TypeScript · pnpm monorepo · Vite + React · PixiJS v8 · Zod · Anthropic TS SDK · MCP TS SDK · Hono · Clipper2 · Vitest + Playwright. The desktop app is Electron (not Tauri: the server is Node), see M2b below.
 
@@ -89,7 +88,7 @@ packages/renderer   PixiJS layer renderers + styles (painted-relief first), tile
 packages/tools      tool definitions (zod) + handlers — shared by the chat agent and MCP
 packages/exporters  png/webp/psd, foundry v14, uvtt
 packages/ddpack     asset pack reader (for battlemaps, M3)
-apps/server         state, ws sync, chat agent, MCP endpoint, asset index, headless render, /view
+apps/server         state, ws sync, chat agent, MCP endpoint, asset index, headless render
 apps/editor         React UI: canvas, brushes, layers, chat panel, reference tray, history
 skills/mapmaking    instructions both Claudes load: cartography + battlemap conventions, tool recipes
 ```
@@ -233,7 +232,7 @@ Each milestone ends with something you can try. Sizes are relative.
 > **Part 2 done (2026-11-15):**
 > - **Places and labels:** a gazetteer of named places (type, notes, hidden-name option) and map labels (sea, region, range, island, feature) with angle, curve and size. Labels use Cinzel caps with a soft white glow. Both are undoable and shared with Claude. The tools are `add_place` / `update_place` / `remove_place` / `list_places`, `add_label` / `update_label` / `remove_label` / `list_labels` and `export_gazetteer`, and `render_preview` can show labels. *(Brought forward from M2.)*
 > - **Editor:** Select, Place and Label tools, drag-to-move, an inspector for the selection, and a Places list. **Land** and **Water** coast brushes. A **Climate** panel. **PNG export** at 2× with rivers and labels.
-> - **Phone page:** read-only `/view` that follows edits live, with pinch-zoom and tap-a-place notes, reached privately through Tailscale (setup guide §7). `GET /api/projects/:id/render.jpg` serves the server's render. *(Brought forward from M2.)*
+> - **Phone page:** read-only `/view` that follows edits live, with pinch-zoom and tap-a-place notes, reached privately through Tailscale (setup guide §7). `GET /api/projects/:id/render.jpg` serves the server's render. *(Brought forward from M2.)* *(Taken out 2026-11-23.)*
 >
 > **Part 3 done (2026-11-15): sharper detail.**
 > - **2048 px maps** (the DM's world was upscaled to 3.9 km per px). New `pnpm upscale <project>` doubles any map's resolution: bicubic upsampling, fractal wiggle on low coasts (balanced so land area is kept; cliffs untouched), ridged detail on high ground, then erosion.
@@ -242,7 +241,7 @@ Each milestone ends with something you can try. Sizes are relative.
 >   - Rain shadow is computed at half resolution on big maps.
 >   - The climate step only builds the noise it needs.
 > - **Heavy work off the main thread:** the server runs climate/rivers and painting on two worker threads, so editors, chat and MCP never stall. The editor builds its texture noise in parallel bands across several web workers.
-> - **Phone viewer:** connects in "lite" mode (no heightmap or climate frames; 36 MB saved at 2048) and reloads the render when the server says the map changed.
+> - **Phone viewer:** connects in "lite" mode (no heightmap or climate frames; 36 MB saved at 2048) and reloads the render when the server says the map changed. *(Taken out 2026-11-23.)*
 >
 > **Part 4 done (2026-11-15): labels along lines and automatic name placement.** *(From M2.)*
 > - Labels can follow a line (`path`): drag with the Label tool, or Claude passes points to `add_label`. Text is centred on the line, reads left to right, and can **spread** along its whole length (the default for range names). Moving the label moves the line; "Straighten" turns it back into a plain label.
@@ -287,7 +286,7 @@ Each milestone ends with something you can try. Sizes are relative.
 
 
 ### M2: Cartography + the first-world proof of concept *(medium)*
-- Label engine (curved, tiered, auto-placement), gazetteer, optional markers, Reference Tray with sketch → landmass, tiled export up to 16k, read-only `/view` page for your phone.
+- Label engine (curved, tiered, auto-placement), gazetteer, optional markers, Reference Tray with sketch → landmass, tiled export up to 16k, ~~read-only `/view` page for your phone~~ (taken out 2026-11-23).
 - **The first world's design sessions** (see §10).
 - **Exit:** a finished, labelled archipelago map in Painted Relief style, plus a gazetteer exportable to your encyclopedia.
 
@@ -349,7 +348,7 @@ The DM can select a point, an area (rectangle, circle, freehand) or a feature (p
 - **`get_selection`** gives the shape, size in km and miles, elevation, climate, rivers, lakes and what lies inside, plus what the DM is looking at; `render_preview` can crop to it (`selection: true`) and draws its outline in gold.
 - **Edit lock:** while it is on (the default whenever an area or a climate region is selected), Claude's terrain edits are clipped to the area with a soft edge and nothing outside changes; placing or moving features outside it is refused. The DM's own brushes are never held, and only the DM can change or clear a locked selection.
 - **Ask Claude about this:** a box in the selection bar types the question into the Claude Code terminal, with a pointer to the selection, only when Claude Code is idle.
-- Later ideas: select several things at once, select a river or lake by clicking it, selecting on the phone page, a lock that can also protect an area ("don't touch this part").
+- Later ideas: select several things at once, select a river or lake by clicking it, a lock that can also protect an area ("don't touch this part").
 
 ### M5: Extras *(optional)*
 - More world styles (e.g. an Inkarnate-like look from reference #1), MCP Apps inline viewer, an image-generation adapter, Azgaar import, a desktop wrapper.

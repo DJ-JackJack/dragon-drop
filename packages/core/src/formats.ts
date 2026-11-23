@@ -100,7 +100,7 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
   },
   {
     id: "previews", name: "Preview pictures", files: ".jpg",
-    use: "What Claude sees when it looks at the map, and what the phone page shows.",
+    use: "What Claude sees when it looks at the map.",
     limits: "Made for looking at, not for printing: use the PNG export for that.",
   },
 ];

@@ -2,7 +2,7 @@
 interface DragonDropBridge {
   platform: string;
   version: string;
-  getSettings(): Promise<{ version: string; projectsDir: string; hasApiKey: boolean; port: number; defaultPort: number; autoUpdate: boolean; assetsDir: string | null; mcpUrl: string; mcpCommand: string; mcpCommandShown: string; mcpHeader: string; phoneKey?: string; terminalCommand: string; toolSet: "all" | "essentials"; phoneHost: string; assistant: { assistant: string | null; name: string | null; auto: boolean; file: string | null; hint: string }; logDir: string; encrypted: boolean } | null>;
+  getSettings(): Promise<{ version: string; projectsDir: string; hasApiKey: boolean; port: number; defaultPort: number; autoUpdate: boolean; assetsDir: string | null; mcpUrl: string; mcpCommand: string; mcpCommandShown: string; mcpHeader: string; terminalCommand: string; toolSet: "all" | "essentials"; assistant: { assistant: string | null; name: string | null; auto: boolean; file: string | null; hint: string }; logDir: string; encrypted: boolean } | null>;
   setApiKey(key: string): Promise<boolean>;
   chooseProjectsFolder(): Promise<string | null>;
   chooseAssetsFolder(): Promise<string | null>;
@@ -10,8 +10,6 @@ interface DragonDropBridge {
   openProjectsFolder(): Promise<void>;
   /** Open a map's backups folder, or its own folder while it has no backups (`opened` says which). */
   openBackups(id: string): Promise<{ ok: boolean; opened: "backups" | "map" | null }>;
-  /** The phone page's address (the PC's Tailscale name), "" for off. The server starts again; the answer is what was kept. */
-  setPhoneHost(host: string): Promise<string>;
   /** Make a new access key: the old one stops working everywhere (the server starts again, and the window reloads with the new one). */
   newAccessKey(): Promise<boolean>;
   openLogs(): Promise<void>;

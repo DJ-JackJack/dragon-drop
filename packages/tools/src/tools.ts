@@ -119,8 +119,8 @@ export interface ToolContext {
   /** Optional: copy a map (the open one unless `from` names another) under a new name, to change the copy; the copy is opened unless `open` is false. */
   duplicateMap?(o: { name: string; from?: string; open?: boolean }): Promise<ProjectInfo & { from: string }>;
   /**
-   * Optional: ask the DM before a risky action (risky.ts): they answer in the editor or on the phone page. Without it (tests, contexts that only look) nothing is asked.
-   * "nobody": no editor or phone page is open to answer.
+   * Optional: ask the DM before a risky action (risky.ts): they answer in the editor. Without it (tests, contexts that only look) nothing is asked.
+   * "nobody": no editor is open to answer.
    */
   confirm?(o: { tool: string; text: string }): Promise<"allowed" | "refused" | "timeout" | "nobody">;
   /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. `level`: a battlemap's level (id or name) instead of its first. */
@@ -1424,7 +1424,7 @@ export const TOOLS = [
   define({
     name: "set_map_furniture",
     description:
-      "Set the map's extras: a title banner, a scale bar, a compass rose and a frame. They show in the editor, the phone page and exports (not in " +
+      "Set the map's extras: a title banner, a scale bar, a compass rose and a frame. They show in the editor and exports (not in " +
       "previews). Only give the fields to change; set title to an empty string to remove it. Only use a title the user gave or confirmed.",
     schema: z.object({
       title: z.string().max(80).optional(),
@@ -1455,7 +1455,7 @@ export const TOOLS = [
     name: "set_grid",
     description:
       "Show a square or hex grid over the map (or turn it off). size_miles is the side of a square, or the distance across the flats of a " +
-      "hex (a '6-mile hex' is 6). The grid is a drawing aid: it shows in the editor, the phone page and PNG exports, but not in previews.",
+      "hex (a '6-mile hex' is 6). The grid is a drawing aid: it shows in the editor and PNG exports, but not in previews.",
     schema: z.object({
       type: z.enum(["off", "square", "hex"]),
       size_miles: z.number().min(0.1).optional().describe("Cell size in miles (default: keep the current size, or a tidy size for this map)"),

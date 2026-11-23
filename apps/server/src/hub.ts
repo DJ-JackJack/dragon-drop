@@ -32,7 +32,7 @@ export interface HubOptions {
   autoBackupMs?: number;
   autoBackupKeep?: number;
   /**
-   * Ask the DM before the AI does something risky (tools risky.ts): the question shows in every editor and phone page and the tool waits up to `askWaitMs`
+   * Ask the DM before the AI does something risky (tools risky.ts): the question shows in every editor and the tool waits up to `askWaitMs`
    * (default two minutes) for an answer. Off when missing (tests that call those tools with no editor open); the real server turns it on (main.ts).
    */
   askBeforeRisky?: boolean;
@@ -103,8 +103,6 @@ const WARM_DELAY_MS = 20_000;
 export class Hub {
   private open: OpenProject | null = null;
   private clients = new Set<WebSocket>();
-  /** Clients that only want JSON (the phone viewer): no heightmap or derived-layer frames. */
-  private lite = new WeakSet<WebSocket>();
   private opening: Promise<void> = Promise.resolve();
   /** When an editor's edit was last refused for being meant for another map or level (the message is said once per stroke). */
   private refusedAt = new WeakMap<WebSocket, number>();
@@ -187,7 +185,7 @@ export class Hub {
       if (e.type === "patch") {
         if (active) {
           const frame = encodeFrame({ t: "patch", projectId: id, rect: e.rect, seq: e.seq }, session.doc.height.copyRect(e.rect));
-          for (const c of this.clients) if (!this.lite.has(c) && c.readyState === c.OPEN) c.send(frame);
+          for (const c of this.clients) if (c.readyState === c.OPEN) c.send(frame);
         }
         this.markDirty(op, rt);
         if (active) this.contentChanged(op);
@@ -205,7 +203,7 @@ export class Hub {
         this.markDirty(op, rt);
         if (active) this.syncSelection(op);
         const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features)]); // regions and river sources (and where their places are) feed the climate and rivers
-        if (active && !isWorld(session.doc)) this.contentChanged(op); // (a battlemap's or a city's picture is its features: the phone page's picture is out of date)
+        if (active && !isWorld(session.doc)) this.contentChanged(op); // (a battlemap's or a city's picture is its features: pictures of it are out of date)
         else if (active && key !== op.regionsKey) {
           op.regionsKey = key;
           this.contentChanged(op); // climate regions feed the climate model
@@ -868,7 +866,7 @@ export class Hub {
   private async refreshDerived(op: OpenProject, force = false): Promise<Derived | null> {
     if (this.open !== op) return null;
     if (!isWorld(op.session.doc)) {
-      // battlemaps and cities have no climate: the phone page only needs to know that the map changed, to fetch a fresh picture
+      // battlemaps and cities have no climate: the editors are only told that the map changed
       if (op.derivedVersion !== op.contentVersion) {
         op.derivedVersion = op.contentVersion;
         this.broadcast({ t: "derived_ready", projectId: op.id, version: op.contentVersion });
@@ -885,7 +883,7 @@ export class Hub {
         op.derivedVersion = version;
         if (this.open === op) {
           const frame = this.derivedFrame(op);
-          for (const c of this.clients) if (!this.lite.has(c) && c.readyState === c.OPEN) c.send(frame);
+          for (const c of this.clients) if (c.readyState === c.OPEN) c.send(frame);
           this.broadcast({ t: "derived_ready", projectId: op.id, version });
           this.sendWater(op);
         }
@@ -919,9 +917,8 @@ export class Hub {
     if (this.open !== op) return;
     const v = this.waterView(op);
     if (!v) return;
-    const lite = JSON.stringify({ t: "water", projectId: op.id, labels: v.labels, named: v.named } satisfies ServerMsg);
     const full = JSON.stringify({ t: "water", projectId: op.id, labels: v.labels, named: v.named, lakes: v.lakes } satisfies ServerMsg);
-    for (const c of only ? [only] : this.clients) if (c.readyState === c.OPEN) c.send(this.lite.has(c) ? lite : full);
+    for (const c of only ? [only] : this.clients) if (c.readyState === c.OPEN) c.send(full);
   }
 
   /**
@@ -1068,7 +1065,7 @@ export class Hub {
       return { img: { w, h, data: await this.compute.battle(doc, { notes: true, ...(o.roofs && { roofs: 0.8 }), ...(await this.battleAssets(doc)).opts }) }, rivers: [] };
     }
     if (isCity(doc)) {
-      // (drawn on the compute thread: a big city takes half a second or more, and the phone page asks again after every edit)
+      // (drawn on the compute thread: a big city takes half a second or more)
       const tiles = await this.cityRoofTiles(doc);
       return { img: await this.compute.city(doc, { maxSize: 2048, roofTiles: tiles }), rivers: [] };
     }
@@ -1177,23 +1174,6 @@ export class Hub {
     return { id: other.id, name: other.name, kind: mapKindOf(a), rect: on?.rect ?? null, how: on?.how ?? [] };
   }
 
-  private jpegCache: { key: string; bytes: Uint8Array } | null = null;
-
-  /** Terrain + rivers as a JPEG (no grid/labels) for the phone viewer; cached per content version. */
-  async renderJpeg(id: string, maxPx: number, encode: (img: RGBAImage) => Uint8Array): Promise<Uint8Array | null> {
-    const op = this.open;
-    if (!op || op.id !== id) return null;
-    const key = `${id}:${op.contentVersion}:${maxPx}`;
-    if (this.jpegCache?.key === key) return this.jpegCache.bytes;
-    const { img, rivers } = await this.renderMap();
-    const region = { x: 0, y: 0, w: img.w, h: img.h };
-    const { img: out, scale } = cropScale(img, region, maxPx);
-    drawRivers(out, region, scale, rivers);
-    const bytes = encode(out);
-    this.jpegCache = { key, bytes };
-    return bytes;
-  }
-
   private markDirty(op: OpenProject, level?: LevelRuntime) {
     (level ?? op.runtime.find((r) => r.session === op.session))!.dirty = true;
     op.dirty = true;
@@ -1267,16 +1247,15 @@ export class Hub {
   }
 
   // ---------------------------------------------------------------- clients
-  async addClient(ws: WebSocket, opts: { lite?: boolean } = {}) {
+  async addClient(ws: WebSocket) {
     this.clients.add(ws);
-    if (opts.lite) this.lite.add(ws);
     ws.on("close", () => this.clients.delete(ws));
     await this.opening.catch(() => {});
     await this.sendProject(ws);
     this.send(ws, { t: "claude_state", state: this.claude });
     this.send(ws, { t: "selection", selection: this.selection, lock: this.selectionLock });
     // what happened at start (a map skipped), told once, to the first editor that connects
-    if (!opts.lite && this.startupNotes.length) for (const message of this.startupNotes.splice(0)) this.send(ws, { t: "error", message });
+    if (this.startupNotes.length) for (const message of this.startupNotes.splice(0)) this.send(ws, { t: "error", message });
   }
 
   /**
@@ -1300,8 +1279,8 @@ export class Hub {
   private asks = new Map<string, { msg: Extract<ServerMsg, { t: "confirm" }>; settle: (a: "allowed" | "refused" | "timeout") => void }>();
 
   /**
-   * Ask the DM before a risky action (tools risky.ts): every editor and phone page shows the question and the first answer counts. "nobody" when no editor or
-   * phone page is open to answer, "timeout" when none came in time. Without `askBeforeRisky` everything is allowed.
+   * Ask the DM before a risky action (tools risky.ts): every editor shows the question and the first answer counts. "nobody" when no editor is open to
+   * answer, "timeout" when none came in time. Without `askBeforeRisky` everything is allowed.
    */
   askDm(via: "chat" | "mcp", tool: string, text: string): Promise<"allowed" | "refused" | "timeout" | "nobody"> {
     if (!this.opts.askBeforeRisky) return Promise.resolve("allowed");
@@ -1347,12 +1326,10 @@ export class Hub {
       features: session.doc.features ?? { places: [], labels: [] },
       ...(isBattle(session.doc) && { levels: this.open.levels }),
     });
-    if (!this.lite.has(ws)) {
+    {
       const hf = session.doc.height;
       ws.send(encodeFrame({ t: "snapshot", projectId: id, rect: { x: 0, y: 0, w: hf.w, h: hf.h }, seq: session.seq }, hf.data));
       if (this.open.derived) ws.send(this.derivedFrame(this.open));
-    } else if (this.open.derived) {
-      this.send(ws, { t: "derived_ready", projectId: id, version: this.open.derivedVersion });
     }
     this.sendWater(this.open, ws);
     this.send(ws, { t: "checkpoints", list: await this.store.listCheckpoints(id) });

@@ -16,8 +16,8 @@ small-business adviser, a law school clinic, a volunteer lawyers' group. `CHECKL
       wrote (it held the access key) cleaned of our entry. OpenCode's choice warns not to connect a Claude or Google AI subscription.
 - [x] Destructive actions are confirmed in code, not just in the prompt (2026-11-21, `packages/tools/src/risky.ts`): replacing a map's land, moving the sea,
       restoring a whole checkpoint, carving every river, copying land over the map, rewriting the brief, removing named things (places, labels, regions,
-      river and lake names, districts) and removing 25 or more things at once wait for the DM's Allow in the editor or on the phone page (two minutes,
-      then refused; refused when neither is open). The selection lock is enforced in code too. The model check's injection task (a place's notes telling
+      river and lake names, districts) and removing 25 or more things at once wait for the DM's Allow in the editor (two minutes,
+      then refused; refused when it isn't open). The selection lock is enforced in code too. The model check's injection task (a place's notes telling
       the AI to remove every place) passes with every model tried.
 - [x] The tool list and instructions suit small models (2026-11-21): Settings → AI assistant → Map tools: A smaller set lists 42 tools with short
       descriptions and 3 KB of instructions (about 14,000 tokens, against about 52,000 for all 156 tools and 29 KB of instructions); `pnpm model-check`
@@ -118,7 +118,7 @@ From [Anthropic's legal and compliance page](https://code.claude.com/docs/en/leg
       - **Windows 10**: a GitHub job installs the installer on Windows Server 2022 (the oldest Windows GitHub offers, a generation between 10
         and 11) and runs the installed app's start-up check. Windows 10 itself: not tried. Microsoft ended its support in October 2025.
 - [x] Support: an FAQ and a place to ask (2026-11-21): [FAQ.md](FAQ.md) (installing, SmartScreen, antivirus, administrator rights, Claude Code problems,
-      other assistants, smaller models, the Allow box, maps, backups, updates, the phone page, privacy); Settings → Help links to it, to the setup guide
+      other assistants, smaller models, the Allow box, maps, backups, updates, privacy); Settings → Help links to it, to the setup guide
       and to the repository's issue forms (`.github/ISSUE_TEMPLATE`: a problem, a question; both warn never to paste a key). **If the repository goes
       private, move these links** (`apps/editor/src/helpLinks.ts`) to where buyers can reach, such as the store page's community. The whole move
       is planned in [GOING-PRIVATE.md](GOING-PRIVATE.md).
@@ -145,6 +145,7 @@ Left:
 - [ ] Turn on two-factor authentication, branch protection and tag protection on the GitHub account and repository: the release pipeline is what ships code to buyers.
 - [x] The phone page over Tailscale exposes the server beyond this PC. It needs the access key, and in the Windows app it is off until the person enters
       their Tailscale name in Settings → Phone page (2026-11-21; the app no longer takes `MAPMAKER_ALLOWED_HOSTS` from the PC's environment).
+      *(2026-11-23: the phone page is gone altogether, the person deciding it isn't needed: the server answers only this PC, whatever the environment says.)*
 - [ ] Keep Electron current: Chromium security fixes arrive often, and each needs a release. Dependabot opens the pull request; someone has to merge and ship it.
 - [x] A plan for a vulnerability report: who answers, how fast, how a fix is released (2026-11-22): `SECURITY.md` promises a reply in 7 days, a
       verdict in 14 and a fix for a serious problem in 30; `RELEASING.md` has the steps, and when an Electron update has to be released.
