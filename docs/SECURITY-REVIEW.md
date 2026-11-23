@@ -33,6 +33,10 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
   but clipboard writing and full screen. The **player screen** (2026-11-23, `openPlayerWindow`) is a second window with the same sandbox, isolation,
   navigation rule and pop-up refusal, and **no preload at all**, so it has no bridge; it shows the player page only (`/?player=1`), which edits
   nothing. The smoke test opens it and checks that it is the sandboxed player page with no Node and no bridge.
+- **Note links** (2026-11-23, `links.cjs`): a place's or realm's link to the DM's own notes is opened by the main process only after `checkLink`
+  (http, https, obsidian and onenote addresses through `shell.openExternal`; a Windows path to a document, picture or folder through `shell.openPath`,
+  never a program, script or shortcut: by its type), and only from the editor (`fromEditor`) on the DM's click, because a map file can come from
+  someone else. Choosing a file uses Windows' own dialog. A test keeps the lists the same as the editor's (`core/links.ts`).
 - **The bridge** (`preload.cjs` → `ipcMain`): every handler checks that the call comes from the editor's own address (`fromEditor`), and the
   inputs are checked: a map id against a pattern before opening its backups folder, the API
   key's length, the start command's length and control characters. Folders are chosen in Windows' own dialog, never from the page.

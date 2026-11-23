@@ -18,6 +18,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const assistants = require("./assistants.cjs");
+const { NOTE_FILE_TYPES, checkLink } = require("./links.cjs");
 
 const APP_NAME = "Dragon Drop";
 const DEFAULT_PORT = 4747;
@@ -809,6 +810,24 @@ ipcMain.handle("dd:clear-assets", async (e) => {
 });
 ipcMain.handle("dd:open-projects", (e) => { if (fromEditor(e)) void shell.openPath(settings.projectsDir); });
 // a map's backups folder (copies kept before a migration, removed pictures), or the map's own folder while it has none; only inside the maps folder
+// a place's link to the DM's own notes (links.cjs): a web page or note address in its own program, a document or folder in Windows' own way; nothing else
+ipcMain.handle("dd:open-link", async (e, link) => {
+  if (!fromEditor(e)) return { ok: false, why: "Not from the editor." };
+  const c = checkLink(link);
+  if (c.why) return { ok: false, why: c.why };
+  if (c.kind === "url") {
+    try { await shell.openExternal(c.url); return { ok: true }; } catch { return { ok: false, why: "No program on this PC opens that address." }; }
+  }
+  if (!fs.existsSync(c.file)) return { ok: false, why: `There is no file or folder at ${c.file} on this PC.` };
+  const err = await shell.openPath(c.file);
+  return err ? { ok: false, why: err } : { ok: true };
+});
+ipcMain.handle("dd:choose-note-file", async (e) => {
+  if (!fromEditor(e) || !win) return null;
+  const r = await dialog.showOpenDialog(win, { title: "Choose your notes for this", properties: ["openFile"], filters: [{ name: "Notes and documents", extensions: NOTE_FILE_TYPES.map((t) => t.slice(1)) }] });
+  return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+});
+
 ipcMain.handle("dd:open-player-screen", (e) => {
   if (!fromEditor(e)) return { ok: false };
   return openPlayerWindow();

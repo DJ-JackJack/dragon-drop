@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { NoteLink } from "./NoteLink.tsx";
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { placeKind,
   GROUND_INFO, MI_PER_KM, WIND_NAMES, type ClimateParams, type ClimateRegion, DEFAULT_CLIMATE, type Corner, type Features, type MapFurniture, type MapGrid, type MapLine, describeFurniture, lineLengthKm, clampGridSize, describeGrid, gridCellPx, niceGridSize, type LabelKind, type MapLabel, type MapMeta, type NamePos, type Place, type PlaceType,
@@ -72,6 +73,7 @@ function PlaceEditor({ p }: { p: Place }) {
         </details>
       </div>
       <label className="field">Notes<textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (p.notes ?? "") && sendPlace({ ...p, notes })} /></label>
+      <NoteLink link={p.link} what={p.name} onChange={(link) => { const { link: _l, ...rest } = p; sendPlace(link ? { ...p, link } : rest, link ? `Link ${p.name} to notes` : `Unlink ${p.name}`); }} />
       <label className="check"><input type="checkbox" checked={!p.hideName} onChange={(e) => sendPlace({ ...p, hideName: !e.target.checked })} /> Show name on map</label>
       <label className="check"><input type="checkbox" checked={!p.hideMarker} onChange={(e) => sendPlace({ ...p, hideMarker: !e.target.checked })} /> Show marker (turn off for a peak the map already shows)</label>
       <GmOnlyBox on={!!p.gmOnly} what="this place" onChange={(on) => { const { gmOnly: _g, ...rest } = p; sendPlace(on ? { ...p, gmOnly: true } : rest, on ? `Make ${p.name} GM only` : `Show ${p.name} to players`); }} />

@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
-  MI_PER_KM, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
+  MI_PER_KM, linkProblem, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
   clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, reliefPicture, renderFull,
   isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle, type StreetKind,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
@@ -1083,10 +1083,12 @@ export const TOOLS = [
       type: PlaceTypeSchema,
       x: z.number(), y: z.number(),
       notes: z.string().max(1000).optional(),
+      link: z.string().max(2000).optional().describe("The DM's own notes on it, only a link the DM gave: a web address, an Obsidian or OneNote link, or a file or folder path on their PC; an empty text removes it"),
       hide_marker: z.boolean().optional(),
     }),
     async run(ctx, i) {
-      const place: Place = { id: newFeatureId("p"), name: i.name, type: i.type, x: i.x, y: i.y, notes: i.notes,
+      if (i.link && linkProblem(i.link)) return { ...text(linkProblem(i.link)!), isError: true };
+      const place: Place = { id: newFeatureId("p"), name: i.name, type: i.type, x: i.x, y: i.y, notes: i.notes, ...(i.link && { link: i.link.trim() }),
         ...(i.hide_marker && { hideMarker: true }) };
       const r = ctx.execute({ op: "features", patch: { upsertPlaces: [place] }, label: `Add place ${i.name}` });
       return json({ change: r.seq, place });
@@ -1102,6 +1104,7 @@ export const TOOLS = [
       type: PlaceTypeSchema.optional(),
       x: z.number().optional(), y: z.number().optional(),
       notes: z.string().max(1000).optional(),
+      link: z.string().max(2000).optional().describe("The DM's own notes on it, only a link the DM gave: a web address, an Obsidian or OneNote link, or a file or folder path on their PC; an empty text removes it"),
       hide_name: z.boolean().optional(),
       hide_marker: z.boolean().optional(),
       name_pos: z.enum(["auto", "right", "left", "above", "below"]).optional().describe("Side of the marker for the name (default auto: the first free side)"),
@@ -1114,6 +1117,11 @@ export const TOOLS = [
         ...(i.notes !== undefined && { notes: i.notes }), ...(i.hide_name !== undefined && { hideName: i.hide_name }),
         ...(i.hide_marker !== undefined && { hideMarker: i.hide_marker }),
         ...(i.name_pos !== undefined && { namePos: i.name_pos }) };
+      if (i.link !== undefined) {
+        if (!i.link.trim()) delete next.link;
+        else if (linkProblem(i.link)) return { ...text(linkProblem(i.link)!), isError: true };
+        else next.link = i.link.trim();
+      }
       const r = ctx.execute({ op: "features", patch: { upsertPlaces: [next] }, label: `Edit place ${next.name}` });
       return json({ change: r.seq, place: next });
     },

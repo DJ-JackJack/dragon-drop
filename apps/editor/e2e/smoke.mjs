@@ -282,6 +282,11 @@ try {
   await page.getByTestId("gm-only").click();
   await page.getByTestId("history").getByText("Make Test Harbour GM only").waitFor({ timeout: 10000 });
   if (!(await page.getByTestId("gm-only").isChecked())) fail("the place should show as GM only once marked");
+  // a link to the DM's own notes: pasted and kept, with an Open button (not clicked here: it would open another program)
+  await page.getByTestId("note-link-input").fill("https://example.com/wiki/Test_Harbour");
+  await page.getByTestId("note-link-input").press("Enter");
+  await page.getByTestId("history").getByText("Link Test Harbour to notes").waitFor({ timeout: 10000 });
+  await page.getByTestId("note-link-open").getByText(/example\.com/).waitFor({ timeout: 5000 });
   // and one of the new pictures: choose a lighthouse in the Place tool, place one, see it in the list
   await page.getByRole("button", { name: "Place", exact: true }).click();
   await page.getByTestId("place-kind-menu").click(); // (the kinds open from a button in the tool bar, and it closes when one is chosen)

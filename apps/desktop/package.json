@@ -29,6 +29,7 @@
     "files": [
       "main.cjs",
       "assistants.cjs",
+      "links.cjs",
       "preload.cjs",
       "package.json",
       "assets/**"

@@ -691,3 +691,7 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 .realm-actions { display: flex; gap: 4px; align-items: center; flex: none; }
 .realm-new { display: flex; gap: 6px; margin-top: 6px; }
 .realm-new input { flex: 1; }
+
+/* a link to the DM's own notes (NoteLink.tsx) */
+.note-link .row { gap: 6px; flex-wrap: wrap; }
+.realm-item .note-link { padding: 4px 6px 8px 36px; }

@@ -6,6 +6,8 @@ import { PLACE_KINDS, type PlaceType } from "./placeKinds.ts"; // (PlaceType its
 
 export interface Place {
   id: string;
+  /** The DM's own notes on it: a web page (a wiki, a shared document), an Obsidian or OneNote note, or a file or folder on their PC (links.ts). */
+  link?: string;
   /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
   gmOnly?: boolean;
   name: string;
@@ -172,6 +174,8 @@ export interface MapNote {
 /** A realm of a world map (realms.ts): a kingdom, province or other territory, painted into `features.realmCells` under its number `n` (1..255). */
 export interface MapRealm {
   id: string;
+  /** The DM's own notes on it: a web page or a file on their PC (links.ts). */
+  link?: string;
   n: number;
   /** The DM's name for it (canon: only one the DM gave). */
   name: string;

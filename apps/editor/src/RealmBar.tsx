@@ -7,6 +7,7 @@ import { type MapRealm, REALM_COLOURS, newFeatureId, nextRealmNumber, realmAreas
 import { store } from "./store.ts";
 import { Popover } from "./ToolBar.tsx";
 import { realmCtl, useRealmSettings } from "./realmUi.ts";
+import { NoteLink, openNoteLink } from "./NoteLink.tsx";
 
 export const REALM_HINT = "Paint a realm onto the land: choose it above (or make a new one, under your own name for it), then drag. Land only keeps the sea out, so a realm stops at the coast; Round neighbours paints only land nobody has yet. Each stroke is one undo step.";
 
@@ -40,6 +41,7 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
   const meta = store.getState().meta, f = store.getState().features;
   const areas = meta ? realmAreas(realmGridOf({ meta, features: f }), meta.kmPerPx) : new Map();
   const add = () => {
@@ -61,7 +63,8 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
   return (
     <div className="realm-list" data-testid="realm-list">
       {realms.map((r) => (
-        <div key={r.id} className={`realm-row${r.id === chosen ? " on" : ""}`}>
+        <div key={r.id} className="realm-item">
+        <div className={`realm-row${r.id === chosen ? " on" : ""}`}>
           <input type="color" value={r.colour} title="Its colour" onChange={(e) => sendRealm({ ...r, colour: e.target.value }, `Colour of ${r.name}`)} />
           {renaming?.id === r.id ? (
             <input value={renaming.name} autoFocus maxLength={80} onChange={(e) => setRenaming({ id: r.id, name: e.target.value })}
@@ -77,10 +80,14 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
             <span className="realm-actions">
               <label className="check" title="For your eyes only: left out of exports for players"><input type="checkbox" checked={!!r.gmOnly} onChange={(e) => { const { gmOnly: _g, ...rest } = r; sendRealm(e.target.checked ? { ...r, gmOnly: true } : rest, e.target.checked ? `Make ${r.name} GM only` : `Show ${r.name} to players`); }} /> GM</label>
               <label className="check" title="Write its name on the map"><input type="checkbox" checked={!r.hideName} onChange={(e) => { const { hideName: _h, ...rest } = r; sendRealm(e.target.checked ? rest : { ...r, hideName: true }, e.target.checked ? `Show the name ${r.name}` : `Hide the name ${r.name}`); }} /> Name</label>
+              {r.link && <button onClick={() => void openNoteLink(r.link!)} title={`Open your notes: ${r.link}`}>Notes ↗</button>}
+              <button onClick={() => setLinking(linking === r.id ? null : r.id)} title="Link it to your own notes (a web page or a file)">Link</button>
               <button onClick={() => setRenaming({ id: r.id, name: r.name })}>Rename</button>
               <button onClick={() => setRemoving(r.id)}>Remove</button>
             </span>
           )}
+        </div>
+        {linking === r.id && <NoteLink link={r.link} what={r.name} onChange={(link) => { const { link: _l, ...rest } = r; sendRealm(link ? { ...r, link } : rest, link ? `Link ${r.name} to notes` : `Unlink ${r.name}`); }} />}
         </div>
       ))}
       <div className="realm-new">
