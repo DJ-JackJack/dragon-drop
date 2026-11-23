@@ -10,7 +10,7 @@
 // The access key is never written into those files: the terminal is started with it in DRAGON_DROP_KEY and the files name the variable. (Documents
 // often syncs to the cloud, and the key should not travel with it.)
 //
-// Antigravity CLI is no longer connected (from 0.1.13): Google's terms for it forbid using it "in connection with products not provided by" Google, and
+// Antigravity CLI is no longer connected (from 0.1.12): Google's terms for it forbid using it "in connection with products not provided by" Google, and
 // Google has suspended accounts over other tools (docs/AI-PROVIDERS.md). `agy` is now a command we don't know, like any other. Earlier versions wrote its
 // file holding the key, so that file is still cleaned of our entry (RETIRED_TARGETS).
 //

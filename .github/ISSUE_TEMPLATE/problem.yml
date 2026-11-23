@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: Dragon Drop version
-      description: At the bottom of Settings (the gear in the top bar).
+      description: At the bottom of Settings (in the top bar; a gear when the window is narrow).
       placeholder: "0.1.12"
     validations:
       required: true
