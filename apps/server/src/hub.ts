@@ -2,6 +2,7 @@
  * The authoritative app state: which project is open, its MapSession, the chat agent,
  * and every connected editor. Editors and Claude (chat or MCP) all act through here.
  */
+import path from "node:path";
 import type { WebSocket } from "ws";
 import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
@@ -14,6 +15,7 @@ import {
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
+  type PrefabTurn, makePrefab, placePrefab, prefabDoc,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -23,6 +25,7 @@ import type { AssetLibrary } from "./assets.ts";
 import { dressBattleWithPacks } from "./battlePack.ts";
 import type { NoiseStore } from "./noiseStore.ts";
 import { PictureRefused, ProjectStore, plainLetters } from "./store.ts";
+import { PREFAB_DIR, PrefabExists, PrefabStore } from "./prefabs.ts";
 
 export interface HubOptions {
   /**
@@ -160,6 +163,65 @@ export class Hub {
   }
 
   constructor(readonly store: ProjectStore, private modelCall: ModelCall | null, private compute: MapCompute = new WorkerCompute(), private opts: HubOptions = {}) {}
+
+  private prefabStore: PrefabStore | null = null;
+  /** The DM's prefabs, in the maps folder's Prefabs folder (core prefabs.ts, ./prefabs.ts). */
+  get prefabs(): PrefabStore {
+    return (this.prefabStore ??= new PrefabStore(path.join(this.store.root, PREFAB_DIR)));
+  }
+
+  /** Save an area (squares) of the open battlemap's level on screen as a prefab, with a small picture of it; every editor gets the new list. */
+  async savePrefab(o: { name: string; rect: Rect; replace?: boolean }) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    if (!isBattle(op.session.doc)) throw new Error("Prefabs are saved from battlemaps.");
+    const r = o.rect;
+    if (!r || ![r.x, r.y, r.w, r.h].every((v) => typeof v === "number" && Number.isFinite(v))) throw new Error("A prefab is saved from a rectangle of squares.");
+    if (op.session.inTransaction) op.session.commit();
+    // (everything is copied out of the map here, before the first await)
+    const p = makePrefab(op.session.doc, r, String(o.name ?? ""));
+    if ("error" in p) throw new Error(p.error);
+    // (its picture has half a square of empty floor all round, so walls along its edge show whole)
+    const pdoc = prefabDoc(p, Math.max(8, Math.min(48, Math.floor(320 / (Math.max(p.w, p.h) + 1)))), true);
+    let png: Uint8Array | null = null;
+    try {
+      const { w, h } = battleImageSize(battleSpec(pdoc));
+      png = encodePng({ w, h, data: await this.compute.battle(pdoc, { overlay: true, lights: true, ...(await this.battleAssets(pdoc)).opts }) });
+    } catch { /* (it is still a prefab without its picture) */ }
+    const saved = await this.prefabs.save(p, png, !!o.replace);
+    await this.sendPrefabs();
+    return saved;
+  }
+
+  /** Place a prefab (by id or name) with its top-left corner at (x, y) squares, turned clockwise by quarter turns and mirrored: one edit that Undo takes back. */
+  async placePrefab(o: { prefab: string; x: number; y: number; turn?: number; mirror?: boolean }, author: Author) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    if (!isBattle(op.session.doc)) throw new Error("Prefabs are placed on battlemaps.");
+    if (![o.x, o.y].every((v) => typeof v === "number" && Number.isFinite(v))) throw new Error("A prefab is placed at a square (x, y).");
+    const got = await this.prefabs.get(String(o.prefab ?? ""));
+    if (!got) {
+      const names = (await this.prefabs.list()).prefabs.map((x) => `"${x.name}"`);
+      throw new Error(`There is no prefab "${o.prefab}". ${names.length ? `There are: ${names.slice(0, 20).join(", ")}.` : "None has been saved yet."}`);
+    }
+    if (this.open !== op || !isBattle(op.session.doc)) throw new Error("Another map was opened before the prefab could be placed, so it wasn't. Place it again.");
+    if (op.session.inTransaction) op.session.commit();
+    const turn = ((((Math.round((o.turn ?? 0) / 90) * 90) % 360) + 360) % 360) as PrefabTurn;
+    const r = placePrefab(op.session.doc, got.prefab, o.x, o.y, { turn, mirror: !!o.mirror });
+    if ("error" in r) throw new Error(r.error);
+    const spec = battleSpec(op.session.doc);
+    const res = op.session.execute({
+      op: "patch_heights", rect: r.rect, data: r.data, features: r.patch, ...(r.palette && { meta: { battle: { ...spec, palette: r.palette } } }),
+      label: `Place prefab ${got.prefab.name}${turn ? `, turned ${turn}°` : ""}${o.mirror ? ", mirrored" : ""}`,
+    }, author);
+    return { change: res.seq, prefab: got.prefab.name, ids: r.ids, x: r.x, y: r.y, w: r.w, h: r.h, problems: r.problems };
+  }
+
+  private async sendPrefabs(ws?: WebSocket) {
+    const { prefabs, skipped } = await this.prefabs.list();
+    const msg: ServerMsg = { t: "prefabs", list: prefabs, skipped };
+    if (ws) this.send(ws, msg); else this.broadcast(msg);
+  }
 
   async close() {
     await this.flush();
@@ -1450,6 +1512,31 @@ export class Hub {
           this.send(ws, { t: "carved", lowered: r.lowered, deepestM: r.deepestM, deltaCells: r.deltaCells, checkpoint: "checkpoint" in r ? r.checkpoint : "", scope: r.scope });
           return;
         }
+        case "prefabs_list":
+          return await this.sendPrefabs(ws);
+        case "prefab_save":
+          try {
+            this.send(ws, { t: "prefab_saved", prefab: await this.savePrefab({ name: String(msg.name ?? ""), rect: msg.rect, replace: !!msg.replace }) });
+          } catch (e) {
+            if (!(e instanceof PrefabExists)) throw e;
+            this.send(ws, { t: "prefab_exists", name: String(msg.name ?? ""), rect: msg.rect });
+          }
+          return;
+        case "prefab_place": {
+          const r = await this.placePrefab({ prefab: String(msg.id ?? ""), x: Number(msg.x), y: Number(msg.y), turn: Number(msg.turn) || 0, mirror: !!msg.mirror }, "user");
+          this.send(ws, { t: "prefab_placed", name: r.prefab, ids: r.ids, problems: r.problems });
+          return;
+        }
+        case "prefab_rename":
+          await this.prefabs.rename(String(msg.id ?? ""), String(msg.name ?? ""));
+          return await this.sendPrefabs();
+        case "prefab_remove": {
+          const name = (await this.prefabs.get(String(msg.id ?? "")))?.prefab.name ?? "The prefab";
+          const where = await this.prefabs.remove(String(msg.id ?? ""));
+          await this.sendPrefabs();
+          this.send(ws, { t: "prefab_removed", name, where });
+          return;
+        }
         case "draw_river": {
           const r = this.drawRiver({ points: msg.points, size: msg.size }, "user");
           this.send(ws, { t: "river_drawn", source: r.source, lengthKm: r.lengthKm, end: r.end, deepestM: r.deepestM, reversed: r.reversed });
@@ -1686,6 +1773,16 @@ export class Hub {
       exportBattle: async (format, level, print, gm) => {
         const f = await self.battleExport(format, level, print, gm);
         return { name: f.name, bytes: f.bytes.byteLength, path: await self.store.saveExport(id(), f.name, f.bytes) };
+      },
+      prefabs: {
+        list: () => self.prefabs.list(),
+        save: async (o) => {
+          try { return await self.savePrefab(o); } catch (e) {
+            if (e instanceof PrefabExists) throw new Error(`${e.message} (save_prefab with replace: true replaces it; the DM is asked first.)`);
+            throw e;
+          }
+        },
+        place: (o) => self.placePrefab(o, author),
       },
       levels: {
         list: () => {

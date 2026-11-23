@@ -48,7 +48,7 @@ export type Command =
   | { op: "features"; patch: FeaturesPatch; label?: string }
   | { op: "replace_heights"; data: Float32Array; label?: string }
   /** New heights for one box (`data` is rect.w * rect.h, row by row), with features changed in the same step if given: one undo step for both (a drawn river's channel and its source). */
-  | { op: "patch_heights"; rect: Rect | null; data: Float32Array; features?: FeaturesPatch; meta?: Pick<Partial<MapMeta>, "climate">; label?: string };
+  | { op: "patch_heights"; rect: Rect | null; data: Float32Array; features?: FeaturesPatch; meta?: Pick<Partial<MapMeta>, "climate" | "battle">; label?: string };
 
 export type Author = "user" | "claude" | "system";
 

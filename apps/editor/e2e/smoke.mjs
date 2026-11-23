@@ -974,6 +974,23 @@ try {
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByTestId("battle-summary").getByText(/ 0 objects/).waitFor({ timeout: 10000 });
     await page.getByTestId("prop-mode-one").click();
+    // prefabs: save the wooden room by name, place it again turned a quarter (one undo step), and undo it
+    const wallPieces = async () => Number(/(\d+) wall pieces?/.exec(await page.getByTestId("battle-summary").textContent())?.[1] ?? -1);
+    await page.getByTestId("btool-prefab").click();
+    await page.getByTestId("prefab-mode-save").click();
+    await drag([10, 5], [14, 9]);
+    await page.getByTestId("prefab-name").fill("Wooden room");
+    await page.getByTestId("prefab-save").click();
+    await page.getByTestId("prefab-menu").getByText("Wooden room").waitFor({ timeout: 15000 }); // (saved: back to Place, with it chosen)
+    const piecesBefore = await wallPieces();
+    await page.keyboard.press("e");
+    await click(19, 11);
+    await page.getByTestId("history").getByText("Place prefab Wooden room, turned 90°").waitFor({ timeout: 10000 });
+    await page.screenshot({ path: path.join(shots, "e2e-4e2-prefab.png") });
+    const piecesAfter = await wallPieces();
+    if (!(piecesBefore > 0 && piecesAfter > piecesBefore)) fail(`the prefab brought no walls (${piecesBefore} -> ${piecesAfter})`);
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.waitForFunction((n) => new RegExp(`(^|[^0-9])${n} wall piece`).test(document.querySelector('[data-testid="battle-summary"]')?.textContent ?? ""), piecesBefore, { timeout: 10000 });
     await page.getByTestId("bgrid-hex").click();
     await page.getByTestId("history").getByText("Grid: hex").waitFor({ timeout: 10000 });
     await page.getByTestId("bgrid-square").click();

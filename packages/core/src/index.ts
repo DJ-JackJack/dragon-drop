@@ -79,3 +79,4 @@ export * from "./pdf.ts";
 export * from "./printPlan.ts";
 export * from "./scatter.ts";
 export * from "./secrets.ts";
+export * from "./prefabs.ts";

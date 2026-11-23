@@ -16,6 +16,7 @@ import type { SketchParams } from "./sketch.ts";
 import type { Selection } from "./selection.ts";
 import type { LevelsFile } from "./levels.ts";
 import type { RouteSurvey } from "./measure.ts";
+import type { PrefabInfo } from "./prefabs.ts";
 
 export type WireCommand = Exclude<Command, { op: "replace_heights" | "patch_heights" }>;
 
@@ -93,6 +94,7 @@ export const EDIT_MESSAGES = new Set([
   "checkpoint_save", "checkpoint_restore", "carve_valleys", "draw_river", "route_line", "paint_cells", "sketch_import", "selection",
   "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as",
   "create_city_here", "create_battle_here", "create_battle_from_city", "create_regional", "regional_refresh", "duplicate_project", "chat_send",
+  "prefab_save", "prefab_place",
 ]);
 
 export type ClientMsg =
@@ -132,6 +134,15 @@ export type ClientMsg =
   | { t: "compare_with"; id: string }
   /** The ruler on a world map: survey the route through these points (map px). Answered with `measured` (same `id`), to this editor only. */
   | { t: "measure"; id: number; points: [number, number][] }
+  /** The DM's prefabs (core prefabs.ts): answered with `prefabs`. */
+  | { t: "prefabs_list" }
+  /** Battlemaps: save an area (squares) of the level on screen as a prefab. Answered with `prefab_saved`, or `prefab_exists` when the name is taken (send it again with `replace`). */
+  | { t: "prefab_save"; name: string; rect: Rect; replace?: boolean }
+  /** Battlemaps: place a prefab with its top-left corner at (x, y) squares, turned clockwise (0, 90, 180, 270) and mirrored: one edit. Answered with `prefab_placed`. */
+  | { t: "prefab_place"; id: string; x: number; y: number; turn: number; mirror: boolean }
+  | { t: "prefab_rename"; id: string; name: string }
+  /** Take a prefab out of the list (its files move to Prefabs/Removed): answered with `prefab_removed`. */
+  | { t: "prefab_remove"; id: string }
   /** Lay a road or trail through waypoints (map px), found over the terrain. */
   | { t: "route_line"; kind: "road" | "trail"; points: [number, number][]; name?: string; id?: string }
   /** Turn a reference image into terrain (replaces the whole map; a checkpoint is saved first). */
@@ -225,6 +236,12 @@ export type ServerMsg =
   | { t: "compare"; id: string; name: string; kind: string; rect: Rect | null; how: string[] }
   /** The ruler's route surveyed (the answer to `measure`): null when the open map isn't a world map. */
   | { t: "measured"; id: number; survey: RouteSurvey | null }
+  /** The DM's prefabs, by name (sent to every editor after one is saved, renamed or removed); `skipped` names files that couldn't be read. */
+  | { t: "prefabs"; list: PrefabInfo[]; skipped: string[] }
+  | { t: "prefab_saved"; prefab: PrefabInfo }
+  | { t: "prefab_exists"; name: string; rect: Rect }
+  | { t: "prefab_placed"; name: string; ids: string[]; problems: string[] }
+  | { t: "prefab_removed"; name: string; where: string }
   /** A river was drawn (the answer to `draw_river`): its new source, how long it is, how it ends, the deepest cut through high ground (m), and whether the line was turned round. */
   | { t: "river_drawn"; source: string; lengthKm: number; end: "sea" | "land" | "edge"; deepestM: number; reversed: boolean }
   /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor until answered (`confirm_done`). via: the API chat or an assistant through the map tools. `map`: the name of the map (and level) it is about, which may not be the one on screen. */

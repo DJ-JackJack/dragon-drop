@@ -74,6 +74,14 @@ export interface ToolContext {
    * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.
    */
   exportBattle?(format: BattleExportFormat, level?: string, print?: import("@mapmaker/core").PrintOptions, gm?: boolean): Promise<{ name: string; bytes: number; path: string }>;
+  /** Optional: the DM's prefabs (core prefabs.ts), saved pieces of battlemaps to place again on any battlemap. */
+  prefabs?: {
+    list(): Promise<{ prefabs: import("@mapmaker/core").PrefabInfo[]; skipped: string[] }>;
+    /** Save a rectangle (squares) of the open battlemap's active level. Throws when the name is taken and `replace` isn't set. */
+    save(o: { name: string; rect: Rect; replace?: boolean }): Promise<import("@mapmaker/core").PrefabInfo>;
+    /** Place one by id or name: one edit. */
+    place(o: { prefab: string; x: number; y: number; turn?: number; mirror?: boolean }): Promise<{ change: number; prefab: string; ids: string[]; x: number; y: number; w: number; h: number; problems: string[] }>;
+  };
   /** Optional: the levels of the open battlemap (a cellar under a ground floor under an attic), and the one being worked on. Every other tool works on that level. */
   levels?: {
     /** The levels from the lowest to the highest, each with what is on it. Throws on a world map. */

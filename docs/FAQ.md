@@ -78,6 +78,9 @@ Rivers aren't drawn one by one: they come from the land and the rain, so they ca
 **How do I update?**
 **Settings → Updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
 
+**Can I reuse a room I already built?**
+Yes. On a battlemap, the **Prefab** tool (`C`) saves a rectangle of it by name (floor, walls, doors, objects, lights) and places it again on any battlemap, turned or mirrored.
+
 **Can I keep things secret from my players?**
 Yes. Tick **GM only** on a place, label, road, object, light or a building's name: it shows faintly for you, and exports for players leave it out (you can still export your own copy with everything).
 

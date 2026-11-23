@@ -147,6 +147,11 @@ export function createAppServer(cfg: Config, hub: Hub) {
         }
         return;
       }
+      const pf = url.pathname.match(/^\/api\/prefabs\/([a-z0-9][a-z0-9-]{0,63})\.png$/);
+      if (pf) {
+        const file = hub.prefabs.picture(pf[1]);
+        return file ? sendPicture(res, file) : void res.writeHead(404, { "content-type": "text/plain" }).end("Not found");
+      }
       const up = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/refs$/);
       if (up) return await handleRefUpload(hub, up[1], req, res);
       const m = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/(refs|previews)\/([^/]+)$/);

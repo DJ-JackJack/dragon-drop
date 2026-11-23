@@ -54,8 +54,8 @@ export function ShortcutHelp({ battle, city = false, onClose }: { battle: boolea
           <Row keys={["Enter", "Double-click"]} what="Finish a wall, line or outline" />
           <Row keys={["Backspace"]} what="Remove the last point while drawing; with something selected, delete it" />
           <Row keys={["Delete"]} what="Delete what is selected" />
-          {battle && !city && <Row keys={["Q", "E"]} what="Turn the selected object (or the one you are about to place) 15° left / right" />}
-          {battle && <Row keys={["X"]} what="Flip the selected object (or the one you are about to place)" />}
+          {battle && !city && <Row keys={["Q", "E"]} what="Turn the selected object (or the one you are about to place) 15° left / right; a prefab about to be placed turns a quarter" />}
+          {battle && <Row keys={["X"]} what="Flip the selected object (or the object or prefab you are about to place)" />}
           {battle && <Row keys={["Page Up", "Page Down"]} what="Switch to the level above / below (a battlemap can have several levels: use the Levels panel in the corner of the map)" />}
           {battle && <Row keys={["Shift", "Alt"]} what="Hold either while placing or moving things (for Shift, once the drag has started) to put them anywhere instead of snapping to the grid" />}
         </fieldset>

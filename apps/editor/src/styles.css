@@ -659,3 +659,15 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 /* the ruler's result in the tool bar (measure.ts) */
 .measure-result { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .measure-result b { color: var(--gold-hi); }
+
+/* the Prefab tool's list (PrefabBar.tsx) */
+.prefab-list { width: 420px; max-width: 75vw; display: flex; flex-direction: column; gap: 4px; }
+.prefab-filter { width: 100%; margin-bottom: 4px; }
+.prefab-row { display: flex; align-items: center; gap: 6px; border-radius: 6px; }
+.prefab-row.on { background: rgba(255, 224, 120, 0.12); }
+.prefab-pick { flex: 1; display: flex; align-items: center; gap: 8px; text-align: left; padding: 4px; background: none; border: 1px solid transparent; }
+.prefab-pick:hover { border-color: var(--line); }
+.prefab-pick img, .prefab-nopic { width: 56px; height: 56px; object-fit: contain; background: #16161a; border-radius: 4px; flex: none; }
+.prefab-actions { display: flex; gap: 4px; flex: none; }
+.prefab-actions input { width: 140px; }
+.prefab-none { max-width: 320px; }

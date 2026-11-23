@@ -5,7 +5,7 @@
  */
 import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
-  type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
+  type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, type PrefabInfo, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
   PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize, EDIT_MESSAGES, IMAGE_HEAD_BYTES, imageSize,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
@@ -52,6 +52,11 @@ export interface AppState {
   carving: boolean;
   /** The AI assistant's questions waiting for the DM's OK (tools risky.ts), oldest first, with when each arrived (AskBox.tsx). */
   asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number; map?: string }[];
+  /** The DM's prefabs (core prefabs.ts; null until asked for), the files that couldn't be read, a save waiting for "replace?", and the one saved last. */
+  prefabs: PrefabInfo[] | null;
+  prefabsSkipped: string[];
+  prefabAsk: { name: string; rect: Rect } | null;
+  prefabSaved: { id: string; at: number } | null;
 }
 
 function loadLockPref(): boolean {
@@ -63,6 +68,7 @@ const initial: AppState = {
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false, asks: [],
+  prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null,
 };
 
 /** The most pictures added in one go (a whole folder dropped by mistake shouldn't start hundreds of uploads). */
@@ -153,6 +159,9 @@ class Store {
     if (waiting) { this.pendingDerived = null; queueMicrotask(() => cb(waiting)); }
     return () => { this.derivedListeners.delete(cb); };
   }
+
+  /** The DM chose another name instead of replacing a prefab. */
+  clearPrefabAsk() { this.set({ prefabAsk: null }); }
 
   private set(p: Partial<AppState>) {
     this.state = { ...this.state, ...p };
@@ -361,6 +370,21 @@ class Store {
         break;
       case "measured":
         for (const cb of this.measureListeners) cb(m);
+        break;
+      case "prefabs":
+        this.set({ prefabs: m.list, prefabsSkipped: m.skipped });
+        break;
+      case "prefab_saved":
+        this.set({ prefabAsk: null, prefabSaved: { id: m.prefab.id, at: Date.now() }, pictureNote: { text: `Saved the prefab "${m.prefab.name}" (${m.prefab.what}). Click the map to place it.`, busy: false, at: Date.now(), ms: 7000 } });
+        break;
+      case "prefab_exists":
+        this.set({ prefabAsk: { name: m.name, rect: m.rect } });
+        break;
+      case "prefab_placed":
+        if (m.problems.length) this.set({ pictureNote: { text: `Placed "${m.name}". ${m.problems.join(" ")}`, busy: false, at: Date.now(), ms: 9000 } });
+        break;
+      case "prefab_removed":
+        this.set({ pictureNote: { text: `"${m.name}" is out of the list; its files were moved to ${m.where}.`, busy: false, at: Date.now(), ms: 9000 } });
         break;
       case "duplicated":
         this.set({ pictureNote: { text: `"${m.name}" is a copy of "${m.from}", now open: change it, and compare it with the original from the Map panel. The original is left as it was.`, busy: false, at: Date.now(), ms: 9000 } });

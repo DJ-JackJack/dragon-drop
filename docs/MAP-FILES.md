@@ -23,6 +23,8 @@ projects\<map-name>\
   levels\<id>\              each further level of a battlemap: the same files as above (features.json, map\ and so on). The first level is the map's own files
 ```
 
+**Prefabs** (rooms, buildings and camps you saved with the battlemap's Prefab tool, to place again on any battlemap) are kept beside the maps, in the maps folder's `Prefabs` folder: one `<name>.json` each (its size, floor, walls, objects and lights, plain JSON) and a small `<name>.png` picture of it. **Remove** in the Prefab tool's list moves both files into `Prefabs\Removed`; nothing is erased. To share a prefab, copy its two files into another PC's `Prefabs` folder.
+
 `project.json` and `features.json` are plain JSON. A battlemap can have several levels (a cellar, a ground floor, an attic). The first level is the map exactly as a one-level battlemap is kept, so a map that never gets a second level is stored just as before. Checkpoints hold every level. To read the terrain elsewhere, unzip `height.f32.gz` and read it as a flat array of little-endian `float32` values, `width × height` of them (both are in `project.json`).
 
 ## How your maps are kept safe

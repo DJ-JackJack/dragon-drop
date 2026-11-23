@@ -30,8 +30,9 @@ import { focusBus, viewForBox } from "./focusBus.ts";
 import { MEASURE_HINT, battleLength, measureCtl, useMeasure } from "./measure.ts";
 import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterUi.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
+import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, prefabSpot } from "./PrefabBar.tsx";
 
-export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
+export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof";
 
 export interface BattleUi {
   tool: BattleTool;
@@ -77,6 +78,12 @@ export interface BattleUi {
   roofAsset: string | null;
   /** The light picture new lights take their shape from (null: round). */
   lightGlow: string | null;
+  /** The Prefab tool: placing a saved prefab (which, turned clockwise, mirrored) or saving one (the rectangle dragged, waiting for its name). */
+  prefabMode: "place" | "save";
+  prefab: string | null;
+  prefabTurn: 0 | 90 | 180 | 270;
+  prefabMirror: boolean;
+  prefabDraft: { x: number; y: number; w: number; h: number } | null;
 }
 
 /** The new-wall style the tools put on a wall (nothing for plain stone, so such a wall is stored exactly as walls always were). */
@@ -88,6 +95,7 @@ export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
   wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
+  prefabMode: "place", prefab: null, prefabTurn: 0, prefabMirror: false, prefabDraft: null,
 };
 
 /** The name of a floor material, including pack textures. */
@@ -124,6 +132,7 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   ] },
   { name: "Objects", tools: [
     { id: "prop", label: "Object", key: "P", tip: "Place an object from your asset packs (choose it in the Assets tab)" },
+    { id: "prefab", label: "Prefab", key: "C", tip: "Place a room, building or camp you saved, or save one to place again (Q and E turn it, X mirrors it)" },
   ] },
   { name: "Roofs", tools: [
     { id: "roof", label: "Roof", key: "F", tip: "Drag a rectangle (or a circle or free-form outline) for a roof over this level" },
@@ -700,6 +709,27 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255, 224, 120, 0.9)"; ctx.stroke();
       ctx.restore();
     }
+    // the prefab about to be placed: its picture, turned and mirrored, with its outline
+    else if (o.tool === "prefab" && o.prefabMode === "place" && pointer.current && !drag.current && !spaceRef.current) {
+      const pf = store.getState().prefabs?.find((x) => x.id === o.prefab);
+      if (pf) {
+        const at = prefabSpot(pf, o.prefabTurn, toSq(pointer.current.x, pointer.current.y), spec), img = prefabPicture(pf, requestDraw);
+        const cx = v.ox + (at.x + at.w / 2) * v.scale, cy = v.oy + (at.y + at.h / 2) * v.scale;
+        ctx.save();
+        if (img) {
+          // (the picture has half a square of empty floor all round: only the prefab itself is shown)
+          ctx.save();
+          ctx.beginPath(); ctx.rect(v.ox + at.x * v.scale, v.oy + at.y * v.scale, at.w * v.scale, at.h * v.scale); ctx.clip();
+          ctx.translate(cx, cy); ctx.rotate((o.prefabTurn * Math.PI) / 180); if (o.prefabMirror) ctx.scale(-1, 1);
+          ctx.globalAlpha = 0.7;
+          ctx.drawImage(img, (-(pf.w + 1) * v.scale) / 2, (-(pf.h + 1) * v.scale) / 2, (pf.w + 1) * v.scale, (pf.h + 1) * v.scale);
+          ctx.restore();
+        }
+        ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)";
+        ctx.strokeRect(v.ox + at.x * v.scale, v.oy + at.y * v.scale, at.w * v.scale, at.h * v.scale);
+        ctx.restore();
+      }
+    }
     // the object about to be placed
     else if (o.tool === "prop" && o.asset && pointer.current && !drag.current && !spaceRef.current) {
       const g = toSq(pointer.current.x, pointer.current.y);
@@ -780,6 +810,15 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.fillStyle = "#fff";
       ctx.strokeText(text, v.ox + x0 * v.scale + 4, v.oy + (y0 + h) * v.scale + 5);
       ctx.fillText(text, v.ox + x0 * v.scale + 4, v.oy + (y0 + h) * v.scale + 5);
+      ctx.restore();
+    }
+    // the area being saved as a prefab, while it waits for its name
+    if (o.tool === "prefab" && o.prefabMode === "save" && o.prefabDraft && !drag.current) {
+      const r = o.prefabDraft;
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 224, 120, 0.12)"; ctx.fillRect(v.ox + r.x * v.scale, v.oy + r.y * v.scale, r.w * v.scale, r.h * v.scale);
+      ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)";
+      ctx.strokeRect(v.ox + r.x * v.scale, v.oy + r.y * v.scale, r.w * v.scale, r.h * v.scale);
       ctx.restore();
     }
     // brush cursor
@@ -880,6 +919,10 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         if (selProp) {
           const next = key === "x" ? { ...selProp, flip: !selProp.flip } : { ...selProp, rotation: (((selProp.rotation ?? 0) + (key === "e" ? 15 : -15)) % 360 + 360) % 360 };
           sendFeatures({ upsertProps: [next] }, "Change object");
+        } else if (uiRef.current.tool === "prefab") {
+          const u = uiRef.current;
+          if (key === "x") onUiRef.current({ prefabMirror: !u.prefabMirror });
+          else onUiRef.current({ prefabTurn: ((u.prefabTurn + (key === "e" ? 90 : 270)) % 360) as BattleUi["prefabTurn"] });
         } else if (uiRef.current.tool === "prop") {
           if (key === "x") onUiRef.current({ propFlip: !uiRef.current.propFlip });
           else onUiRef.current({ propRotation: (((uiRef.current.propRotation + (key === "e" ? 15 : -15)) % 360) + 360) % 360 });
@@ -1074,8 +1117,15 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       flash("Stairs, ladders and holes join two levels. Add another level first: use ＋ Level above or ＋ Level below in the Levels panel, top left of the map.");
       return;
     }
-    if (isShapeTool(o.tool) || isConnectorTool(o.tool)) {
+    if (isShapeTool(o.tool) || isConnectorTool(o.tool) || (o.tool === "prefab" && o.prefabMode === "save")) {
       drag.current = { mode: "rect", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
+      return;
+    }
+    if (o.tool === "prefab") {
+      const pf = store.getState().prefabs?.find((x) => x.id === o.prefab);
+      if (!pf) { flash("Choose a prefab in the bar above first (or choose Save and drag over something to keep)."); return; }
+      const at = prefabSpot(pf, o.prefabTurn, q, spec);
+      store.send({ t: "prefab_place", id: pf.id, x: at.x, y: at.y, turn: o.prefabTurn, mirror: o.prefabMirror });
       return;
     }
     if (o.tool === "wall" || o.tool === "invisible" || o.tool === "path") {
@@ -1251,6 +1301,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
           const [dw, dh] = o.tool === "stairs" ? [1, 2] : [1, 1];
           placeConnector(o.tool, Math.min(spec.squaresX - dw, Math.max(0, Math.floor(d.ax))), Math.min(spec.squaresY - dh, Math.max(0, Math.floor(d.ay))), dw, dh);
         }
+      } else if (o.tool === "prefab") {
+        if (w >= 1 && h >= 1) onUiRef.current({ prefabDraft: { x: x0, y: y0, w, h } });
       } else if (w >= 1 && h >= 1 && o.tool === "roof") makeRoof([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
       else if (w >= 1 && h >= 1 && o.tool === "zone") makeZone([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
       else if (w >= 1 && h >= 1) {
@@ -1531,13 +1583,14 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
   const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
   const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
+    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : ui.tool === "prefab" ? (ui.prefabMode === "save" ? PREFAB_HINT_SAVE : PREFAB_HINT_PLACE) : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "measure" && (
         <span className="measure-result" data-testid="measure-result">
           {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5)}</b>}
           {ms.points.length > 2 && <span className="muted"> · {ms.points.length - 1} legs</span>}
         </span>
       )}
+      {ui.tool === "prefab" && <PrefabToolBar ui={ui} onUi={onUi} />}
       {ui.tool === "roof" && (
         <>
           <label className="field">New roofs look like

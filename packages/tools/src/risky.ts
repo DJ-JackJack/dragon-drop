@@ -20,6 +20,8 @@ export const RISKY_TOOLS = new Set([
   "remove_props", "remove_walls", "remove_lights", "remove_light_zones", "remove_notes", "remove_land", "remove_trees", "remove_connectors", "remove_roofs", "remove_paths",
   // renaming a named thing replaces the DM's canon as surely as removing it (added 2026-11-22)
   "update_place", "update_label", "update_climate_region", "name_water", "update_city_labels", "update_city_districts",
+  // a prefab is the DM's own work, like a map (added 2026-11-23)
+  "save_prefab",
 ]);
 
 /** Renaming `from` to `to` (both names): the question, or null when the name stays (or there was none). */
@@ -62,6 +64,11 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
   let f: Features;
   try { f = ctx.session().doc.features ?? { places: [], labels: [] }; } catch { return null; } // (no map open: the tool says so itself)
   const ids = Array.isArray(i.ids) ? (i.ids as string[]) : [];
+  if (name === "save_prefab") {
+    if (i.replace !== true || typeof i.name !== "string" || !ctx.prefabs) return null;
+    const k = i.name.trim().toLowerCase(), had = (await ctx.prefabs.list()).prefabs.find((p) => p.name.toLowerCase() === k);
+    return had ? `Replace the saved prefab ${q(had.name)} (${had.what}) with this area` : null;
+  }
   switch (name) {
     case "generate_terrain":
       return i.replace_existing && hasLand(ctx) ? `Replace all the land on this map with newly generated terrain (${String(i.template)})` : null;
