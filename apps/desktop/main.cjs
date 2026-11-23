@@ -9,7 +9,7 @@
  * Run `node scripts/prepare.mjs` first; then `npx electron .` for a development run, or
  * `npm run dist` to build the Windows installer.
  */
-const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell, utilityProcess } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, screen, shell, utilityProcess } = require("electron");
 const { execFileSync, spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -314,6 +314,30 @@ function createWindow() {
     });
   }
   win.on("closed", () => { win = null; });
+}
+
+/**
+ * The player screen (the editor's PlayerScreen.tsx): a window of its own for a TV or a second monitor, showing the open battlemap as the players see it. It has no
+ * bridge to this process (no preload), the same sandbox and the same limits as the main window, and opens full screen on a second display when there is one.
+ */
+let playerWin = null;
+function openPlayerWindow() {
+  if (playerWin && !playerWin.isDestroyed()) { playerWin.show(); playerWin.focus(); return { ok: true, display: "same" }; }
+  const primary = screen.getPrimaryDisplay(), other = screen.getAllDisplays().find((d) => d.id !== primary.id);
+  const area = (other ?? primary).workArea;
+  playerWin = new BrowserWindow({
+    x: area.x + (other ? 0 : 60), y: area.y + (other ? 0 : 60), width: other ? area.width : Math.min(1280, area.width - 120), height: other ? area.height : Math.min(760, area.height - 120),
+    backgroundColor: "#000000", title: `${APP_NAME}: player screen`, icon: iconPath, autoHideMenuBar: true, fullscreen: !!other && !SMOKE, show: !SMOKE,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false, devTools: !app.isPackaged },
+  });
+  playerWin.setMenuBarVisibility(false);
+  playerWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const keepLocal = (e, url) => { if (!url.startsWith(`${editorOrigin()}/`)) e.preventDefault(); };
+  playerWin.webContents.on("will-navigate", keepLocal);
+  playerWin.webContents.on("will-redirect", keepLocal);
+  playerWin.loadURL(`${editorOrigin()}/?player=1`);
+  playerWin.on("closed", () => { playerWin = null; });
+  return { ok: true, display: other ? "second" : "same" };
 }
 
 function buildMenu() {
@@ -785,6 +809,11 @@ ipcMain.handle("dd:clear-assets", async (e) => {
 });
 ipcMain.handle("dd:open-projects", (e) => { if (fromEditor(e)) void shell.openPath(settings.projectsDir); });
 // a map's backups folder (copies kept before a migration, removed pictures), or the map's own folder while it has none; only inside the maps folder
+ipcMain.handle("dd:open-player-screen", (e) => {
+  if (!fromEditor(e)) return { ok: false };
+  return openPlayerWindow();
+});
+
 ipcMain.handle("dd:open-backups", (e, id) => {
   if (!fromEditor(e) || typeof id !== "string" || !/^[a-z0-9-]{1,80}$/.test(id)) return { ok: false, opened: null };
   const dir = path.join(settings.projectsDir, id);
@@ -926,6 +955,16 @@ async function smokeTest() {
         await win.webContents.executeJavaScript(`window.open("about:blank") && 1`).catch(() => {});
         await new Promise((r) => setTimeout(r, 600));
         if (BrowserWindow.getAllWindows().length !== windows) return fatal("the editor page could open a new window");
+        // the player screen: a window of its own, sandboxed, with no bridge to this process, showing the player page (and nothing of the editor)
+        const opened = await win.webContents.executeJavaScript("window.dragonDrop.openPlayerScreen()").catch(() => null);
+        if (!opened || !opened.ok || !playerWin) return fatal("the player screen didn't open");
+        let pscreen = null;
+        for (let k = 0; k < 60 && !(pscreen && pscreen.screen); k++) {
+          await new Promise((r) => setTimeout(r, 250));
+          pscreen = await playerWin.webContents.executeJavaScript(`({ req: typeof require, proc: typeof process, bridge: typeof window.dragonDrop, screen: !!document.querySelector('[data-testid="player-screen"]'), editor: !!document.querySelector('[data-testid="battle-canvas"], .toolrail') })`).catch(() => null);
+        }
+        if (!pscreen || !pscreen.screen || pscreen.editor || pscreen.req !== "undefined" || pscreen.proc !== "undefined" || pscreen.bridge !== "undefined") return fatal(`the player screen isn't the sandboxed player page (${JSON.stringify(pscreen)})`);
+        playerWin.close();
         // the server wants its access key: without it the API and the map tools are refused, with it they answer, and the window has its cookie
         const bare = await fetch(`http://127.0.0.1:${port}/api/health`).catch(() => null);
         if (!bare || bare.status !== 401) return fatal(`the server answered a request with no access key (${bare ? bare.status : "no answer"})`);

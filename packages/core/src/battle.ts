@@ -39,6 +39,8 @@ export interface BattleSpec {
   ambient?: number;
   /** "#rrggbb": the colour of the ambient light where no light reaches (dawn pink, dusk orange, night blue). Only shows when the map is dimmed. */
   ambientTint?: string;
+  /** The player screen hides what the DM hasn't revealed (features.reveals, fog.ts). */
+  fog?: boolean;
 }
 
 /** Named light levels for the ambient setting. */

@@ -15,6 +15,7 @@ import { LEVEL_TOOLS } from "./levelTools.ts";
 import { ROOF_TOOLS } from "./roofTools.ts";
 import { PREFAB_TOOLS } from "./prefabTools.ts";
 import { GENERATOR_TOOLS } from "./generatorTools.ts";
+import { REVEAL_TOOLS } from "./revealTools.ts";
 import { PATH_TOOLS } from "./pathTools.ts";
 import { traceOverlay } from "./traceTools.ts";
 
@@ -657,6 +658,7 @@ export const BATTLE_TOOLS = [
   ...PATH_TOOLS,
   ...PREFAB_TOOLS,
   GENERATOR_TOOLS[0],
+  ...REVEAL_TOOLS,
 ] as const;
 
 /** A labelled square grid on a battlemap preview: a line every square, numbered every 5 (or 10 on big crops). */

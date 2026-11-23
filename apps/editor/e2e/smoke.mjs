@@ -1001,6 +1001,36 @@ try {
     await page.screenshot({ path: path.join(shots, "e2e-4e3-cave.png") });
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.waitForFunction((t) => document.querySelector('[data-testid="battle-summary"]')?.textContent === t, summaryBefore, { timeout: 10000 });
+    // the player screen: the Reveal tool shows the players the wooden room (the fog comes on with it), and the player screen's own page draws the map
+    await page.getByTestId("btool-reveal").click();
+    await click(12, 7);
+    await page.getByTestId("history").getByText("Reveal what can be seen from a spot").first().waitFor({ timeout: 10000 });
+    if (!(await page.getByTestId("fog-on").first().isChecked())) fail("revealing should turn the fog on");
+    // (a page of its own, as the player screen's window is: the access key once, then the player screen)
+    const playerContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const players = await playerContext.newPage();
+    await players.goto(`http://localhost:${port}/?t=${key}`);
+    const pictureLoaded = players.waitForResponse((r) => r.url().includes("/api/player.jpg") && r.status() === 200, { timeout: 30000 });
+    await players.goto(`http://localhost:${port}/?player=1`);
+    await players.getByTestId("player-screen").waitFor({ timeout: 15000 });
+    await pictureLoaded;
+    await players.waitForTimeout(800);
+    const lit = await players.evaluate(() => {
+      const c = document.querySelector('[data-testid="player-canvas"]');
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4 * 97) if (d[i] + d[i + 1] + d[i + 2] > 60) n++;
+      return n / (d.length / (4 * 97));
+    });
+    // (the wooden room shows; most of the map stays black)
+    if (!(lit > 0.003 && lit < 0.5)) fail(`the player screen should show the revealed room and little else (lit share ${lit})`);
+    if (await players.locator(".toolrail, [data-testid='battle-canvas']").count()) fail("the player screen shows the editor");
+    await players.screenshot({ path: path.join(shots, "e2e-4e4-player-screen.png") });
+    await playerContext.close();
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("history").getByText("Reveal what can be seen from a spot").first().waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
+    await page.getByTestId("btool-select").click();
     await page.getByTestId("bgrid-hex").click();
     await page.getByTestId("history").getByText("Grid: hex").waitFor({ timeout: 10000 });
     await page.getByTestId("bgrid-square").click();

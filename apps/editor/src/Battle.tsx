@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, type MapReveal, revealFrom, rectPoints, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -32,8 +32,9 @@ import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterU
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, prefabSpot } from "./PrefabBar.tsx";
 import { GenerateBox } from "./GenerateBox.tsx";
+import { drawFog, drawRevealOutlines, openPlayerScreen } from "./fogDraw.ts";
 
-export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof";
+export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof" | "reveal";
 
 export interface BattleUi {
   tool: BattleTool;
@@ -85,6 +86,8 @@ export interface BattleUi {
   prefabTurn: 0 | 90 | 180 | 270;
   prefabMirror: boolean;
   prefabDraft: { x: number; y: number; w: number; h: number } | null;
+  /** The Reveal tool (player screen): a click reveals what can be seen from that spot, a drag reveals an area or hides one again. */
+  revealMode: "spot" | "area" | "hide";
 }
 
 /** The new-wall style the tools put on a wall (nothing for plain stone, so such a wall is stored exactly as walls always were). */
@@ -96,7 +99,7 @@ export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
   wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
-  prefabMode: "place", prefab: null, prefabTurn: 0, prefabMirror: false, prefabDraft: null,
+  prefabMode: "place", prefab: null, prefabTurn: 0, prefabMirror: false, prefabDraft: null, revealMode: "spot",
 };
 
 /** The name of a floor material, including pack textures. */
@@ -138,6 +141,9 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   { name: "Roofs", tools: [
     { id: "roof", label: "Roof", key: "F", tip: "Drag a rectangle (or a circle or free-form outline) for a roof over this level" },
   ] },
+  { name: "Play", tools: [
+    { id: "reveal", label: "Reveal", key: "", tip: "For the player screen: click a room to show the players what can be seen from there, or drag an area to reveal or hide (no key)" },
+  ] },
   { name: "Between levels", tools: [
     { id: "stairs", label: "Stairs", key: "T", tip: "Drag a rectangle (or click) for stairs to the level above or below" },
     { id: "ladder", label: "Ladder", key: "J", tip: "Drag a rectangle (or click) for a ladder to the level above or below" },
@@ -146,6 +152,11 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
 ];
 export const BATTLE_TOOLS = BATTLE_TOOL_GROUPS.flatMap((g) => g.tools);
 
+const REVEAL_HINTS: Record<BattleUi["revealMode"], string> = {
+  spot: "For the player screen: click where the party stands to show what can be seen from there (walls and closed doors block the view, so a click in a room shows the room). The first reveal turns the fog on; Undo takes one back.",
+  area: "For the player screen: drag a rectangle to show it to the players.",
+  hide: "For the player screen: drag a rectangle to hide it from the players again.",
+};
 const SCATTER_HINT = "Drag over the map to strew the chosen object under the brush: each is sized and turned a little differently, never closer than the spacing (nor to objects already there). Letting go makes it one undo step. Size and Layer below apply too.";
 export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   pan: "Drag to move the map. Hold Space, or drag with the right button, to move it with any tool. + and - zoom.",
@@ -206,6 +217,9 @@ interface ViewProps {
 
 const BAND = 96;
 
+/** The part of the battlemap on screen now, in squares (the Map panel's "Show my view" for the player screen); set by the view while it is shown. */
+let viewRectNow: () => { x: number; y: number; w: number; h: number } | null = () => null;
+
 export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -263,6 +277,22 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   /** Pack floor textures by asset id, as 512 px RGBA. */
   const tiles = useRef(new Map<string, Uint8ClampedArray | "loading" | "failed">());
 
+  /** Reveal (or hide) an area for the player screen; the first reveal turns the fog on, as its own step. */
+  const reveal = (r: MapReveal, label: string) => {
+    const spec = metaRef.current?.battle;
+    if (spec && !spec.fog) store.send({ t: "cmd", cmd: { op: "set_meta", patch: { battle: { ...spec, fog: true } } }, label: "Fog on for the player screen" });
+    sendFeatures({ upsertReveals: [r] }, label);
+  };
+  useEffect(() => {
+    viewRectNow = () => {
+      const wrap = wrapRef.current, v = viewRef.current, spec = metaRef.current?.battle;
+      if (!wrap || !spec) return null;
+      const x0 = Math.max(0, -v.ox / v.scale), y0 = Math.max(0, -v.oy / v.scale);
+      const x1 = Math.min(spec.squaresX, (wrap.clientWidth - v.ox) / v.scale), y1 = Math.min(spec.squaresY, (wrap.clientHeight - v.oy) / v.scale);
+      return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+    };
+    return () => { viewRectNow = () => null; };
+  }, []);
   const flash = (t: string) => {
     setNote(t);
     window.clearTimeout(noteTimer.current);
@@ -694,6 +724,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.restore();
     }
     // another map being compared with this one, over it (compare.ts)
+    // the player screen's fog, faintly: what the players can't see (and the reveals' outlines while revealing)
+    if (spec.fog) drawFog(ctx, f.reveals, v, W, H, o.tool === "reveal" ? 0.55 : 0.35, Math.max(2, v.scale * 0.15));
+    if (o.tool === "reveal") drawRevealOutlines(ctx, f.reveals, v);
     compareCtl.draw(ctx, m.id, v, W, H);
     const mq = drag.current;
     if (mq?.mode === "marquee" && pointer.current) {
@@ -1118,7 +1151,12 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       flash("Stairs, ladders and holes join two levels. Add another level first: use ＋ Level above or ＋ Level below in the Levels panel, top left of the map.");
       return;
     }
-    if (isShapeTool(o.tool) || isConnectorTool(o.tool) || (o.tool === "prefab" && o.prefabMode === "save")) {
+    if (o.tool === "reveal" && o.revealMode === "spot") {
+      const pts = revealFrom(featRef.current.walls, q.x, q.y, Math.max(spec.squaresX, spec.squaresY) * 1.5);
+      if (pts.length >= 3) reveal({ id: newFeatureId("v"), points: pts }, "Reveal what can be seen from a spot");
+      return;
+    }
+    if (isShapeTool(o.tool) || isConnectorTool(o.tool) || (o.tool === "prefab" && o.prefabMode === "save") || o.tool === "reveal") {
       drag.current = { mode: "rect", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
       return;
     }
@@ -1304,6 +1342,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         }
       } else if (o.tool === "prefab") {
         if (w >= 1 && h >= 1) onUiRef.current({ prefabDraft: { x: x0, y: y0, w, h } });
+      } else if (o.tool === "reveal") {
+        const hide = o.revealMode === "hide";
+        if (w >= 1 && h >= 1) reveal({ id: newFeatureId("v"), points: rectPoints(x0, y0, w, h), ...(hide && { hide: true }) }, hide ? `Hide an area (${w}×${h})` : `Reveal an area (${w}×${h})`);
       } else if (w >= 1 && h >= 1 && o.tool === "roof") makeRoof([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
       else if (w >= 1 && h >= 1 && o.tool === "zone") makeZone([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
       else if (w >= 1 && h >= 1) {
@@ -1584,7 +1625,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
   const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
   const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : ui.tool === "prefab" ? (ui.prefabMode === "save" ? PREFAB_HINT_SAVE : PREFAB_HINT_PLACE) : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
+    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : ui.tool === "prefab" ? (ui.prefabMode === "save" ? PREFAB_HINT_SAVE : PREFAB_HINT_PLACE) : ui.tool === "reveal" ? REVEAL_HINTS[ui.revealMode] : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "measure" && (
         <span className="measure-result" data-testid="measure-result">
           {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5)}</b>}
@@ -1592,6 +1633,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
         </span>
       )}
       {ui.tool === "prefab" && <PrefabToolBar ui={ui} onUi={onUi} />}
+      {ui.tool === "reveal" && <RevealToolBar ui={ui} onUi={onUi} meta={meta} />}
       {ui.tool === "roof" && (
         <>
           <label className="field">New roofs look like
@@ -2188,6 +2230,36 @@ function LightEditor({ l, onClear }: { l: MapLight; onClear: () => void }) {
 }
 
 /** How bright the map is where no light reaches: a preset (Bright, Dawn, Dusk, Dim, Night, Dark) or anything between, and its colour. */
+/** The Reveal tool's settings: how it reveals, the fog, and the player screen itself. */
+function RevealToolBar({ ui, onUi, meta }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void; meta: MapMeta | null }) {
+  const spec = meta?.battle;
+  const reveals = useSyncExternalStore(store.subscribe, () => store.getState().features.reveals);
+  if (!spec) return null;
+  return (
+    <>
+      <div className="seg" role="group" aria-label="How to reveal">
+        <button className={ui.revealMode === "spot" ? "on" : ""} onClick={() => onUi({ revealMode: "spot" })} title="Click a spot: what can be seen from there is revealed (walls and closed doors block it)" data-testid="reveal-spot">From a spot</button>
+        <button className={ui.revealMode === "area" ? "on" : ""} onClick={() => onUi({ revealMode: "area" })} title="Drag a rectangle to reveal it" data-testid="reveal-area">Area</button>
+        <button className={ui.revealMode === "hide" ? "on" : ""} onClick={() => onUi({ revealMode: "hide" })} title="Drag a rectangle to hide it again" data-testid="reveal-hide">Hide area</button>
+      </div>
+      <FogSwitch spec={spec} />
+      <button onClick={() => store.send({ t: "cmd", cmd: { op: "features", patch: { removeReveals: ["*"] } }, label: "Hide everything from the players" })} disabled={!reveals?.length} data-testid="reveal-reset">Hide everything</button>
+      <button onClick={() => void openPlayerScreen()} title="A window for the TV or a second screen (double-click it for full screen)" data-testid="open-player-screen">Player screen ↗</button>
+    </>
+  );
+}
+
+/** Fog on or off for the player screen (this level). */
+function FogSwitch({ spec }: { spec: BattleSpec }) {
+  return (
+    <label className="check" title="With the fog on, the player screen shows only what you reveal">
+      <input type="checkbox" checked={!!spec.fog} data-testid="fog-on"
+        onChange={(e) => { const { fog: _f, ...rest } = spec; store.send({ t: "cmd", cmd: { op: "set_meta", patch: { battle: e.target.checked ? { ...rest, fog: true } : rest } }, label: e.target.checked ? "Fog on for the player screen" : "Fog off for the player screen" }); }} />
+      Fog (players see only what you reveal)
+    </label>
+  );
+}
+
 function LightLevel({ spec }: { spec: BattleSpec }) {
   const cur = ambientOf(spec);
   const [v, setV] = useState(cur);
@@ -2253,6 +2325,14 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <p className="muted">The grid type goes into exports (Foundry and Universal VTT draw their own grid).</p>
       <h3>Light level</h3>
       <LightLevel spec={spec} />
+      <h3>Player screen</h3>
+      <p className="muted">A window for a TV or second screen at the table: this level with its lights, without what is GM only. With the fog on it shows only what you reveal with the Reveal tool.</p>
+      <div className="row">
+        <button onClick={() => void openPlayerScreen()} data-testid="player-screen-open">Open the player screen ↗</button>
+        <button onClick={() => store.send({ t: "player_view", rect: viewRectNow() })} title="The player screen shows the part of the map you are looking at now" data-testid="player-view-mine">Show my view</button>
+        <button onClick={() => store.send({ t: "player_view", rect: null })} title="The player screen shows the whole map" data-testid="player-view-all">Whole map</button>
+      </div>
+      <FogSwitch spec={spec} />
       <GenerateBox kind="battle" hasContent={walls.length > 0 || (features.lights ?? []).length > 0 || !!store.heights?.data.some((v) => v !== 0)} />
       <h3>Layers</h3>
       <label className="check eye"><input type="checkbox" checked={ui.showGrid} onChange={(e) => onUi({ showGrid: e.target.checked })} /> The grid (G)</label>

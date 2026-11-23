@@ -164,6 +164,46 @@ export class Hub {
 
   constructor(readonly store: ProjectStore, private modelCall: ModelCall | null, private compute: MapCompute = new WorkerCompute(), private opts: HubOptions = {}) {}
 
+  /** What the player screen shows (in memory only): a part of the battlemap the DM chose, in squares, or all of it. */
+  private playerRect: { x: number; y: number; w: number; h: number } | null = null;
+  /** The players' picture of the battlemap level on screen, and what it was made from (the map, level and change). */
+  private playerPic: { key: string; jpeg: Uint8Array } | null = null;
+  private playerPicWork: { key: string; done: Promise<Uint8Array> } | null = null;
+
+  /**
+   * The open battlemap's level on screen as the players see it on the player screen: lights and darkness on; GM-only things, the numbered notes and the secret doors'
+   * marks left out (core playerView, dmMarks); no roofs. A JPEG, made once per change (several screens share it). Null when the open map isn't a battlemap.
+   * The fog is not in it: the player screen draws that itself from the reveals, so revealing needs no new picture.
+   */
+  async playerPicture(): Promise<Uint8Array | null> {
+    const op = this.open;
+    if (!op || !isBattle(op.session.doc)) return null;
+    const session = op.session, f = session.doc.features;
+    // (a change of what is revealed only doesn't change the picture)
+    const { reveals: _r, ...shown } = f ?? { places: [], labels: [] };
+    const { fog: _fog, ...look } = session.doc.meta.battle ?? ({} as Partial<import("@mapmaker/core").BattleSpec>);
+    const key = `${op.id}:${op.levels.active}:${JSON.stringify(look)}:${textHash(JSON.stringify(shown))}:${heightsSum(session.doc.height.data)}`;
+    if (this.playerPic?.key === key) return this.playerPic.jpeg;
+    if (this.playerPicWork?.key === key) return this.playerPicWork.done;
+    const spec = battleSpec(session.doc);
+    const pps = Math.max(16, Math.min(spec.pxPerSquare, 100, Math.floor(Math.sqrt(12e6 / (spec.squaresX * spec.squaresY)))));
+    const doc: MapDoc = { ...session.doc, meta: { ...session.doc.meta, battle: { ...spec, pxPerSquare: pps } }, ...(f && { features: playerView(shown as typeof f) }) };
+    const done = (async () => {
+      const assets = await this.battleAssets(doc);
+      const { w, h } = battleImageSize(battleSpec(doc));
+      const data = await this.compute.battle(doc, { overlay: true, lights: true, dmMarks: false, ...assets.opts });
+      return encodeJpeg({ w, h, data }, 88, 20_000_000);
+    })();
+    this.playerPicWork = { key, done };
+    try {
+      const jpeg = await done;
+      this.playerPic = { key, jpeg };
+      return jpeg;
+    } finally {
+      if (this.playerPicWork?.key === key) this.playerPicWork = null;
+    }
+  }
+
   private prefabStore: PrefabStore | null = null;
   /** The DM's prefabs, in the maps folder's Prefabs folder (core prefabs.ts, ./prefabs.ts). */
   get prefabs(): PrefabStore {
@@ -325,6 +365,8 @@ export class Hub {
   async openProject(id: string): Promise<void> {
     const run = async () => {
       if (this.open?.id === id) return;
+      // (the player screen shows the whole of the next map until the DM chooses a part of it)
+      if (this.playerRect) { this.playerRect = null; this.broadcast({ t: "player_view", rect: null }); }
       if (!(await this.store.exists(id))) throw new Error(`No project "${id}".`);
       await this.flush();
       const doc = await this.store.load(id);
@@ -1486,6 +1528,7 @@ export class Hub {
       switch (msg.t) {
         case "hello":
           await this.sendProject(ws);
+          this.send(ws, { t: "player_view", rect: this.playerRect });
           for (const a of this.asks.values()) this.send(ws, a.msg); // a question still open shows on a page opened since
           return;
         case "confirm_answer":
@@ -1552,6 +1595,12 @@ export class Hub {
         }
         case "prefabs_list":
           return await this.sendPrefabs(ws);
+        case "player_view": {
+          const r = msg.rect;
+          this.playerRect = r && [r.x, r.y, r.w, r.h].every((v) => typeof v === "number" && Number.isFinite(v)) && r.w > 0 && r.h > 0 ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
+          this.broadcast({ t: "player_view", rect: this.playerRect });
+          return;
+        }
         case "generate": {
           const req = cleanGenerateRequest(msg.req);
           if (!req) throw new Error("That generator isn't known.");
@@ -2087,4 +2136,18 @@ export class Hub {
     this.broadcast({ t: "projects", projects: this.projectsCache });
     return { name: info.name, folder };
   }
+}
+
+/** A quick fingerprint of a text (the players' picture's key). */
+function textHash(t: string): number {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (Math.imul(h, 31) + t.charCodeAt(i)) | 0;
+  return h;
+}
+
+/** A quick fingerprint of a battlemap level's floor (material ids), so the players' picture is made again when the floor changes. */
+function heightsSum(d: Float32Array): number {
+  let h = 0;
+  for (let i = 0; i < d.length; i += 1) h = (h * 31 + d[i] * (1 + (i % 7))) % 1_000_000_007;
+  return h;
 }

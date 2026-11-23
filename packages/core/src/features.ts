@@ -169,6 +169,13 @@ export interface MapNote {
   text?: string;
 }
 
+/** A part of a battlemap level revealed to the players on the player screen, or (`hide`) covered again: a polygon in squares, applied in order (fog.ts). */
+export interface MapReveal {
+  id: string;
+  points: [number, number][];
+  hide?: boolean;
+}
+
 /** An area with its own light level, e.g. a roofed building that is dimmer than the open air around it. Grid squares. */
 export interface MapAmbientZone {
   id: string;
@@ -443,6 +450,8 @@ export interface Features {
   notes?: MapNote[];
   /** Battlemaps: areas with their own light level. */
   zones?: MapAmbientZone[];
+  /** What the players have been shown on the player screen (fog.ts), in order. */
+  reveals?: MapReveal[];
   /** Battlemaps: stairs, ladders and holes between levels. */
   connectors?: MapConnector[];
   /** Battlemaps: roofs over this level. */
@@ -494,6 +503,9 @@ export interface FeaturesPatch {
   removeNotes?: string[];
   upsertZones?: MapAmbientZone[];
   removeZones?: string[];
+  /** Reveals are added at the end (their order matters); `removeReveals: ["*"]` takes every one away. */
+  upsertReveals?: MapReveal[];
+  removeReveals?: string[];
   upsertConnectors?: MapConnector[];
   removeConnectors?: string[];
   upsertRoofs?: MapRoof[];
@@ -576,6 +588,13 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const id of p.removeNotes ?? []) notes.delete(id);
     for (const x of p.upsertNotes ?? []) notes.set(x.id, x);
     out.notes = [...notes.values()];
+  }
+  if (f.reveals || p.upsertReveals || p.removeReveals) {
+    const all = p.removeReveals?.includes("*");
+    const reveals = new Map(all ? [] : (f.reveals ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeReveals ?? []) reveals.delete(id);
+    for (const x of p.upsertReveals ?? []) reveals.set(x.id, x);
+    out.reveals = [...reveals.values()];
   }
   if (f.zones || p.upsertZones || p.removeZones) {
     const zones = new Map((f.zones ?? []).map((x) => [x.id, x]));

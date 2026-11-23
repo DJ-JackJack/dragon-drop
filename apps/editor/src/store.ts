@@ -59,6 +59,8 @@ export interface AppState {
   prefabSaved: { id: string; at: number } | null;
   /** The Generate box (GenerateBox.tsx): what was asked for or made last, its seed, and whether it is still being made. */
   generated: { what: GenerateRequest["what"]; seed: number; summary: string; busy: boolean } | null;
+  /** What the player screen shows: a part of the battlemap the DM chose (squares), or all of it (null). */
+  playerRect: { x: number; y: number; w: number; h: number } | null;
 }
 
 function loadLockPref(): boolean {
@@ -70,7 +72,7 @@ const initial: AppState = {
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false, asks: [],
-  prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null,
+  prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null, playerRect: null,
 };
 
 /** The most pictures added in one go (a whole folder dropped by mistake shouldn't start hundreds of uploads). */
@@ -381,6 +383,9 @@ class Store {
         break;
       case "prefabs":
         this.set({ prefabs: m.list, prefabsSkipped: m.skipped });
+        break;
+      case "player_view":
+        this.set({ playerRect: m.rect });
         break;
       case "generated":
         this.set({ generated: { what: m.what, seed: m.seed, summary: m.summary, busy: false }, pictureNote: { text: `Made ${m.summary} (seed ${m.seed}: the same seed makes it again). Undo takes it back.`, busy: false, at: Date.now(), ms: 9000 } });

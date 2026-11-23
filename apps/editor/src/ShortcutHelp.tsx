@@ -63,7 +63,7 @@ export function ShortcutHelp({ battle, city = false, onClose }: { battle: boolea
         <fieldset>
           <legend>Tools</legend>
           <div className="toolkeys">
-            {tools.map((t) => (
+            {tools.filter((t) => t.key).map((t) => (
               <span key={t.id} className="toolkey"><Key>{t.key}</Key> {t.label}</span>
             ))}
           </div>

@@ -126,6 +126,13 @@ export function createAppServer(cfg: Config, hub: Hub) {
         }
         return;
       }
+      // the player screen's picture: the open battlemap's level on screen as the players see it (Hub.playerPicture)
+      if (url.pathname === "/api/player.jpg") {
+        const jpeg = await hub.playerPicture();
+        if (!jpeg) return void res.writeHead(404, { "content-type": "text/plain" }).end("No battlemap is open");
+        res.writeHead(200, { "content-type": "image/jpeg", "content-length": jpeg.byteLength, "cache-control": "no-store" }).end(jpeg);
+        return;
+      }
       // one level of the open battlemap as a picture (the editor shows the level below faintly under the one being worked on)
       const lv = url.pathname.match(/^\/api\/projects\/([a-z0-9-]+)\/levels\/([a-z0-9-]+)\/picture\.png$/);
       if (lv) {

@@ -30,7 +30,9 @@ every time (`apps/desktop/scripts/check-fuses.mjs`, in the workflow's "List what
 
 - **The window**: sandboxed, context isolation on, no Node in the page; it can't leave `http://localhost:<port>/` (other links open in the
   browser, and only `http(s)` ones); pop-ups are refused; every permission request (camera, microphone, location, notifications...) is refused
-  but clipboard writing and full screen.
+  but clipboard writing and full screen. The **player screen** (2026-11-23, `openPlayerWindow`) is a second window with the same sandbox, isolation,
+  navigation rule and pop-up refusal, and **no preload at all**, so it has no bridge; it shows the player page only (`/?player=1`), which edits
+  nothing. The smoke test opens it and checks that it is the sandboxed player page with no Node and no bridge.
 - **The bridge** (`preload.cjs` → `ipcMain`): every handler checks that the call comes from the editor's own address (`fromEditor`), and the
   inputs are checked: a map id against a pattern before opening its backups folder, the API
   key's length, the start command's length and control characters. Folders are chosen in Windows' own dialog, never from the page.

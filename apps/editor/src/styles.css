@@ -674,3 +674,9 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 
 /* the Map panel's Generate box (GenerateBox.tsx) */
 .gen-box .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* the player screen (PlayerScreen.tsx): the map and nothing else */
+.player-screen { position: fixed; inset: 0; background: #000; overflow: hidden; }
+.player-screen canvas { display: block; width: 100%; height: 100%; }
+.player-screen.idle { cursor: none; }
+.player-wait { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.35); font: 600 18px system-ui, sans-serif; letter-spacing: 0.04em; }

@@ -137,6 +137,8 @@ export type ClientMsg =
   | { t: "measure"; id: number; points: [number, number][] }
   /** The DM's prefabs (core prefabs.ts): answered with `prefabs`. */
   | { t: "prefabs_list" }
+  /** The player screen (fog.ts): show the players this part of the battlemap (squares), or the whole of it (null). Every editor is told (`player_view`). */
+  | { t: "player_view"; rect: { x: number; y: number; w: number; h: number } | null }
   /** A dungeon or cave over the battlemap level on screen (its floor, walls, doors and lights replaced), or a village on a settlement map (its streets and buildings replaced): one edit. Answered with `generated`. */
   | { t: "generate"; req: GenerateRequest }
   /** Battlemaps: save an area (squares) of the level on screen as a prefab. Answered with `prefab_saved`, or `prefab_exists` when the name is taken (send it again with `replace`). */
@@ -241,6 +243,8 @@ export type ServerMsg =
   | { t: "measured"; id: number; survey: RouteSurvey | null }
   /** The DM's prefabs, by name (sent to every editor after one is saved, renamed or removed); `skipped` names files that couldn't be read. */
   | { t: "prefabs"; list: PrefabInfo[]; skipped: string[] }
+  /** What the player screen shows: a part of the battlemap the DM chose (squares), or all of it (null). Sent on connecting, and when it changes or another map opens. */
+  | { t: "player_view"; rect: { x: number; y: number; w: number; h: number } | null }
   /** What a generator made (the answer to `generate`): its seed, to make the same again, and what it is in words. */
   | { t: "generated"; what: GenerateRequest["what"]; seed: number; summary: string }
   | { t: "prefab_saved"; prefab: PrefabInfo }
