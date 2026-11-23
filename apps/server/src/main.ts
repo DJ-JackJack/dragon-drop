@@ -25,8 +25,9 @@ export async function start(overrides: Parameters<typeof loadConfig>[0] = {}) {
   });
   hub.noise = new NoiseStore(cfg.cacheDir);
   await hub.ensureProject();
-  if (cfg.assetsDir) {
-    hub.assets = new AssetLibrary(cfg.assetsDir, cfg.cacheDir);
+  // (the library is there with only the Starter Pack too, when no asset folder is chosen)
+  if (cfg.assetsDir || cfg.starterDir) {
+    hub.assets = new AssetLibrary(cfg.assetsDir, cfg.cacheDir, cfg.starterDir);
     hub.assets.pictures = { decode: (b) => compute.decodePicture(b), thumbnail: (b, m) => compute.thumbnail(b, m), shrink: (b, j) => compute.shrinkPicture(b, j), kind: (b) => compute.pictureKind(b) }; // (off the main thread)
     void hub.assets.scan().catch((e) => console.error("Couldn't scan the asset packs:", e)); // in the background: the server is usable meanwhile
   }

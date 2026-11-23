@@ -16,6 +16,8 @@ export interface Config {
   editorDist: string;
   /** Folder with the user's asset library: folders of pictures, zip files and pack files (read in place), or null. */
   assetsDir: string | null;
+  /** Dragon Drop's own Starter Pack (a few free floor textures, read as one more pack, with or without an asset folder), or null for none. */
+  starterDir: string | null;
   /** Where indexes and thumbnails are cached. */
   cacheDir: string;
   /** Extra Host values allowed to talk to the server (e.g. a Tailscale name), besides localhost. */
@@ -53,12 +55,21 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     projectsDir: path.resolve(process.env.MAPMAKER_PROJECTS_DIR ?? path.join(REPO_ROOT, "projects")),
     editorDist: process.env.MAPMAKER_EDITOR_DIST ? path.resolve(process.env.MAPMAKER_EDITOR_DIST) : path.join(REPO_ROOT, "apps/editor/dist"),
     assetsDir: process.env.MAPMAKER_ASSETS_DIR?.trim() ? path.resolve(process.env.MAPMAKER_ASSETS_DIR.trim()) : null,
+    starterDir: starterDir(),
     cacheDir: path.resolve(process.env.MAPMAKER_CACHE_DIR ?? path.join(REPO_ROOT, ".cache")),
     // tolerate pasted URLs: "https://pc.tailnet.ts.net/" -> "pc.tailnet.ts.net"
     extraHosts: (process.env.MAPMAKER_ALLOWED_HOSTS ?? "").split(",")
       .map((s) => s.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).filter(Boolean),
     ...overrides,
   };
+}
+
+/** The Starter Pack's folder: MAPMAKER_STARTER_DIR (empty for none; the Windows app passes the copy it carries), else the repository's own. */
+export const STARTER_PACK_DIR = path.join(REPO_ROOT, "apps/server/starter/Dragon Drop Starter Pack");
+function starterDir(): string | null {
+  const v = process.env.MAPMAKER_STARTER_DIR;
+  if (v !== undefined) return v.trim() ? path.resolve(v.trim()) : null;
+  return existsSync(STARTER_PACK_DIR) ? STARTER_PACK_DIR : null;
 }
 
 export function apiKeyConfigured(): boolean {

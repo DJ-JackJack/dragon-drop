@@ -45,6 +45,10 @@
       {
         "from": "build/THIRD-PARTY-NOTICES.txt",
         "to": "THIRD-PARTY-NOTICES.txt"
+      },
+      {
+        "from": "build/starter",
+        "to": "starter"
       }
     ],
     "win": {

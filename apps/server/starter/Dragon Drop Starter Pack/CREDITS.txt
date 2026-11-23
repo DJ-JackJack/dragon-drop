@@ -1,0 +1,24 @@
+Dragon Drop Starter Pack
+========================
+
+A few floor textures that come with Dragon Drop, so there is something to paint battlemaps with
+before you add asset packs of your own.
+
+Every picture here is from Poly Haven (https://polyhaven.com) and is released under CC0 1.0
+(public domain dedication, https://creativecommons.org/publicdomain/zero/1.0/): free for any use,
+commercial included, with no credit required. Poly Haven's licence page: https://polyhaven.com/license
+We credit the artists anyway, with thanks.
+
+What was changed: the 1k colour picture of each texture was renamed, recompressed as JPEG, and six
+of them (marked *) were halved to 512 pixels so one repeat covers 2 squares, near their real size.
+
+  Floors/Grass.jpg               Grass Ground         Charlotte Baglioni                 https://polyhaven.com/a/grass_ground
+  Floors/Dirt.jpg                Dirt                 Charlotte Baglioni                 https://polyhaven.com/a/dirt
+  Floors/Sand.jpg                Aerial Sand          Rob Tuytel                         https://polyhaven.com/a/aerial_sand
+  Floors/Snowy Ground.jpg        Snow Field Aerial    Rob Tuytel                         https://polyhaven.com/a/snow_field_aerial
+  Floors/Rocky Ground.jpg *      Rock Ground          Rob Tuytel                         https://polyhaven.com/a/rock_ground
+  Floors/Cobblestones.jpg *      Cobblestone Square   Rob Tuytel                         https://polyhaven.com/a/cobblestone_square
+  Floors/Wooden Planks.jpg *     Dark Wooden Planks   Amal Kumar                         https://polyhaven.com/a/dark_wooden_planks
+  Floors/Stone Floor Tiles.jpg * Rock Tile Floor      Charlotte Baglioni                 https://polyhaven.com/a/rock_tile_floor
+  Floors/Gravel.jpg *            Gravel Floor 02      Jenelle van Heerden, Dimitrios Savva https://polyhaven.com/a/gravel_floor_02
+  Floors/Forest Floor.jpg *      Forest Floor         eye-candy.xyz                      https://polyhaven.com/a/forest_floor

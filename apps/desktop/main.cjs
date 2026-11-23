@@ -39,6 +39,8 @@ const noticesFile = () => path.join(resources, "THIRD-PARTY-NOTICES.txt");
 const CHANNEL = (() => { try { return JSON.parse(fs.readFileSync(path.join(resources, "channel.json"), "utf8")).channel === "itch" ? "itch" : "github"; } catch { return "github"; } })();
 const serverMain = path.join(resources, "server", "main.mjs");
 const editorDir = path.join(resources, "editor");
+/** Dragon Drop's own Starter Pack (a few free floor textures), read as one more asset pack with or without an asset folder. */
+const starterDir = path.join(resources, "starter", "Dragon Drop Starter Pack");
 const iconPath = path.join(__dirname, "assets", process.platform === "win32" ? "icon.ico" : "icon.png");
 
 let settingsFile = null;
@@ -202,6 +204,7 @@ async function startServer() {
   if (key) env.ANTHROPIC_API_KEY = key;
   env.MAPMAKER_CACHE_DIR = path.join(app.getPath("userData"), "cache");
   if (settings.assetsDir) env.MAPMAKER_ASSETS_DIR = settings.assetsDir;
+  env.MAPMAKER_STARTER_DIR = fs.existsSync(starterDir) ? starterDir : "";
   childLog = [];
   // An Electron utility process (Node, with no window), not this program run as plain Node (ELECTRON_RUN_AS_NODE): so the RunAsNode switch can be off,
   // and a signed Dragon Drop.exe can't be used by other programs as a Node.js of their own (found 2026-11-22). MAPMAKER_START tells main.mjs to start.
@@ -952,6 +955,18 @@ async function smokeTest() {
         if (!here.startsWith(`http://127.0.0.1:${port}/`)) return fatal(`the window isn't on the IPv4 address (a "localhost" one goes to IPv6 first): ${here}`);
         const page = await fetch(`http://127.0.0.1:${port}/`).catch(() => null);
         if (!page || !page.headers.get("content-security-policy") || page.headers.get("x-content-type-options") !== "nosniff") return fatal("the editor page is served without its security headers");
+        // the Starter Pack comes with the app and is read with no asset folder chosen: its floors are listed and a picture of it is served
+        const keyAuth = { authorization: `Bearer ${settings.accessToken}` };
+        let starter = null;
+        for (let i = 0; i < 30 && !(starter && starter.starter && !starter.scanning); i++) {
+          starter = await fetch(`http://127.0.0.1:${port}/api/assets/status`, { headers: keyAuth }).then((r) => r.json()).catch(() => null);
+          if (!(starter && starter.starter && !starter.scanning)) await new Promise((r) => setTimeout(r, 500));
+        }
+        if (!starter || !starter.starter || starter.ownFolder !== false) return fatal(`the Starter Pack wasn't read: ${JSON.stringify(starter)}`);
+        const floors = await fetch(`http://127.0.0.1:${port}/api/assets/list?cat=terrain&limit=100`, { headers: keyAuth }).then((r) => r.json()).catch(() => null);
+        if (!floors || floors.total < 8) return fatal(`the Starter Pack's floors weren't listed: ${JSON.stringify(floors)}`);
+        const pic = await fetch(`http://127.0.0.1:${port}/api/assets/file?id=${encodeURIComponent(floors.items[0].id)}&thumb=64`, { headers: keyAuth }).catch(() => null);
+        if (!pic || pic.status !== 200) return fatal(`a Starter Pack picture wasn't served (${pic ? pic.status : "no answer"})`);
         const ptyOk = await ptySelfTest();
         if (!ptyOk) return fatal("the pseudo-terminal could not run a command");
         // the editor's Claude Code panel should have started the stand-in through the pseudo-terminal

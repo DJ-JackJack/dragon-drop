@@ -75,7 +75,7 @@ const assetsDir = path.join(tmp, "Assets");
   writeFileSync(path.join(tmp, "e2e-town.png"), PNG.sync.write(town));
 }
 
-const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_CACHE_DIR: path.join(tmp, "cache"), MAPMAKER_AUTO_BACKUP_MINUTES: "0.03" }; // (rolling backups every couple of seconds instead of every 15 minutes)
+const env = { ...process.env, MAPMAKER_PORT: String(port), MAPMAKER_PROJECTS_DIR: tmp, ANTHROPIC_API_KEY: "", MAPMAKER_FAKE_MODEL: "1", MAPMAKER_ACCESS_TOKEN: key, MAPMAKER_ASSETS_DIR: assetsDir, MAPMAKER_STARTER_DIR: "", MAPMAKER_CACHE_DIR: path.join(tmp, "cache"), MAPMAKER_AUTO_BACKUP_MINUTES: "0.03" }; // (rolling backups every couple of seconds instead of every 15 minutes)
 // E2E_APP=<an unpacked Dragon Drop folder> runs the test against that program's own server and editor (a test copy before a release), with the settings
 // the desktop app gives them. (Through this Node: Dragon Drop.exe can't be run as Node any more, its RunAsNode switch is off.)
 const appDir = process.env.E2E_APP ? path.resolve(process.env.E2E_APP) : null;

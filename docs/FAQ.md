@@ -89,3 +89,6 @@ Nothing of its own: it has no analytics or tracking. Your maps stay on your PC. 
 
 **Which asset packs can I use?**
 Folders of pictures, .zip files and asset packs made for other map programs (see [FORMATS.md](FORMATS.md)). Dragon Drop reads them where they are and never copies them. Check each pack's licence before you publish maps made with it.
+
+**Do I need asset packs at all?**
+No. Battlemaps have floors, walls, doors and lights of their own, and Dragon Drop comes with a small Starter Pack of ten floor textures (grass, dirt, sand, cobblestones, wooden planks and more). They are photographs from Poly Haven, released as CC0: you may use them for anything, including maps you sell, with no credit needed. Asset packs add more.

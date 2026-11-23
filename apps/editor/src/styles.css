@@ -472,6 +472,7 @@ ol.steps { margin: 4px 0 4px; padding-left: 20px; font-size: 13.5px; line-height
 .assets-foot { padding: 6px 10px; border-top: 1px solid var(--line); min-height: 28px; }
 .assets-foot p { margin: 2px 0; }
 .assets-empty { padding: 16px; }
+.assets-starter { margin: 0; padding: 8px 10px; font-size: 12px; border-bottom: 1px solid var(--line); }
 
 .cavewalls { margin: 8px 0 2px; }
 .cavewalls button { width: 100%; }

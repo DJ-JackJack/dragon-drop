@@ -85,7 +85,7 @@ AI assistant working on the same map beside you.
 ### Battlemaps
 - Rooms, stone walls with soft shadows, doors, windows, secret doors, lights with line-of-sight shadows, and a light level from bright to dark.
 - Several levels, linked by stairs, ladders and holes, and roofs that hide what is under them.
-- Your own asset packs (folders of pictures, zip files and asset packs), read where they are and never copied.
+- Your own asset packs (folders of pictures, zip files and asset packs), read where they are and never copied, and a small Starter Pack of floor textures (free to use, CC0) to begin with.
 - Export a picture, a Universal VTT file, or a scene **compatible with Foundry VTT** (version 14, with its levels, stairs and roofs).
 
 ### Maps that know about each other

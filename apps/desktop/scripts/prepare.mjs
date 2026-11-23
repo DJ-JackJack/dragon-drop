@@ -1,6 +1,7 @@
 // Gathers what the desktop app needs into apps/desktop/build:
 //   build/server/main.mjs + computeWorker.mjs   the map server, bundled into single files (no node_modules needed)
 //   build/editor/                               the built editor (run `pnpm build` at the repo root first)
+//   build/starter/                              the Starter Pack (apps/server/starter)
 import { build } from "esbuild";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -46,7 +47,8 @@ const notices = generateNotices({
   skip: (p) => p.name.startsWith("@mapmaker/") || p.name === "dragon-drop" || p.name === "ai-mapmaker",
   header: `Dragon Drop is copyright its authors. It includes the open-source software below, each under its own licence, reproduced as those licences ask.
 Electron (with Chromium and Node.js) is licensed in LICENSE.electron.txt and LICENSES.chromium.html in the program's folder.
-The Cinzel typeface is licensed under the SIL Open Font License 1.1 (see its entry below).`,
+The Cinzel typeface is licensed under the SIL Open Font License 1.1 (see its entry below).
+The Starter Pack's floor textures are photographs from Poly Haven (https://polyhaven.com), released under CC0 1.0; starter\\Dragon Drop Starter Pack\\CREDITS.txt lists them.`,
 });
 for (const n of notices.notes) console.warn("notice:", n);
 if (notices.problems.length) { for (const p of notices.problems) console.error("LICENCE PROBLEM:", p); process.exit(1); }
@@ -54,6 +56,8 @@ writeFileSync(path.join(out, "THIRD-PARTY-NOTICES.txt"), notices.text);
 console.log(`Wrote THIRD-PARTY-NOTICES.txt (${notices.packages.length} packages)`);
 
 cpSync(path.join(repo, "apps/editor/dist"), path.join(out, "editor"), { recursive: true });
+// Dragon Drop's own Starter Pack: a few floor textures (CC0, from Poly Haven), so there is something to paint with before any packs are added
+cpSync(path.join(repo, "apps/server/starter"), path.join(out, "starter"), { recursive: true });
 
 // (No sample project is bundled: the maps in this repository are the author's own work and never ship. A new install starts with a generated first map.)
 console.log("Prepared apps/desktop/build");

@@ -41,6 +41,8 @@ export interface PackInfo {
   restricted: boolean;
   /** A newer copy of the same pack is used instead. */
   supersededBy?: string;
+  /** Dragon Drop's own Starter Pack (shipped with the app, there with or without an asset folder). */
+  builtIn?: boolean;
   files: number;
   categories: Record<string, number>;
   error?: string;
@@ -67,7 +69,7 @@ interface PackIndex {
   packJson?: Record<string, unknown>;
 }
 
-interface Source { kind: PackKind; file: string; /** A folder pack made of only the pictures directly in the folder. */ shallow?: boolean }
+interface Source { kind: PackKind; file: string; /** A folder pack made of only the pictures directly in the folder. */ shallow?: boolean; /** Dragon Drop's own Starter Pack. */ builtIn?: boolean }
 
 interface CachedIndex {
   v: 1;
@@ -180,11 +182,18 @@ export class AssetLibrary {
   looked: Promise<void> = Promise.resolve();
   private lookGen = 0;
 
-  constructor(readonly dir: string, readonly cacheDir: string) {}
+  /**
+   * `dir`: the person's asset folder (null when none is chosen). `starterDir`: Dragon Drop's own Starter Pack, a folder read as one more pack (null for
+   * none), so there are a few floors to paint with before any packs are added.
+   */
+  constructor(readonly dir: string | null, readonly cacheDir: string, readonly starterDir: string | null = null) {}
 
   // ---------------------------------------------------------------- scanning
   private async findSources(): Promise<Source[]> {
     const out: Source[] = [];
+    const starter = this.starterDir;
+    if (!this.dir) return starter ? [{ kind: "folder", file: starter, builtIn: true }] : out;
+    const dir = this.dir;
     // zip files and pack files, in the folder and a couple of levels down
     const visit = async (d: string, depth: number) => {
       let names;
@@ -196,12 +205,15 @@ export class AssetLibrary {
         else if (e.isDirectory() && depth < 2 && !skipDir(e.name)) await visit(f, depth + 1);
       }
     };
-    await visit(this.dir, 0);
+    await visit(dir, 0);
     // loose pictures: each folder directly inside the library is a pack (with whatever is below it), and so are pictures lying in the library folder itself
-    const top = await readdir(this.dir, { withFileTypes: true }).catch(() => []);
-    if (top.some((e) => e.isFile() && IMAGE_EXT.test(e.name))) out.push({ kind: "folder", file: this.dir, shallow: true });
-    for (const e of top) if (e.isDirectory() && !skipDir(e.name)) out.push({ kind: "folder", file: path.join(this.dir, e.name) });
-    return out.sort((a, b) => a.file.localeCompare(b.file));
+    const top = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    if (top.some((e) => e.isFile() && IMAGE_EXT.test(e.name))) out.push({ kind: "folder", file: dir, shallow: true });
+    for (const e of top) if (e.isDirectory() && !skipDir(e.name)) out.push({ kind: "folder", file: path.join(dir, e.name) });
+    out.sort((a, b) => a.file.localeCompare(b.file));
+    // (the Starter Pack, unless the person's folder is the very same folder or holds it)
+    if (starter && !out.some((s) => path.resolve(s.file) === path.resolve(starter))) out.unshift({ kind: "folder", file: starter, builtIn: true });
+    return out;
   }
 
   async scan(): Promise<void> {
@@ -220,6 +232,7 @@ export class AssetLibrary {
           const s = sources[next++];
           try {
             const p = s.kind === "folder" ? await this.indexFolder(s.file, !!s.shallow) : s.kind === "zip" ? await this.indexZip(s.file) : await this.indexPack(s.file);
+            if (p && s.builtIn) p.info.builtIn = true;
             if (p) found.push(p);
           } catch (e) { this.errors.push({ file: s.file, message: (e as Error).message }); }
           this.scanned++;
@@ -250,7 +263,8 @@ export class AssetLibrary {
       (!!a.info.packId && a.info.packId === b.info.packId) || (!a.info.packId && !b.info.packId && a.info.name === b.info.name && a.info.kind === b.info.kind);
     let old = 0;
     for (const [k, group] of byKey) {
-      group.sort((a, b) => compareVersions(b.info.version, a.info.version) || b.info.mtimeMs - a.info.mtimeMs); // newest first
+      // newest first; Dragon Drop's own Starter Pack always first, so its pictures keep their ids whatever else is in the folder
+      group.sort((a, b) => Number(!!b.info.builtIn) - Number(!!a.info.builtIn) || compareVersions(b.info.version, a.info.version) || b.info.mtimeMs - a.info.mtimeMs);
       const winners: PackIndex[] = [];
       for (const p of group) {
         const twin = winners.find((w) => samePack(w, p));
@@ -448,7 +462,7 @@ export class AssetLibrary {
   status() {
     const usable = this.usablePacks();
     return {
-      dir: this.dir, scanning: this.scanning, scanned: this.scanned, total: this.total, packs: this.packs.size,
+      dir: this.dir, ownFolder: !!this.dir, starter: [...this.packs.values()].some((p) => p.info.builtIn), scanning: this.scanning, scanned: this.scanned, total: this.total, packs: this.packs.size,
       usablePacks: usable.length, files: usable.reduce((n, p) => n + p.info.files, 0),
       restricted: [...this.packs.values()].filter((p) => p.info.restricted).length, errors: this.errors, lastScan: this.lastScan,
       ...(this.looking.done < this.looking.total && { looking: { ...this.looking } }),
@@ -807,7 +821,7 @@ export class AssetLibrary {
     const st = this.status();
     const all = [...this.packs.values()];
     // (the home folder shortened: it holds the Windows user name, and this report is sent to whoever improves Dragon Drop)
-    L.push(`Dragon Drop asset report ${new Date().toISOString()}`, `folder: ${shortHome(this.dir)}`);
+    L.push(`Dragon Drop asset report ${new Date().toISOString()}`, `folder: ${this.dir ? shortHome(this.dir) : "(none chosen: the Starter Pack only)"}`);
     L.push(`packs: ${st.packs} (${st.usablePacks} usable, ${st.restricted} restricted by their authors, ${all.filter((p) => p.info.supersededBy).length} older duplicates), files in usable packs: ${st.files}`);
     const kinds: Record<string, number> = {};
     for (const p of all) kinds[p.info.kind] = (kinds[p.info.kind] ?? 0) + 1;

@@ -4,6 +4,10 @@ import type { AssetItem } from "@mapmaker/core";
 export interface AssetStatus {
   configured: boolean;
   dir?: string;
+  /** The person chose an asset folder (false: only Dragon Drop's own Starter Pack is there). */
+  ownFolder?: boolean;
+  /** Dragon Drop's own Starter Pack is read. */
+  starter?: boolean;
   scanning: boolean;
   scanned: number;
   total: number;

@@ -17,7 +17,7 @@ export interface PackGridProps {
   placeholder: string;
   /** What to say when nothing of this kind is in the packs at all. */
   noneFound: string;
-  /** What to say without an asset folder. */
+  /** What to say without an asset folder (also when only the Starter Pack is there and it has nothing of this kind). */
   noFolder: string;
   /** A swatch's state: the one in use ("on"), one already on the map ("added"). */
   stateOf?: (it: AssetItem) => { on?: boolean; added?: boolean; note?: string };
@@ -30,6 +30,7 @@ export interface PackGridProps {
 export function PackGrid(p: PackGridProps) {
   const [status, setStatus] = useState<AssetStatus | null>(null);
   const [packs, setPacks] = useState<AssetPack[]>([]);
+  const [packsRead, setPacksRead] = useState(false);
   const [cat, setCat] = useState(p.kinds[0].cat);
   const [pack, setPack] = useState("");
   const [text, setText] = useState("");
@@ -48,7 +49,7 @@ export function PackGrid(p: PackGridProps) {
     void fetchAssetStatus().then((st) => {
       if (!alive) return;
       setStatus(st);
-      if (st.configured) void fetchPacks().then((list) => alive && setPacks(list.filter((k) => !k.restricted && !k.supersededBy))).catch(() => {});
+      if (st.configured) void fetchPacks().then((list) => { if (alive) { setPacks(list.filter((k) => !k.restricted && !k.supersededBy)); setPacksRead(true); } }).catch(() => {});
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -72,16 +73,22 @@ export function PackGrid(p: PackGridProps) {
   const choose = (it: AssetItem) => { void markAssetUsed(it.id); p.onChoose(it); };
 
   if (!status) return null;
-  if (!status.configured) return <p className="muted pack-floors-note" data-testid={`${p.testId}-none`}>{p.noFolder}</p>;
+  const none = <p className="muted pack-floors-note" data-testid={`${p.testId}-none`}>{p.noFolder}</p>;
+  if (!status.configured) return none;
+  // (with only the Starter Pack, which holds floors: the other pickers say how to add packs, as with no folder at all)
+  const starterOnly = status.ownFolder === false;
+  if (starterOnly && !packsRead) return null;
+  if (starterOnly && !p.kinds.some((k) => packs.some((x) => (x.categories[k.cat] ?? 0) > 0))) return none;
   const withKind = packs.filter((k) => (k.categories[cat] ?? 0) > 0);
   const label = p.kinds.find((k) => k.cat === cat)?.label ?? cat;
   return (
     <div className="pack-floors" data-testid={p.testId}>
       <div className="pack-floors-head">
-        <b>From your asset packs</b>
+        <b>{starterOnly ? "From the Starter Pack" : "From your asset packs"}</b>
         <span className="muted">{status.scanning ? "reading…" : `${total.toLocaleString()} ${label}`}</span>
         {p.onBrowse && <button className="ghost" onClick={p.onBrowse} title="Open the Assets tab, with bigger pictures">Browse</button>}
       </div>
+      {starterOnly && items.length > 0 && <p className="muted pack-floors-note" data-testid={`${p.testId}-starter`}>A few free floors that come with Dragon Drop. For more, choose the folder with your own asset packs in Settings (Maps and assets).</p>}
       {p.kinds.length > 1 && (
         <div className="seg" role="group" aria-label="Which pictures" data-testid={`${p.testId}-kinds`}>
           {p.kinds.map((k) => <button key={k.cat} className={k.cat === cat ? "on" : ""} onClick={() => setCat(k.cat)} data-testid={`${p.testId}-kind-${k.cat}`}>{k.label}</button>)}
@@ -114,7 +121,7 @@ Right-click to ${starred(it) ? "take its star away" : "star it"}`} aria-label={`
           );
         })}
       </div>
-      {!items.length && !busy && <p className="muted">{only === "favourites" ? "No starred pictures of this kind yet: right-click a picture to star it." : only === "recent" ? "None of this kind used yet." : q ? `Nothing here matches "${q}".` : p.noneFound}</p>}
+      {!items.length && !busy && <p className="muted">{only === "favourites" ? "No starred pictures of this kind yet: right-click a picture to star it." : only === "recent" ? "None of this kind used yet." : q ? `Nothing here matches "${q}".` : starterOnly ? p.noFolder : p.noneFound}</p>}
       {items.length < total && <button className="ghost pack-floors-more" disabled={busy} onClick={() => void load(items.length)} data-testid={`${p.testId}-more`}>{busy ? "Loading…" : `More (${(total - items.length).toLocaleString()} left)`}</button>}
     </div>
   );

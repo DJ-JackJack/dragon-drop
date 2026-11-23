@@ -162,7 +162,8 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
             <fieldset disabled={!!busy}>
               <legend>Asset library</legend>
               <p className="muted" style={{ wordBreak: "break-all" }} data-testid="assets-dir">{s?.assetsDir ?? "Not set. Choose the folder that holds your assets (folders of pictures, .zip files or asset packs, in any mix); they are read where they are and never copied."}</p>
-              {assets?.configured && (
+              {assets?.starter && <p className="muted" data-testid="assets-starter-note">Dragon Drop's own Starter Pack (a few floor textures, free to use) is always there too.</p>}
+              {assets?.configured && s?.assetsDir && (
                 <p className="muted" data-testid="assets-status">
                   {assets.scanning ? `Reading assets… ${assets.scanned} of ${assets.total}` : `${assets.packs} packs read: ${assets.usablePacks} usable (${assets.files.toLocaleString()} files)`}
                   {assets.restricted > 0 && `, ${assets.restricted} not used because their authors don't allow other programs`}

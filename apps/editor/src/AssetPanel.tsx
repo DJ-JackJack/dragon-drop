@@ -53,6 +53,13 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus, onAskTags }: {
   const seq = useRef(0);
 
   useEffect(() => { setCat(focus.cat); }, [focus.n]);
+  // (when the packs hold nothing of the kind shown, as with only the Starter Pack's floors, show the first kind they do hold)
+  useEffect(() => {
+    const has = (c: string) => packs.some((p) => !p.restricted && !p.supersededBy && (p.categories[c] ?? 0) > 0);
+    if (!packs.length || has(cat)) return;
+    const first = CATS.find((c) => c.usable && has(c.id));
+    if (first) setCat(first.id);
+  }, [packs]);
   useEffect(() => { const t = window.setTimeout(() => setQ(text.trim()), 250); return () => window.clearTimeout(t); }, [text]);
 
   // status (and the pack list once scanning has finished)
@@ -129,6 +136,12 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus, onAskTags }: {
           {status?.scanning ? `Reading assets… ${status.scanned}/${status.total}` : `${total.toLocaleString()} found`}
         </span>
       </div>
+      {status?.ownFolder === false && (
+        <p className="muted assets-starter" data-testid="assets-starter">
+          These are the floors of the Starter Pack that comes with Dragon Drop (free to use).{" "}
+          {desktop ? <>For your own asset packs, choose their folder in <b>Settings</b> (Maps and assets).</> : <>For your own asset packs, set <code>MAPMAKER_ASSETS_DIR</code> in the <code>.env</code> file and restart.</>}
+        </p>
+      )}
       <div className="assets-controls">
         <input placeholder="Search: table, torch, oak…" value={text} onChange={(e) => setText(e.target.value)} data-testid="assets-search" />
         <select value={pack} onChange={(e) => setPack(e.target.value)} data-testid="assets-pack">
