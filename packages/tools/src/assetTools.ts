@@ -3,7 +3,10 @@
  * and place objects on a battlemap. The pictures stay on the user's PC and are read in place.
  */
 import { z } from "zod";
-import { type PaletteEntry, type RGBAImage, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, MAX_FLOOR_TEXTURES, PROP_PX_PER_SQUARE } from "@mapmaker/core";
+import {
+  type PaletteEntry, type RGBAImage, type XY, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, MAX_FLOOR_TEXTURES, PROP_PX_PER_SQUARE,
+  SpotIndex, battleSpec, parseAssetId, scatterInArea, scatterLook, seededRandom, variantStem,
+} from "@mapmaker/core";
 import { decodeImage, encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext } from "./tools.ts";
 import { define, fail, json } from "./toolKit.ts";
@@ -153,6 +156,58 @@ export const ASSET_TOOLS = [
   }),
 
   define({
+    name: "scatter_props",
+    description:
+      "Strew objects over an area of the battlemap, as a person does with the Object tool's Scatter mode: trees in a wood, rocks on a slope, debris in a ruin, " +
+      "barrels in a storeroom. Spots fall naturally (never in rows), at least `spacing` squares from each other and from objects already there, and each object " +
+      "is varied in size and turned (and mirrored) unless asked not to. With mix_variants (default true) a picture's variants in the same folder are mixed in " +
+      "(\"Tree_A1\", \"Tree_A2\"...). Only on floor (never on void) unless on_floor_only is false. One edit, one undo step. Find pictures with search_assets " +
+      "(category objects); render_battlemap afterwards to look.",
+    schema: z.object({
+      assets: z.array(z.string()).min(1).max(12).describe("Picture ids from search_assets (category objects); each spot takes one at random"),
+      area: z.union([
+        z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }),
+        z.object({ points: z.array(z.tuple([z.number(), z.number()])).min(3).max(100) }),
+      ]).describe("Where, in squares: a rectangle (x, y = top-left corner) or an outline"),
+      spacing: z.number().min(0.2).max(20).optional().describe("Squares between objects' centres (default 1.5)"),
+      count: z.number().int().min(1).max(400).optional().describe("At most this many (default: as many as fit)"),
+      scale: z.number().min(0.05).max(10).optional().describe("Their size (default 1, the picture's own)"),
+      vary: z.number().min(0).max(0.8).optional().describe("How much sizes vary, either way (default 0.25 = 75% to 125%)"),
+      turn: z.boolean().optional().describe("Turn and mirror each at random (default true; false keeps them upright)"),
+      mix_variants: z.boolean().optional(),
+      on_floor_only: z.boolean().optional(),
+      layer: z.enum(["below", "above"]).optional(),
+      seed: z.number().int().optional().describe("The same seed gives the same spots"),
+    }),
+    async run(ctx, i) {
+      if (!ctx.assets) return fail(NO_ASSETS);
+      const doc = ctx.session().doc, spec = doc.meta.battle;
+      if (!spec) return fail("This isn't a battlemap.");
+      const bad: string[] = [];
+      for (const a of i.assets) if (!(await ctx.assets.info(a))) bad.push(a);
+      if (bad.length) return fail(`No such asset: ${bad.join(", ")}. Use search_assets for ids.`);
+      const pics = i.mix_variants === false ? [...new Set(i.assets)] : await withVariants(ctx, i.assets);
+      const poly: XY[] = "points" in i.area ? (i.area.points as XY[]) : [[i.area.x, i.area.y], [i.area.x + i.area.w, i.area.y], [i.area.x + i.area.w, i.area.y + i.area.h], [i.area.x, i.area.y + i.area.h]];
+      const spacing = i.spacing ?? 1.5, sub = battleSpec(doc).sub, hf = doc.height;
+      const taken = new SpotIndex(spacing, (doc.features?.props ?? []).map((p) => [p.x, p.y] as XY));
+      const rnd = seededRandom(i.seed ?? Date.now());
+      const onFloor = (x: number, y: number) => x >= 0 && y >= 0 && x < spec.squaresX && y < spec.squaresY && (i.on_floor_only === false || (hf.get(Math.floor(x * sub), Math.floor(y * sub)) | 0) > 0);
+      const spots = scatterInArea(poly, spacing, taken, rnd, { max: i.count ?? 400, ok: onFloor });
+      if (!spots.length) return fail("No room there: the area is full (objects within the spacing), off the map, or not on floor. Try a smaller spacing or another area.");
+      const props = spots.map(([x, y]) => {
+        const look = scatterLook(rnd, { scale: i.scale ?? 1, vary: i.vary ?? 0.25, turn: i.turn !== false });
+        return {
+          id: newFeatureId("o"), asset: pics[Math.floor(rnd() * pics.length)], x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100,
+          ...(look.rotation && { rotation: look.rotation }), ...(Math.abs(look.scale - 1) > 0.005 && { scale: Math.round(look.scale * 100) / 100 }), ...(look.flip && { flip: true }),
+          ...(i.layer === "below" && { layer: "below" as const }),
+        };
+      });
+      const r = ctx.execute({ op: "features", patch: { upsertProps: props }, label: `Scatter ${props.length} object${props.length === 1 ? "" : "s"}` });
+      return json({ change: r.seq, added: props.length, pictures_used: [...new Set(props.map((p) => p.asset))], note: "render_battlemap to look; remove_props takes any back." });
+    },
+  }),
+
+  define({
     name: "update_prop",
     description: "Move, rotate, resize, mirror or re-layer an object on the battlemap. Ids come from list_battle.",
     schema: z.object({
@@ -183,6 +238,24 @@ export const ASSET_TOOLS = [
 ] as const;
 
 /** The asset tools that only make sense on a battlemap (search and view work anywhere). */
-export const ASSET_BATTLE_TOOL_NAMES = ["add_floor_texture", "add_props", "update_prop", "remove_props"];
+export const ASSET_BATTLE_TOOL_NAMES = ["add_floor_texture", "add_props", "scatter_props", "update_prop", "remove_props"];
+
+/** The pictures and their variants in the same folder ("Tree_A1" brings "Tree_A2", "Tree_A3"...), at most 24. */
+async function withVariants(ctx: ToolContext, ids: string[]): Promise<string[]> {
+  const out = new Set(ids);
+  for (const id of ids) {
+    const a = parseAssetId(id);
+    if (!a || !ctx.assets) continue;
+    const want = variantStem(a.path);
+    if (!want.stem) continue;
+    const found = await ctx.assets.search({ pack: a.pack, q: want.stem, limit: 200 });
+    for (const it of found.items) {
+      const v = variantStem(it.path);
+      if (v.dir === want.dir && v.stem === want.stem) out.add(it.id);
+      if (out.size >= 24) break;
+    }
+  }
+  return [...out];
+}
 
 export type { ToolContext };

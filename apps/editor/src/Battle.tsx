@@ -28,6 +28,7 @@ import { makeResizeKeeper } from "./viewResize.ts";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { focusBus, viewForBox } from "./focusBus.ts";
 import { MEASURE_HINT, battleLength, measureCtl, useMeasure } from "./measure.ts";
+import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterUi.ts";
 
 export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
@@ -50,6 +51,9 @@ export interface BattleUi {
   propRotation: number;
   propLayer: "above" | "below";
   propFlip: boolean;
+  /** The Object tool strews objects with a drag (Scatter) instead of placing one a click. */
+  propScatter: boolean;
+  scatter: ScatterSettings;
   /** The shape the Area and Room tools make. */
   roomShape: "rect" | "circle" | "free";
   /** Which way a new stair or ladder leads from this level. */
@@ -81,7 +85,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
-  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
+  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
   wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
 };
 
@@ -131,6 +135,7 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
 ];
 export const BATTLE_TOOLS = BATTLE_TOOL_GROUPS.flatMap((g) => g.tools);
 
+const SCATTER_HINT = "Drag over the map to strew the chosen object under the brush: each is sized and turned a little differently, never closer than the spacing (nor to objects already there). Letting go makes it one undo step. Size and Layer below apply too.";
 export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   pan: "Drag to move the map. Hold Space, or drag with the right button, to move it with any tool. + and - zoom.",
   brush: "Drag to paint the chosen floor. Pick a material with the floor button above. [ and ] change the brush size.",
@@ -211,10 +216,12 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const fittedFor = useRef<string | null>(null);
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string;
+  const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move" | "marquee" | "trace" | "scatter"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string;
     /** move: what is being dragged, whether the pointer has really moved yet, and whether it started on a member of a group (a click without a drag then picks that one). marquee: whether it adds to the selection, and what was selected before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[] } | null>(null);
   const draft = useRef<{ kind: WallKind | "path"; pts: [number, number][] } | null>(null);
+  /** The objects a Scatter stroke has strewn so far (sent as one edit when the mouse is let go). */
+  const scatterStroke = useRef<ScatterStroke | null>(null);
   /** Corners of a free-form floor or room being clicked out. */
   const shapeDraft = useRef<[number, number][] | null>(null);
   const lastClick = useRef<{ t: number; x: number; y: number } | null>(null);
@@ -683,8 +690,17 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.save(); ctx.fillStyle = "rgba(255, 224, 120, 0.12)"; ctx.fillRect(x, y, w, h);
       ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.strokeRect(x + 0.5, y + 0.5, w, h); ctx.restore();
     }
+    // a scatter stroke: what it has strewn so far, and the brush
+    if (scatterStroke.current) for (const pr of scatterStroke.current.placed) drawProp(pr, 0.9);
+    if (o.tool === "prop" && o.propScatter && pointer.current && !spaceRef.current) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pointer.current.x, pointer.current.y, o.scatter.radius * v.scale, 0, Math.PI * 2);
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(255, 224, 120, 0.9)"; ctx.stroke();
+      ctx.restore();
+    }
     // the object about to be placed
-    if (o.tool === "prop" && o.asset && pointer.current && !drag.current && !spaceRef.current) {
+    else if (o.tool === "prop" && o.asset && pointer.current && !drag.current && !spaceRef.current) {
       const g = toSq(pointer.current.x, pointer.current.y);
       drawProp({ id: "ghost", asset: o.asset, x: snapProp(g.x, altRef.current), y: snapProp(g.y, altRef.current), rotation: o.propRotation, scale: o.propScale, flip: o.propFlip }, 0.6);
     }
@@ -1103,6 +1119,17 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       onUiRef.current({ multi: [], selected: light.id });
       return;
     }
+    if (o.tool === "prop" && o.propScatter) {
+      if (!o.asset) { flash("Choose an object in the Assets tab first."); return; }
+      const hf = store.heights, sub = spec.sub;
+      const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < spec.squaresX && y < spec.squaresY && (!o.scatter.floorOnly || !hf || (hf.get(Math.floor(x * sub), Math.floor(y * sub)) | 0) > 0);
+      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer },
+        (featRef.current.props ?? []).map((pr) => [pr.x, pr.y] as [number, number]), ok);
+      scatterStroke.current.at(q.x, q.y);
+      drag.current = { mode: "scatter", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
+      requestDraw();
+      return;
+    }
     if (o.tool === "prop") {
       if (!o.asset) { flash("Choose an object in the Assets tab first."); return; }
       const prop: MapProp = {
@@ -1148,6 +1175,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
     if (uiRef.current.tool === "measure" && !d) { measureCtl.move(q); requestDraw(); }
+    if (d?.mode === "scatter") { scatterStroke.current?.at(q.x, q.y); requestDraw(); return; }
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "brush") {
@@ -1175,6 +1203,13 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const d = drag.current, p = pointer.current, spec = metaRef.current?.battle;
     drag.current = null;
     if (d?.mode === "trace") { traceCtl.up(); return; }
+    if (d?.mode === "scatter") {
+      const st = scatterStroke.current;
+      scatterStroke.current = null;
+      if (st?.placed.length) sendFeatures({ upsertProps: st.placed }, `Scatter ${st.placed.length} object${st.placed.length === 1 ? "" : "s"}`);
+      requestDraw();
+      return;
+    }
     if (d?.mode === "brush") send({ t: "txn_end" } as never);
     if (d?.mode === "move" && d.ids && spec) {
       const mg = moveGroup.current, f = featRef.current;
@@ -1495,7 +1530,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
   const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
   const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
+    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "measure" && (
         <span className="measure-result" data-testid="measure-result">
           {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5)}</b>}
@@ -1564,7 +1599,27 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
       )}
       {ui.tool === "prop" && (
         <div className="prop-options" data-testid="prop-options">
-          <span className="muted">{ui.asset ? `Placing: ${assetLabel(parseAssetId(ui.asset)?.path ?? ui.asset)}` : "No object chosen yet: open the Assets tab and click one."}</span>
+          <div className="seg" role="group" aria-label="How objects are placed" data-testid="prop-modes">
+            <button className={ui.propScatter ? "" : "on"} onClick={() => onUi({ propScatter: false })} title="A click places one object" data-testid="prop-mode-one">One</button>
+            <button className={ui.propScatter ? "on" : ""} onClick={() => onUi({ propScatter: true })} title="Drag to strew objects under a round brush: trees, rocks, debris" data-testid="prop-mode-scatter">Scatter</button>
+          </div>
+          <span className="muted">{ui.asset ? `${ui.propScatter ? "Strewing" : "Placing"}: ${assetLabel(parseAssetId(ui.asset)?.path ?? ui.asset)}` : "No object chosen yet: open the Assets tab and click one."}</span>
+          {ui.propScatter && (
+            <>
+              <label className="slider"><span>Brush <b>{ui.scatter.radius}</b> sq</span>
+                <input type="range" min={0.5} max={8} step={0.5} value={ui.scatter.radius} onChange={(e) => onUi({ scatter: { ...ui.scatter, radius: Number(e.target.value) } })} data-testid="scatter-radius" />
+              </label>
+              <label className="slider" title="Squares between the objects' centres (and from objects already there)"><span>Spacing <b>{ui.scatter.spacing}</b> sq</span>
+                <input type="range" min={0.2} max={4} step={0.1} value={ui.scatter.spacing} onChange={(e) => onUi({ scatter: { ...ui.scatter, spacing: Number(e.target.value) } })} data-testid="scatter-spacing" />
+              </label>
+              <label className="slider"><span>Sizes vary <b>{Math.round(ui.scatter.vary * 100)}%</b></span>
+                <input type="range" min={0} max={60} step={5} value={Math.round(ui.scatter.vary * 100)} onChange={(e) => onUi({ scatter: { ...ui.scatter, vary: Number(e.target.value) / 100 } })} />
+              </label>
+              <label className="check"><input type="checkbox" checked={ui.scatter.turn} onChange={(e) => onUi({ scatter: { ...ui.scatter, turn: e.target.checked } })} /> Turn each</label>
+              <label className="check" title="Pictures of the same name in the same folder, numbered or lettered (Tree A1, A2, A3...)"><input type="checkbox" checked={ui.scatter.variants} onChange={(e) => onUi({ scatter: { ...ui.scatter, variants: e.target.checked } })} /> Mix in its variants</label>
+              <label className="check"><input type="checkbox" checked={ui.scatter.floorOnly} onChange={(e) => onUi({ scatter: { ...ui.scatter, floorOnly: e.target.checked } })} /> Only on floor</label>
+            </>
+          )}
           <label className="slider"><span>Size <b>{Math.round(ui.propScale * 100)}%</b></span>
             <input type="range" min={10} max={400} step={5} value={Math.round(ui.propScale * 100)} onChange={(e) => onUi({ propScale: Number(e.target.value) / 100 })} data-testid="prop-scale" />
           </label>

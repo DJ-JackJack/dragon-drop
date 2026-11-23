@@ -957,6 +957,17 @@ try {
     await page.getByTestId("history").getByText("Change object").first().waitFor({ timeout: 10000 });
     await page.getByTestId("prop-delete").click();
     await page.getByTestId("history").getByText("Delete object").waitFor({ timeout: 10000 });
+    // the Object tool's Scatter mode: a drag strews several tables in one undo step
+    await page.getByTestId("btool-prop").click();
+    await page.getByTestId("prop-mode-scatter").click();
+    await page.getByLabel("Only on floor").uncheck();
+    await drag([3, 3], [14, 3]);
+    await page.getByTestId("history").getByText(/^Scatter \d+ objects$/).waitFor({ timeout: 10000 });
+    const strewn = Number(/(\d+) objects?/.exec(await page.getByTestId("battle-summary").textContent())?.[1] ?? 0);
+    if (strewn < 4) fail(`Scatter strewed only ${strewn} objects`);
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("battle-summary").getByText(/ 0 objects/).waitFor({ timeout: 10000 });
+    await page.getByTestId("prop-mode-one").click();
     await page.getByTestId("bgrid-hex").click();
     await page.getByTestId("history").getByText("Grid: hex").waitFor({ timeout: 10000 });
     await page.getByTestId("bgrid-square").click();

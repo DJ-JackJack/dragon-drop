@@ -77,3 +77,4 @@ export * from "./lava.ts";
 export * from "./measure.ts";
 export * from "./pdf.ts";
 export * from "./printPlan.ts";
+export * from "./scatter.ts";
