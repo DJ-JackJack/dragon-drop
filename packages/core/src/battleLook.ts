@@ -7,7 +7,7 @@
  * Light comes from the top left, so shadows fall down and to the right.
  */
 import type { BattleSpec } from "./battle.ts";
-import { type MapConnector, type MapWall, wallSegments } from "./features.ts";
+import { type MapConnector, type MapWall, type WallLook, wallSegments } from "./features.ts";
 
 export interface LookImage {
   w: number;
@@ -106,7 +106,7 @@ interface Piece {
   wall: MapWall;
 }
 
-interface Post { x: number; y: number; square: boolean }
+interface Post { x: number; y: number; square: boolean; wall: MapWall }
 
 /** Signed "inside" distance of a point to a butt-ended slab along a piece, `half` either side (positive inside). */
 function slab(p: { ax: number; ay: number; ux: number; uy: number; len: number }, x: number, y: number, half: number): number {
@@ -115,9 +115,21 @@ function slab(p: { ax: number; ay: number; ux: number; uy: number; len: number }
   return Math.min(s, p.len - s, half - Math.abs(c));
 }
 
+/** A decoded picture from the asset packs to draw along walls (RGBA, its own aspect: a long strip or a square texture). */
+export interface WallPicture { w: number; h: number; data: Uint8ClampedArray }
+export type WallPictureSource = (asset: string) => WallPicture | null | undefined;
+
+/** The colour each built-in wall look starts from. */
+export const WALL_BASE: Record<WallLook, [number, number, number]> = { stone: [126, 120, 112], brick: [150, 80, 60], wood: [138, 96, 58], plaster: [214, 206, 188], rock: [88, 80, 72] };
+
+/** A picture longer than this (width over height) is a strip: laid along the wall, its height across it. Anything squarer is a texture tiled along it. */
+const STRIP_ASPECT = 2.5;
+
 export interface WallLayerOptions {
   /** Is there floor under this point (in squares)? Chooses which way an open door swings. */
   floorAt?: (xSquares: number, ySquares: number) => boolean;
+  /** Pictures from the asset packs for walls that have one (`MapWall.asset`); a wall whose picture isn't there (yet) is drawn in its look. */
+  pictureFor?: WallPictureSource;
   /** Stairs, ladders and holes: painted first, so walls and their shadows lie over them. */
   connectors?: MapConnector[];
 }
@@ -198,7 +210,7 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
 
   // ---- sort the pieces
   const stone: Piece[] = [], doors: Piece[] = [], windows: Piece[] = [], ghosts: Piece[] = [], secrets: Piece[] = [];
-  const ends = new Map<string, { x: number; y: number; n: number; axis: boolean; solid: boolean }>();
+  const ends = new Map<string, { x: number; y: number; n: number; axis: boolean; solid: boolean; wall: MapWall }>();
   const key = (x: number, y: number) => `${Math.round(x * 20)},${Math.round(y * 20)}`;
   for (const wl of walls) {
     for (const [a, b] of wallSegments(wl)) {
@@ -214,13 +226,14 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
       for (const [x, y] of [[ax, ay], [bx, by]] as const) {
         const k = key(x, y), e = ends.get(k);
         const solid = wl.kind !== "wall" && wl.kind !== "secret";
-        if (e) { e.n++; e.axis = e.axis && axis; e.solid = e.solid || solid; } else ends.set(k, { x, y, n: 1, axis, solid });
+        // (a post takes the look of a solid wall that meets there, not a door's or window's)
+        if (e) { e.n++; e.axis = e.axis && axis; e.solid = e.solid || solid; if (!solid && (e.wall.kind === "door" || e.wall.kind === "window")) e.wall = wl; } else ends.set(k, { x, y, n: 1, axis, solid, wall: wl });
       }
     }
   }
   // a stone post where pieces meet, and at both ends of every door and window (so the opening has a frame)
   const posts: Post[] = [];
-  for (const e of ends.values()) if (e.n >= 2 || e.solid) posts.push({ x: e.x, y: e.y, square: e.axis });
+  for (const e of ends.values()) if (e.n >= 2 || e.solid) posts.push({ x: e.x, y: e.y, square: e.axis, wall: e.wall });
 
   // ---- soft shadows and ambient occlusion, computed at low resolution
   const S = Math.max(1, Math.round(px / 16)), lw = Math.ceil(W / S), lh = Math.ceil(H / S);
@@ -291,12 +304,14 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
   const d = out.data;
   for (const [k, items] of tileItems) {
     const tx = k % tilesX, ty = (k - tx) / tilesX;
+    let bestItem: (typeof items)[number] | null = null;
     const insideAt = (x: number, y: number) => {
       let best = -9;
+      bestItem = null;
       for (const it of items) {
         const v = it.kind === "seg" ? slab(it.p, x, y, half)
           : it.q.square ? half - Math.max(Math.abs(x - it.q.x), Math.abs(y - it.q.y)) : half - Math.hypot(x - it.q.x, y - it.q.y);
-        if (v > best) best = v;
+        if (v > best) { best = v; bestItem = it; }
       }
       return best;
     };
@@ -305,15 +320,29 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
       for (let x = tx * TILE; x < Math.min(W, (tx + 1) * TILE); x++) {
         const cx = x + 0.5, cy = y + 0.5, ins = insideAt(cx, cy);
         if (ins < -0.5) continue;
+        const item = bestItem as (typeof items)[number] | null;
         const cov = clamp(ins + 0.5, 0, 1);
         const gx = g(cx + 1, cy) - g(cx - 1, cy), gy = g(cx, cy + 1) - g(cx, cy - 1);
         // the outward normal is minus the gradient of the inside distance; edges that face the light (top and left) are bright
         const facing = (-gx / 2) * LIGHT_DIR[0] + (-gy / 2) * LIGHT_DIR[1];
         const lit = 1 + 0.62 * facing;
         const rim = smooth(-0.2, 1.4, ins);
-        const tex = 0.86 + 0.18 * (0.6 * vnoise(x / (px * 0.11), y / (px * 0.11)) + 0.4 * vnoise(x / (px * 0.034), y / (px * 0.034))) + 0.05 * (hash2(x, y) - 0.5);
-        const f = tex * lit * (0.5 + 0.5 * rim);
-        over(d, (y * W + x) * 4, STONE[0] * f, STONE[1] * f, STONE[2] * f, cov);
+        const wall = item ? (item.kind === "seg" ? item.p.wall : item.q.wall) : null;
+        // where along the wall and across it this pixel is (a post: along the piece it was found with, or plain x)
+        const p = item?.kind === "seg" ? item.p : null;
+        const along = p ? (cx - p.ax) * p.ux + (cy - p.ay) * p.uy : cx;
+        const across = p ? -(cx - p.ax) * p.uy + (cy - p.ay) * p.ux : cy - (item?.kind === "post" ? item.q.y : 0);
+        const pic = wall?.asset && opts.pictureFor ? opts.pictureFor(wall.asset) : null;
+        if (pic) {
+          const c = samplePicture(pic, along, across, half, px, wall!.tile);
+          const f = lit * (0.72 + 0.28 * rim);
+          over(d, (y * W + x) * 4, c[0] * f, c[1] * f, c[2] * f, cov * (c[3] / 255));
+          continue;
+        }
+        const look: WallLook = wall?.look ?? "stone";
+        const [r, gr, b] = lookColour(look, x, y, along, across, half, px);
+        const f = lit * (0.5 + 0.5 * rim);
+        over(d, (y * W + x) * 4, r * f, gr * f, b * f, cov);
       }
     }
   }
@@ -377,6 +406,65 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
     }
   }
   return out;
+}
+
+/**
+ * The colour of a built-in wall look at a pixel (before light and the rounded edge): stone as walls always were (noise in map pixels, so old maps look the
+ * same), and brick courses, wood planks, plaster and rough cave rock laid out along the wall (`along`, `across` in pixels from the wall's line).
+ */
+function lookColour(look: WallLook, x: number, y: number, along: number, across: number, half: number, px: number): [number, number, number] {
+  const [r, g, b] = WALL_BASE[look];
+  let f: number;
+  switch (look) {
+    case "stone":
+      f = 0.86 + 0.18 * (0.6 * vnoise(x / (px * 0.11), y / (px * 0.11)) + 0.4 * vnoise(x / (px * 0.034), y / (px * 0.034))) + 0.05 * (hash2(x, y) - 0.5);
+      break;
+    case "brick": {
+      // bricks a quarter of a square long, two courses across the wall's top when it is thick enough on screen (one when not), the joints staggered,
+      // thin mortar between them
+      const rows = 2 * half >= 14 ? 2 : 1, rowH = (2 * half) / rows, row = clamp(Math.floor((across + half) / rowH), 0, rows - 1), bl = 0.25 * px;
+      const jw = Math.max(0.45, 0.012 * px);
+      const u = (along + (row & 1 ? bl / 2 : 0)) / bl, col = Math.floor(u), fu = u - col;
+      const joint = Math.min(fu, 1 - fu) * bl < jw || (rows > 1 && Math.abs(across) < jw / 2);
+      if (joint) return [164, 150, 134];
+      f = 0.84 + 0.22 * hash2(col * 7 + row, row * 13 + 3) + 0.06 * (vnoise(x / (px * 0.05), y / (px * 0.05)) - 0.5);
+      break;
+    }
+    case "wood": {
+      // planks along the wall, three across it, with grain
+      const n = 3, pw = (2 * half) / n, plank = Math.floor((across + half) / pw), fv = (across + half) / pw - plank;
+      const seam = Math.min(fv, 1 - fv) * pw < 0.6 ? 0.72 : 1;
+      f = seam * (0.86 + 0.14 * hash2(plank, 91) + 0.1 * vnoise(along / (px * 0.6), plank * 5 + across / (px * 0.05)));
+      break;
+    }
+    case "plaster":
+      f = 0.95 + 0.05 * vnoise(x / (px * 0.08), y / (px * 0.08)) + 0.03 * (hash2(x, y) - 0.5);
+      break;
+    case "rock":
+      // rough and mottled: big dark and light blotches, cracks of shadow, grit
+      f = 0.6 + 0.62 * (0.6 * vnoise(x / (px * 0.16), y / (px * 0.16)) + 0.4 * vnoise(x / (px * 0.045), y / (px * 0.045))) + 0.1 * (hash2(x, y) - 0.5);
+      if (vnoise(x / (px * 0.07) + 31, y / (px * 0.07)) > 0.78) f *= 0.7;
+      break;
+  }
+  return [r * f, g * f, b * f];
+}
+
+/**
+ * A pack picture's pixel for a point on a wall: a long strip is laid along the wall with its height across it (so it keeps its shape, smaller), a squarer
+ * texture is tiled along the wall's direction, one repeat every `tile` squares (default 1).
+ */
+function samplePicture(pic: WallPicture, along: number, across: number, half: number, px: number, tile?: number): [number, number, number, number] {
+  let u: number, v: number;
+  if (pic.w / pic.h >= STRIP_ASPECT) {
+    const len = (2 * half * pic.w) / pic.h;
+    u = along / len; v = (across + half) / (2 * half);
+  } else {
+    const rep = Math.max(0.1, tile ?? 1) * px;
+    u = along / rep; v = (across + half) / rep;
+  }
+  const sx = Math.floor((u - Math.floor(u)) * pic.w), sy = clamp(Math.floor((v - Math.floor(v)) * pic.h), 0, pic.h - 1);
+  const o = (sy * pic.w + clamp(sx, 0, pic.w - 1)) * 4;
+  return [pic.data[o], pic.data[o + 1], pic.data[o + 2], pic.data[o + 3]];
 }
 
 /** Paint a slab (butt ends, `halfWidth` each side of the line a -> a + dir * len) with a per-pixel colour function. */

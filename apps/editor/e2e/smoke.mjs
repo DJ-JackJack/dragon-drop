@@ -38,6 +38,7 @@ const assetsDir = path.join(tmp, "Assets");
     { path: "textures/objects/Barrel.png", data: png(256, 256, [120, 80, 40]) },
     { path: "textures/terrain/Grass.png", data: png(1024, 1024, [50, 160, 50]) },
     { path: "textures/terrain/Cobbles.png", data: png(512, 512, [128, 128, 128]) },
+    { path: "textures/walls/Stone_Wall.png", data: png(512, 64, [70, 90, 200]) },
   ];
   const pad = (n, a) => (a - (n % a)) % a;
   const names = files.map((f) => enc.encode(`res://${f.path}`));
@@ -663,8 +664,31 @@ try {
     await page.getByTestId("btool-room").click();
     await page.getByTestId("floor-material-menu").click(); // (the floors open from a button in the tool bar; it closes when one is chosen)
     await page.getByTestId("material-wood-planks").click();
+    // its walls of brick (what walls are built of opens from a button in the tool bar too)
+    await page.getByTestId("wall-look-menu").click();
+    await page.getByTestId("wall-look-brick").click();
+    await page.getByTestId("wall-look-menu").getByText("Brick").waitFor({ timeout: 5000 });
     await drag([10, 5], [14, 9]);
     await page.getByTestId("history").getByText("Room walls (4×4)").waitFor({ timeout: 10000 });
+    // its left wall, built again of a wall picture from the pack (chosen in the inspector, where the picker opens in the panel)
+    await page.getByTestId("btool-select").click();
+    await click(10, 7.5);
+    await page.getByTestId("wall-built-of").getByText("Brick").waitFor({ timeout: 5000 });
+    await page.getByTestId("wall-built-of").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-wall"]').length === 1, null, { timeout: 15000 });
+    await page.getByTestId("pack-wall").click();
+    await page.getByTestId("history").getByText("Wall built of Stone Wall").waitFor({ timeout: 10000 });
+    await page.getByTestId("wall-built-of").getByText("Stone Wall").waitFor({ timeout: 5000 });
+    await page.keyboard.press("Escape"); // (a chosen wall is drawn highlighted)
+    await page.waitForTimeout(1200); // the picture loads, then the walls are drawn again
+    const wallAt = (pt) => page.evaluate(({ x, y }) => {
+      const c = document.querySelector('[data-testid="battle-canvas"]'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+      const d = c.getContext("2d").getImageData(Math.round((x - r.left) * dpr), Math.round((y - r.top) * dpr), 1, 1).data;
+      return [d[0], d[1], d[2]];
+    }, pt);
+    const blueWall = await wallAt(sq(10, 7.5)), brickWall = await wallAt(sq(14, 7.5));
+    if (!(blueWall[2] > blueWall[0] + 40)) fail(`the wall's pack picture isn't drawn (got ${blueWall})`);
+    if (!(brickWall[0] > brickWall[2] + 30)) fail(`the room's other walls aren't brick (got ${brickWall})`);
     // a door in its top wall; then try one on bare floor, which should explain itself
     await page.getByTestId("btool-door").click();
     await click(12, 5);

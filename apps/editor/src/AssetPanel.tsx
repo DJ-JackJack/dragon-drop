@@ -9,7 +9,7 @@ import type { MapMeta } from "@mapmaker/core";
 const CATS: { id: string; label: string; usable: boolean; tip: string }[] = [
   { id: "objects", label: "Objects", usable: true, tip: "Furniture, trees, rubble... click one, then click the map" },
   { id: "terrain", label: "Floors", usable: true, tip: "Seamless ground textures: click one to paint with it" },
-  { id: "walls", label: "Walls", usable: false, tip: "Wall styles (browse only for now)" },
+  { id: "walls", label: "Walls", usable: true, tip: "Wall pictures: click one, then draw walls with it (or choose one for a wall in the inspector)" },
   { id: "paths", label: "Paths", usable: false, tip: "Path styles (browse only for now)" },
   { id: "portals", label: "Doors", usable: false, tip: "Doors and windows (browse only for now)" },
   { id: "roofs", label: "Roofs", usable: false, tip: "Roof patterns (browse only for now)" },
@@ -66,7 +66,8 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
     setNote(null);
     if (it.cat === "objects" || it.cat === "other") { onUi({ asset: it.id, tool: "prop", propScale: 1, propRotation: 0 }); return; }
     if (it.cat === "terrain") { useAsFloor(it); return; }
-    setNote("Only objects and floor textures can be used so far. Walls, paths, doors, roofs and patterns are on the way.");
+    if (it.cat === "walls") { onUi({ tool: "wall", wallAsset: it.id }); return; }
+    setNote("Only objects, floor textures and walls can be used so far. Paths, doors, roofs and patterns are on the way.");
   };
 
   const useAsFloor = (it: AssetItem) => {

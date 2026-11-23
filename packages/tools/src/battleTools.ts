@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   type MapAmbientZone, type MapLight, type MapNote, type MapWall, type RGBAImage, type Rect, type Shape, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, ambientOf, applyLightPreset, battleSizeError, battleSpec, circlePolygon, cropScale, drawLabel, insertDoor,
   connectorTo, lightPresetName, nextNoteNumber, readingOrderNumbers, sortedNotes,
-  materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS,
+  materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS, WALL_LOOKS, type WallStyle, wallStyleOf,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext } from "./tools.ts";
@@ -19,6 +19,25 @@ const XY = z.array(z.number()).length(2).describe("[x, y] in grid squares");
 const MaterialNames = MATERIALS.map((m) => m.name) as [string, ...string[]];
 const MaterialSchema = z.string().min(1).max(80).describe(`Floor material: one of ${MaterialNames.join(", ")}, or the name of a pack floor texture added with add_floor_texture`);
 const WallKindSchema = z.enum(["wall", "door", "secret", "window", "invisible"]);
+const WallLookSchema = z.enum(WALL_LOOKS as [string, ...string[]]).describe("What the walls are built of when no pack picture is given: stone (the default), brick, wood, plaster, or rock (a cave)");
+const WallAssetSchema = z.string().min(1).describe(
+  "A picture from the DM's asset packs to draw the walls with: an id from search_assets (category walls: a long strip, laid along the wall; or a square texture such as bricks from category terrain, tiled along it). Prefer one when the packs have a fitting wall",
+);
+
+/** The wall style a call asks for, its pack picture checked; or a message why not. */
+async function wallStyleFrom(ctx: ToolContext, i: { wall_look?: string; wall_asset?: string; wall_tile?: number }): Promise<WallStyle | string> {
+  if (i.wall_asset) {
+    if (!ctx.assets) return "There's no asset library set up (Settings), so there are no wall pictures: give wall_look instead.";
+    const info = await ctx.assets.info(i.wall_asset);
+    if (!info) return `No asset has the id "${i.wall_asset}". Find one with search_assets (category walls).`;
+  }
+  return wallStyleOf({ ...(i.wall_look && { look: i.wall_look as WallStyle["look"] }), ...(i.wall_asset && { asset: i.wall_asset }), ...(i.wall_tile && { tile: i.wall_tile }) });
+}
+const WallStyleFields = {
+  wall_look: WallLookSchema.optional(),
+  wall_asset: WallAssetSchema.optional(),
+  wall_tile: z.number().min(0.25).max(8).optional().describe("For a square wall_asset texture: squares one repeat covers (default 1)"),
+};
 const LightLevelSchema = z.union([z.enum(LIGHT_PRESET_NAMES as [string, ...string[]]), z.number().min(0.05).max(1)]);
 const ZoneShape = z.discriminatedUnion("type", [
   z.object({ type: z.literal("rect"), x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }),
@@ -148,16 +167,19 @@ export const BATTLE_TOOLS = [
         width: z.number().min(0.5).max(4).optional().describe("Squares (default 1)"),
         kind: z.enum(["door", "secret", "window"]).optional(),
       })).max(24).optional(),
+      ...WallStyleFields,
     }),
     async run(ctx, i) {
       const sp = spec(ctx);
       if (i.x < 0 || i.y < 0 || i.x + i.w > sp.squaresX || i.y + i.h > sp.squaresY) return fail(`The room runs off the map (${sp.squaresX} x ${sp.squaresY} squares).`);
+      const style = await wallStyleFrom(ctx, i);
+      if (typeof style === "string") return fail(style);
       const floor = materialId(ctx, i.floor ?? "flagstone");
       ctx.execute({ op: "paint_floor", params: { shape: { type: "rect", x: i.x * sp.sub, y: i.y * sp.sub, w: i.w * sp.sub, h: i.h * sp.sub }, material: floor } }, `Room floor (${i.w}x${i.h})`);
       let walls: MapWall[] = [];
       if (i.walls !== false) {
         const id = newFeatureId("w");
-        walls = roomWalls(id, i.x, i.y, i.w, i.h, i.doors ?? []);
+        walls = roomWalls(id, i.x, i.y, i.w, i.h, i.doors ?? [], style);
       }
       const r = walls.length ? ctx.execute({ op: "features", patch: { upsertWalls: walls }, label: `Room walls (${i.w}x${i.h})` }) : null;
       return json({ change: r?.seq, room: { x: i.x, y: i.y, w: i.w, h: i.h }, walls: walls.length, doors: walls.filter((w) => w.kind !== "wall").map((w) => ({ id: w.id, kind: w.kind, from: w.points[0], to: w.points[1] })) });
@@ -176,9 +198,12 @@ export const BATTLE_TOOLS = [
       ]),
       floor: MaterialSchema.optional().describe("Default flagstone"),
       walls: z.boolean().optional().describe("Build the wall around it (default true)"),
+      ...WallStyleFields,
     }),
     async run(ctx, i) {
       const sp = spec(ctx);
+      const style = await wallStyleFrom(ctx, i);
+      if (typeof style === "string") return fail(style);
       const polygon = i.shape.type === "circle" ? circlePolygon(i.shape.x, i.shape.y, i.shape.r) : i.shape.points.map(([x, y]) => [x, y] as [number, number]);
       if (polygon.some(([x, y]) => x < -0.01 || y < -0.01 || x > sp.squaresX + 0.01 || y > sp.squaresY + 0.01)) return fail(`The shape runs off the map (${sp.squaresX} x ${sp.squaresY} squares).`);
       const floor = materialId(ctx, i.floor ?? "flagstone");
@@ -188,7 +213,7 @@ export const BATTLE_TOOLS = [
       ctx.execute({ op: "paint_floor", params: { shape, material: floor } }, `Room floor (${i.shape.type})`);
       let wall: MapWall | undefined;
       if (i.walls !== false) {
-        wall = { id: newFeatureId("w"), kind: "wall", points: polygon, closed: true };
+        wall = { id: newFeatureId("w"), kind: "wall", points: polygon, closed: true, ...style };
         ctx.execute({ op: "features", patch: { upsertWalls: [wall] }, label: `Room walls (${i.shape.type})` });
       }
       return json({ room: i.shape, wall_id: wall?.id });
@@ -204,10 +229,13 @@ export const BATTLE_TOOLS = [
     schema: z.object({
       region: z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }).optional().describe("Only outlines in this area, in squares (default: the whole map)"),
       keep_previous: z.boolean().optional().describe("Don't replace walls made by an earlier call"),
+      ...WallStyleFields,
     }),
     async run(ctx, i) {
       const doc = ctx.session().doc;
-      const walls = wallsAroundFloor(doc, () => newFeatureId("w"), { region: i.region });
+      const style = await wallStyleFrom(ctx, i);
+      if (typeof style === "string") return fail(style);
+      const walls = wallsAroundFloor(doc, () => newFeatureId("w"), { region: i.region }).map((w) => ({ ...w, ...style }));
       const old = i.keep_previous || i.region ? [] : (doc.features?.walls ?? []).filter((w) => w.auto).map((w) => w.id);
       if (!walls.length && !old.length) return fail("There's no floor to wall yet. Paint some with paint_floor or add_room first.");
       const r = ctx.execute({ op: "features", patch: { removeWalls: old, upsertWalls: walls }, label: `Walls around the floor (${walls.length} outline${walls.length === 1 ? "" : "s"})` });
@@ -226,11 +254,14 @@ export const BATTLE_TOOLS = [
       closed: z.boolean().optional().describe("Join the last point back to the first"),
       open: z.boolean().optional().describe("Doors: drawn open"),
       locked: z.boolean().optional().describe("Doors: locked (Foundry)"),
+      ...WallStyleFields,
     }),
     async run(ctx, i) {
       const sp = spec(ctx);
       for (const [x, y] of i.points) if (x < -0.01 || y < -0.01 || x > sp.squaresX + 0.01 || y > sp.squaresY + 0.01) return fail("A point is off the map.");
-      const wall: MapWall = { id: newFeatureId("w"), kind: i.kind ?? "wall", points: i.points.map(([x, y]) => [x, y] as [number, number]), ...(i.closed && { closed: true }), ...(i.open && { open: true }), ...(i.locked && { locked: true }) };
+      const style = await wallStyleFrom(ctx, i);
+      if (typeof style === "string") return fail(style);
+      const wall: MapWall = { id: newFeatureId("w"), kind: i.kind ?? "wall", points: i.points.map(([x, y]) => [x, y] as [number, number]), ...(i.closed && { closed: true }), ...(i.open && { open: true }), ...(i.locked && { locked: true }), ...style };
       const r = ctx.execute({ op: "features", patch: { upsertWalls: [wall] }, label: `Add ${wall.kind}` });
       return json({ change: r.seq, wall });
     },
@@ -268,6 +299,35 @@ export const BATTLE_TOOLS = [
       const next: MapWall = { ...w, ...(i.kind && { kind: i.kind }), ...(i.open !== undefined && { open: i.open }), ...(i.locked !== undefined && { locked: i.locked }) };
       const r = ctx.execute({ op: "features", patch: { upsertWalls: [next] }, label: `Update ${next.kind}` });
       return json({ change: r.seq, wall: next });
+    },
+  }),
+
+  define({
+    name: "set_wall_look",
+    description:
+      "Change what walls are built of: a built-in look (stone, brick, wood, plaster, rock) or a picture from the asset packs (wall_asset, an id from search_assets). " +
+      "ids from list_battle; without ids, every wall on the active level. Doors keep their own look; a window's frame takes the wall's. wall_asset: null takes a picture off (the look shows again).",
+    schema: z.object({
+      ids: z.array(z.string()).min(1).max(400).optional(),
+      wall_look: WallLookSchema.optional(),
+      wall_asset: WallAssetSchema.nullable().optional(),
+      wall_tile: WallStyleFields.wall_tile,
+    }),
+    async run(ctx, i) {
+      if (!i.wall_look && i.wall_asset === undefined && !i.wall_tile) return fail("Give wall_look, wall_asset or wall_tile.");
+      const style = await wallStyleFrom(ctx, { wall_look: i.wall_look, wall_asset: i.wall_asset ?? undefined, wall_tile: i.wall_tile });
+      if (typeof style === "string") return fail(style);
+      const all = wallsOf(ctx).filter((w) => w.kind !== "invisible");
+      const pick = i.ids ? all.filter((w) => i.ids!.includes(w.id)) : all;
+      if (!pick.length) return fail(i.ids ? "None of those ids are walls here. Use list_battle." : "There are no walls on this level yet.");
+      const next = pick.map((w) => {
+        const n: MapWall = { ...w, ...style };
+        if (i.wall_asset === null) { delete n.asset; delete n.tile; }
+        return n;
+      });
+      const what = i.wall_asset ? "a pack picture" : i.wall_asset === null ? "no picture" : i.wall_look ?? "a new repeat";
+      const r = ctx.execute({ op: "features", patch: { upsertWalls: next }, label: `Walls: ${what} (${next.length})` });
+      return json({ change: r.seq, walls: next.length });
     },
   }),
 
@@ -325,7 +385,7 @@ export const BATTLE_TOOLS = [
     async run(ctx) {
       return json({
         summary: battleSummary(ctx),
-        walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), pieces: wallSegments(w).length })),
+        walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), ...wallStyleOf(w), pieces: wallSegments(w).length })),
         lights: lightsOf(ctx).map((l) => ({ id: l.id, x: round(l.x), y: round(l.y), radius: l.radius, bright: l.bright, colour: l.colour })),
         connectors: (ctx.session().doc.features?.connectors ?? []).map((c) => ({ id: c.id, kind: c.kind, ...(c.name && { name: c.name }), x: c.x, y: c.y, w: c.w, h: c.h, leads: connectorTo(c) })),
         roofs: (ctx.session().doc.features?.roofs ?? []).map((r) => ({ id: r.id, ...(r.name && { name: r.name }), style: r.style, ...(r.asset && { asset: r.asset }), points: r.points.map(([x, y]) => [round(x), round(y)]) })),

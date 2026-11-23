@@ -10,7 +10,7 @@ import { HeightField } from "./doc.ts";
 import { type PaletteEntry, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "./assets.ts";
 import { type Features, type MapAmbientZone, type MapConnector, type MapLight, type MapProp, type MapWall, connectorTo, emptyFeatures, wallSegments } from "./features.ts";
 import { lightVisibility, visibleDistance } from "./lighting.ts";
-import { boxBlur, compositeOver, renderWallLayer } from "./battleLook.ts";
+import { boxBlur, compositeOver, renderWallLayer , type WallPictureSource } from "./battleLook.ts";
 import { type RoofPictureRect, type RoofTileSource, renderRoofLayer, renderRoofPicture, roofPictureRect } from "./battleRoof.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
 import { type FoundryStairInput, type FoundrySurfaceInput, type FoundryTileInput, foundryScene } from "./foundryScene.ts";
@@ -204,6 +204,7 @@ export const toCells = (squares: number, spec: BattleSpec) => squares * spec.sub
  */
 export function roomWalls(
   idPrefix: string, x: number, y: number, w: number, h: number, doors: { side: "top" | "bottom" | "left" | "right"; offset: number; width?: number; kind?: "door" | "secret" | "window" }[],
+  style: WallStyle = {},
 ): MapWall[] {
   const edges: Record<string, { a: [number, number]; b: [number, number] }> = {
     top: { a: [x, y], b: [x + w, y] }, right: { a: [x + w, y], b: [x + w, y + h] },
@@ -222,13 +223,21 @@ export function roomWalls(
     const pt = (t: number): [number, number] => [a[0] + dir[0] * t, a[1] + dir[1] * t];
     for (const d of here) {
       const start = Math.max(cursor, Math.min(len, along(d))), width = Math.min(d.width ?? 1, len - start);
-      if (start > cursor) out.push({ id: `${idPrefix}-${n++}`, kind: "wall", points: [pt(cursor), pt(start)] });
-      out.push({ id: `${idPrefix}-${n++}`, kind: d.kind ?? "door", points: [pt(start), pt(start + width)] });
+      if (start > cursor) out.push({ id: `${idPrefix}-${n++}`, kind: "wall", points: [pt(cursor), pt(start)], ...wallStyleOf(style) });
+      out.push({ id: `${idPrefix}-${n++}`, kind: d.kind ?? "door", points: [pt(start), pt(start + width)], ...wallStyleOf(style) });
       cursor = start + width;
     }
-    if (cursor < len - 1e-9) out.push({ id: `${idPrefix}-${n++}`, kind: "wall", points: [pt(cursor), pt(len)] });
+    if (cursor < len - 1e-9) out.push({ id: `${idPrefix}-${n++}`, kind: "wall", points: [pt(cursor), pt(len)], ...wallStyleOf(style) });
   }
   return out;
+}
+
+/** What a wall is built of: its look, or a picture from the asset packs (and that picture's repeat). */
+export type WallStyle = Pick<MapWall, "look" | "asset" | "tile">;
+
+/** A wall's style as fields to spread into another wall (only the ones that are set, so an unstyled wall stays exactly as it was). */
+export function wallStyleOf(w: WallStyle): WallStyle {
+  return { ...(w.look && { look: w.look }), ...(w.asset && { asset: w.asset }), ...(w.tile && { tile: w.tile }) };
 }
 
 /** Largest battlemap image we'll render, in pixels (RGBA, so 4 bytes each). */
@@ -275,7 +284,8 @@ export function insertDoor(
   const centre = Math.max(w / 2, Math.min(len - w / 2, t * len));
   const at = (s: number): [number, number] => [a[0] + ((b[0] - a[0]) * s) / len, a[1] + ((b[1] - a[1]) * s) / len];
   const add: MapWall[] = [];
-  const piece = (p: [number, number], q: [number, number], k: MapWall["kind"]): MapWall => ({ id: newId(), kind: k, points: [p, q] });
+  // (every piece keeps what the wall was built of: a window's frame, and the wall either side of a door, look as it did)
+  const piece = (p: [number, number], q: [number, number], k: MapWall["kind"]): MapWall => ({ id: newId(), kind: k, points: [p, q], ...wallStyleOf(wall) });
   segs.forEach((seg, j) => {
     if (j !== i) { add.push(piece(seg[0], seg[1], "wall")); return; }
     if (centre - w / 2 > 1e-6) add.push(piece(a, at(centre - w / 2), "wall"));
@@ -678,8 +688,8 @@ export function drawBattleLights(
 }
 
 /** Walls, doors and windows (and, unless `lights` is false, light) onto an image of the whole battlemap (image px). */
-export function drawBattleOverlay(img: { w: number; h: number; data: Uint8ClampedArray }, spec: BattleSpec, f: Features | undefined, opts: { lights?: boolean; floorAt?: (xSquares: number, ySquares: number) => boolean } = {}) {
-  compositeOver(img, renderWallLayer(spec, f?.walls, { floorAt: opts.floorAt, connectors: f?.connectors }));
+export function drawBattleOverlay(img: { w: number; h: number; data: Uint8ClampedArray }, spec: BattleSpec, f: Features | undefined, opts: { lights?: boolean; floorAt?: (xSquares: number, ySquares: number) => boolean; wallPictures?: WallPictureSource } = {}) {
+  compositeOver(img, renderWallLayer(spec, f?.walls, { floorAt: opts.floorAt, connectors: f?.connectors, pictureFor: opts.wallPictures }));
   if (opts.lights !== false) drawBattleLights(img, spec, f?.lights, f?.walls, f?.zones);
 }
 
@@ -747,7 +757,7 @@ export function footprint(spr: SpriteData & { origW?: number; origH?: number }):
 
 /** The whole battlemap as an image: floors, objects below the walls, walls and doors, objects above, then lights; with `roofs` (an opacity, 0 to 1) the level's roofs over everything. */
 export function renderBattle(
-  doc: MapDoc, opts: { overlay?: boolean; lights?: boolean; notes?: boolean; tiles?: TileSource; sprites?: SpriteSource; roofs?: number; roofTiles?: RoofTileSource } = {},
+  doc: MapDoc, opts: { overlay?: boolean; lights?: boolean; notes?: boolean; tiles?: TileSource; sprites?: SpriteSource; roofs?: number; roofTiles?: RoofTileSource; wallPictures?: WallPictureSource } = {},
 ): { w: number; h: number; data: Uint8ClampedArray } {
   const spec = battleSpec(doc);
   const { w, h } = battleImageSize(spec);
@@ -755,7 +765,7 @@ export function renderBattle(
   renderBattleFloor(doc, img.data, undefined, opts.tiles);
   drawBattleProps(img, spec, doc.features?.props, opts.sprites, "below");
   if (opts.overlay !== false) {
-    compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors }));
+    compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures }));
     drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
     if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones);
     if (opts.notes) drawBattleNotes(img, spec, doc.features?.notes);

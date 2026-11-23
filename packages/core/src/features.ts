@@ -92,6 +92,11 @@ export interface MapLine {
 
 export type WallKind = "wall" | "door" | "secret" | "window" | "invisible";
 
+/** What a battlemap wall is built of, when no picture from the asset packs is given (missing = stone, as walls always were). */
+export type WallLook = "stone" | "brick" | "wood" | "plaster" | "rock";
+export const WALL_LOOKS: WallLook[] = ["stone", "brick", "wood", "plaster", "rock"];
+export const WALL_LOOK_NAMES: Record<WallLook, string> = { stone: "Stone", brick: "Brick", wood: "Wood", plaster: "Plaster", rock: "Cave rock" };
+
 /** A wall, door, secret door, window or invisible barrier on a battlemap. Points are in grid squares. */
 export interface MapWall {
   id: string;
@@ -106,6 +111,12 @@ export interface MapWall {
   /** Built automatically around painted floor (so it can be rebuilt without piling up). */
   auto?: boolean;
   notes?: string;
+  /** What it is built of (missing: stone). */
+  look?: WallLook;
+  /** A picture from the asset packs drawn along it instead (an asset id): a long strip is laid along the wall, a square texture tiled along it. */
+  asset?: string;
+  /** For a square texture: squares one repeat covers (default 1). */
+  tile?: number;
 }
 
 /** The straight pieces a wall is made of (a closed wall includes the piece back to its start). */

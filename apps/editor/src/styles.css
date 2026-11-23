@@ -659,3 +659,13 @@ button.link { background: none; border: none; padding: 0; color: var(--gold-hi);
 .swatch.tex.added:not(.on) { box-shadow: inset 0 0 0 2px rgba(212, 175, 55, 0.45); }
 .pack-floors-more { align-self: center; font-size: 12px; padding: 3px 10px; }
 .pack-floors-note { margin: 8px 0 0; max-width: 274px; font-size: 12.5px; }
+
+/* what a wall is built of (WallLookPicker.tsx): in the tool bar's pop-out, and open inside the inspector, at the panel's width */
+.wall-picker { width: 274px; max-width: 70vw; }
+.wall-picker .seg { margin: 0; }
+.inline-picker { margin: 4px 0 6px; }
+.inline-picker .wall-picker, .inline-picker .pack-floors { width: auto; max-width: none; }
+.inline-picker .materials { grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); }
+.inline-picker .pack-floor-grid { max-height: 200px; }
+button.built-of { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: flex-start; }
+button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }

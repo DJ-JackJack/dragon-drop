@@ -470,14 +470,21 @@ export class Hub {
   }
 
   /** Pack textures and object images the open battlemap needs, decoded for the render worker, and how many couldn't be had. */
-  async battleAssets(doc: MapDoc): Promise<{ opts: { tiles?: Record<number, import("@mapmaker/core").TileData>; sprites?: Record<string, import("@mapmaker/core").SpriteData>; roofTiles?: Record<string, import("@mapmaker/core").TileData> }; missing: number }> {
+  async battleAssets(doc: MapDoc): Promise<{ opts: { tiles?: Record<number, import("@mapmaker/core").TileData>; sprites?: Record<string, import("@mapmaker/core").SpriteData>; roofTiles?: Record<string, import("@mapmaker/core").TileData>; wallPictures?: Record<string, import("@mapmaker/core").SpriteData> }; missing: number }> {
     const lib = this.assets;
     const spec = battleSpec(doc);
     const palette = spec.palette ?? [];
     const props = doc.features?.props ?? [];
     const pictured = (doc.features?.roofs ?? []).filter((r) => r.asset);
-    if (!lib || (!palette.length && !props.length && !pictured.length)) return { opts: {}, missing: palette.length + props.length + pictured.length };
+    const wallAssets = [...new Set((doc.features?.walls ?? []).map((w) => w.asset).filter((a): a is string => !!a))];
+    if (!lib || (!palette.length && !props.length && !pictured.length && !wallAssets.length)) return { opts: {}, missing: palette.length + props.length + pictured.length + wallAssets.length };
     let missing = 0;
+    // walls drawn with a picture from an asset pack (a long strip or a square texture, kept in its own shape)
+    const wallPictures: Record<string, import("@mapmaker/core").SpriteData> = {};
+    for (const a of wallAssets) {
+      const pic = await lib.wallPicture(a);
+      if (pic) wallPictures[a] = pic; else missing++;
+    }
     // roofs made of a picture from an asset pack: the pictures, by asset id
     const roofTiles: Record<string, import("@mapmaker/core").TileData> = {};
     for (const r of pictured) {
@@ -501,7 +508,7 @@ export class Hub {
       const s = await lib.sprite(asset, (spec.pxPerSquare * sc) / PROP_PX_PER_SQUARE);
       if (s) sprites[asset] = s; else missing++;
     }
-    return { opts: { tiles, sprites, ...(pictured.length && { roofTiles }) }, missing };
+    return { opts: { tiles, sprites, ...(pictured.length && { roofTiles }), ...(wallAssets.length && { wallPictures }) }, missing };
   }
 
   // ---------------------------------------------------------------- battlemap levels

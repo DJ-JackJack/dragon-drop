@@ -10,6 +10,53 @@ const at = (img: { w: number; data: Uint8ClampedArray }, xSq: number, ySq: numbe
   return { r: img.data[o], g: img.data[o + 1], b: img.data[o + 2], a: img.data[o + 3] };
 };
 
+describe("what walls are built of", () => {
+  // (a long horizontal wall, looked at on its line, a little inside its top edge, and off it)
+  const line = [[1, 5], [11, 5]] as [number, number][];
+  const mean = (l: { w: number; data: Uint8ClampedArray }, y: number) => {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let x = 2 * 40; x < 10 * 40; x++) { const o = (y * l.w + x) * 4; r += l.data[o]; g += l.data[o + 1]; b += l.data[o + 2]; n++; }
+    return [r / n, g / n, b / n];
+  };
+
+  it("is stone without a look, exactly as walls always were", () => {
+    const a = renderWallLayer(spec(), [wall("w", "wall", line)]);
+    const b = renderWallLayer(spec(), [wall("w", "wall", line, { look: "stone" })]);
+    expect(Buffer.from(b.data).equals(Buffer.from(a.data))).toBe(true);
+  });
+
+  it("draws each look in its own colours: brick red, wood brown, plaster pale, cave rock dark", () => {
+    const col = (look: MapWall["look"]) => mean(renderWallLayer(spec(), [wall("w", "wall", line, { look })]), 198); // (a row inside the wall, off its middle)
+    const stone = col("stone"), brick = col("brick"), wood = col("wood"), plaster = col("plaster"), rock = col("rock");
+    expect(brick[0] - brick[2]).toBeGreaterThan(stone[0] - stone[2] + 30);
+    expect(wood[0] - wood[2]).toBeGreaterThan(30);
+    expect(plaster[0] + plaster[1] + plaster[2]).toBeGreaterThan(stone[0] + stone[1] + stone[2] + 120);
+    expect(rock[0] + rock[1] + rock[2]).toBeLessThan(stone[0] + stone[1] + stone[2]);
+  });
+
+  it("lays a pack picture along the wall when it has one, and its look until the picture is there", () => {
+    // a strip: blue top half, yellow bottom half; it lies along the wall, so the wall's top is blue and its bottom yellow
+    const strip = { w: 400, h: 40, data: new Uint8ClampedArray(400 * 40 * 4) };
+    for (let y = 0; y < 40; y++) for (let x = 0; x < 400; x++) strip.data.set(y < 20 ? [40, 60, 220, 255] : [230, 210, 40, 255], (y * 400 + x) * 4);
+    const w = wall("w", "wall", line, { look: "brick", asset: "pack:walls/strip.png" });
+    const l = renderWallLayer(spec(), [w], { pictureFor: (a) => (a === "pack:walls/strip.png" ? strip : null) });
+    const top = mean(l, 200 - 2), bottom = mean(l, 200 + 2);
+    expect(top[2]).toBeGreaterThan(top[0] + 60); // blue
+    expect(bottom[0]).toBeGreaterThan(bottom[2] + 60); // yellow
+    // not loaded yet: brick
+    const waiting = mean(renderWallLayer(spec(), [w], { pictureFor: () => null }), 198);
+    expect(waiting[0] - waiting[2]).toBeGreaterThan(40);
+    // a square texture is tiled along the wall: a red-and-green checker shows both colours along it
+    const sq = { w: 64, h: 64, data: new Uint8ClampedArray(64 * 64 * 4) };
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) sq.data.set(x < 32 ? [220, 40, 40, 255] : [40, 200, 40, 255], (y * 64 + x) * 4);
+    const t = renderWallLayer(spec(), [wall("t", "wall", line, { asset: "sq" })], { pictureFor: () => sq });
+    const row = 200, reds: number[] = [], greens: number[] = [];
+    for (let x = 2 * 40; x < 6 * 40; x++) { const o = (row * t.w + x) * 4; (t.data[o] > t.data[o + 1] ? reds : greens).push(x); }
+    expect(reds.length).toBeGreaterThan(40);
+    expect(greens.length).toBeGreaterThan(40);
+  });
+});
+
 describe("the wall layer", () => {
   it("is empty without walls and sized to the map", () => {
     const l = renderWallLayer(spec(), []);

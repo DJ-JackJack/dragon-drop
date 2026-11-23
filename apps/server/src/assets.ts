@@ -643,6 +643,20 @@ export class AssetLibrary {
     return this.remember(key, { w: s.w, h: s.h, data: s.data, origW: s.origW, origH: s.origH }, s.data.length);
   }
 
+  /**
+   * A picture to draw along walls, in its own shape: a long strip (wall pictures in pack files are 10 to 30 times as long as they are high) at most 128 px
+   * high, a squarer texture at most 512 px a side. Null when it can't be read.
+   */
+  async wallPicture(id: string): Promise<SpriteData | null> {
+    const r = await this.locate(id);
+    if (!r) return null;
+    const s = await this.sizeOf(r.pack, r.entry);
+    if (!s) return null;
+    const ratio = s.w / s.h >= 2.5 ? Math.min(1, 128 / s.h) : Math.min(1, 512 / Math.max(s.w, s.h));
+    const pic = await this.sprite(id, ratio);
+    return pic && { w: pic.w, h: pic.h, data: pic.data };
+  }
+
   /** A pack's picture made ready to draw (core shrinkPicture): on the worker thread when the server gave one (`pictures`), else here. */
   private async shrunk(id: string, job: ShrinkJob): Promise<ShrunkPicture | null> {
     const r = await this.locate(id);

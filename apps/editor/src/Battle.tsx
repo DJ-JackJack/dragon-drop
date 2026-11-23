@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, WALL_BASE, type WallLook, type WallStyle, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -19,6 +19,7 @@ import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { PackFloors } from "./PackFloors.tsx";
+import { type WallChoice, WallLookPicker, WallSwatch, wallChoiceLabel } from "./WallLookPicker.tsx";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
@@ -55,11 +56,20 @@ export interface BattleUi {
   roofStyle: RoofStyle;
   /** Roofs over the map: hidden, faint (to see the rooms through them while you work) or solid (as the players will see them). */
   roofView: "off" | "faint" | "solid";
+  /** What new walls (the Wall and Room tools, walls around the floor) are built of: a look, or a picture from the asset packs. */
+  wallLook: WallLook;
+  wallAsset: string | null;
+}
+
+/** The new-wall style the tools put on a wall (nothing for plain stone, so such a wall is stored exactly as walls always were). */
+export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallStyle {
+  return wallStyleOf({ ...(o.wallLook !== "stone" && { look: o.wallLook }), ...(o.wallAsset && { asset: o.wallAsset }) });
 }
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
+  wallLook: "stone", wallAsset: null,
 };
 
 /** The name of a floor material, including pack textures. */
@@ -292,13 +302,41 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const sig = `${m.id}|${px}|${spec.squaresX}x${spec.squaresY}|${JSON.stringify(walls)}|${JSON.stringify(connectors)}`;
     if (!force && sig === wallSig.current && wallRef.current) return;
     wallSig.current = sig;
-    const layer = renderWallLayer({ ...spec, pxPerSquare: px }, walls, { floorAt: floorAtFn({ meta: m, height: hf } as MapDoc), connectors });
+    const layer = renderWallLayer({ ...spec, pxPerSquare: px }, walls, { floorAt: floorAtFn({ meta: m, height: hf } as MapDoc), connectors, pictureFor: wallPictureFor });
     const cv = wallRef.current?.cv ?? document.createElement("canvas");
     cv.width = layer.w; cv.height = layer.h;
     cv.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(layer.data), layer.w, layer.h), 0, 0);
     wallRef.current = { cv, px };
     requestDraw();
   }, []);
+
+  /**
+   * The wall pictures from asset packs in their own shape, as the server prepares them (a long strip at most 128 px high, a squarer texture at most
+   * 512 px a side): loaded once, and the walls are drawn again when one arrives.
+   */
+  const wallPictures = useRef(new Map<string, WallPicture | "loading" | "failed">());
+  const wallPictureFor: WallPictureSource = (asset) => {
+    const hit = wallPictures.current.get(asset);
+    if (hit && hit !== "loading" && hit !== "failed") return hit;
+    if (!hit) {
+      wallPictures.current.set(asset, "loading");
+      const img = new Image();
+      img.onload = () => {
+        const strip = img.naturalWidth / img.naturalHeight >= 2.5;
+        const k = strip ? Math.min(1, 128 / img.naturalHeight) : Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const cx = c.getContext("2d")!;
+        cx.drawImage(img, 0, 0, w, h);
+        wallPictures.current.set(asset, { w, h, data: cx.getImageData(0, 0, w, h).data });
+        buildWalls(true);
+      };
+      img.onerror = () => wallPictures.current.set(asset, "failed");
+      img.src = assetUrl(asset);
+    }
+    return null;
+  };
 
   /** The roof pictures from asset packs, as 512 px RGBA (loaded like floor textures: the roofs are drawn again when one arrives). */
   const roofTileFor: RoofTileSource = (asset) => {
@@ -798,7 +836,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       : { type: "polygon" as const, points: polygon.map(([x, y]) => [toCells(x, spec), toCells(y, spec)] as [number, number]) };
     send({ t: "cmd", cmd: { op: "paint_floor", params: { shape, material: o.material } }, label: o.tool === "room" ? "Room floor" : `Paint ${materialLabel(metaRef.current, o.material)}` });
     if (o.tool === "room") {
-      const wall: MapWall = { id: newFeatureId("w"), kind: "wall", points: polygon.map(([x, y]) => [x, y] as [number, number]), closed: true };
+      const wall: MapWall = { id: newFeatureId("w"), kind: "wall", points: polygon.map(([x, y]) => [x, y] as [number, number]), closed: true, ...newWallStyle(o) };
       sendFeatures({ upsertWalls: [wall] }, "Room walls");
     }
   }
@@ -837,7 +875,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     draft.current = null;
     requestDraw();
     if (!dr || dr.pts.length < 2) return;
-    const wall: MapWall = { id: newFeatureId("w"), kind: dr.kind, points: dr.pts, ...(closed && dr.pts.length >= 3 && { closed: true }) };
+    const wall: MapWall = { id: newFeatureId("w"), kind: dr.kind, points: dr.pts, ...(closed && dr.pts.length >= 3 && { closed: true }), ...(dr.kind === "wall" && newWallStyle(uiRef.current)) };
     sendFeatures({ upsertWalls: [wall] }, `Add ${dr.kind === "wall" ? "wall" : "invisible wall"}`);
     onUiRef.current({ multi: [], selected: wall.id });
   }
@@ -1087,7 +1125,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         const shape = { type: "rect" as const, x: toCells(x0, spec), y: toCells(y0, spec), w: toCells(w, spec), h: toCells(h, spec) };
         send({ t: "cmd", cmd: { op: "paint_floor", params: { shape, material: o.material } }, label: o.tool === "room" ? `Room floor (${w}×${h})` : `Paint ${materialLabel(metaRef.current, o.material)}` });
         if (o.tool === "room") {
-          const walls = roomWalls(newFeatureId("w"), x0, y0, w, h, []);
+          const walls = roomWalls(newFeatureId("w"), x0, y0, w, h, [], newWallStyle(o));
           sendFeatures({ upsertWalls: walls }, `Room walls (${w}×${h})`);
         }
       }
@@ -1424,6 +1462,11 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
           </label>
         </div>
       )}
+      {(ui.tool === "wall" || ui.tool === "room") && (
+        <Popover label={<><WallSwatch c={{ look: ui.wallLook, asset: ui.wallAsset }} /> Walls: <b>{wallChoiceLabel({ look: ui.wallLook, asset: ui.wallAsset })}</b></>} title="Choose what new walls are built of" testId="wall-look-menu">
+          {(close) => <WallLookPicker value={{ look: ui.wallLook, asset: ui.wallAsset }} onPick={(c) => { onUi({ wallLook: c.look, wallAsset: c.asset }); close(); }} />}
+        </Popover>
+      )}
       {ui.tool === "brush" && (
         <label className="slider">
           <span>Brush size <b>{(ui.brush * 2).toFixed(1)}</b> squares across</span>
@@ -1431,18 +1474,18 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
         </label>
       )}
       {(isFloorTool(ui.tool) || ui.tool === "wall") && <div className="cavewalls" data-testid="cave-walls">
-        <button onClick={() => buildWallsAroundFloor(meta)} title="Draw a wall along the edge of all the floor: handy for caves and anything you painted freehand" data-testid="walls-around-floor">▢ Walls around the floor</button>
+        <button onClick={() => buildWallsAroundFloor(meta, newWallStyle(ui))} title="Draw a wall along the edge of all the floor: handy for caves and anything you painted freehand" data-testid="walls-around-floor">▢ Walls around the floor</button>
       </div>}
     </ToolBar>
   );
 }
 
 /** Walls along the edge of all the floor. Walls built this way before are replaced, so it can be run again after changing the floor. */
-export function buildWallsAroundFloor(meta: MapMeta | null) {
+export function buildWallsAroundFloor(meta: MapMeta | null, style: WallStyle = {}) {
   const hf = store.heights;
   if (!meta?.battle || !hf) return;
   const doc: MapDoc = { meta, height: hf };
-  const walls = wallsAroundFloor(doc, () => newFeatureId("w"));
+  const walls = wallsAroundFloor(doc, () => newFeatureId("w")).map((w) => ({ ...w, ...style }));
   const old = (store.getState().features.walls ?? []).filter((w) => w.auto).map((w) => w.id);
   if (!walls.length && !old.length) { window.alert("There's no floor to put walls around yet."); return; }
   sendFeatures({ removeWalls: old, upsertWalls: walls }, `Walls around the floor (${walls.length} outline${walls.length === 1 ? "" : "s"})`);
@@ -1467,6 +1510,9 @@ function useLatest<T>(value: T) {
 /** Several things selected at once: what they are, and what can be done with them together. */
 function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Features; ids: string[]; bounds: { w: number; h: number }; onClear: () => void; onSelect: (ids: string[]) => void }) {
   const count = (k: string) => ids.filter((id) => featureKindOf(features, id) === k).length;
+  const [picking, setPicking] = useState(false);
+  // (walls and windows can be restyled together; a door keeps its own look, an invisible wall has none)
+  const buildable = (features.walls ?? []).filter((w) => ids.includes(w.id) && (w.kind === "wall" || w.kind === "window" || w.kind === "secret"));
   const parts = [[count("prop"), "object"], [count("light"), "light"], [count("wall"), "wall piece"], [count("note"), "room note"], [count("zone"), "light zone"], [count("connector"), "stair, ladder or hole"], [count("roof"), "roof"]]
     .filter(([n]) => (n as number) > 0).map(([n, w]) => `${n} ${w}${n === 1 ? "" : "s"}`);
   return (
@@ -1484,6 +1530,22 @@ function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Fe
         <button className="danger" onClick={() => { sendFeatures(deleteFeatures(features, ids), `Delete ${ids.length} items`); onClear(); }} data-testid="group-delete" title="Delete">Delete</button>
         <button className="ghost" onClick={onClear}>Deselect</button>
       </div>
+      {buildable.length > 0 && (
+        <>
+          <button className="built-of" onClick={() => setPicking((v) => !v)} aria-expanded={picking} title="Choose what the selected walls are built of" data-testid="group-built-of">
+            Build {buildable.length === 1 ? "the wall" : `these ${buildable.length} walls`} of… <span aria-hidden="true">{picking ? "▴" : "▾"}</span>
+          </button>
+          {picking && (
+            <div className="inline-picker">
+              <WallLookPicker value={{ look: buildable[0].look ?? "stone", asset: buildable[0].asset ?? null }} onPick={(c) => {
+                const next = buildable.map((w) => { const n: MapWall = { ...w }; delete n.look; delete n.asset; delete n.tile; return { ...n, ...newWallStyle({ wallLook: c.look, wallAsset: c.asset }) }; });
+                sendFeatures({ upsertWalls: next }, `Walls built of ${wallChoiceLabel(c)} (${next.length})`);
+                setPicking(false);
+              }} />
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
@@ -1705,6 +1767,14 @@ function WallEditor({ w, onClear }: { w: MapWall; onClear: () => void }) {
     latest.current = next;
     sendFeatures({ upsertWalls: [next] }, `Change ${next.kind}`);
   };
+  const [picking, setPicking] = useState(false);
+  const setStyle = (c: WallChoice) => {
+    const next: MapWall = { ...latest.current };
+    delete next.look; delete next.asset; delete next.tile;
+    Object.assign(next, newWallStyle({ wallLook: c.look, wallAsset: c.asset }));
+    latest.current = next;
+    sendFeatures({ upsertWalls: [next] }, `Wall built of ${wallChoiceLabel(c)}`);
+  };
   const isDoor = w.kind === "door" || w.kind === "secret";
   const segs = wallSegments(w).length;
   return (
@@ -1715,6 +1785,15 @@ function WallEditor({ w, onClear }: { w: MapWall; onClear: () => void }) {
           <option value="window">Window</option><option value="invisible">Invisible wall</option>
         </select>
       </label>
+      {(w.kind === "wall" || w.kind === "window" || w.kind === "secret") && (
+        <>
+          {/* (open in the panel, not as a pop-out: the panel scrolls, and would cut a pop-out off) */}
+          <button className="built-of" onClick={() => setPicking((v) => !v)} aria-expanded={picking} title="Choose what this wall is built of" data-testid="wall-built-of">
+            Built of <WallSwatch c={{ look: w.look ?? "stone", asset: w.asset ?? null }} /> <b>{wallChoiceLabel({ look: w.look ?? "stone", asset: w.asset ?? null })}</b> <span aria-hidden="true">{picking ? "▴" : "▾"}</span>
+          </button>
+          {picking && <div className="inline-picker"><WallLookPicker value={{ look: w.look ?? "stone", asset: w.asset ?? null }} onPick={(c) => { setStyle(c); setPicking(false); }} /></div>}
+        </>
+      )}
       {isDoor && <label className="check"><input type="checkbox" checked={!!w.open} onChange={(e) => set({ open: e.target.checked })} data-testid="wall-open" /> Open</label>}
       {isDoor && <label className="check"><input type="checkbox" checked={!!w.locked} onChange={(e) => set({ locked: e.target.checked })} /> Locked (Foundry)</label>}
       <p className="muted">{segs} piece{segs === 1 ? "" : "s"}{w.closed ? ", closed" : ""}</p>

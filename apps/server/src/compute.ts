@@ -64,6 +64,8 @@ export interface BattleRenderOpts {
   roofPictures?: boolean;
   /** The decoded pictures of asset-pack roofs, by asset id. */
   roofTiles?: Record<string, TileData>;
+  /** The decoded pictures of asset-pack walls (their own aspect), by asset id. */
+  wallPictures?: Record<string, SpriteData>;
 }
 
 /** A thumbnail: a small PNG, and the size of the picture it was made from. */
@@ -168,11 +170,12 @@ export class JobRunner {
     }
     if (job.op === "battle") {
       const bdoc: MapDoc = { meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features };
-      const { tiles, sprites, roofTiles } = job;
+      const { tiles, sprites, roofTiles, wallPictures } = job;
       const tileFor = roofTiles ? (a: string) => roofTiles[a] ?? null : undefined;
       if (job.roofPictures) return renderBattleRoofPictures(bdoc, tileFor);
       return renderBattle(bdoc, {
         overlay: job.overlay, lights: job.lights, notes: job.notes, roofs: job.roofs, roofTiles: tileFor,
+        ...(wallPictures && { wallPictures: (a: string) => wallPictures[a] ?? null }),
         ...(tiles && { tiles: (id: number) => tiles[id] ?? null }), ...(sprites && { sprites: (id: string) => sprites[id] ?? null }),
       }).data;
     }
