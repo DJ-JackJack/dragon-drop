@@ -81,6 +81,8 @@ interface CachedIndex {
 }
 
 const catOf = (e: Entry): AssetCategory => e.cat ?? (e.cat = categoryOf(e.path));
+/** A pack key without the version at its end ("textures-a-v3-58" -> "textures-a", "floors-v1-12" -> "floors"), and without "~old2". */
+const baseKey = (k: string) => k.replace(/~old\d+$/, "").replace(/-v?\d+(?:-\d+)*$/, "");
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const MAX_DECODE_PIXELS = 40_000_000;
 /** How many recently used pictures are remembered. */
@@ -275,6 +277,15 @@ export class AssetLibrary {
         } else winners.push(p);
       }
       winners.forEach((w, i) => { w.info.key = i === 0 ? k : `${k}-${i + 1}`; this.packs.set(w.info.key, w); });
+    }
+    // the same pack in two versions whose names differ (a version in the name: "Textures A v3.58" and "v3.59"): the newest is offered, the older one is
+    // kept under its own key, so the pictures maps already use from it are still found
+    const byId = new Map<string, PackIndex[]>();
+    for (const p of this.packs.values()) if (p.info.packId && !p.info.supersededBy) byId.set(p.info.packId, [...(byId.get(p.info.packId) ?? []), p]);
+    for (const group of byId.values()) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => Number(!!b.info.builtIn) - Number(!!a.info.builtIn) || compareVersions(b.info.version, a.info.version) || b.info.mtimeMs - a.info.mtimeMs);
+      for (const p of group.slice(1)) p.info.supersededBy = path.basename(group[0].info.file);
     }
   }
 
@@ -621,7 +632,7 @@ export class AssetLibrary {
   /** One asset by id (with its pixel size), or null if it doesn't exist or its pack is restricted. */
   async info(id: string): Promise<AssetItem | null> {
     const a = parseAssetId(id);
-    const pack = a && this.packs.get(a.pack);
+    const pack = a && (this.packs.get(a.pack) ?? this.newerVersionOf(a.pack, a.path));
     if (!a || !pack || pack.info.restricted) return null;
     const entry = pack.byPath.get(a.path.toLowerCase());
     if (!entry) return null;
@@ -665,11 +676,23 @@ export class AssetLibrary {
   private async locate(id: string): Promise<{ pack: PackIndex; entry: Entry } | null> {
     const a = parseAssetId(id);
     if (!a) return null;
-    const pack = this.packs.get(a.pack);
+    const pack = this.packs.get(a.pack) ?? this.newerVersionOf(a.pack, a.path);
     if (!pack || pack.info.restricted) return null;
     const entry = pack.byPath.get(a.path.toLowerCase());
     if (!entry || entry.encrypted) return null;
     return { pack, entry };
+  }
+
+  /**
+   * A picture of a pack that isn't there any more, looked for in another version of the same pack: a map made with "textures-a-v3-58:..." still shows
+   * its floors once that pack was replaced by v3.59. (The key without its version and the same path inside; the usable one, newest first.)
+   */
+  private newerVersionOf(key: string, file: string): PackIndex | undefined {
+    const base = baseKey(key), p = file.toLowerCase();
+    if (base === key) return undefined;
+    return [...this.packs.values()]
+      .filter((x) => !x.info.restricted && baseKey(x.info.key) === base && x.byPath.has(p))
+      .sort((a, b) => Number(!!a.info.supersededBy) - Number(!!b.info.supersededBy) || compareVersions(b.info.version, a.info.version) || b.info.mtimeMs - a.info.mtimeMs)[0];
   }
 
   private async bytesOf(pack: PackIndex, entry: Entry): Promise<Uint8Array> {

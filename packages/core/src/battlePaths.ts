@@ -1,19 +1,16 @@
 /**
  * How a battlemap's paths look (roads, tracks, streams): one RGBA layer (straight alpha) laid over the floors and under the objects and walls, so the
  * editor, previews and exports agree. A path is rounded at its corners, soft at its edges, and made of a look (dirt, gravel, cobblestones, a stream) or a
- * picture from the asset packs laid along it: a long strip runs along the path (its height across it), a squarer texture is tiled along it.
+ * picture from the asset packs: a strip (long, or with see-through edges: laidAlong) runs along the path, its height across it; a floor texture is tiled.
  */
 import type { BattleSpec } from "./battle.ts";
-import { type WallPictureSource, lookKit } from "./battleLook.ts";
+import { type WallPictureSource, laidAlong, lookKit } from "./battleLook.ts";
 import type { MapPath, PathLook } from "./features.ts";
 
 const { clamp, smooth, hash2, vnoise, over } = lookKit;
 
 /** The colour each look starts from. */
 export const PATH_BASE: Record<PathLook, [number, number, number]> = { dirt: [136, 108, 74], gravel: [150, 146, 136], cobble: [132, 126, 118], water: [64, 112, 140] };
-
-/** A strip at least this many times as long as it is high is laid along the path; anything squarer is tiled. */
-const STRIP_ASPECT = 2.5;
 
 /** The corners of a line rounded off (two rounds of cutting each corner a quarter of the way in), its ends kept. */
 export function smoothPath(points: [number, number][], rounds = 2): [number, number][] {
@@ -94,12 +91,13 @@ function paintPath(out: { w: number; h: number; data: Uint8ClampedArray }, path:
       let r: number, g: number, b: number, a: number;
       if (pic) {
         let u: number, v: number;
-        if (pic.w / pic.h >= STRIP_ASPECT) { u = s / ((2 * half * pic.w) / pic.h); v = (c + half) / (2 * half); } else { u = s / px; v = (c + half) / px; }
+        const strip = laidAlong(pic);
+        if (strip) { u = s / ((2 * half * pic.w) / pic.h); v = (c + half) / (2 * half); } else { u = s / px; v = (c + half) / px; }
         const sx = clamp(Math.floor((u - Math.floor(u)) * pic.w), 0, pic.w - 1), sy = clamp(Math.floor((v - Math.floor(v)) * pic.h), 0, pic.h - 1);
         const o = (sy * pic.w + sx) * 4;
         r = pic.data[o]; g = pic.data[o + 1]; b = pic.data[o + 2];
         // (a strip has its own soft edges; a tiled texture gets the path's)
-        a = (pic.data[o + 3] / 255) * (pic.w / pic.h >= STRIP_ASPECT ? clamp((half + 0.5 - d) / 1.5, 0, 1) : fade);
+        a = (pic.data[o + 3] / 255) * (strip ? clamp((half + 0.5 - d) / 1.5, 0, 1) : fade);
       } else {
         [r, g, b] = lookColour(look, x, y, s, c, half, px);
         a = fade * (look === "water" ? 0.92 : 0.95);

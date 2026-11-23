@@ -7,6 +7,7 @@ export interface ViewLike { scale: number; ox: number; oy: number }
 export function makeResizeKeeper(getView: () => ViewLike, setView: (v: ViewLike) => void, refit: () => void) {
   let lastFit: ViewLike | null = null;
   let last: { w: number; h: number } | null = null;
+  const sameAs = (f: ViewLike) => { const v = getView(); return v.scale === f.scale && v.ox === f.ox && v.oy === f.oy; };
   return {
     /** Call right after the view was fitted to the canvas. */
     fitted() { lastFit = { ...getView() }; },
@@ -14,9 +15,12 @@ export function makeResizeKeeper(getView: () => ViewLike, setView: (v: ViewLike)
     resized(w: number, h: number) {
       const prev = last;
       last = { w, h };
-      if (!prev || !w || !h || !prev.w || !prev.h || (prev.w === w && prev.h === h)) return;
+      if (!w || !h) return;
+      // a fit made while the canvas had no size (hidden when the map came, or the window minimised) was against nothing: the map would sit at 0%
+      if (lastFit && !(lastFit.scale > 0) && sameAs(lastFit)) { refit(); return; }
+      if (!prev || !prev.w || !prev.h || (prev.w === w && prev.h === h)) return;
       const v = getView();
-      if (lastFit && v.scale === lastFit.scale && v.ox === lastFit.ox && v.oy === lastFit.oy) refit();
+      if (lastFit && sameAs(lastFit)) refit();
       else setView({ ...v, ox: v.ox + (w - prev.w) / 2, oy: v.oy + (h - prev.h) / 2 });
     },
   };

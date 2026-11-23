@@ -15,13 +15,16 @@ const lib = path.join(root, "Library");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const put = (rel: string, w: number, h: number, rgb: [number, number, number]) => {
   const p = new PNG({ width: w, height: h });
-  for (let i = 0; i < w * h; i++) p.data.set([...rgb, 255], i * 4);
+  // (a texture: brighter and darker blotches; a flat colour is no floor texture)
+  for (let i = 0; i < w * h; i++) { const d = ((i % w) >> 4 ^ Math.floor(i / w) >> 4) & 1 ? 14 : -14; p.data.set([rgb[0] + d, rgb[1] + d, rgb[2] + d, 255], i * 4); }
   mkdirSync(path.dirname(path.join(lib, rel)), { recursive: true });
   writeFileSync(path.join(lib, rel), PNG.sync.write(p));
 };
 beforeAll(() => {
-  for (const n of ["Grass_A", "Grass_B", "Dirt_A", "Sand_A", "Snow_A", "Rock_A", "Forest_Floor_A", "Cobblestone_A", "Wood_Floor_A", "Flagstone_A", "Shallow_Water_A", "Deep_Water_A"]) put(`Kit/Floors/${n}.png`, 256, 256, [100, 140, 80]);
+  for (const n of ["Grass_A", "Grass_B", "Dirt_A", "Sand_A", "Snow_A", "Rock_A", "Forest_Floor_A", "Cobblestone_A", "Wood_Floor_A", "Flagstone_A", "Shallow_Water_A", "Deep_Water_A"]) put(`Kit/Floors/${n}.png`, 256, 256, /Water/.test(n) ? [40, 110, 150] : [100, 140, 80]);
   put("Kit/Walls/Stone_Wall_A.png", 640, 64, [120, 120, 130]);
+  // (a wall's end and corner pieces: never laid along a whole wall)
+  for (const n of ["Stone_Wall_A_end", "Stone_Wall_A_End_B", "Stone_Wall_Corner", "Stone_Wall_Post"]) put(`Kit/Walls/${n}.png`, 64, 64, [120, 120, 130]);
   put("Kit/Doors/Oak_Door.png", 256, 64, [140, 90, 50]);
 });
 

@@ -122,8 +122,26 @@ export type WallPictureSource = (asset: string) => WallPicture | null | undefine
 /** The colour each built-in wall look starts from. */
 export const WALL_BASE: Record<WallLook, [number, number, number]> = { stone: [126, 120, 112], brick: [150, 80, 60], wood: [138, 96, 58], plaster: [214, 206, 188], rock: [88, 80, 72] };
 
-/** A picture longer than this (width over height) is a strip: laid along the wall, its height across it. Anything squarer is a texture tiled along it. */
+/** A picture longer than this (width over height) is a strip: laid along the wall, its height across it. */
 const STRIP_ASPECT = 2.5;
+const stripMemo = new WeakMap<WallPicture, boolean>();
+/**
+ * Whether a pack picture is laid along a wall or path (its length along it, its height across it) rather than tiled like a floor texture: a long strip,
+ * or any picture whose top and bottom edges are see-through (a path or wall piece drawn with ragged edges on nothing, like a road 502 x 290); an opaque
+ * squarer picture (a brick or plank floor texture) is tiled.
+ */
+export function laidAlong(pic: WallPicture): boolean {
+  let v = stripMemo.get(pic);
+  if (v !== undefined) return v;
+  v = pic.w / pic.h >= STRIP_ASPECT;
+  if (!v) {
+    const rows = Math.max(1, Math.round(pic.h * 0.04));
+    const meanAlpha = (y0: number) => { let s = 0; for (let y = y0; y < y0 + rows; y++) for (let x = 0; x < pic.w; x++) s += pic.data[(y * pic.w + x) * 4 + 3]; return s / (rows * pic.w); };
+    v = meanAlpha(0) < 160 && meanAlpha(pic.h - rows) < 160;
+  }
+  stripMemo.set(pic, v);
+  return v;
+}
 
 export interface WallLayerOptions {
   /** Is there floor under this point (in squares)? Chooses which way an open door swings. */
@@ -459,7 +477,7 @@ function lookColour(look: WallLook, x: number, y: number, along: number, across:
  */
 function samplePicture(pic: WallPicture, along: number, across: number, half: number, px: number, tile?: number): [number, number, number, number] {
   let u: number, v: number;
-  if (pic.w / pic.h >= STRIP_ASPECT) {
+  if (laidAlong(pic)) {
     const len = (2 * half * pic.w) / pic.h;
     u = along / len; v = (across + half) / (2 * half);
   } else {

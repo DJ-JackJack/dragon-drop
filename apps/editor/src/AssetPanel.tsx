@@ -133,7 +133,7 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus, onAskTags }: {
       <div className="chat-head">
         <span className="chat-title">Assets</span>
         <span className="muted" style={{ flex: 1 }} data-testid="assets-count">
-          {status?.scanning ? `Reading assets… ${status.scanned}/${status.total}` : `${total.toLocaleString()} found`}
+          {status?.scanning ? `Reading assets… ${status.scanned}/${status.total}` : busy && !items.length ? "Looking…" : `${total.toLocaleString()} found`}
         </span>
       </div>
       {status?.ownFolder === false && (

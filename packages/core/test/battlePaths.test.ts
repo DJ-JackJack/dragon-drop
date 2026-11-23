@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type Features, type MapPath, applyFeaturesPatch, drawBattleLights, boxSelect, copyFeatures, createBattleDoc, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, renderBattle, renderPathLayer,
-  smoothPath,
+  laidAlong, smoothPath,
 } from "../src/index.ts";
 
 const spec = { squaresX: 12, squaresY: 8, pxPerSquare: 40, feetPerSquare: 5, sub: 8, gridType: "square" as const };
@@ -43,6 +43,26 @@ describe("battlemap paths", () => {
     const onPath = at(img, 5, 4), onWall = at(img, 3, 4);
     expect(onPath[2]).toBeGreaterThan(onPath[0] + 20); // the stream on the floor
     expect(Math.abs(onWall[0] - onWall[2])).toBeLessThan(40); // the stone wall over it
+  });
+
+  it("lays a road picture with see-through edges along the path whatever its shape, keeping its dark edges, and tiles an opaque texture", () => {
+    // (like a pack's "Road 1": 502 x 290, nothing above and below, a dark ragged edge, a pale middle)
+    const road = { w: 500, h: 290, data: new Uint8ClampedArray(500 * 290 * 4) };
+    for (let y = 0; y < 290; y++) for (let x = 0; x < 500; x++) {
+      const t = y / 290;
+      road.data.set(t < 0.15 || t > 0.85 ? [0, 0, 0, 0] : t < 0.25 || t > 0.75 ? [40, 30, 20, 255] : [230, 220, 190, 255], (y * 500 + x) * 4);
+    }
+    expect(laidAlong(road)).toBe(true);
+    const opaque = { w: 500, h: 290, data: new Uint8ClampedArray(500 * 290 * 4).fill(255) };
+    expect(laidAlong(opaque)).toBe(false);
+    expect(laidAlong({ w: 1000, h: 100, data: new Uint8ClampedArray(1000 * 100 * 4).fill(255) })).toBe(true);
+    // a 2-square road along y = 4 (straight there): pale in the middle, its dark edge kept about 0.6 squares out, nothing beyond the picture's edge
+    const l = renderPathLayer(spec, [path({ asset: "kit:Paths/Road 1.png", width: 2, points: [[1, 4], [10, 4]] })], { pictureFor: () => road });
+    const mid = at(l, 5, 4), edge = at(l, 5, 4.6), off = at(l, 5, 4.85);
+    expect(mid[0]).toBeGreaterThan(200);
+    expect(edge[3]).toBeGreaterThan(200);
+    expect(edge[0]).toBeLessThan(80);
+    expect(off[3]).toBeLessThan(60);
   });
 
   it("is selected, moved, copied and deleted with the rest", () => {

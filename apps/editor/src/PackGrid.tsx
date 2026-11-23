@@ -85,7 +85,7 @@ export function PackGrid(p: PackGridProps) {
     <div className="pack-floors" data-testid={p.testId}>
       <div className="pack-floors-head">
         <b>{starterOnly ? "From the Starter Pack" : "From your asset packs"}</b>
-        <span className="muted">{status.scanning ? "reading…" : `${total.toLocaleString()} ${label}`}</span>
+        <span className="muted">{status.scanning ? "reading…" : busy && !items.length ? "looking…" : `${total.toLocaleString()} ${label}`}</span>
         {p.onBrowse && <button className="ghost" onClick={p.onBrowse} title="Open the Assets tab, with bigger pictures">Browse</button>}
       </div>
       {starterOnly && items.length > 0 && <p className="muted pack-floors-note" data-testid={`${p.testId}-starter`}>A few free floors that come with Dragon Drop. For more, choose the folder with your own asset packs in Settings (Maps and assets).</p>}
