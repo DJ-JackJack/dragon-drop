@@ -123,6 +123,45 @@ The gap no one fills: **an editable, structured map where you can talk to Claude
 9. Import maps from other editors and Azgaar `.map` files (medium).
 10. Seeded dungeon generator with tags (medium; Claude can already compose layouts, so lower).
 
+## 7. Update 2026-11-23: what the other tools have that we don't
+
+*A third look, a week after section 6 and after the asset update (0.1.13). Sources are product pages, changelogs, blog posts, forum threads and review roundups (several roundups are paid placements); treat the details as indicative. Other programs are named here only: this file stays internal.*
+
+**What section 6's list became.** Done since: multi-floor battlemaps with Foundry levels (5), light presets and shaded areas with their own light level (2), numbered notes with a key on battlemaps (1, `add_note`, `renumber_notes`). Still open: travel time (3), prefabs (4), object shadows and tinting, dragging wall points and a layers list (6), a printer-friendly export (7), the hand-drawn symbol style (8), importing other tools' maps (9), a seeded dungeon generator (10).
+
+**What changed out there**
+
+| Tool | New or newly found | What it means for us |
+|---|---|---|
+| **Inkarnate 2.0** (Dec 2025) and a Base plan (Jul 2026) | Scene Stamps (a built scene becomes a reusable asset), custom layers with masks and blend modes, per-layer shadows, Brush Tool 2.0 with pen pressure, any stamp as a brush tip, copy and paste between scenes, autosave and snapshots, a **print-friendly "Classic" battlemap style**, a **marketplace** where artists sell packs and maps; the Base plan (about $6 a month) has 4K export. [(24)](https://feedback.inkarnate.com/changelog/inkarnate-20-star) | Prefabs (Scene Stamps) and an ink-saving print look are now normal. Its users praise the look most; its critics say the maps all look alike. Our Painted Relief and pack-based battlemaps are distinctive; keep it so. |
+| **Dungeon Scrawl** (Roll20; Jan and May 2026) | A **Random Dungeon** generator (beta: one click, settings, regenerate), a **Stamp tool that scatters** an image with random size, turn, spacing and colour, rounded corners on rooms and **smooth curved walls and paths**, lights with bright and dim radii and **presets** (torch, lantern, the light cantrip...), **Send to Tabletop**: a player display for in-person play where unlit areas are black, live link to Roll20 pages, PDF export (paid). [(25)](https://blog.roll20.net/posts/dungeon-scrawl-updates-may-2026/) [(26)](https://blog.roll20.net/posts/dungeon-scrawl-2025-year-in-review/) | Scatter brush, a generator, named light presets and a player display are what a busy GM is now offered for free or cheap. |
+| **D&D Beyond Maps** (Aug 2026 roadmap) | **Scene Prep**: the DM's prep notes put on the map, keyed to scene pins; encounters attached to them; DM tools usable outside the virtual tabletop. No AI. [(27)](https://www.dndbeyond.com/posts/2223-mid-year-update-d-d-beyonds-2026-development) | Notes on the map, keyed to pins, are what DMs want for prep. We have places with notes and numbered battlemap notes; we lack **GM-only** things and a player version. |
+| **LegendKeeper** | Map pins that link to wiki pages, pins filtered by tags, **pins hidden from players**, regions, paths, labels, **measuring and "fantasy navigation"** (travel directions between pins), what shows at which zoom, a map embedded in a wiki page. [(28)](https://www.legendkeeper.com/changelog/legendkeeper-0-18-0-0/) [(29)](https://www.legendkeeper.com/features-maps) | Measuring and travel directions; secrets hidden from players; a place linking to a page of notes elsewhere (the DM's own lore files). |
+| **Arkenforge** | Map making plus showing the map **on a TV for in-person play**: the GM sees all, players see what their characters can; dynamic fog; a player screen on a second output. [(30)](https://startplaying.games/play/arkenforge) [(31)](https://flash-acrylic-5ca.notion.site/Arkenforge-17922282d34b4d30b30d6399cf331415) | A player screen is the in-person counterpart of our Foundry export. |
+| **Campaign Cartographer 4** (crowdfunded, not out) | "Faster and easier" than CC3+, built-in support for the main virtual tabletops, a random dungeon generator in Dungeon Designer 4, perpetual licences (no subscription). [(32)](https://rpgmaps.profantasy.com/newsletter-cc4-preview-isometric-sewers-and-cutting-corners/) | Confirms the pull towards easy, VTT-ready tools and against subscriptions (our one-off price fits). |
+| **Dungeon Alchemist** (Early Access, full release planned late 2026) | Room themes furnished by its own procedural rules, a trace overlay, importing your own 3D models; its store page now says it uses **no generative AI**, only its own algorithms and paid artists' work. [(33)](https://store.steampowered.com/app/1588530/Dungeon_Alchemist/) | The market is wary of generative AI. Our pictures are procedural or the DM's own packs, and Claude edits the map's structure, never paints pictures: say so plainly (the store page's AI disclosure). |
+| **Watabou** generators | Village and city generators (February 2025 update; a village at a crossroads, water, a square, orchards), JSON export other tools read. [(34)](https://watabou.itch.io/village-generator/devlog/880634/three-generators-have-been-updated) | A one-click settlement start. Our settlements are planned by Claude or by hand; a "generate a village here" button could use our own planner (`line_streets`). |
+| **Image generators** sold as map makers (several) | Text to a picture of a map, some with area edits; outputs are pictures, not grid-ready maps with walls. [(35)](https://www.jenova.ai/en/resources/ai-map-maker-guide) | Not our competition for play, but they set the expectation "describe it, get a map". |
+
+**What GMs ask for** (a small forum thread, Aug 2025, and Reddit recommendations): going from a rough sketch to a detailed map in stages, the way they sketch at the table; **printed maps** (one asks for printed, reusable maps with the encounter attached); easy and fast to learn; a distinct look; good VTT export; sci-fi and modern assets; no subscriptions. Frustrations: steep learning curves, dated interfaces, maps that look like everyone else's, digital work being slower than pen and paper for big connected areas. [(36)](https://www.enworld.org/goto/post?id=9728956) [(37)](https://gummysearch.com/tools/best-products/map-making-software/)
+
+**Gaps, ranked** (value to a busy DM first, then effort)
+
+1. **A ruler with travel time** (world maps: miles or km and days on foot, by horse, by ship, along roads or straight; battlemaps: feet). Small. LegendKeeper, Azgaar, Wonderdraft have measuring; nothing tells travel days. Claude already knows the scale.
+2. **Print at table scale**: a battlemap (or any map) as a PDF of Letter or A4 pages at 1 inch a square, with overlap and assembly marks, and an ink-saving look. Small to medium. Today DMs take an exported picture to a separate tiling tool and fix the scale by hand.
+3. **A scatter brush for objects** on battlemaps (trees, rocks, debris, barrels: drag, and picked pack objects land with random size, turn and spacing). Small to medium. Dungeon Scrawl, Inkarnate and battlemap editors have it; we place one object at a time.
+4. **GM-only secrets and a player version**: mark a place, label, note, room or door as secret; exports, the picture and Foundry get a player version without them. Small to medium. LegendKeeper and D&D Beyond do this for prep notes.
+5. **Prefabs**: save a room, building or camp (floor, walls, doors, objects, lights) by name and place it again, by hand or by Claude. Medium. Inkarnate's Scene Stamps.
+6. **One-click generators**: a dungeon or cave on a battlemap and a village on a settlement map, seeded, with a few settings, then edited as usual. Medium. Claude can already build these on request; a button serves DMs without an assistant connected and is instant.
+7. **A player screen** for in-person play: a second window for a TV that shows only what the DM has revealed (by room or by drawn area), with the battlemap's lights. Medium to large. Arkenforge, Dungeon Scrawl, D&D Beyond Maps. Online groups use Foundry instead, which we already export to.
+8. **Realms**: filled, coloured territories (kingdoms, provinces) as a political layer on world maps, named only by the DM. Medium. We have border lines only.
+9. **Object shadows and tinting** (still open from section 6). Medium.
+10. **Linking a place to the DM's own notes** (a markdown file or a web page opened from the place's panel), for DMs who keep lore elsewhere. Small.
+11. **The hand-drawn ink style** for world maps (still open). Large and art-heavy; a distinct look matters to buyers, but Painted Relief already gives one.
+12. **A layers list** with user layers. Large; adds complexity a busy DM doesn't want. Lowest.
+
+Not worth chasing: a marketplace (we sell no assets), live links into one VTT (Foundry export covers it), image-generated maps (against our approach and the market's mood), 3D views.
+
 ## Sources
 
 1. [Files and Resources with MCP – Part 1](https://llmastery-co-uk.pages.dev/posts/2025/01/mcp-files-resources-part1)
@@ -148,3 +187,18 @@ The gap no one fills: **an editable, structured map where you can talk to Claude
 21. [ctkrug/erosion (WebGL2 hydraulic erosion)](https://github.com/ctkrug/erosion)
 22. [LanLou123/Webgl-Erosion](https://github.com/LanLou123/Webgl-Erosion)
 23. [PixiJS v8 launch post](https://pixijs.com/blog/pixi-v8-launches)
+24. [Inkarnate 2.0 changelog (Dec 2025)](https://feedback.inkarnate.com/changelog/inkarnate-20-star)
+25. [Dungeon Scrawl updates, May 2026](https://blog.roll20.net/posts/dungeon-scrawl-updates-may-2026/)
+26. [Dungeon Scrawl 2025 year in review (Jan 2026)](https://blog.roll20.net/posts/dungeon-scrawl-2025-year-in-review/)
+27. [D&D Beyond 2026 roadmap, mid-year update (Aug 2026)](https://www.dndbeyond.com/posts/2223-mid-year-update-d-d-beyonds-2026-development)
+28. [LegendKeeper 0.18 changelog](https://www.legendkeeper.com/changelog/legendkeeper-0-18-0-0/)
+29. [LegendKeeper maps](https://www.legendkeeper.com/features-maps)
+30. [StartPlaying – Arkenforge](https://startplaying.games/play/arkenforge)
+31. [Arkenforge review (Notion)](https://flash-acrylic-5ca.notion.site/Arkenforge-17922282d34b4d30b30d6399cf331415)
+32. [ProFantasy – CC4 preview newsletter](https://rpgmaps.profantasy.com/newsletter-cc4-preview-isometric-sewers-and-cutting-corners/)
+33. [Dungeon Alchemist on Steam](https://store.steampowered.com/app/1588530/Dungeon_Alchemist/)
+34. [Watabou – three generators updated (Feb 2025)](https://watabou.itch.io/village-generator/devlog/880634/three-generators-have-been-updated)
+35. [Jenova – AI map maker guide](https://www.jenova.ai/en/resources/ai-map-maker-guide) (vendor page)
+36. [EN World – map tools that actually serve GMs (Aug 2025)](https://www.enworld.org/goto/post?id=9728956)
+37. [GummySearch – map-making software from Reddit](https://gummysearch.com/tools/best-products/map-making-software/)
+38. [Printing battlemaps to scale (guide)](https://www.czepeku.com/blog/how-to-print-battlemaps-to-scale)
