@@ -111,9 +111,9 @@ export type ClientMsg =
   /** Make a battlemap (a grid-based tabletop map) and open it. */
   | { t: "create_battle"; name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }
   /** Make a battlemap of the ground at a point (map px) of the open world map, and open it. */
-  | { t: "create_battle_here"; name: string; x: number; y: number; squaresX?: number; squaresY?: number }
+  | { t: "create_battle_here"; name: string; x: number; y: number; squaresX?: number; squaresY?: number; /** false: built-in looks only, no pictures from the asset packs */ packPictures?: boolean }
   /** A battlemap of a box of the open city map (metres): its ground, streets, buildings (walls, doors, roofs) and walls. */
-  | { t: "create_battle_from_city"; name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number }
+  | { t: "create_battle_from_city"; name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number; packPictures?: boolean }
   /** Make a more detailed map of an area (map px) of the open map, and open it. */
   | { t: "create_regional"; name: string; rect: Rect }
   /** On a regional map: re-read the climate from its parent map. */

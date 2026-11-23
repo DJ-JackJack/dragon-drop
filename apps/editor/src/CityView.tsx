@@ -914,7 +914,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const m = metaRef.current, sq = cityBattleSquares(rect);
     if (!m) return;
     if (sq.squaresX > 150 || sq.squaresY > 150) { await notice(`That box is ${Math.round(rect.w)} × ${Math.round(rect.h)} m: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, and a battlemap can be at most 150 squares a side (about 228 m). Drag a smaller box.`); return; }
-    const name = await ask(`A battlemap of ${Math.round(rect.w)} × ${Math.round(rect.h)} m here: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, with the buildings as walls, doors and roofs. Its name:`, `${m.name} scene`, "Make it");
+    const name = await ask(`A battlemap of ${Math.round(rect.w)} × ${Math.round(rect.h)} m here: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, with the buildings as walls, doors and roofs (in pictures from your asset packs where they fit). Its name:`, `${m.name} scene`, "Make it");
     if (!name?.trim()) return;
     store.send({ t: "create_battle_from_city", name: name.trim(), rect });
   }

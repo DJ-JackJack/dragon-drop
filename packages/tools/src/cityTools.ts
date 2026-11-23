@@ -159,19 +159,21 @@ export const CITY_TOOLS = [
       "Make a battlemap of a part of the open CITY map and open it (for a fight or a scene there): either a spot (x, y in metres) and the battlemap's size in squares (squares_x, squares_y; default 30 x 20, as create_battlemap_here makes on a world map), " +
       "or a box in metres (x, y its top-left corner, w, h its size; at 5 ft a square, 150 squares is about 228 m, the most). " +
       "The battlemap gets the city's ground there, the streets as cobbles or dirt (bridges as planks or flagstones), every building as walls with a door toward the nearest street, a floor by what it is and its roof, " +
-      "and the city walls and towers as walls. Trees, names and furniture are not carried over: add them on the battlemap. The battlemap remembers the city (a way back).",
+      "and the city walls and towers as walls. Trees, names and furniture are not carried over: add them on the battlemap. The battlemap remembers the city (a way back). " +
+      "With an asset library, its floors, walls, doors and windows are fitting pictures of the packs (the DM's starred ones first) where one fits; pack_pictures: false keeps the built-in looks.",
     schema: z.object({
       x: z.number(), y: z.number(), w: z.number().min(6).optional().describe("With h: a box from (x, y); without: (x, y) is the middle of the battlemap"), h: z.number().min(6).optional(),
       squares_x: z.number().int().min(3).max(150).optional().describe("Without w and h; default 30"), squares_y: z.number().int().min(3).max(150).optional().describe("Without w and h; default 20"),
       name: z.string().min(1).max(80).optional().describe("The battlemap's name (default: the city's, with \"scene\")"),
       feet_per_square: z.number().min(1).max(30).optional().describe("Default 5"),
+      pack_pictures: z.boolean().optional().describe("Use fitting pictures from the asset packs for floors, walls, doors and windows (default true when there is an asset library)"),
     }),
     async run(ctx, i) {
       const bad = needCity(ctx); if (bad) return bad;
       if (!ctx.createBattleFromCity) return fail("Battlemaps can't be made from a city here.");
       try {
         const rect = i.w !== undefined && i.h !== undefined ? { x: i.x, y: i.y, w: i.w, h: i.h } : cityBattleBoxAt(i.x, i.y, citySpec(ctx.session().doc), i.squares_x ?? 30, i.squares_y ?? 20, i.feet_per_square ?? 5);
-        const info = await ctx.createBattleFromCity({ name: i.name ?? "", rect, feetPerSquare: i.feet_per_square });
+        const info = await ctx.createBattleFromCity({ name: i.name ?? "", rect, feetPerSquare: i.feet_per_square, ...(i.pack_pictures === false && { packPictures: false }) });
         return json({ created: info, note: "The battlemap is open now. render_battlemap looks at it; doors, furniture and lights are yours to add." });
       } catch (e) { return fail((e as Error).message); }
     },

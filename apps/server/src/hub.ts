@@ -19,6 +19,7 @@ import { type ToolContext, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
+import { dressBattleWithPacks } from "./battlePack.ts";
 import type { NoiseStore } from "./noiseStore.ts";
 import { PictureRefused, ProjectStore, plainLetters } from "./store.ts";
 
@@ -605,7 +606,7 @@ export class Hub {
   }
 
   /** Make a battlemap of the ground at a point of the open world map: its climate, slope, water, coast and rivers choose the floors. */
-  async createBattleFromWorld(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number }) {
+  async createBattleFromWorld(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number; packPictures?: boolean }) {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const parent = op.session.doc;
@@ -623,16 +624,18 @@ export class Hub {
     const seed = Math.floor(Math.random() * 2 ** 31);
     const doc = createBattleDoc({ id, name, squaresX: sx, squaresY: sy, pxPerSquare: 70, feetPerSquare: o.feetPerSquare, seed });
     battleFloorFromWorld(doc, sample, seed);
+    // (pictures from the asset packs where they fit, unless asked not to: battlePack.ts)
+    const dressed = o.packPictures !== false && this.assets ? await dressBattleWithPacks(doc, this.assets) : [];
     doc.meta.origin = { id: parent.meta.id, name: parent.meta.name, x: Math.round(o.x), y: Math.round(o.y) };
-    doc.meta.notes = `A scene at ${parent.meta.name} (${Math.round(o.x)}, ${Math.round(o.y)}): ${what}.`;
+    doc.meta.notes = `A scene at ${parent.meta.name} (${Math.round(o.x)}, ${Math.round(o.y)}): ${what}.${dressed.length ? ` Pictures from the asset packs: ${dressed.join("; ")}.` : ""}`;
     await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A battlemap of ${what}, at map px (${Math.round(o.x)}, ${Math.round(o.y)}) of **${parent.meta.name}** (project \`${parent.meta.id}\`), ${sx} x ${sy} squares. The floors were chosen from that spot's climate, slope and water; everything else (walls, rooms, objects, who and what is here) is for the DM to decide.*\n`);
     await this.openProject(id);
     const info = (await this.store.list()).find((p) => p.id === id)!;
-    return { ...info, description: what };
+    return { ...info, description: what, ...(dressed.length && { packPictures: dressed }) };
   }
 
   /** Make a battlemap of a box (metres) of the open city map and open it: its ground, streets and bridges as floors, its buildings as walls with doors and roofs, its walls and towers. */
-  async createBattleFromCity(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number }) {
+  async createBattleFromCity(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number; packPictures?: boolean }) {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const city = op.session.doc;
@@ -651,12 +654,13 @@ export class Hub {
     const id = await this.store.uniqueId(name);
     const doc = createBattleDoc({ id, name, squaresX, squaresY, pxPerSquare: px, feetPerSquare: feet, seed: Math.floor(Math.random() * 2 ** 31) });
     const made = battleFromCity(city, rect, doc);
+    const dressed = o.packPictures !== false && this.assets ? await dressBattleWithPacks(doc, this.assets) : [];
     doc.meta.origin = { id: city.meta.id, name: city.meta.name, x: Math.round(rect.x + rect.w / 2), y: Math.round(rect.y + rect.h / 2), unit: "m" };
-    doc.meta.notes = `A scene in ${city.meta.name}: ${made.description}.`;
+    doc.meta.notes = `A scene in ${city.meta.name}: ${made.description}.${dressed.length ? ` Pictures from the asset packs: ${dressed.join("; ")}.` : ""}`;
     await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A battlemap of ${made.description} (settlement map \`${city.meta.id}\`), ${squaresX} x ${squaresY} squares of ${feet} ft. Record what the scene is, who is here and what the DM has decided.*\n`);
     await this.openProject(id);
     const info = (await this.store.list()).find((p) => p.id === id)!;
-    return { ...info, description: made.description };
+    return { ...info, description: made.description, ...(dressed.length && { packPictures: dressed }) };
   }
 
   /** A level of the open battlemap by id or by name (any case); an error that lists the levels when there is none, or when a name is ambiguous. */
@@ -1420,10 +1424,10 @@ export class Hub {
           return;
         }
         case "create_battle_from_city":
-          await this.createBattleFromCity({ name: msg.name, rect: msg.rect, feetPerSquare: msg.feetPerSquare });
+          await this.createBattleFromCity({ name: msg.name, rect: msg.rect, feetPerSquare: msg.feetPerSquare, packPictures: msg.packPictures });
           return;
         case "create_battle_here":
-          return await this.createBattleFromWorld({ name: msg.name, x: msg.x, y: msg.y, squaresX: msg.squaresX, squaresY: msg.squaresY });
+          return await this.createBattleFromWorld({ name: msg.name, x: msg.x, y: msg.y, squaresX: msg.squaresX, squaresY: msg.squaresY, packPictures: msg.packPictures });
         case "create_regional":
           return await this.createRegional({ name: msg.name, rect: msg.rect });
         case "regional_refresh":

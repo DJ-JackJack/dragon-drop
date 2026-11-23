@@ -62,13 +62,13 @@ export interface ToolContext {
   /** Optional: make a battlemap and open it. */
   createBattle?(o: { name: string; squaresX: number; squaresY: number; feetPerSquare?: number; pxPerSquare?: number; gridType?: "square" | "hex" | "none"; roomMargin?: number }): Promise<ProjectInfo>;
   /** Optional: make a battlemap of the ground at a point of the open world map, and open it. */
-  createBattleHere?(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
+  createBattleHere?(o: { name: string; x: number; y: number; squaresX?: number; squaresY?: number; feetPerSquare?: number; packPictures?: boolean }): Promise<ProjectInfo & { description: string; packPictures?: string[] }>;
   /** The picture reader for streets and water (Hub.readCityStreets / readCityWater), and setting ground cells as one edit (by Claude). */
   readCityStreets?(o: { area?: [number, number][]; samples: [number, number][]; others?: [number, number][]; tolerance?: number }): Promise<{ streets: { points: [number, number][]; width: number; kind: StreetKind }[]; alreadyThere: number }>;
   readCityWater?(o: { area?: [number, number][]; samples: { x: number; y: number; material: number }[]; others?: [number, number][]; tolerance?: number }): Promise<{ runs: { material: number; runs: number[] }[]; cells: number; alreadyThere: number }>;
   paintCityCells?(runs: { material: number; runs: number[] }[], label: string): number;
   /** A battlemap of a box (metres) of the open city map, opened. */
-  createBattleFromCity?(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number }): Promise<ProjectInfo & { description: string }>;
+  createBattleFromCity?(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number; packPictures?: boolean }): Promise<ProjectInfo & { description: string; packPictures?: string[] }>;
   /**
    * Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. For a battlemap with several levels the
    * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.

@@ -145,18 +145,20 @@ export const BATTLE_TOOLS = [
     name: "create_battlemap_here",
     description:
       "Make a battlemap of the ground at a point on the open WORLD map (x, y in map pixels) and open it. The floors are chosen from what the world map says is there: climate (snow, desert, woodland, meadow), steep rocky ground, a lake, a river running along its real direction, or the sea on the correct side of a coast. " +
-      "It gives a natural-looking outdoor scene to build on: add rooms, walls, objects and lights afterwards. The scene is a few dozen metres across, not the area of a world-map pixel. Only the biome and water come from the world; what is there (names, who lives here) is the DM's to decide.",
+      "It gives a natural-looking outdoor scene to build on: add rooms, walls, objects and lights afterwards. The scene is a few dozen metres across, not the area of a world-map pixel. Only the biome and water come from the world; what is there (names, who lives here) is the DM's to decide. " +
+      "With an asset library, each floor is a fitting floor texture of the packs (the DM's starred ones first) where one fits; pack_pictures: false keeps the built-in floors.",
     schema: z.object({
       name: z.string().min(1).max(80),
       x: z.number().describe("World-map pixel x"), y: z.number().describe("World-map pixel y"),
       squares_x: z.number().int().min(3).max(150).optional().describe("Default 30"),
       squares_y: z.number().int().min(3).max(150).optional().describe("Default 20"),
       feet_per_square: z.number().min(1).max(100).optional(),
+      pack_pictures: z.boolean().optional().describe("Use fitting pictures from the asset packs for the floors (default true when there is an asset library)"),
     }),
     async run(ctx, i) {
       if (!ctx.createBattleHere) return fail("Battlemaps can't be created here.");
-      const info = await ctx.createBattleHere({ name: i.name, x: i.x, y: i.y, squaresX: i.squares_x, squaresY: i.squares_y, feetPerSquare: i.feet_per_square });
-      return json({ created: info, ground: info.description, summary: battleSummary(ctx), note: "Now working in the battlemap (open_project returns to the world map). Look with render_battlemap." });
+      const info = await ctx.createBattleHere({ name: i.name, x: i.x, y: i.y, squaresX: i.squares_x, squaresY: i.squares_y, feetPerSquare: i.feet_per_square, ...(i.pack_pictures === false && { packPictures: false }) });
+      return json({ created: info, ground: info.description, ...(info.packPictures && { pack_pictures: info.packPictures }), summary: battleSummary(ctx), note: "Now working in the battlemap (open_project returns to the world map). Look with render_battlemap." });
     },
   }),
 
