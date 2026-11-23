@@ -28,6 +28,7 @@ import { ask, notice } from "./dialogs.tsx";
 import { CityExportDialog } from "./cityExport.tsx";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { focusBus, viewForBox } from "./focusBus.ts";
+import { cityLength, measureCtl } from "./measure.ts";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 
 type Pt = [number, number];
@@ -394,6 +395,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     // another map being compared with this one, over it (compare.ts)
     compareCtl.draw(ctx, m.id, v, W, H);
     labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H }, sel) : [];
+    if (o.tool === "measure") measureCtl.draw(ctx, v, cityLength);
 
     // what is selected
     ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = GOLD; ctx.lineJoin = "round";
@@ -1047,6 +1049,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   // ------------------------------------------------------------ effects
   useEffect(() => store.onPatch((r) => paintGround(r)), [paintGround]);
   useEffect(() => { void loadRoofPools(); return roofAssetsStore.subscribe(requestDraw); }, [meta?.id, requestDraw]);
+  useEffect(() => { measureCtl.clear(); }, [meta?.id]); // (a ruler's route belongs to its map)
   useEffect(() => { void loadLabelFonts().then(requestDraw); }, [requestDraw]);
   // the Objects list: bring a thing into view (metres)
   useEffect(() => focusBus.listen((b) => { const w = wrapRef.current; if (!w) return; viewRef.current = viewForBox(viewRef.current, b, w.clientWidth, w.clientHeight, 4, MIN_ZOOM); requestDraw(); }), [requestDraw]);
@@ -1069,6 +1072,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const keys = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const o = uiRef.current;
+      // the ruler: Enter finishes the route, Escape clears it, Backspace takes back the last point
+      if (o.tool === "measure" && measureCtl.key(e)) { e.preventDefault(); requestDraw(); return; }
       const draft = o.tool === "outline" ? outline : o.tool === "street" ? streetDraft : o.tool === "hills" ? landDraft : o.tool === "trees" ? treeDraft : o.tool === "citywall" ? wallDraft : o.tool === "district" ? districtDraft : null;
       if (draft?.current) {
         if (e.key === "Enter") (o.tool === "outline" ? finishOutline : o.tool === "street" ? finishStreet : o.tool === "hills" ? finishLand : o.tool === "citywall" ? () => finishWall(false) : o.tool === "district" ? () => void finishDistrict() : finishTrees)();
@@ -1124,6 +1129,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     }
     if (e.button === 1 || e.button === 2 || o.tool === "pan" || spaceRef.current) { drag.current = { mode: "pan", ...base }; return; }
     if (e.button !== 0) return;
+    if (o.tool === "measure") { measureCtl.down(q, p); requestDraw(); return; }
     if (o.tool === "select" || o.tool === "citylabel") {
       const lh = hitTest(labelHits.current, p.x, p.y);
       const hit = lh?.kind === "label" ? { kind: "label" as const, id: lh.id } : o.tool === "select" ? hitAt(q.x, q.y) : null;
@@ -1221,6 +1227,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
     if (d?.mode === "reader") { readerCtl.dragTo(q.x, q.y); return; }
+    if (uiRef.current.tool === "measure" && !d) { measureCtl.move(q); requestDraw(); }
     if (d?.mode === "pan") viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     else if (d?.mode === "move" && moving.current) { if (Math.hypot(p.x - d.sx, p.y - d.sy) > 4 || moving.current.dx || moving.current.dy) moving.current = { ...moving.current, dx: q.x - d.ax, dy: q.y - d.ay }; }
     else if (d?.mode === "brush") {
@@ -1291,7 +1298,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       <canvas
         ref={canvasRef} style={{ cursor }} data-testid="city-canvas"
         onMouseDown={noShiftTextSelect} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-        onPointerLeave={() => { pointer.current = null; setHover(null); requestDraw(); }}
+        onPointerLeave={() => { pointer.current = null; measureCtl.leave(); setHover(null); requestDraw(); }}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
       {exportOpen && meta?.city && <CityExportDialog meta={meta} names={ui.names} contours={ui.contours} prepare={prepareExport} paint={(t) => draw(t)} onClose={() => setExportOpen(false)} />}

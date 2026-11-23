@@ -6,6 +6,7 @@ const P: Record<string, ReactNode> = {
   pan: <path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />,
   select: <path d="M5 3l14 7-6 2-2 6z" />,
   area: <rect x="4" y="4" width="16" height="16" strokeDasharray="3 3" />,
+  measure: <><path d="M3 17L17 3l4 4L7 21z" /><path d="M7 13l2 2M10 10l2 2M13 7l2 2" /></>,
   // world terrain
   raise: <><path d="M3 19c4-9 14-9 18 0" /><path d="M12 3v7M9 6l3-3 3 3" /></>,
   lower: <><path d="M3 5c4 9 14 9 18 0" /><path d="M12 21v-7M9 18l3 3 3-3" /></>,

@@ -631,13 +631,20 @@ export const BATTLE_TOOLS = [
       "Write the battlemap as a file for a virtual tabletop into the project's exports folder: 'uvtt' (Universal VTT .dd2vtt: image, walls, doors and lights in one file, " +
       "for the Universal Battlemap Importer in Foundry and other virtual tabletops that read Universal VTT files; the format has no see-through wall or secret door, so windows, invisible walls and secret doors are written as plain wall, and only real doors become doors), 'foundry' (a .zip with a Foundry scene JSON and the PNG), or 'png' (the image only). " +
       "'key' (the numbered notes of every level as a Markdown list, for the DM; notes are never in the picture). " +
+      "'print' (a PDF to print at table scale, one inch a square, across sheets of US Letter or A4, with an assembly page and corner marks to trim along; paper, ink_saver and grid choose how; at most 80 pages). " +
       "A battlemap with several levels: the Foundry scene holds every level (one picture each, stairs and holes included); 'png' and 'uvtt' are of one level, named with it (level: its id or name, default the one being worked on). " +
       "The Foundry scene was tried in Foundry v14 (levels, walls, doors, window, lights, stairs and floors came through); the Universal VTT file was tried with the Universal Battlemap Importer (walls, doors and lights came through). " +
       "Neither has been tried in a live player view, and what a hole does to a token in Foundry hasn't been looked at: say so if asked, and ask the user to report anything odd.",
-    schema: z.object({ format: z.enum(BATTLE_EXPORT_FORMATS), level: z.string().optional().describe("png and uvtt only: a level's id or name (from list_levels)") }),
+    schema: z.object({
+      format: z.enum(BATTLE_EXPORT_FORMATS),
+      level: z.string().optional().describe("png, uvtt and print only: a level's id or name (from list_levels)"),
+      paper: z.enum(["letter", "a4"]).optional().describe("print only: US Letter (default) or A4"),
+      ink_saver: z.boolean().optional().describe("print only: grey and lighten the picture and draw the walls again dark, to save ink"),
+      grid: z.boolean().optional().describe("print only: draw the grid (default true)"),
+    }),
     async run(ctx, i) {
       if (!ctx.exportBattle) return fail("Exports aren't available here.");
-      const f = await ctx.exportBattle(i.format, i.level);
+      const f = await ctx.exportBattle(i.format, i.level, i.format === "print" ? { paper: i.paper, ink: i.ink_saver, grid: i.grid ?? true } : undefined);
       return json({ file: f.name, saved_to: f.path, megabytes: +(f.bytes / 1048576).toFixed(1), note: "The user can also download it from the editor's Export button." });
     },
   }),

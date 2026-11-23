@@ -121,6 +121,12 @@ class Store {
     this.compareListeners.add(cb);
     return () => { this.compareListeners.delete(cb); };
   }
+  /** Who wants the ruler's route surveyed (measure.ts). */
+  private measureListeners = new Set<(m: Extract<ServerMsg, { t: "measured" }>) => void>();
+  onMeasured(cb: (m: Extract<ServerMsg, { t: "measured" }>) => void) {
+    this.measureListeners.add(cb);
+    return () => { this.measureListeners.delete(cb); };
+  }
   private derivedListeners = new Set<(frame: DerivedFrame) => void>();
   /** A climate frame that arrived while nobody was listening (the map view mounts a moment after the first frames). */
   private pendingDerived: DerivedFrame | null = null;
@@ -352,6 +358,9 @@ class Store {
         break;
       case "compare":
         for (const cb of this.compareListeners) cb(m);
+        break;
+      case "measured":
+        for (const cb of this.measureListeners) cb(m);
         break;
       case "duplicated":
         this.set({ pictureNote: { text: `"${m.name}" is a copy of "${m.from}", now open: change it, and compare it with the original from the Map panel. The original is left as it was.`, busy: false, at: Date.now(), ms: 9000 } });

@@ -8,6 +8,7 @@ export const TOOL_GROUPS: { name: string; tools: ToolDef[] }[] = [
     { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
     { id: "select", label: "Select", key: "V", tip: "Click a place, label or region to edit it; drag to move it; Delete removes it. Click bare ground to point Claude at that spot" },
     { id: "area", label: "Select area", key: "E", tip: "Drag a rectangle, circle or freehand shape to show Claude exactly where you mean. Click for a single point. Esc clears" },
+    { id: "measure", label: "Ruler", key: "K", tip: "Click points along a route to measure it: miles and km, the ground along the way and how long it takes on foot, riding, by wagon or by ship. Double-click or Enter finishes, Backspace takes back a point, Esc clears" },
   ] },
   { name: "Terrain", tools: [
     { id: "raise", label: "Raise", key: "R", tip: "Paint terrain upward" },

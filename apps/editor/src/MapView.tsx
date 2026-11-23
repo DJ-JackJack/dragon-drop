@@ -25,11 +25,12 @@ import { makeResizeKeeper } from "./viewResize.ts";
 import { type WaterPick, namedShape, pickWater, withWaterLabels } from "./waterUi.ts";
 import type { RiverMode } from "./WorldToolBar.tsx";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
+import { measureCtl, worldLength } from "./measure.ts";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
 const MAX_ZOOM = 80;
-export type Tool = "pan" | "select" | "area" | "place" | "label" | "region" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
+export type Tool = "pan" | "select" | "area" | "measure" | "place" | "label" | "region" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
 /** The shape the Select area tool drags out. */
 export type AreaShape = "rect" | "circle" | "free" | "poly";
 const isBrush = (t: Tool): t is BrushTool => ["raise", "lower", "smooth", "flatten", "land", "water"].includes(t);
@@ -444,6 +445,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       const sh = namedShape(rivers, wv, selRef.current);
       if (sh) drawWaterShape(ctx, v, sh, "rgba(255, 215, 60, 0.95)");
     }
+    if (optsRef.current.tool === "measure") measureCtl.draw(ctx, v, (u) => worldLength(u * (metaRef.current?.kmPerPx ?? 1)));
     if (optsRef.current.tool === "river") {
       const wh = waterHover.current;
       if (wh && riverRef.current.mode === "name") drawWaterShape(ctx, v, wh, "rgba(110, 220, 255, 0.95)");
@@ -673,6 +675,8 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     const ku = (e: KeyboardEvent) => { if (e.code === "Space") setSpaceDown(false); };
     const del = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
+      // the ruler: Enter finishes the route, Escape clears it, Backspace takes back the last point
+      if (optsRef.current.tool === "measure" && measureCtl.key(e)) { e.preventDefault(); requestDraw(); return; }
       // outlining an area corner by corner: Enter closes it, Escape cancels, Backspace drops the last corner
       if (polyDraft.current) {
         if (e.key === "Enter") finishPoly();
@@ -787,6 +791,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     if (e.button !== 0) return;
     const m = toMap(p.x, p.y);
     const tl = optsRef.current.tool;
+    if (tl === "measure") { measureCtl.down(m, p); requestDraw(); return; }
     if (tl === "battlehere") {
       onBattleRef.current(m.x, m.y);
       return;
@@ -930,6 +935,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(m); return; }
     if (optsRef.current.tool === "river") waterHover.current = !d && riverRef.current.mode === "name" ? pickAt(m.x, m.y) : null;
+    if (optsRef.current.tool === "measure" && !d) measureCtl.move(m);
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "move" && d.hit) {
@@ -1136,6 +1142,9 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     requestDraw();
   }
 
+  // the ruler's routes are surveyed on world maps; a route belongs to its map
+  useEffect(() => { measureCtl.setWorld(true); return () => measureCtl.setWorld(false); }, []);
+  useEffect(() => { measureCtl.clear(); requestDraw(); }, [meta?.id, requestDraw]);
   // switching tools abandons a half-drawn line or region
   useEffect(() => { lineDraft.current = null; regionDraft.current = null; polyDraft.current = null; waterHover.current = null; requestDraw(); }, [tool, areaShape, riverMode, requestDraw]);
   // new rivers or names: what is under the pointer is looked for again
@@ -1153,7 +1162,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
 
   const cursor = traceMode === "move" && features.trace ? "move" : traceMode && features.trace ? "crosshair"
     : spaceDown || tool === "pan" ? (drag.current?.mode === "pan" ? "grabbing" : "grab")
-    : tool === "select" ? "default" : tool === "river" ? "pointer" : tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" || tool === "cityhere" ? "crosshair" : "none";
+    : tool === "select" ? "default" : tool === "river" ? "pointer" : tool === "measure" || tool === "place" || tool === "label" || tool === "region" || tool === "detail" || tool === "area" || tool === "line" || tool === "battlehere" || tool === "cityhere" ? "crosshair" : "none";
 
   return (
     <div className="mapview-col">
@@ -1166,7 +1175,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onPointerLeave={() => { pointer.current = null; waterHover.current = null; setHover(null); requestDraw(); }}
+        onPointerLeave={() => { pointer.current = null; waterHover.current = null; measureCtl.leave(); setHover(null); requestDraw(); }}
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
         data-testid="map-canvas"

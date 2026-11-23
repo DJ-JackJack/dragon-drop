@@ -139,7 +139,8 @@ export function createAppServer(cfg: Config, hub: Hub) {
       if (ex) {
         if (hub.activeId !== ex[1]) return void res.writeHead(404, { "content-type": "text/plain" }).end("Not the open project");
         try {
-          const f = await hub.battleExport(ex[2] as BattleExportFormat, url.searchParams.get("level") ?? undefined);
+          const q = url.searchParams, paper = q.get("paper");
+          const f = await hub.battleExport(ex[2] as BattleExportFormat, q.get("level") ?? undefined, { paper: paper === "a4" ? "a4" : "letter", ink: q.get("ink") === "1", grid: q.get("grid") === "1" });
           res.writeHead(200, { "content-type": f.mime, "content-disposition": `attachment; filename="${f.name}"`, "content-length": f.bytes.byteLength, "cache-control": "no-cache" }).end(f.bytes);
         } catch (e) {
           res.writeHead(400, { "content-type": "text/plain" }).end((e as Error).message);

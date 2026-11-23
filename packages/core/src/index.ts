@@ -74,3 +74,6 @@ export * from "./selection.ts";
 export * from "./riverPaint.ts";
 export * from "./biomeLook.ts";
 export * from "./lava.ts";
+export * from "./measure.ts";
+export * from "./pdf.ts";
+export * from "./printPlan.ts";

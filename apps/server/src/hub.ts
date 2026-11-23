@@ -14,8 +14,9 @@ import {
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
+  surveyRoute, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
 } from "@mapmaker/core";
-import { type ToolContext, encodePng, encodePngRgba } from "@mapmaker/tools";
+import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
@@ -678,6 +679,37 @@ export class Hub {
   }
 
   /** One level of the open battlemap drawn as it is exported: walls and doors kept, lights and the DM's notes left out (the tabletop does its own lighting). */
+  /**
+   * A battlemap level as a printable PDF at one inch a square (core printPlan.ts, pdf.ts): drawn at up to 150 px a square (fewer on a very big map, to stay
+   * under 40 million pixels), cut into pages, each a JPEG.
+   */
+  private async printBattle(doc: MapDoc, title: string, o: PrintOptions): Promise<Uint8Array> {
+    const spec = battleSpec(doc);
+    const plan = planPrint(spec.squaresX, spec.squaresY, { paper: o.paper });
+    if (plan.tiles.length > MAX_PRINT_PAGES) {
+      throw new Error(`At one inch a square this battlemap needs ${plan.tiles.length} pages (${describePlan(plan)}): at most ${MAX_PRINT_PAGES} are made. Export the picture (PNG) and have a print shop print it at ${spec.squaresX} × ${spec.squaresY} inches instead.`);
+    }
+    const pps = Math.max(40, Math.min(150, Math.floor(Math.sqrt(40e6 / (spec.squaresX * spec.squaresY)))));
+    const big: MapDoc = { ...doc, meta: { ...doc.meta, battle: { ...spec, pxPerSquare: pps } } };
+    const data = await this.compute.battle(big, { overlay: true, lights: false, ...(await this.battleAssets(big)).opts });
+    const W = spec.squaresX * pps, H = spec.squaresY * pps;
+    if (o.ink) inkSaver(data);
+    const jpeg = (img: RGBAImage) => ({ jpeg: encodeJpeg(img, 88, 6_000_000), pw: img.w, ph: img.h });
+    const crop = (x: number, y: number, w: number, h: number): RGBAImage => {
+      const out = new Uint8ClampedArray(w * h * 4);
+      for (let r = 0; r < h; r++) out.set(data.subarray(((y + r) * W + x) * 4, ((y + r) * W + x + w) * 4), r * w * 4);
+      return { w, h, data: out };
+    };
+    const k = Math.min(1, 1600 / Math.max(W, H)), ow = Math.max(1, Math.round(W * k)), oh = Math.max(1, Math.round(H * k));
+    const overview = jpeg({ w: ow, h: oh, data: k < 1 ? boxResize(data, W, H, ow, oh) : data });
+    const walls = o.ink ? (doc.features?.walls ?? []).filter((w) => w.kind !== "invisible").map((w) => ({ points: w.points, kind: w.kind === "door" ? "door" as const : w.kind === "window" ? "window" as const : "wall" as const })) : undefined;
+    const pages = printPages(plan, {
+      title, feetPerSquare: spec.feetPerSquare, squaresX: spec.squaresX, squaresY: spec.squaresY, overview, grid: !!o.grid, walls,
+      tile: (t) => jpeg(crop(t.x * pps, t.y * pps, t.w * pps, t.h * pps)),
+    });
+    return writePdf(pages, title);
+  }
+
   private async renderLevelArt(doc: MapDoc): Promise<{ png: Uint8Array; w: number; h: number }> {
     const { w, h } = battleImageSize(battleSpec(doc));
     const data = await this.compute.battle(doc, { overlay: true, lights: false, ...(await this.battleAssets(doc)).opts });
@@ -688,7 +720,7 @@ export class Hub {
    * The open battlemap as a file for a virtual tabletop: image, Universal VTT, or a Foundry scene (zip). A battlemap of several levels gives a Foundry
    * scene with every level (one picture each); the image and the Universal VTT file are of the level being worked on, named with it.
    */
-  async battleExport(format: BattleExportFormat, level?: string): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
+  async battleExport(format: BattleExportFormat, level?: string, print: PrintOptions = {}): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     if (!isBattle(op.session.doc)) throw new Error("Only battlemaps can be exported this way.");
@@ -708,6 +740,7 @@ export class Hub {
         : battleKey(doc);
       return { name: `${base}-key.md`, mime: "text/markdown; charset=utf-8", bytes: enc.encode(text) };
     }
+    if (format === "print") return { name: `${many ? `${base}-${fileSlug(active.name)}` : base}-print.pdf`, mime: "application/pdf", bytes: await this.printBattle(doc, many ? `${doc.meta.name}, ${active.name}` : doc.meta.name, print) };
     if (format === "png" || format === "uvtt") {
       const stem = many ? `${base}-${fileSlug(active.name)}` : base;
       const { png } = await this.renderLevelArt(doc);
@@ -1429,6 +1462,15 @@ export class Hub {
           this.send(ws, { t: "compare", ...r });
           return;
         }
+        case "measure": {
+          // the ruler (core measure.ts): the ground along the route, from the climate worked out last (or now, when there is none yet)
+          const op = this.open, id = Number(msg.id) || 0;
+          const pts = Array.isArray(msg.points) ? msg.points.slice(0, 200).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((v) => Number.isFinite(v))) : [];
+          if (!op || !isWorld(op.session.doc) || pts.length < 2) { this.send(ws, { t: "measured", id, survey: null }); return; }
+          const d = op.derived ?? (await this.refreshDerived(op, true));
+          this.send(ws, { t: "measured", id, survey: surveyRoute(op.session.doc, d, pts) });
+          return;
+        }
         case "sketch_import": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
@@ -1638,8 +1680,8 @@ export class Hub {
         self.projectsCache = await self.store.list();
         return info;
       },
-      exportBattle: async (format, level) => {
-        const f = await self.battleExport(format, level);
+      exportBattle: async (format, level, print) => {
+        const f = await self.battleExport(format, level, print);
         return { name: f.name, bytes: f.bytes.byteLength, path: await self.store.saveExport(id(), f.name, f.bytes) };
       },
       levels: {

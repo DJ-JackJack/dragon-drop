@@ -15,6 +15,7 @@ import type { ParentLink } from "./regional.ts";
 import type { SketchParams } from "./sketch.ts";
 import type { Selection } from "./selection.ts";
 import type { LevelsFile } from "./levels.ts";
+import type { RouteSurvey } from "./measure.ts";
 
 export type WireCommand = Exclude<Command, { op: "replace_heights" | "patch_heights" }>;
 
@@ -129,6 +130,8 @@ export type ClientMsg =
   | { t: "duplicate_project"; name: string }
   /** Where another map lies over the open one, to compare them in the editor (its picture is GET /api/projects/<id>/picture.jpg). Answered with `compare`. */
   | { t: "compare_with"; id: string }
+  /** The ruler on a world map: survey the route through these points (map px). Answered with `measured` (same `id`), to this editor only. */
+  | { t: "measure"; id: number; points: [number, number][] }
   /** Lay a road or trail through waypoints (map px), found over the terrain. */
   | { t: "route_line"; kind: "road" | "trail"; points: [number, number][]; name?: string; id?: string }
   /** Turn a reference image into terrain (replaces the whole map; a checkpoint is saved first). */
@@ -220,6 +223,8 @@ export type ServerMsg =
    * (they can then only be shown side by side), and how they are linked, in words.
    */
   | { t: "compare"; id: string; name: string; kind: string; rect: Rect | null; how: string[] }
+  /** The ruler's route surveyed (the answer to `measure`): null when the open map isn't a world map. */
+  | { t: "measured"; id: number; survey: RouteSurvey | null }
   /** A river was drawn (the answer to `draw_river`): its new source, how long it is, how it ends, the deepest cut through high ground (m), and whether the line was turned round. */
   | { t: "river_drawn"; source: string; lengthKm: number; end: "sea" | "land" | "edge"; deepestM: number; reversed: boolean }
   /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor until answered (`confirm_done`). via: the API chat or an assistant through the map tools. `map`: the name of the map (and level) it is about, which may not be the one on screen. */

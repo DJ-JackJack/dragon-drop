@@ -10,7 +10,7 @@ import {
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
-import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, routeLength, type PaperId, MAX_PRINT_PAGES, describePlan, planPrint, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
@@ -27,8 +27,9 @@ import { store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { focusBus, viewForBox } from "./focusBus.ts";
+import { MEASURE_HINT, battleLength, measureCtl, useMeasure } from "./measure.ts";
 
-export type BattleTool = "pan" | "select" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
+export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
 export interface BattleUi {
   tool: BattleTool;
@@ -94,6 +95,7 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   { name: "Move", tools: [
     { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
     { id: "select", label: "Select", key: "V", tip: "Click a wall, door, light or object to edit it. Shift-click, or drag a box round bare ground, to select several; drag to move what is selected (hold Shift or Alt once you are dragging to put it anywhere, not snapped). Delete removes it" },
+    { id: "measure", label: "Ruler", key: "M", tip: "Click points to measure a distance in feet and squares. Double-click or Enter finishes, Backspace takes back a point, Esc clears" },
   ] },
   { name: "Floor", tools: [
     { id: "brush", label: "Brush", key: "B", tip: "Paint the chosen floor material. Choose \"void\" to erase" },
@@ -659,6 +661,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     drawPathMarks(ctx, (f.paths ?? []).map(shiftedPoly), v, isSel);
     drawLightMarkers(ctx, lights, v, isSel);
     if (o.showNotes) drawNoteBadges(ctx, (f.notes ?? []).map(shifted), v, isSel);
+    if (o.tool === "measure") measureCtl.draw(ctx, v, (u) => battleLength(u, spec.feetPerSquare));
     // walls and light zones being dragged: where they will land (their picture stays until they are dropped), and the box being drawn
     if (mg && mgSet && (mg.dx || mg.dy)) {
       ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)";
@@ -776,6 +779,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   useEffect(() => focusBus.listen((bx) => { const w = wrapRef.current; if (!w) return; viewRef.current = viewForBox(viewRef.current, bx, w.clientWidth, w.clientHeight, 60, 3); requestDraw(); }), [requestDraw]);
   // the level below, as a picture from the server (fetched again each time a level is switched to, since the one below may have been changed meanwhile)
   const projectId = meta?.id ?? null, activeLevel = levels?.active ?? null;
+  // a ruler's route belongs to its map and level
+  useEffect(() => { measureCtl.clear(); }, [projectId, activeLevel]);
   useEffect(() => {
     if (!projectId || !belowId) { ghostRef.current?.bmp.close(); ghostRef.current = null; requestDraw(); return; }
     let dead = false;
@@ -808,6 +813,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const ku = (e: KeyboardEvent) => { altRef.current = e.altKey || e.shiftKey; if (e.code === "Space") setSpaceDown(false); };
     const keys = (e: KeyboardEvent) => {
       if (typing(e)) return;
+      // the ruler: Enter finishes the route, Escape clears it, Backspace takes back the last point
+      if (uiRef.current.tool === "measure" && measureCtl.key(e)) { e.preventDefault(); requestDraw(); return; }
       const sd = shapeDraft.current;
       if (sd) {
         if (e.key === "Enter") finishShape();
@@ -1019,6 +1026,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     }
     if (e.button !== 0) return;
     const spec = m.battle;
+    if (o.tool === "measure") { measureCtl.down(q, p); requestDraw(); return; }
     if (o.tool === "brush") {
       send({ t: "txn_begin", label: `Paint ${materialLabel(m, o.material)}` } as never);
       paintStroke([[q.x, q.y]]);
@@ -1139,6 +1147,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
+    if (uiRef.current.tool === "measure" && !d) { measureCtl.move(q); requestDraw(); }
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
     } else if (d?.mode === "brush") {
@@ -1238,7 +1247,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       <canvas
         ref={canvasRef} style={{ cursor }} data-testid="battle-canvas"
         onMouseDown={noShiftTextSelect} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-        onPointerLeave={() => { pointer.current = null; setHover(null); requestDraw(); }}
+        onPointerLeave={() => { pointer.current = null; measureCtl.leave(); setHover(null); requestDraw(); }}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
       {levels && <LevelBar levels={levels} />}
@@ -1482,10 +1491,17 @@ function drawNoteBadges(ctx: CanvasRenderingContext2D, notes: MapNote[], v: View
 // ---------------------------------------------------------------- side panels
 /** The tool bar: the settings of the tool in use (floor material, brush size, object size, shapes). The tools themselves are in the rail. */
 export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void; meta: MapMeta | null; assetsOn: boolean; onOpenAssets: () => void }) {
+  const ms = useMeasure();
   const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
   const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <ToolBar hint={BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
+    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
+      {ui.tool === "measure" && (
+        <span className="measure-result" data-testid="measure-result">
+          {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5)}</b>}
+          {ms.points.length > 2 && <span className="muted"> · {ms.points.length - 1} legs</span>}
+        </span>
+      )}
       {ui.tool === "roof" && (
         <>
           <label className="field">New roofs look like
@@ -2158,17 +2174,25 @@ export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; l
   const [levelId, setLevelId] = useState(levels?.active ?? "");
   const many = (levels?.levels.length ?? 0) > 1;
   const [error, setError] = useState<string | null>(null);
+  /** Printing at table scale (core printPlan.ts): the paper, the grid and the ink-saving look; remembered while the dialog is open. */
+  const [paper, setPaper] = useState<PaperId>(() => { try { return localStorage.getItem("dd.printPaper") === "a4" ? "a4" : "letter"; } catch { return "letter"; } });
+  const [printGrid, setPrintGrid] = useState(true);
+  const [ink, setInk] = useState(false);
+  const plan = meta.battle ? planPrint(meta.battle.squaresX, meta.battle.squaresY, { paper }) : null;
   const files = [
     { fmt: "uvtt", name: `${meta.id}.dd2vtt`, title: "Universal VTT (.dd2vtt)", text: "One file with the image, walls, doors and lights (of the level you are working on). Use it in virtual tabletops that read Universal VTT files, or with the Universal Battlemap Importer module in Foundry. The format has no see-through wall, so windows and invisible walls are written as plain walls. In Foundry, the Foundry scene below is better: it keeps them (and your levels)." },
     { fmt: "foundry", name: `${meta.id}-foundry.zip`, title: "Foundry scene (.zip)", text: "A picture for each level plus a scene file for Foundry's Import Data, with the grid, levels, walls, doors, windows (see-through, but nothing walks through) and lights. A README inside says where things go." },
     { fmt: "key", name: `${meta.id}-key.md`, title: "Key (.md)", text: "Your numbered room notes as a list (Markdown), for the DM. Notes are never part of the picture." },
     { fmt: "png", name: `${meta.id}.png`, title: "Image only (.png)", text: "The picture of the level you are working on, with walls and doors drawn in. No lights (the tabletop does its own lighting)." },
   ] as const;
-  const go = async (f: (typeof files)[number]) => {
+  const go = async (f: { fmt: string; name: string }) => {
     setError(null);
     setBusy(f.fmt);
     try {
-      const q = many && (f.fmt === "png" || f.fmt === "uvtt") ? `?level=${encodeURIComponent(levelId)}` : "";
+      const params = new URLSearchParams();
+      if (many && (f.fmt === "png" || f.fmt === "uvtt" || f.fmt === "print")) params.set("level", levelId);
+      if (f.fmt === "print") { params.set("paper", paper); if (printGrid) params.set("grid", "1"); if (ink) params.set("ink", "1"); try { localStorage.setItem("dd.printPaper", paper); } catch { /* fine */ } }
+      const q = params.size ? `?${params}` : "";
       const r = await fetch(`/api/projects/${encodeURIComponent(meta.id)}/export/${f.fmt}${q}`);
       if (!r.ok) throw new Error((await r.text()) || `The export failed (${r.status}).`);
       // (the server names the file, with the level's name when there are several)
@@ -2199,6 +2223,24 @@ export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; l
             <button className="primary" disabled={!!busy} onClick={() => void go(f)} data-testid={`battle-export-${f.fmt}`}>{busy === f.fmt ? "Preparing…" : "Download"}</button>
           </div>
         ))}
+        <div className="export-choice" data-testid="battle-print">
+          <div>
+            <b>Print at table scale (.pdf)</b>
+            <p className="muted">One inch a square, across sheets of paper you trim and tape together, for miniatures on the table. An assembly page comes first; each page has corner marks to trim along and says which pages join it. Print it at actual size (100%), not fitted to the page.</p>
+            <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
+              <label className="field">Paper
+                <select value={paper} onChange={(e) => setPaper(e.target.value as PaperId)} data-testid="print-paper">
+                  <option value="letter">US Letter</option>
+                  <option value="a4">A4</option>
+                </select>
+              </label>
+              <label className="check"><input type="checkbox" checked={printGrid} onChange={(e) => setPrintGrid(e.target.checked)} data-testid="print-grid" /> Grid</label>
+              <label className="check" title="The picture greyed and lightened, the walls drawn again dark: far less ink"><input type="checkbox" checked={ink} onChange={(e) => setInk(e.target.checked)} data-testid="print-ink" /> Save ink</label>
+            </div>
+            {plan && <p className="muted" data-testid="print-pages">{plan.tiles.length > MAX_PRINT_PAGES ? `Too big to print this way (${plan.tiles.length} pages): export the picture and have a print shop print it at ${meta.battle!.squaresX} × ${meta.battle!.squaresY} inches.` : `${describePlan(plan)}.`}</p>}
+          </div>
+          <button className="primary" disabled={!!busy || !plan || plan.tiles.length > MAX_PRINT_PAGES} onClick={() => void go({ fmt: "print", name: `${meta.id}-print.pdf` })} data-testid="battle-export-print">{busy === "print" ? "Preparing…" : "Download"}</button>
+        </div>
         <p className="muted">The Foundry scene has been tried in Foundry v14 (levels, walls, doors, windows, lights and stairs came through); the Universal VTT file with the Universal Battlemap Importer (walls, doors and lights came through). Neither has been tried in a live player view. If one doesn't import cleanly, tell me what it said.</p>
         {error && <p className="error-text" data-testid="battle-export-error">{error}</p>}
         <div className="row end"><button className="ghost" onClick={onClose} disabled={!!busy}>Close</button></div>

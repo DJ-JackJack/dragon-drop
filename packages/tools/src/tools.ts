@@ -12,7 +12,7 @@ import {
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
   type LakeShape, type NamedWater, type RiverNet, type LinkedMap, COPYABLE, copyFeaturesFrom, copyHeightsFrom, heightsFromState, mapTransform,
-  MAX_SMOOTH_REACH_PX,
+  MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, battleRoute, battleSpec, cityRoute, describeRoute, surveyRoute, travelEstimates,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -73,7 +73,7 @@ export interface ToolContext {
    * Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. For a battlemap with several levels the
    * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.
    */
-  exportBattle?(format: BattleExportFormat, level?: string): Promise<{ name: string; bytes: number; path: string }>;
+  exportBattle?(format: BattleExportFormat, level?: string, print?: import("@mapmaker/core").PrintOptions): Promise<{ name: string; bytes: number; path: string }>;
   /** Optional: the levels of the open battlemap (a cellar under a ground floor under an attic), and the one being worked on. Every other tool works on that level. */
   levels?: {
     /** The levels from the lowest to the highest, each with what is on it. Throws on a world map. */
@@ -486,6 +486,45 @@ export const TOOLS = [
         const e = Math.round(s.doc.height.sample(x, y));
         return { x, y, elevation_m: e, is_land: e > s.doc.meta.seaLevel };
       }));
+    },
+  }),
+
+  define({
+    name: "measure",
+    description:
+      "Measure a route through points, in the open map's own units (world maps: map pixels; battlemaps: grid squares; settlements: metres). World maps: the distance in " +
+      "miles and km, the ground along it (open; rough: forest, jungle, marsh, mountains, steep slopes, ice; along roads and trails; over water), the rivers it crosses, " +
+      "how far it climbs, and how long it takes on foot, riding, by wagon or cart and by sailing ship (rough ground halves the pace on foot and riding, a wagon goes at a " +
+      "third, roads are open going, a ship only sails water). Battlemaps: feet and squares. Settlements: metres, feet and minutes on foot. Use it for any distance or " +
+      "travel time rather than working one out: it reads the land, the climate and the roads the way the DM's ruler does.",
+    schema: z.object({
+      points: z.array(XY).min(2).max(200).describe("The route's points, in order (world maps: map pixels; battlemaps: squares; settlements: metres)"),
+      paces: z.object(Object.fromEntries(TRAVEL_MODES.map((m) => [m.id, z.number().positive().max(1000).optional().describe(`${m.name}, miles a day (usually ${m.milesPerDay})`)])) as Record<TravelModeId, z.ZodOptional<z.ZodNumber>>)
+        .optional().describe("Other paces, when the DM uses them (world maps)"),
+    }),
+    async run(ctx, i) {
+      const doc = ctx.session().doc;
+      const pts = i.points as [number, number][];
+      if (isBattle(doc)) {
+        const ft = battleSpec(doc).feetPerSquare, r = battleRoute(pts, ft);
+        return json({ feet: Math.round(r.feet * 10) / 10, squares: Math.round(r.squares * 10) / 10, feet_per_square: ft, legs_feet: pts.slice(1).map((p, k) => Math.round(battleRoute([pts[k], p], ft).feet * 10) / 10) });
+      }
+      if (isCity(doc)) {
+        const r = cityRoute(pts);
+        return json({ metres: Math.round(r.metres), feet: Math.round(r.feet), walk: `about ${Math.max(1, Math.round(r.walkMinutes))} minutes on foot` });
+      }
+      const s = surveyRoute(doc, (await ctx.derived?.()) ?? null, pts);
+      const r1 = (n: number) => Math.round(n * 10) / 10;
+      const mi = (km: number) => r1(km * MI_PER_KM);
+      return json({
+        route: describeRoute(s),
+        miles: mi(s.km), km: r1(s.km), legs_miles: s.legsKm.map(mi),
+        ground_miles: { open: mi(s.openKm), rough: mi(s.roughKm), roads: mi(s.roadKm), water: mi(s.waterKm) },
+        rough_miles: Object.fromEntries(Object.entries(s.rough).filter(([, v]) => v > 0.05).map(([k, v]) => [k, mi(v)])),
+        rivers_crossed: s.riversCrossed, climb_m: Math.round(s.climbM), descent_m: Math.round(s.descentM), highest_m: Math.round(s.highestM),
+        travel: travelEstimates(s, i.paces as Partial<Record<TravelModeId, number>> | undefined).map((t) => ({ how: t.name, time: t.time, days: Math.round(t.days * 100) / 100, ...(t.note && { note: t.note }) })),
+        ...(!s.climateKnown && { note: "The climate isn't worked out yet, so forest, jungle and marsh count as open ground." }),
+      });
     },
   }),
 
@@ -1749,7 +1788,7 @@ const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n 
  * map, its selection and the DM's editor stay as they are.
  */
 export const LOOK_ONLY_TOOLS = new Set([
-  "get_map_summary", "get_brief", "render_preview", "query_points", "list_places", "list_labels", "list_lines", "list_climate_regions", "list_river_sources", "check_hydrology",
+  "get_map_summary", "get_brief", "render_preview", "query_points", "measure", "list_places", "list_labels", "list_lines", "list_climate_regions", "list_river_sources", "check_hydrology",
   "list_waters", "find_straits", "list_references", "view_reference", "list_checkpoints", "get_trace_picture",
   "list_battle", "render_battlemap", "list_connectors", "list_roofs",
   "render_city", "list_buildings", "list_streets", "list_land", "list_trees", "list_city_walls", "list_city_districts", "list_city_labels", "check_city",

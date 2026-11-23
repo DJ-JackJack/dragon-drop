@@ -976,6 +976,18 @@ try {
     const keyText = await (await import("node:fs/promises")).readFile(await keyDl.path(), "utf8");
     if (!keyText.includes("1. **Wooden room**") || !keyText.includes("A torch burns here.")) fail(`the key is missing the note: ${keyText}`);
     await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    // printing at table scale: the dialog says how many pages, and the PDF has them
+    await page.getByTestId("battle-export-button").click();
+    await page.getByTestId("print-pages").getByText(/pages? of US Letter/).waitFor({ timeout: 5000 });
+    await page.getByTestId("print-paper").selectOption("a4");
+    const printNote = await page.getByTestId("print-pages").textContent();
+    if (!/of A4/.test(printNote)) fail(`the print note didn't follow the paper: ${printNote}`);
+    const [pdfDl] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("battle-export-print").click()]);
+    if (!pdfDl.suggestedFilename().endsWith("-print.pdf")) fail(`unexpected print name ${pdfDl.suggestedFilename()}`);
+    const pdfText = (await (await import("node:fs/promises")).readFile(await pdfDl.path())).toString("latin1");
+    const wanted = Number(/^(\d+) pages?/.exec(printNote)[1]) + 1;
+    if (!pdfText.startsWith("%PDF") || (pdfText.match(/\/Type \/Page /g) ?? []).length !== wanted) fail(`the PDF should have ${wanted} pages`);
+    await page.getByTestId("battle-export-dialog").waitFor({ state: "detached", timeout: 10000 });
     // levels: add one above (it starts empty, with the room below showing faintly through it), switch with Page Down / Page Up, and the Foundry export has a picture for each
     await page.getByTestId("level-bar").waitFor({ timeout: 5000 });
     const isOn = (id) => page.evaluate((i) => !!document.querySelector(`[data-testid="level-row-${i}"].on`), id);
@@ -1134,6 +1146,20 @@ try {
     await legend.locator("summary").click();
     for (const name of ["Conifer forest", "Temperate rainforest", "Glacier", "Volcanic ground", "Beach"]) await legend.getByText(name, { exact: true }).waitFor({ timeout: 5000 });
     await legend.locator("summary").click();
+  }
+
+  // The ruler: two clicks and Enter give the route's length and the time on foot, and the line below says what it crosses (worked out by the server)
+  {
+    await page.bringToFront();
+    await page.getByRole("button", { name: "Ruler", exact: true }).click();
+    const rb = await page.locator('[data-testid="map-canvas"]').boundingBox();
+    await page.mouse.click(rb.x + rb.width * 0.35, rb.y + rb.height * 0.4);
+    await page.mouse.click(rb.x + rb.width * 0.65, rb.y + rb.height * 0.6);
+    await page.keyboard.press("Enter");
+    await page.getByTestId("measure-result").getByText(/mi \(.*km\) · On foot: about/).waitFor({ timeout: 10000 });
+    await page.getByTestId("tool-hint").getByText(/^[\d.,]+ mi \([\d.,]+ km\)/).waitFor({ timeout: 10000 });
+    await page.keyboard.press("Escape");
+    await page.getByTestId("measure-result").getByText("Click to start a route").waitFor({ timeout: 5000 });
   }
 
   // Selecting: drag an area (rectangle, circle, freehand), click for a point, see the bar and the gold outline, lock and unlock, Esc clears; the server shares it with Claude

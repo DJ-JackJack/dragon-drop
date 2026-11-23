@@ -2,7 +2,7 @@
 import type { BuildingKind, CityLabelKind, CityWallKind, Features, FeaturesPatch, MapBuilding, MapCityWall, MapDistrict, MapLabel, MapLandform, MapStreet, MapTrees, RoofStyle, StreetKind, TreeGroup, TreeSpecies } from "@mapmaker/core";
 import { store } from "./store.ts";
 
-export type CityTool = "pan" | "select" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees" | "citylabel" | "district" | "citybattle";
+export type CityTool = "pan" | "select" | "measure" | "building" | "outline" | "street" | "citywall" | "ground" | "hills" | "trees" | "citylabel" | "district" | "citybattle";
 
 /** What the Land tool makes: a hill (a click, or a drag for its size), a ridge or valley (points along it), a plateau or hollow (an outline), a slope (a drag from low to high). */
 export type LandMode = "hill" | "ridge" | "valley" | "plateau" | "hollow" | "slope";
@@ -57,6 +57,7 @@ export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: str
   { name: "Move", tools: [
     { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
     { id: "select", label: "Select", key: "V", tip: "Click a building or street to select it, drag it to move it; drag on bare ground to box-select; Shift-click adds. Delete removes, Q and E turn buildings" },
+    { id: "measure", label: "Ruler", key: "K", tip: "Click points to measure a distance in metres and feet, and how long it takes on foot. Double-click or Enter finishes, Backspace takes back a point, Esc clears" },
   ] },
   { name: "Build", tools: [
     { id: "building", label: "Building", key: "B", tip: "Click to place a house; drag a rectangle to size one. Q and E turn it (15° at a time)" },

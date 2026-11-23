@@ -22,7 +22,9 @@ export const PACK_FILE_NAME = /\.pck$|\.[a-z0-9]+_pack$/i;
 export const ZIP_FILE_NAME = /\.zip$/i;
 
 /** What a battlemap can be exported as (the Export button, the export_battlemap tool and the download routes). */
-export const BATTLE_EXPORT_FORMATS = ["png", "uvtt", "foundry", "key"] as const;
+export const BATTLE_EXPORT_FORMATS = ["png", "uvtt", "foundry", "key", "print"] as const;
+/** How a battlemap is printed (the "print" export). */
+export interface PrintOptions { paper?: "letter" | "a4"; ink?: boolean; grid?: boolean }
 export type BattleExportFormat = (typeof BATTLE_EXPORT_FORMATS)[number];
 
 export interface FormatInfo {
@@ -97,6 +99,11 @@ export const FORMATS_WRITTEN: FormatInfo[] = [
     id: "key", name: "Room key", files: ".md", exportFormat: "key",
     use: "The battlemap's numbered room notes (of every level) as a Markdown list, for the DM.",
     limits: "Notes are never drawn into the pictures or the tabletop files.",
+  },
+  {
+    id: "print", name: "Printable PDF", files: "-print.pdf", exportFormat: "print",
+    use: "A battlemap printed at table scale, one inch a square, across sheets of US Letter or A4: an assembly page first, then each page with corner marks to trim along and the names of the pages that join it. Optionally the grid, and an ink-saving look (the picture greyed and lightened, the walls drawn again dark).",
+    limits: "Print it at actual size (100%), not fitted to the page. At most 80 pages (a bigger map is better printed from the PNG at a print shop). The picture is of the level you are working on, without lights; it is drawn at up to 150 pixels an inch (less on very big maps).",
   },
   {
     id: "previews", name: "Preview pictures", files: ".jpg",

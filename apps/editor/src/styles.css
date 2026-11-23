@@ -655,3 +655,7 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 .asset-words { display: flex; flex-direction: column; gap: 4px; }
 .asset-words .chips button { font-size: 11.5px; }
 .asset-words input { flex: 1; min-width: 0; }
+
+/* the ruler's result in the tool bar (measure.ts) */
+.measure-result { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.measure-result b { color: var(--gold-hi); }

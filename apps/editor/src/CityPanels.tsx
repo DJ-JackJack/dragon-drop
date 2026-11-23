@@ -3,9 +3,10 @@ import { useState, useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
-  cityWallPieces, wallPieces, wallSettings,
+  cityWallPieces, wallPieces, wallSettings, cityRoute,
 } from "@mapmaker/core";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
+import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
 import { store } from "./store.ts";
 import { forAssistant } from "./assistantName.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -53,11 +54,18 @@ const rgb = (c: readonly number[]) => `rgb(${c.join(",")})`;
 /** The tool bar: the options of the tool in use (the roof of the next building, the kind of street, the ground to paint). The tools themselves are in the rail. */
 export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {
   const building = ui.tool === "building" || ui.tool === "outline";
+  useMeasure(); // (the ruler's result follows the route)
+  const route = measureCtl.shown(), walked = route.length >= 2 ? cityRoute(route) : null;
   const roofs = useSyncExternalStore(roofAssetsStore.subscribe, roofAssetsStore.get);
   const have = roofs.pools?.[ui.roof]?.length ?? 0;
   const ground = MATERIALS[ui.material];
   return (
-    <ToolBar tool={{ id: ui.tool, name: CITY_TOOL_DEFS.find((t) => t.id === ui.tool)?.label ?? ui.tool }} hint={ui.tool === "hills" ? LAND_MODES.find((m) => m.id === ui.landMode)?.hint : ui.tool === "trees" ? TREE_KINDS.find((k) => k.id === ui.treeKind)?.hint : HINTS[ui.tool]}>
+    <ToolBar tool={{ id: ui.tool, name: CITY_TOOL_DEFS.find((t) => t.id === ui.tool)?.label ?? ui.tool }} hint={ui.tool === "hills" ? LAND_MODES.find((m) => m.id === ui.landMode)?.hint : ui.tool === "trees" ? TREE_KINDS.find((k) => k.id === ui.treeKind)?.hint : ui.tool === "measure" ? MEASURE_HINT : HINTS[ui.tool]}>
+      {ui.tool === "measure" && (
+        <span className="measure-result" data-testid="measure-result">
+          {walked ? <><b>{cityLength(walked.metres)}</b> · about {Math.max(1, Math.round(walked.walkMinutes))} minute{Math.round(walked.walkMinutes) > 1 ? "s" : ""} on foot</> : "Click to start measuring"}
+        </span>
+      )}
       {building && (
         <>
           <div className="seg" role="group" aria-label="Roof look" data-testid="city-roofs">

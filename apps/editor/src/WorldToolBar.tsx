@@ -1,5 +1,7 @@
 /** The world map's tool bar: the settings of the tool in use, and what to do next with it. */
-import { type LabelKind, type LineKind, type PlaceType, type RiverSize, MAX_SMOOTH_REACH_PX, placeKind } from "@mapmaker/core";
+import { type LabelKind, type LineKind, type PlaceType, type RiverSize, MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, describeRoute, placeKind, routeLength, travelEstimates } from "@mapmaker/core";
+import { MEASURE_HINT, measureCtl, useMeasure, worldLength } from "./measure.ts";
+import { store } from "./store.ts";
 import { RIVER_SIZE_NAMES } from "./WaterPanel.tsx";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { LABEL_KINDS } from "./Panels.tsx";
@@ -46,12 +48,45 @@ export function lineHint(kind: LineKind, auto: boolean): string {
 
 export const BRUSHES: Tool[] = ["raise", "lower", "smooth", "flatten", "land", "water"];
 
+/** The ruler's second line: what the route crosses once surveyed, else what to do. */
+function measureHint(ms: ReturnType<typeof useMeasure>): string {
+  if (ms.survey && ms.points.length >= 2) return `${describeRoute(ms.survey)}.${ms.survey.climateKnown ? "" : " (The climate isn't worked out yet: forest and marsh count as open ground.)"}`;
+  return MEASURE_HINT;
+}
+
+/** The ruler on a world map: how you travel, your pace, and how far and how long. */
+function WorldMeasure({ ms }: { ms: ReturnType<typeof useMeasure> }) {
+  const km = routeLength(measureCtl.shown()) * (store.state.meta?.kmPerPx ?? 1);
+  const mode = TRAVEL_MODES.find((m) => m.id === ms.mode) ?? TRAVEL_MODES[0];
+  const est = ms.survey && ms.points.length >= 2 ? travelEstimates(ms.survey, ms.paces).find((t) => t.mode === ms.mode) : null;
+  return (
+    <>
+      <label className="field">Travel
+        <select value={ms.mode} onChange={(e) => measureCtl.setMode(e.target.value as TravelModeId)} data-testid="measure-mode">
+          {TRAVEL_MODES.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+      </label>
+      <label className="field" title="Miles a day on open ground or a road (rough ground is slower). Change it to your own table's pace; it is remembered on this computer.">
+        <input type="number" min={1} max={999} step={1} value={ms.paces[mode.id] ?? mode.milesPerDay} style={{ width: 58 }} data-testid="measure-pace"
+          onChange={(e) => measureCtl.setPace(mode.id, Number(e.target.value) === mode.milesPerDay ? null : Number(e.target.value))} /> mi a day
+      </label>
+      <span className="measure-result" data-testid="measure-result">
+        {ms.points.length < 2 && !ms.hover ? "Click to start a route" : <>
+          <b>{worldLength(km)}</b>
+          {est && <> · {mode.name}: <b>{est.time}</b>{est.note ? ` (${est.note})` : ""}</>}
+        </>}
+      </span>
+    </>
+  );
+}
+
 export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineAuto, onLineAuto, areaShape, onAreaShape, placeType, onPlaceType, labelKind, onLabelKind, riverMode, onRiverMode, riverSize, onRiverSize }: {
   tool: Tool; brush: Brush; onBrush: (b: Brush) => void; lineKind: LineKind; onLineKind: (k: LineKind) => void; lineAuto: boolean; onLineAuto: (on: boolean) => void;
   areaShape: AreaShape; onAreaShape: (a: AreaShape) => void; placeType: PlaceType; onPlaceType: (t: PlaceType) => void; labelKind: LabelKind; onLabelKind: (k: LabelKind) => void;
   riverMode: RiverMode; onRiverMode: (m: RiverMode) => void; riverSize: RiverSize; onRiverSize: (s: RiverSize) => void;
 }) {
-  const hint = tool === "line" ? lineHint(lineKind, lineAuto) : tool === "river" ? riverHint(riverMode) : TOOL_HINTS[tool];
+  const ms = useMeasure();
+  const hint = tool === "line" ? lineHint(lineKind, lineAuto) : tool === "river" ? riverHint(riverMode) : tool === "measure" ? measureHint(ms) : TOOL_HINTS[tool];
   return (
     <ToolBar hint={hint || undefined} tool={{ id: tool, name: TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === tool)?.label ?? tool }}>
       {tool === "line" && (
@@ -84,6 +119,7 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
           )}
         </>
       )}
+      {tool === "measure" && <WorldMeasure ms={ms} />}
       {tool === "area" && (
         <div className="seg" role="group" aria-label="Area shape" data-testid="area-shapes">
           {AREA_SHAPES.map((a) => (

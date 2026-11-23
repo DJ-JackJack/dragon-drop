@@ -15,7 +15,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await hub.close(); rmSync(root, { recursive: true, force: true }); });
 
-const SUFFIX: Record<string, string> = { png: ".png", uvtt: ".dd2vtt", foundry: "-foundry.zip", key: "-key.md" };
+const SUFFIX: Record<string, string> = { png: ".png", uvtt: ".dd2vtt", foundry: "-foundry.zip", key: "-key.md", print: "-print.pdf" };
 
 describe("battlemap exports", () => {
   it.each([...BATTLE_EXPORT_FORMATS])("%s is written, with the file name the formats page describes", async (format) => {
