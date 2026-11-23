@@ -553,7 +553,7 @@ function TopBar({ s, onNew, onHelp, onSettings, mapOpen, onMap, claudeOpen, onCl
         onChange={(e) => store.send({ t: "open_project", id: e.target.value })}
         title="Open project"
       >
-        {s.projects.map((p) => <option key={p.id} value={p.id}>{p.parent ? `${p.name} (part of ${p.parent.name})` : p.kind === "battle" ? `${p.name} (battlemap)` : p.kind === "city" ? `${p.name} (city)` : p.name}</option>)}
+        {s.projects.map((p) => <option key={p.id} value={p.id}>{p.parent ? `${p.name} (part of ${p.parent.name})` : p.kind === "battle" ? `${p.name} (battlemap)` : p.kind === "city" ? `${p.name} (settlement)` : p.name}</option>)}
       </select>
       {/* (in a narrow window the words in .tb-word are hidden from sight but stay the buttons' names: styles.css) */}
       <button className="ghost" onClick={onNew} title="Make a new map">+<span className="tb-word"> New map</span></button>
@@ -589,18 +589,18 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const battleOk = sx >= 3 && sy >= 3 && sx <= 150 && sy <= 150 && sx * sy * 70 * 70 <= 25_000_000;
   const cityOk = cw >= 50 && ch >= 50 && cw <= 6000 && ch <= 6000;
   const switchKind = (k: "world" | "battle" | "city") => {
-    const stock: Record<string, string> = { world: "New Map", battle: "New Battlemap", city: "New City" };
+    const stock: Record<string, string> = { world: "New Map", battle: "New Battlemap", city: "New Settlement" };
     setName((n) => (Object.values(stock).includes(n) ? stock[k] : n));
     setKind(k);
   };
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} data-testid="new-map-dialog">
-        <h2>{kind === "world" ? "New map" : kind === "city" ? "New city" : "New battlemap"}</h2>
+        <h2>{kind === "world" ? "New map" : kind === "city" ? "New settlement" : "New battlemap"}</h2>
         <div className="seg" role="group" aria-label="Kind of map">
           <button className={kind === "world" ? "on" : ""} onClick={() => switchKind("world")} data-testid="new-kind-world">World map</button>
           <button className={kind === "battle" ? "on" : ""} onClick={() => switchKind("battle")} data-testid="new-kind-battle">Battlemap</button>
-          <button className={kind === "city" ? "on" : ""} onClick={() => switchKind("city")} data-testid="new-kind-city">City</button>
+          <button className={kind === "city" ? "on" : ""} onClick={() => switchKind("city")} data-testid="new-kind-city" title="A village, a town or a city">Settlement</button>
         </div>
         <label>Name<input value={name} onChange={(e) => setName(e.target.value)} autoFocus data-testid="new-name" /></label>
         {kind === "world" ? (
@@ -638,7 +638,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
             <label>Width in metres<input type="number" min={50} max={6000} value={cw} onChange={(e) => setCw(Number(e.target.value))} data-testid="new-cw" /></label>
             <label>Height in metres<input type="number" min={50} max={6000} value={ch} onChange={(e) => setCh(Number(e.target.value))} data-testid="new-ch" /></label>
             <p className="muted">
-              {cityOk ? <>A city seen from above, made of buildings and streets on a ground. A village is about 300 × 200 m, a walled town 1,000 × 700, a big city 3,000 × 2,000.</>
+              {cityOk ? <>A village, a town or a city seen from above, made of buildings and streets on a ground. A village is about 300 × 200 m, a walled town 1,000 × 700, a big city 3,000 × 2,000.</>
                 : <>Between 50 and 6,000 metres each way.</>}
             </p>
           </>
@@ -667,7 +667,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
             className="primary" data-testid="new-create" disabled={(kind === "battle" && !battleOk) || (kind === "city" && !cityOk)}
             onClick={() => {
               if (kind === "city") {
-                store.send({ t: "create_city", name: name.trim() || "New City", widthM: cw, heightM: ch });
+                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: cw, heightM: ch });
               } else if (kind === "battle") {
                 store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: feet, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
               } else {
@@ -687,7 +687,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
 /** Delete the open map, after asking. Its folder is moved into the maps folder's "Deleted maps" (nothing is erased), and another map opens. */
 function DeleteMap({ meta }: { meta: MapMeta }) {
   const [asking, setAsking] = useState(false);
-  const kind = meta.kind === "city" ? "city map" : meta.kind === "battle" ? "battlemap" : "map";
+  const kind = meta.kind === "city" ? "settlement map" : meta.kind === "battle" ? "battlemap" : "map";
   return (
     <section data-testid="delete-map">
       <button className="danger" onClick={() => setAsking(true)} data-testid="delete-map-open">Delete this {kind}…</button>
@@ -713,11 +713,11 @@ function CityHereDialog({ spot, onClose, onMake }: { spot: { x: number; y: numbe
   const size = citySizeForPlace(spot.place?.type);
   const [name, setName] = useState(spot.place?.name ?? "");
   const [w, setW] = useState(size.widthM), [h, setH] = useState(size.heightM);
-  const make = () => { const n = name.trim() || "City"; store.send({ t: "create_city_here", name: n, x: spot.x, y: spot.y, widthM: w, heightM: h }); onMake(n); };
+  const make = () => { const n = name.trim() || "Settlement"; store.send({ t: "create_city_here", name: n, x: spot.x, y: spot.y, widthM: w, heightM: h }); onMake(n); };
   return (
     <div className="modal-back" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-modal="true" data-testid="city-here-dialog" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>A city map {spot.place ? <>of {spot.place.name}</> : "here"}</h2>
+        <h2>A settlement map {spot.place ? <>of {spot.place.name}</> : "here"}</h2>
         <p className="muted">Its climate, height above the sea, slope, coast, river and woods come from this spot on the world map. A world-map pixel is a kilometre or more, so it is a rough start to shape.</p>
         <label>Name<input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && make()} data-testid="city-here-name" /></label>
         <div className="row">
@@ -726,7 +726,7 @@ function CityHereDialog({ spot, onClose, onMake }: { spot: { x: number; y: numbe
         </div>
         <div className="row end">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" onClick={make} data-testid="city-here-make">Make city map</button>
+          <button className="primary" onClick={make} data-testid="city-here-make">Make settlement map</button>
         </div>
       </div>
     </div>

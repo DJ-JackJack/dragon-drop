@@ -853,7 +853,8 @@ export function CityView({ meta, features, ui, onUi }: Props) {
     const bb = pointsBounds(pts);
     if (bb.x1 - bb.x0 < 1 || bb.y1 - bb.y0 < 1) return; // (a sliver: most likely a stray click)
     const id = newFeatureId("b");
-    const pic = o.roofSource === "assets" ? roofChoiceFor(o.roof, id) : null; // (a picture of the packs whenever one fits the look; the look is drawn only when none does)
+    // (a picture of the packs whenever one fits the look, the look drawn only when none does; or the picture the person chose for new buildings)
+    const pic = o.roofSource === "assets" ? roofChoiceFor(o.roof, id) : o.roofSource === "picture" ? o.roofPick : null;
     sendCityFeatures({ upsertBuildings: [{ id, points: pts, roof: o.roof, kind: o.kind, ...(pic && { asset: pic.asset, tile: pic.tile }) }] }, "Add building");
     onUiRef.current({ selected: [id] });
   }
@@ -1311,7 +1312,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         {hover && <> · {counts}</>}
       </>}
     >
-      <button onClick={() => setExportOpen(true)} title="Export the city as a picture (PNG), or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
+      <button onClick={() => setExportOpen(true)} title="Export the settlement as a picture (PNG), or tiles for very large sizes" data-testid="export-button">⤓ Export</button>
     </StatusBar>
     </div>
   );

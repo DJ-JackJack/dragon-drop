@@ -73,7 +73,7 @@ export function CityExportDialog({ meta, names: namesOn, contours: contoursOn, p
           c.width = c.height = 0;
         }
         files.push({ name: "README.txt", data: new TextEncoder().encode([
-          `${meta.name}: ${plan.width} x ${plan.height} px in ${plan.cols} x ${plan.rows} tiles of up to 4096 px, ${k} px per metre (the city is ${spec.widthM} x ${spec.heightM} m).`,
+          `${meta.name}: ${plan.width} x ${plan.height} px in ${plan.cols} x ${plan.rows} tiles of up to 4096 px, ${k} px per metre (the settlement is ${spec.widthM} x ${spec.heightM} m).`,
           `Files are named ${base}_r<row>_c<column>.png, counting from 1 at the top-left.`,
           `Place them edge to edge, left to right and top to bottom, to rebuild the whole map.`,
         ].join("\r\n")) });
@@ -91,7 +91,7 @@ export function CityExportDialog({ meta, names: namesOn, contours: contoursOn, p
   return (
     <div className="modal-back" onMouseDown={() => !busy && onClose()}>
       <div className="modal wide" role="dialog" aria-modal="true" data-testid="export-dialog" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>Export the city</h2>
+        <h2>Export the settlement</h2>
         <fieldset disabled={!!busy}>
           <legend>Size</legend>
           {CITY_EXPORT_SCALES.map((s) => {
@@ -113,7 +113,7 @@ export function CityExportDialog({ meta, names: namesOn, contours: contoursOn, p
           <label className="check"><input type="checkbox" checked={contours} onChange={(e) => setContours(e.target.checked)} /> Contour lines</label>
           <label className="check"><input type="checkbox" checked={scaleBar} onChange={(e) => setScaleBar(e.target.checked)} /> Scale bar</label>
         </fieldset>
-        <p className="muted">The city is drawn afresh at the size you choose, so buildings, streets, walls and names stay sharp; the ground's colours are blended from its cells.</p>
+        <p className="muted">The settlement is drawn afresh at the size you choose, so buildings, streets, walls and names stay sharp; the ground's colours are blended from its cells.</p>
         {error && <p className="error-text" data-testid="export-error">{error}</p>}
         <div className="row end">
           <button className="ghost" onClick={onClose} disabled={!!busy}>Cancel</button>

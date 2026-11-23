@@ -13,8 +13,12 @@ export interface CityUi {
   selected: string[];
   /** What the next building looks like. */
   roof: RoofStyle;
-  /** Where a new building's roof comes from: a picture of the asset packs whenever one fits its roof look (the default), or always drawn from the look. */
-  roofSource: "assets" | "drawn";
+  /**
+   * Where a new building's roof comes from: a picture of the asset packs whenever one fits its roof look (the default: a different one for each building),
+   * always drawn from the look, or the one picture the person chose (`roofPick`).
+   */
+  roofSource: "assets" | "drawn" | "picture";
+  roofPick: { asset: string; tile: number } | null;
   kind: BuildingKind;
   /** The next rectangular building is turned this many degrees clockwise (Q and E change it). */
   angle: number;
@@ -45,7 +49,7 @@ export interface CityUi {
 }
 
 export const defaultCityUi: CityUi = {
-  tool: "pan", selected: [], roof: "slate", roofSource: "assets", kind: "house", angle: 0, streetKind: "street", streetBridge: "auto", material: 4, brush: 6,
+  tool: "pan", selected: [], roof: "slate", roofSource: "assets", roofPick: null, kind: "house", angle: 0, streetKind: "street", streetBridge: "auto", material: 4, brush: 6,
   landMode: "hill", landHeight: 15, landSize: 80, treeKind: "wood", treeSize: 0, treeSpecies: "", wallKind: "stone", wallTowers: 40, labelKind: "district", labelSize: 1, contours: true, names: true,
 };
 
@@ -58,7 +62,7 @@ export const CITY_TOOL_GROUPS: { name: string; tools: { id: CityTool; label: str
     { id: "building", label: "Building", key: "B", tip: "Click to place a house; drag a rectangle to size one. Q and E turn it (15° at a time)" },
     { id: "outline", label: "Outline", key: "O", tip: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish; Backspace drops a corner, Esc cancels" },
     { id: "street", label: "Street", key: "S", tip: "Click the points a street passes through; double-click or press Enter to finish. Backspace drops a point, Esc cancels" },
-    { id: "citywall", label: "Wall", key: "W", tip: "Click the points of a city wall: click the first point to close it into a ring, or double-click or press Enter to end it. A gate appears wherever a street crosses it" },
+    { id: "citywall", label: "Wall", key: "W", tip: "Click the points of a town wall: click the first point to close it into a ring, or double-click or press Enter to end it. A gate appears wherever a street crosses it" },
   ] },
   { name: "Land", tools: [
     { id: "ground", label: "Paint ground", key: "P", tip: "Paint water, grass, cobbles and the like. [ and ] change the brush size" },

@@ -8,7 +8,7 @@ import { ask } from "./dialogs.tsx";
 import { type CompareMode, compareCtl } from "./compare.ts";
 import { store } from "./store.ts";
 
-const kindWord = (k: string | undefined) => (k === "battle" ? "battlemap" : k === "city" ? "city map" : "map");
+const kindWord = (k: string | undefined) => (k === "battle" ? "battlemap" : k === "city" ? "settlement map" : "map");
 
 /** The Map panel's section: what this map is a copy of, copying it, and comparing it with another map. */
 export function OtherMaps({ meta, projects }: { meta: MapMeta; projects: ProjectInfo[] }) {

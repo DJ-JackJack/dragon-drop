@@ -1,5 +1,5 @@
 /** The city map's tool bar (the options of the chosen tool), the inspector for what is selected, and the city's own settings (its land and climate) for the Map panel. */
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
@@ -10,6 +10,8 @@ import { store } from "./store.ts";
 import { forAssistant } from "./assistantName.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
+import { RoofPicturePicker, roofPictureName } from "./RoofPicturePicker.tsx";
+import { assetUrl } from "./assetsApi.ts";
 
 /** A roof picture's name for people: "Roof Texture Tile Red A1". */
 const pictureName = (asset: string) => (asset.split("/").pop() ?? asset).replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
@@ -32,7 +34,7 @@ const LAND_MODES: { id: LandMode; name: string; hint: string }[] = [
   { id: "valley", name: "Valley", hint: "Click points along the valley floor (where a river would run); double-click or press Enter to finish." },
   { id: "plateau", name: "Plateau", hint: "Click the corners of high, level ground; double-click, click the first corner or press Enter to finish." },
   { id: "hollow", name: "Hollow", hint: "Click the corners of low ground (a basin, a lake bed); double-click, click the first corner or press Enter to finish." },
-  { id: "slope", name: "Slope", hint: "Drag from the low side to the high side: the whole city rises that way (the land falling to the sea or a river)." },
+  { id: "slope", name: "Slope", hint: "Drag from the low side to the high side: the whole settlement rises that way (the land falling to the sea or a river)." },
 ];
 const TREE_KINDS: { id: TreeGroup; name: string; hint: string }[] = [
   { id: "wood", name: "Wood", hint: "Click the corners of a wood; double-click, click the first corner or press Enter to finish." },
@@ -69,6 +71,9 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
             <button className={ui.roofSource === "assets" ? "on" : ""} onClick={() => onUi({ roofSource: "assets" })} title="Use a roof picture from your asset packs whenever one fits the look" data-testid="city-roof-assets">Roof pictures</button>
             <button className={ui.roofSource === "drawn" ? "on" : ""} onClick={() => onUi({ roofSource: "drawn" })} title="Always draw the roof from its look" data-testid="city-roof-drawn">Drawn</button>
           </div>
+          <Popover label={<>{ui.roofSource === "picture" && ui.roofPick ? <><span className="swatch now" style={{ backgroundImage: `url(${assetUrl(ui.roofPick.asset, 64)})` }} /> <b>{roofPictureName(ui.roofPick.asset)}</b></> : "Choose a picture…"}</>} title="Choose the one roof picture new buildings get" testId="city-roof-choose">
+            {(close) => <RoofPicturePicker look={ui.roof} value={ui.roofSource === "picture" ? ui.roofPick?.asset ?? null : null} onPick={(p) => { onUi({ roofSource: "picture", roofPick: p }); close(); }} />}
+          </Popover>
           <label className="field">What it is
             <select value={ui.kind} onChange={(e) => onUi({ kind: e.target.value as BuildingKind })} data-testid="city-kind">
               {BUILDING_KINDS.map((k) => <option key={k} value={k}>{KIND_NAMES[k]}</option>)}
@@ -76,7 +81,8 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
           </label>
           {ui.tool === "building" && <span className="muted">Turned {ui.angle}° (Q / E)</span>}
           <span className="muted" data-testid="city-roof-note">
-            {ui.roofSource === "drawn" ? "Roofs are drawn from their look."
+            {ui.roofSource === "picture" && ui.roofPick ? `New buildings get the roof picture ${roofPictureName(ui.roofPick.asset)}.`
+              : ui.roofSource === "drawn" ? "Roofs are drawn from their look."
               : !roofs.loaded ? "Looking in your asset packs…"
               : !roofs.pools ? "No asset packs are set up (Settings), so roofs are drawn."
               : have ? `${have} ${ROOF_STYLE_NAMES[ui.roof].toLowerCase()} roof picture${have === 1 ? "" : "s"} in your packs: new buildings use them.`
@@ -185,7 +191,7 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
   return (
     <>
       <section data-testid="city-summary">
-        <h3>This city</h3>
+        <h3>This settlement</h3>
         {row("Size", `${c.widthM.toLocaleString()} × ${c.heightM.toLocaleString()} m`)}
         {row("Buildings", (features.buildings ?? []).length.toLocaleString())}
         {row("Streets", (features.streets ?? []).length.toLocaleString())}
@@ -196,7 +202,7 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         {meta!.origin && (
           <>
             <p className="muted" data-testid="city-origin">Started from <b>{meta!.origin.name}</b> at map px ({meta!.origin.x}, {meta!.origin.y}).</p>
-            <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta!.origin!.id })} title="Open the world map this city was started from" data-testid="city-back">↑ Back to {meta!.origin.name}</button></div>
+            <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta!.origin!.id })} title="Open the world map this settlement was started from" data-testid="city-back">↑ Back to {meta!.origin.name}</button></div>
           </>
         )}
       </section>
@@ -226,6 +232,7 @@ const hexOf = (c: [number, number, number]) => `#${c.map((v) => v.toString(16).p
 
 /** What is selected: one building or street to edit, or a group to change together. */
 export function CityInspector({ features, ui, onUi }: { features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {
+  const [picking, setPicking] = useState(false); // (the group's roof picture picker: a hook, so before any early return)
   const { buildings, streets, trees, land, walls, labels, districts } = selectedOf(features, ui.selected);
   if (!buildings.length && !streets.length && !trees.length && !land.length && !walls.length && !labels.length && !districts.length) return null;
   const clear = () => onUi({ selected: [] });
@@ -259,6 +266,15 @@ export function CityInspector({ features, ui, onUi }: { features: Features; ui: 
               {ROOF_STYLES.map((r) => <option key={r} value={r}>{ROOF_STYLE_NAMES[r]}</option>)}
             </select>
           </label>
+          <button className="built-of" onClick={() => setPicking((v) => !v)} aria-expanded={picking} data-testid="city-group-roof-picture">One roof picture for them all… <span aria-hidden="true">{picking ? "▴" : "▾"}</span></button>
+          {picking && (
+            <div className="inline-picker">
+              <RoofPicturePicker look={buildings[0].roof ?? "slate"} value={null} onPick={(p) => {
+                sendCityFeatures({ upsertBuildings: buildings.map((b) => { const { colour: _c, ...rest } = b; return { ...rest, asset: p.asset, tile: p.tile }; }) }, `Roof picture ${roofPictureName(p.asset)} (${buildings.length})`);
+                setPicking(false);
+              }} />
+            </div>
+          )}
           <label className="field">What they are
             <select value="" onChange={(e) => e.target.value && change({ kind: e.target.value as BuildingKind }, `Kind: ${e.target.value}`)} data-testid="city-group-kind">
               <option value="">Change…</option>
@@ -283,6 +299,7 @@ function BuildingEditor({ b, roofSource, onClear, onRemove }: { b: MapBuilding; 
     sendCityFeatures({ upsertBuildings: [{ ...rest, ...patch, ...(pic && { asset: pic.asset, tile: pic.tile }) }] }, label);
   };
   const bb = pointsBounds(b.points as [number, number][]);
+  const [picking, setPicking] = useState(false);
   return (
     <section data-testid="city-inspector">
       <h3>Building</h3>
@@ -304,6 +321,7 @@ function BuildingEditor({ b, roofSource, onClear, onRemove }: { b: MapBuilding; 
         <div className="field" data-testid="city-roof-picture">Roof picture
           <p className="muted" title={b.asset}>{pictureName(b.asset)}</p>
           <span className="row">
+            <button onClick={() => setPicking((v) => !v)} aria-expanded={picking} title="Choose the roof picture by sight" data-testid="city-roof-choose-one">Choose…</button>
             <button disabled={available < 2} onClick={() => { const n = nextRoofPicture(look, b.asset); if (n) roofWith(n, {}, "Another roof picture"); }} title="Use the next roof picture of your packs" data-testid="city-roof-another">Another</button>
             <button onClick={() => roofWith(null, {}, "Draw the roof")} title="Draw this roof from its look instead (then you can choose its colour)" data-testid="city-roof-draw">Draw it instead</button>
           </span>
@@ -311,10 +329,12 @@ function BuildingEditor({ b, roofSource, onClear, onRemove }: { b: MapBuilding; 
       ) : (
         <p className="muted" data-testid="city-roof-drawn-note">
           Drawn from its look.{" "}
-          {available > 0 && <button onClick={() => { const c = roofChoiceFor(look, b.id); if (c) roofWith(c, {}, "Use a roof picture"); }} data-testid="city-roof-use">Use a roof picture</button>}
+          {available > 0 && <button onClick={() => { const c = roofChoiceFor(look, b.id); if (c) roofWith(c, {}, "Use a roof picture"); }} data-testid="city-roof-use">Use a roof picture</button>}{" "}
+          {roofs.pools && <button onClick={() => setPicking((v) => !v)} aria-expanded={picking} data-testid="city-roof-choose-one">Choose…</button>}
           {roofs.loaded && roofs.pools && available === 0 && <>No {ROOF_STYLE_NAMES[look].toLowerCase()} roof picture in your packs.</>}
         </p>
       )}
+      {picking && <div className="inline-picker"><RoofPicturePicker look={look} value={b.asset ?? null} onPick={(p) => { roofWith(p, {}, `Roof picture ${roofPictureName(p.asset)}`); setPicking(false); }} /></div>}
       <label className="check" title="No ridge: a flat roof"><input type="checkbox" checked={!!b.flat} onChange={(e) => { const { flat: _f, ...rest } = b; sendCityFeatures({ upsertBuildings: [e.target.checked ? { ...rest, flat: true } : rest] }, "Roof pitch"); }} /> Flat roof</label>
       {!b.asset && (
         <label className="field">Colour

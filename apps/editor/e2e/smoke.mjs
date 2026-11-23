@@ -1279,6 +1279,17 @@ try {
     await status(/1 buildings/);
     await page.keyboard.press("Control+z");
     await status(/2 buildings/);
+    // its roof picture, chosen by sight (this pack has no roof textures, so from any picture of the pack: a floor texture)
+    await page.mouse.click(cx(120), cy(160));
+    await page.getByTestId("city-inspector").getByText("Building").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-roof-choose-one").click();
+    await page.getByTestId("roof-picture-any").click();
+    await page.getByTestId("pack-roofs-kind-terrain").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-roof"]').length >= 1, null, { timeout: 15000 });
+    await page.getByTestId("pack-roof").first().click();
+    await page.getByTestId("history").getByText(/^Roof picture /).first().waitFor({ timeout: 10000 });
+    await page.getByTestId("city-roof-picture").waitFor({ timeout: 5000 });
+    await page.keyboard.press("Escape");
     // the ground: pick water and paint a stroke
     await page.keyboard.press("p");
     await page.getByTestId("city-ground-menu").click();
@@ -1483,7 +1494,7 @@ try {
     await page.getByRole("button", { name: /Back to E2E City/ }).click();
     await page.getByTestId("city-canvas").waitFor({ timeout: 20000 });
     // a city map is its own kind of project, listed as such, and the other kinds' tools are not on screen
-    if (!(await page.locator("select.project").evaluate((s) => s.selectedOptions[0].textContent)).includes("(city)")) fail("a city map is not listed as a city");
+    if (!(await page.locator("select.project").evaluate((s) => s.selectedOptions[0].textContent)).includes("(settlement)")) fail("a settlement map is not listed as a settlement");
     if (await page.getByRole("button", { name: "Raise", exact: true }).count()) fail("the world map's terrain tools are showing on a city map");
     // delete it: Cancel keeps it; Delete moves it aside, another map opens, and a note says where it went
     await page.getByTestId("delete-map-open").click();
@@ -1514,7 +1525,7 @@ try {
     await page.getByTestId("show-labels").check();
     await page.getByTestId("show-markers").check();
     // City here: a click on the world map asks for a city map's name and size (Cancel makes nothing; the making itself is tested on the server, where a spot on land is known)
-    await page.getByRole("button", { name: "City here" }).click();
+    await page.getByRole("button", { name: "Settlement here" }).click();
     await page.getByTestId("tool-hint").getByText(/town's marker or any spot on land/).waitFor({ timeout: 5000 });
     const wb = await page.getByTestId("map-canvas").boundingBox();
     await page.mouse.click(wb.x + wb.width / 2, wb.y + wb.height / 2);

@@ -22,7 +22,7 @@ export const TOOL_HINTS: Partial<Record<Tool, string>> = {
   label: "Click for a straight label, or click and drag to draw a line for the name to follow. A box will ask for the text.",
   region: "Click the corners of the area, one at a time. Double-click, click the first corner, or press Enter to finish. Esc cancels.",
   line: "", // depends on the kind: see lineHint()
-  cityhere: "Click a town's marker or any spot on land. A box asks for the city map's name and size; its climate, height above the sea, slope, coast, river and woods come from that spot. A world-map pixel is a kilometre or more, so it is a rough start to shape.",
+  cityhere: "Click a town's marker or any spot on land. A box asks for the settlement map's name and size; its climate, height above the sea, slope, coast, river and woods come from that spot. A world-map pixel is a kilometre or more, so it is a rough start to shape.",
   battlehere: "Click the spot. A box will ask for the battlemap's name; its floors come from that spot's climate, slope, rivers, lakes and coast. You can build rooms, add objects and lights afterwards.",
   detail: "Drag a box on the map. The new map keeps this one's land, climate and names, with 2× to 16× the detail.",
   select: "Click a place, label, region or road to select it. Drag to move it. Delete removes it.",

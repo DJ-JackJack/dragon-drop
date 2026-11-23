@@ -25,6 +25,6 @@ export const TOOL_GROUPS: { name: string; tools: ToolDef[] }[] = [
     { id: "region", label: "Climate", key: "C", tip: "Climate region: click its corners, then double-click (or click the first corner, or press Enter) to close it. Esc cancels" },
     { id: "detail", label: "Detail map", key: "D", tip: "Drag a box around an area to make a separate, more detailed map of it" },
     { id: "battlehere", label: "Battlemap here", key: "M", tip: "Click a spot to make a battlemap of the ground there (its climate, rivers, lakes and coast choose the floors)" },
-    { id: "cityhere", label: "City here", key: "Y", tip: "Click a place or a spot to start a city map there (its climate, height, slope, coast and river come from the world map)" },
+    { id: "cityhere", label: "Settlement here", key: "Y", tip: "Click a place or a spot to start a settlement map there: a village, a town or a city (its climate, height, slope, coast and river come from the world map)" },
   ] },
 ];

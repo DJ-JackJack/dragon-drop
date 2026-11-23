@@ -289,7 +289,7 @@ export class Hub {
     const name = (o.name ?? "").trim() || "City";
     const id = await this.store.uniqueId(name);
     const doc = createCityDoc({ id, name, widthM: o.widthM, heightM: o.heightM, cellM: cell, seed: Math.floor(Math.random() * 2 ** 31) });
-    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A city map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres. Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
+    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A settlement map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres. Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
     await this.openProject(id);
     return (await this.store.list()).find((p) => p.id === id)!;
   }
@@ -421,7 +421,7 @@ export class Hub {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const doc = op.session.doc;
-    if (!isCity(doc)) throw new Error("Ground cells are a city map's.");
+    if (!isCity(doc)) throw new Error("Ground cells are a settlement map's.");
     const data = new Float32Array(doc.height.data), n = data.length;
     let changed = 0;
     for (const { material, runs: rs } of runs) {
@@ -636,7 +636,7 @@ export class Hub {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     const city = op.session.doc;
-    if (!isCity(city)) throw new Error("Open a city map first: this makes a battlemap from a part of one.");
+    if (!isCity(city)) throw new Error("Open a settlement map first: this makes a battlemap from a part of one.");
     if (op.session.inTransaction) op.session.commit();
     const sp = citySpec(city), feet = o.feetPerSquare ?? 5;
     const x0 = Math.max(0, Math.min(o.rect.x, o.rect.x + o.rect.w)), y0 = Math.max(0, Math.min(o.rect.y, o.rect.y + o.rect.h));
@@ -653,7 +653,7 @@ export class Hub {
     const made = battleFromCity(city, rect, doc);
     doc.meta.origin = { id: city.meta.id, name: city.meta.name, x: Math.round(rect.x + rect.w / 2), y: Math.round(rect.y + rect.h / 2), unit: "m" };
     doc.meta.notes = `A scene in ${city.meta.name}: ${made.description}.`;
-    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A battlemap of ${made.description} (city map \`${city.meta.id}\`), ${squaresX} x ${squaresY} squares of ${feet} ft. Record what the scene is, who is here and what the DM has decided.*\n`);
+    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A battlemap of ${made.description} (settlement map \`${city.meta.id}\`), ${squaresX} x ${squaresY} squares of ${feet} ft. Record what the scene is, who is here and what the DM has decided.*\n`);
     await this.openProject(id);
     const info = (await this.store.list()).find((p) => p.id === id)!;
     return { ...info, description: made.description };
@@ -1464,7 +1464,7 @@ export class Hub {
         case "route_line": {
           const op = this.open;
           if (!op) throw new Error("No project is open.");
-          if (!isWorld(op.session.doc)) throw new Error("Roads are for world maps. (On a city map, streets are lines with a width.)");
+          if (!isWorld(op.session.doc)) throw new Error("Roads are for world maps. (On a settlement map, streets are lines with a width.)");
           const d = await this.refreshDerived(op, true);
           const r = routeWaypoints(op.session.doc, d, msg.points, { steepOk: msg.kind === "trail" });
           if ("error" in r) throw new Error(r.error);

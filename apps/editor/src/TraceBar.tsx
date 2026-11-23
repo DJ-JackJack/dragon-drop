@@ -126,7 +126,7 @@ export function TraceBar({ trace, meta, level }: { trace: TracePicture | undefin
         <button disabled={locked} onClick={() => traceCtl.fit(trace, meta)} title="Fit the whole picture inside the map again" data-testid="trace-fit">Fit</button>
         <button className={locked ? "on" : ""} onClick={() => traceCtl.setLocked(trace, !locked)} title={locked ? "Unlock it so it can be moved again" : forAssistant("Lock it in place, so neither you nor Claude moves it by accident")} data-testid="trace-lock">{locked ? "Locked" : "Lock"}</button>
         {city && !reading && (
-          <button onClick={() => { traceCtl.reset(); readerCtl.start(); }} title="Find the buildings, streets or water in the picture by their colours and add them to the city (line the picture up first)" data-testid="reader-start">Read the picture…</button>
+          <button onClick={() => { traceCtl.reset(); readerCtl.start(); }} title="Find the buildings, streets or water in the picture by their colours and add them to the settlement (line the picture up first)" data-testid="reader-start">Read the picture…</button>
         )}
       </div>
       {reading && <ReaderRows />}
