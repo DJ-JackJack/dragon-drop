@@ -13,7 +13,7 @@ import type { MapDoc } from "./doc.ts";
 import { HeightField } from "./doc.ts";
 import { battleSpec, isBattle } from "./battle.ts";
 import type { BuildingKind, MapBuilding, MapLight, MapStreet, MapWall, RoofStyle } from "./features.ts";
-import { traceFloorOutlines } from "./traceWalls.ts";
+import { traceFloorOutlines, traceSquareOutlines } from "./traceWalls.ts";
 import { seededRandom } from "./scatter.ts";
 import { citySpec, isCity } from "./city.ts";
 import { type PlannedBuilding, planFrontage, routeStreet } from "./cityPlan.ts";
@@ -104,7 +104,8 @@ function dungeon(doc: MapDoc, W: number, H: number, sub: number, o: DungeonOptio
     if (rnd() < 0.5) { across(ax, bx, ay); down(ay, by, bx); } else { down(ay, by, ax); across(ax, bx, by); }
   }
   const data = floorFromSquares(g, W, H, sub, () => FLAGSTONE);
-  const walls: Omit<MapWall, "id">[] = traceWalls(doc, data).map((points) => ({ kind: "wall", points, closed: true, auto: true }));
+  // (traced along the squares' edges: the smoothed trace leans a wall where a corridor meets a room)
+  const walls: Omit<MapWall, "id">[] = traceSquareOutlines((x, y) => g[y * W + x] !== 0, W, H).map((points) => ({ kind: "wall", points, closed: true, auto: true }));
   // doors: where a one-square corridor meets a room's side
   let doors = 0, secrets = 0;
   if (o.doors !== false) {

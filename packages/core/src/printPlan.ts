@@ -91,7 +91,7 @@ export function printPages(plan: PrintPlan, o: {
     const ops: PdfOp[] = [];
     const top = H - m;
     ops.push({ t: "text", x: m, y: top - 14, size: 15, text: o.title });
-    ops.push({ t: "text", x: m, y: top - 32, size: 9.5, gray: 0.25, text: `${describePlan(plan)}. ${scale} (one square a ${trim(plan.inchPerSquare)} inch). Print at actual size (100%, not "fit to page").` });
+    ops.push({ t: "text", x: m, y: top - 32, size: 9.5, gray: 0.25, text: `${describePlan(plan)}. ${scale}: each square is ${trim(plan.inchPerSquare)} inch${plan.inchPerSquare === 1 ? "" : "es"} across. Print at actual size (100%, not "fit to page").` });
     ops.push({ t: "text", x: m, y: top - 46, size: 9.5, gray: 0.25, text: "Trim each page along its corner marks, then tape the pages edge to edge as laid out below. Each page says which pages join it." });
     const boxW = W - 2 * m, boxH = top - 60 - m;
     const k = Math.min(boxW / o.squaresX, boxH / o.squaresY);

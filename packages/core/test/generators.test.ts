@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanGenerateRequest, createBattleDoc, createCityDoc, generateDungeon, generateVillage } from "../src/index.ts";
+import { cleanGenerateRequest, createBattleDoc, createCityDoc, generateDungeon, generateVillage, traceSquareOutlines } from "../src/index.ts";
 
 const battle = (w = 40, h = 30) => createBattleDoc({ id: "b", name: "Deep", squaresX: w, squaresY: h });
 
@@ -39,6 +39,44 @@ describe("the dungeon generator", () => {
     const small = generateDungeon(battle(60, 60), { style: "dungeon", size: "small", seed: 1 }), large = generateDungeon(battle(60, 60), { style: "dungeon", size: "large", seed: 1 });
     if ("error" in small || "error" in large) throw new Error("no dungeon");
     expect(rooms(large.summary)).toBeGreaterThan(rooms(small.summary));
+  });
+
+  it("runs a dungeon's walls straight along the grid lines, with nothing but corners in them, round all the floor", () => {
+    // (the smoothed trace used to lean a wall by a tenth of a square where a one-square corridor met a room)
+    for (const seed of [4242, 7, 99, 1234]) {
+      const doc = battle(30, 22);
+      const a = generateDungeon(doc, { style: "dungeon", seed });
+      if ("error" in a) throw new Error(a.error);
+      const walls = a.walls.filter((w) => w.kind === "wall");
+      let length = 0;
+      for (const w of walls) {
+        const p = w.points;
+        expect(p.flat().every(Number.isInteger)).toBe(true);
+        for (let i = 0; i < p.length; i++) {
+          const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length];
+          expect(x0 === x1 || y0 === y1).toBe(true);
+          length += Math.abs(x1 - x0) + Math.abs(y1 - y0);
+        }
+      }
+      // the walls' length is the floor's edge: every side of a floor square that has no floor beyond it
+      const sub = doc.meta.battle!.sub, CW = 30 * sub, fl = (x: number, y: number) => x >= 0 && y >= 0 && x < 30 && y < 22 && a.data[y * sub * CW + x * sub] !== 0;
+      let edge = 0;
+      for (let y = 0; y < 22; y++) for (let x = 0; x < 30; x++) if (fl(x, y)) edge += +!fl(x - 1, y) + +!fl(x + 1, y) + +!fl(x, y - 1) + +!fl(x, y + 1);
+      expect(length).toBe(edge);
+    }
+  });
+
+  it("keeps two squares that touch only at a corner apart when tracing along the squares' edges", () => {
+    const on = new Set(["0,0", "1,1"]);
+    const loops = traceSquareOutlines((x, y) => on.has(`${x},${y}`), 3, 3);
+    expect(loops).toHaveLength(2);
+    expect(loops.map((l) => l.length)).toEqual([4, 4]);
+    // an L: one outline of six corners
+    const L = new Set(["0,0", "0,1", "1,1"]);
+    expect(traceSquareOutlines((x, y) => L.has(`${x},${y}`), 3, 3).map((l) => l.length)).toEqual([6]);
+    // a ring: an outline round the outside and one round the hole
+    const ring = (x: number, y: number) => !(x === 1 && y === 1);
+    expect(traceSquareOutlines(ring, 3, 3).map((l) => l.length).sort()).toEqual([4, 4]);
   });
 
   it("makes one connected cave with rock walls, and refuses a map that is too small or not a battlemap", () => {

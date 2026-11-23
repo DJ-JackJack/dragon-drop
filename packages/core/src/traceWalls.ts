@@ -104,6 +104,59 @@ export function traceFloorOutlines(doc: MapDoc, opts: TraceOptions = {}): Pt[][]
   return out;
 }
 
+/**
+ * Outlines of a grid of whole squares exactly along the squares' edges (for floors made of whole squares, such as a generated
+ * dungeon: the smoothing of `traceFloorOutlines` would lean the walls where a one-square corridor meets a room).
+ * Each outline goes round with the floor on its right; where two floor squares touch only at a corner they are kept apart.
+ * Points are square corners (integers), corners only.
+ */
+export function traceSquareOutlines(isFloor: (x: number, y: number) => boolean, W: number, H: number): Pt[][] {
+  const fl = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && isFloor(x, y);
+  const V = W + 1, key = (x: number, y: number) => y * V + x;
+  // the boundary edges, directed so the floor is on the right (y down): top left to right, right side downward, and so on
+  const out = new Map<number, number[]>();
+  const add = (ax: number, ay: number, bx: number, by: number) => {
+    const a = key(ax, ay);
+    (out.get(a) ?? out.set(a, []).get(a)!).push(key(bx, by));
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!fl(x, y)) continue;
+    if (!fl(x, y - 1)) add(x, y, x + 1, y);
+    if (!fl(x + 1, y)) add(x + 1, y, x + 1, y + 1);
+    if (!fl(x, y + 1)) add(x + 1, y + 1, x, y + 1);
+    if (!fl(x - 1, y)) add(x, y + 1, x, y);
+  }
+  const xy = (k: number): Pt => [k % V, (k / V) | 0];
+  const loops: Pt[][] = [];
+  for (const start of [...out.keys()]) {
+    while (out.get(start)?.length) {
+      const pts: Pt[] = [];
+      let prev = start, cur = out.get(start)!.pop()!;
+      pts.push(xy(start));
+      for (let guard = 0; guard < 4 * (W + 1) * (H + 1) && cur !== start; guard++) {
+        pts.push(xy(cur));
+        const nb = out.get(cur)!;
+        let pick = 0;
+        if (nb.length > 1) {
+          // two ways on: two floor squares meet at this corner only; turn right, round the same square
+          const [px, py] = xy(prev), [cx, cy] = xy(cur), dx = cx - px, dy = cy - py;
+          pick = nb.findIndex((n) => { const [nx, ny] = xy(n); return nx - cx === -dy && ny - cy === dx; });
+          if (pick < 0) pick = 0;
+        }
+        prev = cur;
+        cur = nb.splice(pick, 1)[0];
+      }
+      // corners only
+      const corners = pts.filter((p, i) => {
+        const a = pts[(i + pts.length - 1) % pts.length], b = pts[(i + 1) % pts.length];
+        return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0;
+      });
+      if (corners.length >= 4) loops.push(corners);
+    }
+  }
+  return loops;
+}
+
 /** Walls (one closed wall per outline). */
 export function wallsAroundFloor(doc: MapDoc, newId: () => string, opts: TraceOptions = {}): MapWall[] {
   return traceFloorOutlines(doc, opts).map((pts) => ({ id: newId(), kind: "wall" as const, points: pts, closed: true, auto: true }));

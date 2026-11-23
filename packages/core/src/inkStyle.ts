@@ -19,6 +19,8 @@ const RIVER_INK: RGB = [62, 78, 98];
 const SHADE: RGB = [196, 180, 148];
 const TREE: RGB = [178, 186, 140];
 type RGB = [number, number, number];
+/** How much of a ripple line at sea distance `at` a pixel at (smoothed) distance `s` is: 1 on it, nothing three quarters of a pixel off. */
+const ring = (s: number, at: number) => Math.max(0, 1 - Math.abs(s - at) / 0.75);
 
 /** A number 0..1 from a cell and a seed (the same every time). */
 function hash(x: number, y: number, seed: number): number {
@@ -84,8 +86,14 @@ export function renderInk(doc: MapDoc, d: Derived, rect: Rect, out: Uint8Clamped
     }
     if (ink) { /* (the coast) */ }
     else if (!d.lakes[i] && h[i] <= sea) {
+      // (the distance is in whole pixels: its mean round the pixel makes the lines soft-edged instead of stepped)
       const sd = d.seaDist[i];
-      ink = sd === 3 ? 0.42 : sd === 6 ? 0.28 : sd === 10 ? 0.16 : 0;
+      if (sd >= 2 && sd <= 11 && x > 0 && y > 0 && x < W - 1 && y < H - 1) {
+        let sum = 0;
+        for (let dy = -W; dy <= W; dy += W) sum += d.seaDist[i + dy - 1] + d.seaDist[i + dy] + d.seaDist[i + dy + 1];
+        const s = sum / 9;
+        ink = Math.max(0.42 * ring(s, 3), 0.28 * ring(s, 6), 0.16 * ring(s, 10));
+      }
     } else if (d.lakes[i] && x > 0 && y > 0 && x < W - 1 && y < H - 1 && (land(i - 1) || land(i + 1) || land(i - W) || land(i + W))) ink = 0.85;
     if (ink) { r += (INK[0] - r) * ink; g += (INK[1] - g) * ink; b += (INK[2] - b) * ink; }
     out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
