@@ -12,6 +12,8 @@ export interface AssetStatus {
   files: number;
   restricted: number;
   errors: { file: string; message: string }[];
+  /** While pictures whose names say nothing are looked at, after a scan. */
+  looking?: { done: number; total: number };
 }
 
 export interface AssetPack {

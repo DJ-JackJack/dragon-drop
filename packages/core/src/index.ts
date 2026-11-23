@@ -34,6 +34,7 @@ export * from "./formats.ts";
 export * from "./pictures.ts";
 export * from "./levels.ts";
 export * from "./assets.ts";
+export * from "./pictureKind.ts";
 export * from "./image.ts";
 export * from "./battleTerrain.ts";
 export * from "./traceWalls.ts";

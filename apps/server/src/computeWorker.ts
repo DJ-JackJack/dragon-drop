@@ -12,7 +12,7 @@ parentPort!.on("message", ({ id, job }: { id: number; job: Job }) => {
   try {
     const value = runner.run(job);
     // (map data hands its buffers back; the picture reader's answer is a plain object, copied)
-    const transfer = value === null || job.op === "read" || job.op === "read_as" ? []
+    const transfer = value === null || job.op === "read" || job.op === "read_as" || job.op === "look" ? []
       : job.op === "city" || job.op === "decode" ? [(value as RGBAImage).data.buffer as ArrayBuffer]
       : job.op === "reference" ? [(value as PreparedReference).jpeg.buffer as ArrayBuffer]
       : job.op === "thumb" ? [(value as Thumbnail).png.buffer as ArrayBuffer]

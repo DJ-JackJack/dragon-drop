@@ -167,6 +167,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
                   {assets.scanning ? `Reading assets… ${assets.scanned} of ${assets.total}` : `${assets.packs} packs read: ${assets.usablePacks} usable (${assets.files.toLocaleString()} files)`}
                   {assets.restricted > 0 && `, ${assets.restricted} not used because their authors don't allow other programs`}
                   {assets.errors.length > 0 && `, ${assets.errors.length} couldn't be read`}.
+                  {assets.looking && ` Looking at the pictures whose names don't say what they are: ${assets.looking.done.toLocaleString()} of ${assets.looking.total.toLocaleString()}.`}
                 </p>
               )}
               <div className="row end">

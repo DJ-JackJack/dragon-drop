@@ -10,12 +10,12 @@
  * (`allow_3rd_party_mapping_software: false` in the pack's own info) are listed but never served or drawn.
  */
 import { createHash } from "node:crypto";
-import { type FileHandle, mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { type FileHandle, mkdir, open, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   type AssetCategory, type AssetItem, type RandomAccess, type RGBAImage, type ShrinkJob, type ShrunkPicture, shrinkPicture, type RoofAsset, type SpriteData, type TileData, ASSET_CATEGORIES, IMAGE_EXT, IMAGE_HEAD_BYTES, PACK_FILE_NAME, ZIP_FILE_NAME, assetId, assetLabel, boxResize,
-  categoryOf, defaultTileSquares, imageSize, parseAssetId, readPck, readPckFile, roofLookOfAsset,
+  categoryOf, defaultTileSquares, imageSize, kindOfPackName, pictureKindHint, parseAssetId, readPck, readPckFile, roofLookOfAsset,
 } from "@mapmaker/core";
 import { decodeImage } from "@mapmaker/tools";
 import { PNG } from "pngjs";
@@ -81,6 +81,10 @@ interface CachedIndex {
 const catOf = (e: Entry): AssetCategory => e.cat ?? (e.cat = categoryOf(e.path));
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const MAX_DECODE_PIXELS = 40_000_000;
+/** At most this many pictures without names are looked at after one scan (the rest after the next: what was found is remembered). */
+const MAX_LOOKS = 50_000;
+/** Raise when core pictureKindHint judges differently, so every picture is looked at again. */
+const PICTURE_KINDS_VERSION = 1;
 const MAX_FOLDER_DEPTH = 12;
 
 /**
@@ -168,6 +172,11 @@ export class AssetLibrary {
   total = 0;
   errors: { file: string; message: string }[] = [];
   lastScan: string | null = null;
+  /** The pictures whose names say nothing, being looked at after a scan (lookAtNameless). */
+  looking = { done: 0, total: 0 };
+  /** Settles when that looking is done (tests wait on it). */
+  looked: Promise<void> = Promise.resolve();
+  private lookGen = 0;
 
   constructor(readonly dir: string, readonly cacheDir: string) {}
 
@@ -216,6 +225,7 @@ export class AssetLibrary {
       await Promise.all([worker(), worker(), worker()]);
       this.install(found);
       this.lastScan = new Date().toISOString();
+      this.looked = this.lookAtNameless(++this.lookGen).catch((e) => console.error("Looking at the asset pictures without names stopped:", (e as Error).message));
     } finally {
       this.scanning = false;
     }
@@ -281,7 +291,9 @@ export class AssetLibrary {
 
   private build(kind: PackKind, file: string, name: string, st: { size: number; mtimeMs: number }, entries: Entry[], extra: { formatVersion: number; engine: string }, d: { packJson?: Record<string, unknown>; tags: Map<string, string[]> }): PackIndex {
     const categories: Record<string, number> = {};
-    for (const e of entries) { const c = (e.cat = categoryOf(e.path)); categories[c] = (categories[c] ?? 0) + 1; }
+    // (a picture whose path says nothing takes what the pack's own name says: a folder called "Floor Textures" with a1.png, a2.png inside)
+    const fromName = kindOfPackName(name);
+    for (const e of entries) { let c = (e.cat = categoryOf(e.path)); if (c === "other" && fromName) c = e.cat = fromName; categories[c] = (categories[c] ?? 0) + 1; }
     const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : v != null && typeof v !== "object" ? String(v) : undefined);
     const info: PackInfo = {
       key: "", name: str(d.packJson?.name) ?? name, file, kind, bytes: st.size, mtimeMs: st.mtimeMs, formatVersion: extra.formatVersion, engine: extra.engine,
@@ -363,6 +375,72 @@ export class AssetLibrary {
     return this.build("folder", root, path.basename(root) || "Assets", { size: bytes, mtimeMs: st.mtimeMs }, entries, { formatVersion: 0, engine: "" }, await this.readDescription(entries, sourceFor("folder", root, null)));
   }
 
+  // ---------------------------------------------------------------- pictures whose names say nothing
+  /**
+   * After a scan, the pictures whose names say nothing (core categoryOf found no kind: "other") are looked at one at a time on the worker thread
+   * (`pictures.kind`, core pictureKindHint): an empty border makes an object, a picture made to repeat a floor texture. What was found is remembered in the
+   * cache folder (picture-kinds.json, by pack file, path and size), so each picture is looked at once, not at every start. A new scan stops it.
+   */
+  private async lookAtNameless(gen: number): Promise<void> {
+    const todo: { pack: PackIndex; e: Entry }[] = [];
+    for (const p of this.packs.values()) if (!p.info.restricted) for (const e of p.entries) if (catOf(e) === "other" && !e.encrypted) todo.push({ pack: p, e });
+    const batch = todo.slice(0, MAX_LOOKS);
+    this.looking = { done: 0, total: batch.length };
+    if (!batch.length) return;
+    const memo = await this.readPictureKinds();
+    let fresh = 0;
+    for (const { pack, e } of batch) {
+      if (gen !== this.lookGen) return;
+      const key = `${pack.info.file}|${e.path}|${e.size}`;
+      let kind = memo.get(key);
+      if (kind === undefined) {
+        kind = (await this.lookAt(pack, e)) ?? "";
+        memo.set(key, kind);
+        if (++fresh % 200 === 0) await this.writePictureKinds(memo);
+      }
+      if (gen !== this.lookGen) return;
+      if (kind === "terrain" || kind === "objects") {
+        pack.info.categories.other = Math.max(0, (pack.info.categories.other ?? 0) - 1);
+        pack.info.categories[kind] = (pack.info.categories[kind] ?? 0) + 1;
+        e.cat = kind;
+      }
+      this.looking.done++;
+    }
+    if (fresh) await this.writePictureKinds(memo);
+  }
+
+  private async lookAt(pack: PackIndex, e: Entry): Promise<"terrain" | "objects" | null> {
+    try {
+      const s = await this.sizeOf(pack, e);
+      if (s && s.w * s.h > MAX_DECODE_PIXELS) return null;
+      const bytes = await this.bytesOf(pack, e);
+      if (this.pictures) return await this.pictures.kind(bytes);
+      const img = decodeImage(bytes);
+      return img ? pictureKindHint(img) : null;
+    } catch {
+      return null; // (unreadable: the same as saying nothing)
+    }
+  }
+
+  private pictureKindsFile() { return path.join(this.cacheDir, "picture-kinds.json"); }
+
+  private async readPictureKinds(): Promise<Map<string, string>> {
+    try {
+      const j = JSON.parse(await readFile(this.pictureKindsFile(), "utf8")) as { v?: number; kinds?: Record<string, string> };
+      if (j.v === PICTURE_KINDS_VERSION && j.kinds && typeof j.kinds === "object") return new Map(Object.entries(j.kinds));
+    } catch { /* none yet, or unreadable: looked at again */ }
+    return new Map();
+  }
+
+  private async writePictureKinds(memo: Map<string, string>): Promise<void> {
+    const f = this.pictureKindsFile(), tmp = `${f}.${process.pid}.tmp`;
+    try {
+      await mkdir(this.cacheDir, { recursive: true });
+      await writeFile(tmp, JSON.stringify({ v: PICTURE_KINDS_VERSION, kinds: Object.fromEntries(memo) }));
+      await rename(tmp, f);
+    } catch { /* only a cache: looked at again next time */ }
+  }
+
   // ---------------------------------------------------------------- catalog
   status() {
     const usable = this.usablePacks();
@@ -370,6 +448,7 @@ export class AssetLibrary {
       dir: this.dir, scanning: this.scanning, scanned: this.scanned, total: this.total, packs: this.packs.size,
       usablePacks: usable.length, files: usable.reduce((n, p) => n + p.info.files, 0),
       restricted: [...this.packs.values()].filter((p) => p.info.restricted).length, errors: this.errors, lastScan: this.lastScan,
+      ...(this.looking.done < this.looking.total && { looking: { ...this.looking } }),
     };
   }
 
@@ -523,6 +602,7 @@ export class AssetLibrary {
     decode(bytes: Uint8Array): Promise<RGBAImage | null>;
     thumbnail(bytes: Uint8Array, max: number): Promise<{ png: Uint8Array; w: number; h: number } | null>;
     shrink(bytes: Uint8Array, job: ShrinkJob): Promise<ShrunkPicture | null>;
+    kind(bytes: Uint8Array): Promise<"terrain" | "objects" | null>;
   } | null = null;
 
   private remember<T>(key: string, value: T, bytes: number): T {

@@ -98,6 +98,15 @@ function folderKind(dir: string): AssetCategory | null {
   return found;
 }
 
+/**
+ * What a pack's own name says its pictures are, for the ones whose paths say nothing: a folder called "Floor Textures" or "Dungeon Doors.zip" with
+ * nameless pictures straight inside. Undefined when it says nothing.
+ */
+export function kindOfPackName(name: string): Kind | undefined {
+  const base = name.replace(/\.(zip|pck)$/i, "");
+  return kindOfName(base) ?? (nameWords(base).some((w) => /^(textures?|tiles?)$/i.test(w)) ? "terrain" : undefined);
+}
+
 export function categoryOf(path: string): AssetCategory {
   if (!IMAGE_EXT.test(path) || NOT_ASSETS.test(path)) return "data";
   const slash = path.lastIndexOf("/");

@@ -79,7 +79,8 @@ describe("asset sources of every kind", () => {
     expect(st.errors.find((e) => e.file.endsWith("Empty.zip"))!.message).toMatch(/no PNG, JPEG or WebP/);
     const byName = Object.fromEntries(lib.packList().map((p) => [p.name, p]));
     expect(Object.keys(byName).sort()).toEqual(["Dungeon Kit", "Locked Kit", "My Assets", "Odd", "Tokens and Props", "renamed"].sort());
-    expect(byName["Tokens and Props"]).toMatchObject({ kind: "folder", files: 4, categories: { terrain: 1, objects: 2, other: 1 } }); // hidden folders and non-pictures are left out
+    // hidden folders and non-pictures are left out; lamp.webp's path says nothing, so the pack's own name (Props) does
+    expect(byName["Tokens and Props"]).toMatchObject({ kind: "folder", files: 4, categories: { terrain: 1, objects: 3 } });
     expect(byName["Dungeon Kit"]).toMatchObject({ kind: "zip", version: "2", author: "Zed", files: 3, categories: { data: 1, terrain: 1, portals: 1 } }); // the junk and the unsafe path are left out
     expect(byName["Odd"].kind).toBe("pck");
     expect(byName["renamed"].kind).toBe("pck");
@@ -89,9 +90,9 @@ describe("asset sources of every kind", () => {
 
   it("works out kinds from folder names and lists every source together", () => {
     expect(lib.list({ cat: "terrain" }).items.map((i) => i.id)).toEqual(["dungeon-kit:Floors/cobble.png", "tokens-and-props:Floors/flagstone.png", "renamed:textures/terrain/Moss.png"]);
-    expect(lib.list({ cat: "objects" }).items.map((i) => i.name)).toEqual(["Barrel", "Chair", "Lantern"]);
+    expect(lib.list({ cat: "objects" }).items.map((i) => i.name)).toEqual(["lamp", "Barrel", "Chair", "Lantern"]);
     expect(lib.list({ cat: "portals" }).items.map((i) => i.name)).toEqual(["oak"]);
-    expect(lib.list({ q: "lamp" }).items[0]).toMatchObject({ cat: "other", pack: "tokens-and-props" });
+    expect(lib.list({ q: "lamp" }).items[0]).toMatchObject({ cat: "objects", pack: "tokens-and-props" }); // (from the pack's name)
     expect(lib.list({ pack: "my-assets" }).total).toBe(1);
     expect(lib.list({ q: "secret" }).total).toBe(0); // a hidden folder
     expect(lib.list({ q: "evil" }).total).toBe(0); // a path that leaves the zip

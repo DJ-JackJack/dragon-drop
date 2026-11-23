@@ -38,7 +38,7 @@ export function parseAssetId(id: string): { pack: string; path: string } | null 
 }
 
 // (what kind a picture is, from its path: assetKinds.ts)
-export { categoryOf, kindOfName, nameWords } from "./assetKinds.ts";
+export { categoryOf, kindOfName, kindOfPackName, nameWords } from "./assetKinds.ts";
 
 /** A readable name from a file path: "textures/objects/Oak_Table-01.png" -> "Oak Table 01". */
 export function assetLabel(path: string): string {

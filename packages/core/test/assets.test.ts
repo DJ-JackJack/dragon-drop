@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUSTOM_MATERIAL_BASE, MapSession, assetId, assetLabel, categoryOf, kindOfName, nameWords, createBattleDoc, defaultTileSquares, drawBattleProps, memoryAccess, paintFloor,
+  CUSTOM_MATERIAL_BASE, MapSession, assetId, assetLabel, categoryOf, kindOfName, kindOfPackName, nameWords, createBattleDoc, defaultTileSquares, drawBattleProps, memoryAccess, paintFloor,
   PCK_MAGIC, imageSize, isPckSignature, parseAssetId, pngSize, readPck, readPckFile, renderBattle, renderBattleFloor, writePck, type SpriteData, type TileData,
 } from "../src/index.ts";
 
@@ -182,6 +182,11 @@ describe("asset kinds in any library", () => {
     expect(kindOfName("Wall Decorations")).toBeUndefined(); // a tie: the folder above decides
     expect(kindOfName("textures")).toBeUndefined(); // a hint, not enough alone
     expect(kindOfName("constructor")).toBeUndefined();
+    // a pack's own name, for pictures whose paths say nothing
+    expect(kindOfPackName("Floor Textures")).toBe("terrain");
+    expect(kindOfPackName("Dungeon Doors.zip")).toBe("portals");
+    expect(kindOfPackName("Textures")).toBe("terrain");
+    expect(kindOfPackName("Pack 3")).toBeUndefined();
   });
 });
 
