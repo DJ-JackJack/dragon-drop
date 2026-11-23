@@ -80,3 +80,4 @@ export * from "./printPlan.ts";
 export * from "./scatter.ts";
 export * from "./secrets.ts";
 export * from "./prefabs.ts";
+export * from "./generators.ts";

@@ -74,6 +74,8 @@ export interface ToolContext {
    * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.
    */
   exportBattle?(format: BattleExportFormat, level?: string, print?: import("@mapmaker/core").PrintOptions, gm?: boolean): Promise<{ name: string; bytes: number; path: string }>;
+  /** Optional: a dungeon or cave over the open battlemap's level, or a village on the open settlement map (core generators.ts): one edit. */
+  generate?(req: import("@mapmaker/core").GenerateRequest): Promise<{ change: number; seed: number; summary: string }>;
   /** Optional: the DM's prefabs (core prefabs.ts), saved pieces of battlemaps to place again on any battlemap. */
   prefabs?: {
     list(): Promise<{ prefabs: import("@mapmaker/core").PrefabInfo[]; skipped: string[] }>;

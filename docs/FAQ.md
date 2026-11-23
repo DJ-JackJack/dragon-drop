@@ -78,6 +78,9 @@ Rivers aren't drawn one by one: they come from the land and the rain, so they ca
 **How do I update?**
 **Settings → Updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
 
+**Can it make a dungeon or a village for me?**
+Yes, without Claude too: the Map panel's **Generate** box makes a dungeon or cave on a battlemap and a village on a settlement map, in one click, to edit as you like. The same seed makes the same map again.
+
 **Can I reuse a room I already built?**
 Yes. On a battlemap, the **Prefab** tool (`C`) saves a rectangle of it by name (floor, walls, doors, objects, lights) and places it again on any battlemap, turned or mirrored.
 

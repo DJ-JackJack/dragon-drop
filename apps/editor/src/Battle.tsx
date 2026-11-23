@@ -31,6 +31,7 @@ import { MEASURE_HINT, battleLength, measureCtl, useMeasure } from "./measure.ts
 import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterUi.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, prefabSpot } from "./PrefabBar.tsx";
+import { GenerateBox } from "./GenerateBox.tsx";
 
 export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof";
 
@@ -2252,6 +2253,7 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <p className="muted">The grid type goes into exports (Foundry and Universal VTT draw their own grid).</p>
       <h3>Light level</h3>
       <LightLevel spec={spec} />
+      <GenerateBox kind="battle" hasContent={walls.length > 0 || (features.lights ?? []).length > 0 || !!store.heights?.data.some((v) => v !== 0)} />
       <h3>Layers</h3>
       <label className="check eye"><input type="checkbox" checked={ui.showGrid} onChange={(e) => onUi({ showGrid: e.target.checked })} /> The grid (G)</label>
       <label className="check eye"><input type="checkbox" checked={ui.showLights} onChange={(e) => onUi({ showLights: e.target.checked })} /> Light glows (and the light level)</label>

@@ -22,6 +22,8 @@ export const RISKY_TOOLS = new Set([
   "update_place", "update_label", "update_climate_region", "name_water", "update_city_labels", "update_city_districts",
   // a prefab is the DM's own work, like a map (added 2026-11-23)
   "save_prefab",
+  // the generators replace a level's floor and walls, or a settlement's streets and buildings (added 2026-11-23)
+  "generate_dungeon", "generate_village",
 ]);
 
 /** Renaming `from` to `to` (both names): the question, or null when the name stays (or there was none). */
@@ -64,6 +66,16 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
   let f: Features;
   try { f = ctx.session().doc.features ?? { places: [], labels: [] }; } catch { return null; } // (no map open: the tool says so itself)
   const ids = Array.isArray(i.ids) ? (i.ids as string[]) : [];
+  if (name === "generate_dungeon") {
+    const d = ctx.session().doc, n = (f.walls?.length ?? 0) + (f.lights?.length ?? 0);
+    let floored = false;
+    for (let k = 0; k < d.height.data.length && !floored; k += 3) floored = d.height.data[k] !== 0;
+    return floored || n ? `Replace this level's floor, walls, doors and lights with a generated ${i.style === "cave" ? "cave" : "dungeon"}` : null;
+  }
+  if (name === "generate_village") {
+    const n = (f.streets?.length ?? 0) + (f.buildings?.length ?? 0);
+    return n ? `Replace this settlement's ${f.streets?.length ?? 0} streets and ${f.buildings?.length ?? 0} buildings with a generated village` : null;
+  }
   if (name === "save_prefab") {
     if (i.replace !== true || typeof i.name !== "string" || !ctx.prefabs) return null;
     const k = i.name.trim().toLowerCase(), had = (await ctx.prefabs.list()).prefabs.find((p) => p.name.toLowerCase() === k);

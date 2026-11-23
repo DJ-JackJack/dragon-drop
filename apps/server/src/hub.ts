@@ -15,7 +15,7 @@ import {
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
-  type PrefabTurn, makePrefab, placePrefab, prefabDoc,
+  type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -215,6 +215,44 @@ export class Hub {
       label: `Place prefab ${got.prefab.name}${turn ? `, turned ${turn}°` : ""}${o.mirror ? ", mirrored" : ""}`,
     }, author);
     return { change: res.seq, prefab: got.prefab.name, ids: r.ids, x: r.x, y: r.y, w: r.w, h: r.h, problems: r.problems };
+  }
+
+  /**
+   * One of the generators (core generators.ts, on the compute thread): a dungeon or cave over the battlemap level on screen (its floor, walls, doors and lights
+   * replaced; objects, notes, stairs and roofs stay) or a village on a settlement map (its streets and buildings replaced; land, water and trees stay). One edit.
+   */
+  async generate(req: GenerateRequest, author: Author) {
+    const op = this.open;
+    if (!op) throw new Error("No project is open.");
+    const doc = op.session.doc, village = req.what === "village";
+    if (village ? !isCity(doc) : !isBattle(doc)) throw new Error(village ? "Villages are made on settlement maps." : "Dungeons and caves are made on battlemaps.");
+    if (op.session.inTransaction) op.session.commit();
+    const session = op.session;
+    const g = await this.compute.generate(doc, req);
+    if ("error" in g) throw new Error(g.error);
+    if (this.open !== op || op.session !== session) throw new Error("Another map or level was opened before it was made, so nothing changed. Make it again.");
+    const f = session.doc.features ?? { places: [], labels: [] };
+    if ("data" in g) {
+      const hf = session.doc.height;
+      const walls = g.walls.map((w) => ({ ...w, id: newFeatureId("w") })), lights = g.lights.map((l) => ({ ...l, id: newFeatureId("g") }));
+      const res = session.execute({
+        op: "patch_heights", rect: { x: 0, y: 0, w: hf.w, h: hf.h }, data: g.data,
+        features: { removeWalls: (f.walls ?? []).map((w) => w.id), removeLights: (f.lights ?? []).map((l) => l.id), upsertWalls: walls, upsertLights: lights },
+        label: `Generate a ${req.what} (seed ${g.seed})`,
+      }, author);
+      return { change: res.seq, seed: g.seed, summary: g.summary };
+    }
+    const sp = citySpec(session.doc), pools = this.roofPools();
+    const streets = g.streets.map((s) => cleanStreet({ ...s, id: newFeatureId("t") }, sp)).filter((s): s is Exclude<typeof s, { error: string }> => !("error" in s));
+    const buildings = g.buildings.map((b) => {
+      const id = newFeatureId("b"), pic = chooseRoof(pools, b.roof, id);
+      return cleanBuilding({ id, points: b.points, roof: b.roof, kind: b.kind, ...(pic && { asset: pic.asset, tile: pic.tile }) }, sp);
+    }).filter((b): b is Exclude<typeof b, { error: string }> => !("error" in b));
+    const res = session.execute({
+      op: "features", patch: { removeStreets: (f.streets ?? []).map((s) => s.id), removeBuildings: (f.buildings ?? []).map((b) => b.id), upsertStreets: streets, upsertBuildings: buildings },
+      label: `Generate a village (seed ${g.seed})`,
+    }, author);
+    return { change: res.seq, seed: g.seed, summary: g.summary };
   }
 
   private async sendPrefabs(ws?: WebSocket) {
@@ -1514,6 +1552,13 @@ export class Hub {
         }
         case "prefabs_list":
           return await this.sendPrefabs(ws);
+        case "generate": {
+          const req = cleanGenerateRequest(msg.req);
+          if (!req) throw new Error("That generator isn't known.");
+          const r = await this.generate(req, "user");
+          this.send(ws, { t: "generated", what: req.what, seed: r.seed, summary: r.summary });
+          return;
+        }
         case "prefab_save":
           try {
             this.send(ws, { t: "prefab_saved", prefab: await this.savePrefab({ name: String(msg.name ?? ""), rect: msg.rect, replace: !!msg.replace }) });
@@ -1774,6 +1819,7 @@ export class Hub {
         const f = await self.battleExport(format, level, print, gm);
         return { name: f.name, bytes: f.bytes.byteLength, path: await self.store.saveExport(id(), f.name, f.bytes) };
       },
+      generate: (req) => self.generate(req, author),
       prefabs: {
         list: () => self.prefabs.list(),
         save: async (o) => {

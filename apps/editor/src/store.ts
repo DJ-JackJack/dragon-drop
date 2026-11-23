@@ -5,7 +5,7 @@
  */
 import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
-  type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, type PrefabInfo, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
+  type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, type PrefabInfo, type GenerateRequest, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
   PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize, EDIT_MESSAGES, IMAGE_HEAD_BYTES, imageSize,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
@@ -57,6 +57,8 @@ export interface AppState {
   prefabsSkipped: string[];
   prefabAsk: { name: string; rect: Rect } | null;
   prefabSaved: { id: string; at: number } | null;
+  /** The Generate box (GenerateBox.tsx): what was asked for or made last, its seed, and whether it is still being made. */
+  generated: { what: GenerateRequest["what"]; seed: number; summary: string; busy: boolean } | null;
 }
 
 function loadLockPref(): boolean {
@@ -68,7 +70,7 @@ const initial: AppState = {
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false, asks: [],
-  prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null,
+  prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null,
 };
 
 /** The most pictures added in one go (a whole folder dropped by mistake shouldn't start hundreds of uploads). */
@@ -158,6 +160,12 @@ class Store {
     const waiting = this.pendingDerived;
     if (waiting) { this.pendingDerived = null; queueMicrotask(() => cb(waiting)); }
     return () => { this.derivedListeners.delete(cb); };
+  }
+
+  /** Make a dungeon, cave or village (the Generate box): the box waits for the answer. */
+  generate(req: GenerateRequest) {
+    this.set({ generated: { what: req.what, seed: this.state.generated?.seed ?? 0, summary: "", busy: true } });
+    this.send({ t: "generate", req });
   }
 
   /** The DM chose another name instead of replacing a prefab. */
@@ -374,6 +382,9 @@ class Store {
       case "prefabs":
         this.set({ prefabs: m.list, prefabsSkipped: m.skipped });
         break;
+      case "generated":
+        this.set({ generated: { what: m.what, seed: m.seed, summary: m.summary, busy: false }, pictureNote: { text: `Made ${m.summary} (seed ${m.seed}: the same seed makes it again). Undo takes it back.`, busy: false, at: Date.now(), ms: 9000 } });
+        break;
       case "prefab_saved":
         this.set({ prefabAsk: null, prefabSaved: { id: m.prefab.id, at: Date.now() }, pictureNote: { text: `Saved the prefab "${m.prefab.name}" (${m.prefab.what}). Click the map to place it.`, busy: false, at: Date.now(), ms: 7000 } });
         break;
@@ -431,7 +442,7 @@ class Store {
         break;
       }
       case "error":
-        this.set({ error: m.message, carving: false });
+        this.set({ error: m.message, carving: false, ...(this.state.generated?.busy && { generated: { ...this.state.generated, busy: false } }) });
         break;
     }
   }

@@ -1,4 +1,5 @@
 /** The city map's tool bar (the options of the chosen tool), the inspector for what is selected, and the city's own settings (its land and climate) for the Map panel. */
+import { GenerateBox } from "./GenerateBox.tsx";
 import { useState, useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
@@ -214,6 +215,9 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
             <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta!.origin!.id })} title="Open the world map this settlement was started from" data-testid="city-back">↑ Back to {meta!.origin.name}</button></div>
           </>
         )}
+      </section>
+      <section>
+        <GenerateBox kind="city" hasContent={(features.streets ?? []).length > 0 || (features.buildings ?? []).length > 0} />
       </section>
       <section data-testid="city-land">
         <h3>Land and climate</h3>

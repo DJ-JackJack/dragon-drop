@@ -991,6 +991,16 @@ try {
     if (!(piecesBefore > 0 && piecesAfter > piecesBefore)) fail(`the prefab brought no walls (${piecesBefore} -> ${piecesAfter})`);
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.waitForFunction((n) => new RegExp(`(^|[^0-9])${n} wall piece`).test(document.querySelector('[data-testid="battle-summary"]')?.textContent ?? ""), piecesBefore, { timeout: 10000 });
+    // the Generate box: a cave over the level (it asks first: there is floor), one undo step
+    const summaryBefore = await page.getByTestId("battle-summary").textContent();
+    await page.getByTestId("gen-cave").click();
+    await page.getByTestId("gen-seed").fill("7");
+    await page.getByTestId("gen-go").click();
+    await page.getByTestId("gen-confirm").click();
+    await page.getByTestId("history").getByText("Generate a cave (seed 7)").first().waitFor({ timeout: 15000 });
+    await page.screenshot({ path: path.join(shots, "e2e-4e3-cave.png") });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.waitForFunction((t) => document.querySelector('[data-testid="battle-summary"]')?.textContent === t, summaryBefore, { timeout: 10000 });
     await page.getByTestId("bgrid-hex").click();
     await page.getByTestId("history").getByText("Grid: hex").waitFor({ timeout: 10000 });
     await page.getByTestId("bgrid-square").click();
@@ -1470,6 +1480,22 @@ try {
     await page.screenshot({ path: path.join(shots, "e2e-5d-city-wall.png") });
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByTestId("city-summary").getByText(/1 · 2 gates · \d+ towers/).waitFor({ timeout: 5000 });
+    // the Generate box: a hamlet in place of the streets and buildings (it asks first), one undo step
+    const cityCounts = async () => /Buildings\d+Streets\d+/.exec(await page.getByTestId("city-summary").textContent())?.[0];
+    const citySummary = await cityCounts();
+    await page.getByTestId("generate-box").getByTestId("gen-size").selectOption("hamlet");
+    await page.getByTestId("gen-seed").fill("5");
+    await page.getByTestId("gen-go").click();
+    await page.getByTestId("gen-confirm").click();
+    await page.getByTestId("history").getByText("Generate a village (seed 5)").first().waitFor({ timeout: 20000 });
+    await page.screenshot({ path: path.join(shots, "e2e-5d2-village.png") });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    for (let k = 0; ; k++) {
+      const now = await cityCounts();
+      if (now === citySummary) break;
+      if (k > 40) fail(`Undo did not bring the settlement back: ${now} (was ${citySummary})`);
+      await page.waitForTimeout(250);
+    }
     // names: the Name tool names the street it clicks, and writes a district's name on open ground; that label's panel makes it name water instead, and Delete removes it
     await page.getByTestId("ctool-citylabel").click();
     await page.mouse.click(cx(150), cy(210));

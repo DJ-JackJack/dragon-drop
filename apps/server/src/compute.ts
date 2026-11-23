@@ -7,6 +7,7 @@ import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, boxResize, type ShrinkJob, type ShrunkPicture, shrinkPicture, pictureKindHint, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
+  type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
 
@@ -35,6 +36,8 @@ export interface MapCompute {
   readPictureAs(key: string, bytes: Uint8Array, job: ReadJob): Promise<ReadAnswer>;
   /** Valleys carved along these rivers (core carve.ts): new heights, the map itself is not changed. */
   carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions): Promise<CarveResult>;
+  /** A dungeon, cave or village made for this map (core generators.ts); the map itself is not changed. */
+  generate(doc: MapDoc, r: GenerateRequest): Promise<GeneratedLevel | GeneratedVillage | { error: string }>;
   /** One lake drained (core terrainDrain.ts drainLakeAt): the new heights of the whole map and what was done; the map itself is not changed. */
   drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }): Promise<DrainLakeResult & { heights: Float32Array }>;
   /** An asset pack's picture made ready to draw (a floor or roof tile, an object at a scale: core shrinkPicture); null when it can't be read. */
@@ -96,6 +99,7 @@ export type Job =
   | { op: "read_as"; key: string; bytes: Uint8Array; job: ReadJob }
   | { op: "city"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; maxSize: number; roofTiles?: Record<string, TileData> }
   | { op: "carve"; W: number; H: number; heights: Float32Array; meta: MapMeta; rivers: RiverPath[]; opts: CarveOptions }
+  | { op: "generate"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; req: GenerateRequest }
   | { op: "drain"; W: number; H: number; heights: Float32Array; meta: MapMeta; x: number; y: number; opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number } }
   | { op: "decode"; bytes: Uint8Array }
   | { op: "thumb"; bytes: Uint8Array; max: number }
@@ -141,13 +145,14 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | ShrunkPicture | PictureKindHint | null {
+  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | ShrunkPicture | PictureKindHint | GeneratedLevel | GeneratedVillage | { error: string } | null {
     if (job.op === "decode") return decodeImage(job.bytes);
     if (job.op === "thumb") return thumbnailOf(job.bytes, job.max);
     if (job.op === "shrink") { const img = decodeImage(job.bytes); return img ? shrinkPicture(img, job.job) : null; }
     if (job.op === "look") { const img = decodeImage(job.bytes); return img ? pictureKindHint(img) : null; }
     if (job.op === "reference") return prepareReference(job.bytes, job.maxPx, job.region);
     if (job.op === "carve") return carveValleys(job.heights, job.W, job.H, job.meta.seaLevel, job.rivers, job.opts);
+    if (job.op === "generate") return runGenerator({ meta: job.meta, height: new HeightField(job.W, job.H, job.heights), features: job.features }, job.req);
     if (job.op === "drain") { const h = job.heights.slice(); return { ...drainLakeAt(h, job.W, job.H, job.meta.seaLevel, job.x, job.y, job.opts), heights: h }; }
     if (job.op === "city") {
       const tiles = job.roofTiles;
@@ -227,6 +232,9 @@ export class InlineCompute implements MapCompute {
   }
   async carve(doc: MapDoc, rivers: RiverPath[], opts: CarveOptions) {
     return this.runner.run({ op: "carve", ...snapshot(doc), rivers, opts }) as CarveResult;
+  }
+  async generate(doc: MapDoc, req: GenerateRequest) {
+    return this.runner.run({ op: "generate", ...snapshot(doc), features: structuredClone(doc.features ?? { places: [], labels: [] }), req }) as GeneratedLevel | GeneratedVillage | { error: string };
   }
 
   async drain(doc: MapDoc, x: number, y: number, opts: { mode?: "auto" | "outlet" | "fill"; maxCutM?: number }) {
@@ -399,6 +407,12 @@ export class WorkerCompute implements MapCompute {
     if (this.painter.dead) return this.inline.carve(doc, rivers, opts);
     const s = snapshot(doc);
     return this.painter.call<CarveResult>({ op: "carve", ...s, rivers, opts }, [s.heights.buffer as ArrayBuffer]);
+  }
+
+  generate(doc: MapDoc, req: GenerateRequest): Promise<GeneratedLevel | GeneratedVillage | { error: string }> {
+    if (this.painter.dead) return this.inline.generate(doc, req);
+    const s = snapshot(doc);
+    return this.painter.call({ op: "generate", ...s, features: structuredClone(doc.features ?? { places: [], labels: [] }), req }, [s.heights.buffer as ArrayBuffer]);
   }
 
   warm(doc: MapDoc) {

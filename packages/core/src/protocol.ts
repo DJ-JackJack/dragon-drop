@@ -17,6 +17,7 @@ import type { Selection } from "./selection.ts";
 import type { LevelsFile } from "./levels.ts";
 import type { RouteSurvey } from "./measure.ts";
 import type { PrefabInfo } from "./prefabs.ts";
+import type { GenerateRequest } from "./generators.ts";
 
 export type WireCommand = Exclude<Command, { op: "replace_heights" | "patch_heights" }>;
 
@@ -94,7 +95,7 @@ export const EDIT_MESSAGES = new Set([
   "checkpoint_save", "checkpoint_restore", "carve_valleys", "draw_river", "route_line", "paint_cells", "sketch_import", "selection",
   "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as",
   "create_city_here", "create_battle_here", "create_battle_from_city", "create_regional", "regional_refresh", "duplicate_project", "chat_send",
-  "prefab_save", "prefab_place",
+  "prefab_save", "prefab_place", "generate",
 ]);
 
 export type ClientMsg =
@@ -136,6 +137,8 @@ export type ClientMsg =
   | { t: "measure"; id: number; points: [number, number][] }
   /** The DM's prefabs (core prefabs.ts): answered with `prefabs`. */
   | { t: "prefabs_list" }
+  /** A dungeon or cave over the battlemap level on screen (its floor, walls, doors and lights replaced), or a village on a settlement map (its streets and buildings replaced): one edit. Answered with `generated`. */
+  | { t: "generate"; req: GenerateRequest }
   /** Battlemaps: save an area (squares) of the level on screen as a prefab. Answered with `prefab_saved`, or `prefab_exists` when the name is taken (send it again with `replace`). */
   | { t: "prefab_save"; name: string; rect: Rect; replace?: boolean }
   /** Battlemaps: place a prefab with its top-left corner at (x, y) squares, turned clockwise (0, 90, 180, 270) and mirrored: one edit. Answered with `prefab_placed`. */
@@ -238,6 +241,8 @@ export type ServerMsg =
   | { t: "measured"; id: number; survey: RouteSurvey | null }
   /** The DM's prefabs, by name (sent to every editor after one is saved, renamed or removed); `skipped` names files that couldn't be read. */
   | { t: "prefabs"; list: PrefabInfo[]; skipped: string[] }
+  /** What a generator made (the answer to `generate`): its seed, to make the same again, and what it is in words. */
+  | { t: "generated"; what: GenerateRequest["what"]; seed: number; summary: string }
   | { t: "prefab_saved"; prefab: PrefabInfo }
   | { t: "prefab_exists"; name: string; rect: Rect }
   | { t: "prefab_placed"; name: string; ids: string[]; problems: string[] }

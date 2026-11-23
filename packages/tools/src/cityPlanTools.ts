@@ -8,6 +8,7 @@ import {
   isCity, newFeatureId, planFrontage, routeStreet, streetBridges, streetWidthFor,
 } from "@mapmaker/core";
 import type { ToolContext, ToolResult } from "./tools.ts";
+import { GENERATOR_TOOLS } from "./generatorTools.ts";
 import { define, fail, json } from "./toolKit.ts";
 
 const Pt = z.tuple([z.number(), z.number()]);
@@ -121,7 +122,7 @@ export const CITY_PLAN_TOOLS = [
       if (r.regularity.looks_stamped) advice.push("The buildings are nearly all one angle and one size, which reads as a grid of stamps: re-line the streets with line_streets (vary the character), and let streets follow the land (route_street).");
       return json({ ...r, ...(advice.length ? { advice } : { verdict: "Nothing wrong found." }) });
     },
-  }),
+  }),  GENERATOR_TOOLS[1],
 ];
 
 export const CITY_PLAN_TOOL_NAMES: string[] = CITY_PLAN_TOOLS.map((t) => t.name);

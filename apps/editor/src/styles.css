@@ -671,3 +671,6 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 .prefab-actions { display: flex; gap: 4px; flex: none; }
 .prefab-actions input { width: 140px; }
 .prefab-none { max-width: 320px; }
+
+/* the Map panel's Generate box (GenerateBox.tsx) */
+.gen-box .row { flex-wrap: wrap; gap: 6px; align-items: center; }

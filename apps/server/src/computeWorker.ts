@@ -18,6 +18,7 @@ parentPort!.on("message", ({ id, job }: { id: number; job: Job }) => {
       : job.op === "thumb" ? [(value as Thumbnail).png.buffer as ArrayBuffer]
       : job.op === "shrink" ? [] // (its pixels may be the decoded picture's own, inside a bigger buffer: copied)
       : job.op === "carve" || job.op === "drain" ? [(value as CarveResult).heights.buffer as ArrayBuffer]
+      : job.op === "generate" ? ("data" in (value as object) ? [(value as unknown as { data: Float32Array }).data.buffer as ArrayBuffer] : [])
       : value instanceof Uint8ClampedArray || value instanceof Float32Array ? [value.buffer as ArrayBuffer]
       : derivedBuffers(value as Derived);
     parentPort!.postMessage({ id, ok: true, value }, transfer);
