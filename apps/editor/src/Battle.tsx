@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, WALL_BASE, type WallLook, type WallStyle, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -19,7 +19,7 @@ import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { PackFloors } from "./PackFloors.tsx";
-import { type WallChoice, WallLookPicker, WallSwatch, wallChoiceLabel } from "./WallLookPicker.tsx";
+import { PortalPicker, PortalSwatch, type WallChoice, WallLookPicker, WallSwatch, portalLabel, wallChoiceLabel } from "./WallLookPicker.tsx";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
@@ -59,6 +59,9 @@ export interface BattleUi {
   /** What new walls (the Wall and Room tools, walls around the floor) are built of: a look, or a picture from the asset packs. */
   wallLook: WallLook;
   wallAsset: string | null;
+  /** The pictures from the asset packs new doors and windows get (null: the wooden door, the glass). */
+  doorPicture: string | null;
+  windowPicture: string | null;
 }
 
 /** The new-wall style the tools put on a wall (nothing for plain stone, so such a wall is stored exactly as walls always were). */
@@ -69,7 +72,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
-  wallLook: "stone", wallAsset: null,
+  wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null,
 };
 
 /** The name of a floor material, including pack textures. */
@@ -989,8 +992,11 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     }
     const dk = doorKind(o.tool);
     if (dk) {
-      const res = insertDoor(featRef.current.walls ?? [], q.x, q.y, 1, dk, () => newFeatureId("w"));
-      if (!res) { flash("There's no wall there. Click right on a wall (draw one first with the Wall or Room tool)."); return; }
+      const found = insertDoor(featRef.current.walls ?? [], q.x, q.y, 1, dk, () => newFeatureId("w"));
+      if (!found) { flash("There's no wall there. Click right on a wall (draw one first with the Wall or Room tool)."); return; }
+      // (a door or window gets the picture chosen for new ones; a secret door looks like the wall)
+      const picture = dk === "door" ? o.doorPicture : dk === "window" ? o.windowPicture : null;
+      const res = { ...found, add: found.add.map((w) => (w.id === found.door.id ? { ...w, ...portalOf(picture) } : w)), door: { ...found.door, ...portalOf(picture) } };
       sendFeatures({ removeWalls: res.remove, upsertWalls: res.add }, `Add ${dk === "secret" ? "secret door" : dk}`);
       onUiRef.current({ multi: [], selected: res.door.id });
       return;
@@ -1462,6 +1468,14 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
           </label>
         </div>
       )}
+      {(ui.tool === "door" || ui.tool === "window") && (() => {
+        const kind = ui.tool, picture = kind === "door" ? ui.doorPicture : ui.windowPicture;
+        return (
+          <Popover label={<><PortalSwatch kind={kind} picture={picture} /> {kind === "door" ? "Doors" : "Windows"}: <b>{portalLabel(kind, picture)}</b></>} title={`Choose what new ${kind}s look like`} testId={`${kind}-look-menu`}>
+            {(close) => <PortalPicker kind={kind} value={picture} onPick={(pic) => { onUi(kind === "door" ? { doorPicture: pic } : { windowPicture: pic }); close(); }} />}
+          </Popover>
+        );
+      })()}
       {(ui.tool === "wall" || ui.tool === "room") && (
         <Popover label={<><WallSwatch c={{ look: ui.wallLook, asset: ui.wallAsset }} /> Walls: <b>{wallChoiceLabel({ look: ui.wallLook, asset: ui.wallAsset })}</b></>} title="Choose what new walls are built of" testId="wall-look-menu">
           {(close) => <WallLookPicker value={{ look: ui.wallLook, asset: ui.wallAsset }} onPick={(c) => { onUi({ wallLook: c.look, wallAsset: c.asset }); close(); }} />}
@@ -1768,6 +1782,14 @@ function WallEditor({ w, onClear }: { w: MapWall; onClear: () => void }) {
     sendFeatures({ upsertWalls: [next] }, `Change ${next.kind}`);
   };
   const [picking, setPicking] = useState(false);
+  const [pickingPortal, setPickingPortal] = useState(false);
+  const setPortal = (picture: string | null) => {
+    const next: MapWall = { ...latest.current };
+    delete next.portal;
+    Object.assign(next, portalOf(picture));
+    latest.current = next;
+    sendFeatures({ upsertWalls: [next] }, `${next.kind === "door" ? "Door" : "Window"} looks like ${portalLabel(next.kind === "door" ? "door" : "window", picture)}`);
+  };
   const setStyle = (c: WallChoice) => {
     const next: MapWall = { ...latest.current };
     delete next.look; delete next.asset; delete next.tile;
@@ -1792,6 +1814,14 @@ function WallEditor({ w, onClear }: { w: MapWall; onClear: () => void }) {
             Built of <WallSwatch c={{ look: w.look ?? "stone", asset: w.asset ?? null }} /> <b>{wallChoiceLabel({ look: w.look ?? "stone", asset: w.asset ?? null })}</b> <span aria-hidden="true">{picking ? "▴" : "▾"}</span>
           </button>
           {picking && <div className="inline-picker"><WallLookPicker value={{ look: w.look ?? "stone", asset: w.asset ?? null }} onPick={(c) => { setStyle(c); setPicking(false); }} /></div>}
+        </>
+      )}
+      {(w.kind === "door" || w.kind === "window") && (
+        <>
+          <button className="built-of" onClick={() => setPickingPortal((v) => !v)} aria-expanded={pickingPortal} title={`Choose what this ${w.kind} looks like`} data-testid="portal-look">
+            Looks like <PortalSwatch kind={w.kind} picture={w.portal} /> <b>{portalLabel(w.kind, w.portal)}</b> <span aria-hidden="true">{pickingPortal ? "▴" : "▾"}</span>
+          </button>
+          {pickingPortal && <div className="inline-picker"><PortalPicker kind={w.kind} value={w.portal ?? null} onPick={(pic) => { setPortal(pic); setPickingPortal(false); }} /></div>}
         </>
       )}
       {isDoor && <label className="check"><input type="checkbox" checked={!!w.open} onChange={(e) => set({ open: e.target.checked })} data-testid="wall-open" /> Open</label>}

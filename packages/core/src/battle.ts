@@ -203,7 +203,7 @@ export const toCells = (squares: number, spec: BattleSpec) => squares * spec.sub
  * side: which edge; offset: squares from the edge's start (top/bottom: from the left; left/right: from the top).
  */
 export function roomWalls(
-  idPrefix: string, x: number, y: number, w: number, h: number, doors: { side: "top" | "bottom" | "left" | "right"; offset: number; width?: number; kind?: "door" | "secret" | "window" }[],
+  idPrefix: string, x: number, y: number, w: number, h: number, doors: { side: "top" | "bottom" | "left" | "right"; offset: number; width?: number; kind?: "door" | "secret" | "window"; picture?: string }[],
   style: WallStyle = {},
 ): MapWall[] {
   const edges: Record<string, { a: [number, number]; b: [number, number] }> = {
@@ -224,7 +224,7 @@ export function roomWalls(
     for (const d of here) {
       const start = Math.max(cursor, Math.min(len, along(d))), width = Math.min(d.width ?? 1, len - start);
       if (start > cursor) out.push({ id: `${idPrefix}-${n++}`, kind: "wall", points: [pt(cursor), pt(start)], ...wallStyleOf(style) });
-      out.push({ id: `${idPrefix}-${n++}`, kind: d.kind ?? "door", points: [pt(start), pt(start + width)], ...wallStyleOf(style) });
+      out.push({ id: `${idPrefix}-${n++}`, kind: d.kind ?? "door", points: [pt(start), pt(start + width)], ...wallStyleOf(style), ...(d.kind !== "secret" && portalOf(d.picture)) });
       cursor = start + width;
     }
     if (cursor < len - 1e-9) out.push({ id: `${idPrefix}-${n++}`, kind: "wall", points: [pt(cursor), pt(len)], ...wallStyleOf(style) });
@@ -238,6 +238,11 @@ export type WallStyle = Pick<MapWall, "look" | "asset" | "tile">;
 /** A wall's style as fields to spread into another wall (only the ones that are set, so an unstyled wall stays exactly as it was). */
 export function wallStyleOf(w: WallStyle): WallStyle {
   return { ...(w.look && { look: w.look }), ...(w.asset && { asset: w.asset }), ...(w.tile && { tile: w.tile }) };
+}
+
+/** A door's or window's picture as a field to spread into it (nothing when there is none). */
+export function portalOf(picture: string | null | undefined): Pick<MapWall, "portal"> {
+  return picture ? { portal: picture } : {};
 }
 
 /** Largest battlemap image we'll render, in pixels (RGBA, so 4 bytes each). */

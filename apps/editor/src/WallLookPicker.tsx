@@ -38,3 +38,32 @@ export function WallLookPicker({ value, onPick }: { value: WallChoice; onPick: (
     </div>
   );
 }
+
+/** What a door's or window's picture is called: the picture's name, or the built-in one's. */
+export function portalLabel(kind: "door" | "window", picture: string | null | undefined): string {
+  return picture ? assetLabel(parseAssetId(picture)?.path ?? picture) : kind === "door" ? "Wooden door" : "Glass";
+}
+
+/** The small swatch for a door or window: its picture, or the built-in one's colour. */
+export function PortalSwatch({ kind, picture }: { kind: "door" | "window"; picture: string | null | undefined }) {
+  const style = picture ? { backgroundImage: `url(${assetUrl(picture, 64)})` } : { background: kind === "door" ? "rgb(158,106,58)" : "rgb(160,206,230)" };
+  return <span className="swatch now" style={style} />;
+}
+
+/** What a door or window looks like: the built-in one (a wooden door, glass) or a picture from the asset packs' doors and windows. */
+export function PortalPicker({ kind, value, onPick }: { kind: "door" | "window"; value: string | null; onPick: (picture: string | null) => void }) {
+  return (
+    <div className="wall-picker" data-testid={`${kind}-looks`}>
+      <div className="row">
+        <button className={value ? "" : "on"} onClick={() => onPick(null)} data-testid={`${kind}-builtin`}><PortalSwatch kind={kind} picture={null} /> {portalLabel(kind, null)}</button>
+      </div>
+      <PackGrid
+        kinds={[{ cat: "portals", label: "doors and windows" }]} testId="pack-portals" item="pack-portal" placeholder={kind === "door" ? "Search: door, gate, oak…" : "Search: window, shutter…"}
+        noneFound="No doors or windows were found in your asset packs (Dragon Drop knows them by the words door, gate, window, portcullis... in their folder or file names)."
+        noFolder="To use the doors and windows in your asset packs, choose your asset folder in Settings (Maps and assets)."
+        stateOf={(it) => ({ on: it.id === value })}
+        onChoose={(it) => onPick(it.id)}
+      />
+    </div>
+  );
+}

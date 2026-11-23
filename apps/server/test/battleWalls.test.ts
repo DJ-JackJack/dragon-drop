@@ -20,6 +20,11 @@ beforeAll(() => {
   for (let i = 0; i < 640 * 64; i++) p.data.set([30, 60, 230, 255], i * 4);
   mkdirSync(path.join(lib, "Castle Kit", "Walls"), { recursive: true });
   writeFileSync(path.join(lib, "Castle Kit", "Walls", "Blue_Stone_Wall.png"), PNG.sync.write(p));
+  // a door picture, green, four times as wide as it is deep
+  const d = new PNG({ width: 256, height: 64 });
+  for (let i = 0; i < 256 * 64; i++) d.data.set([40, 200, 60, 255], i * 4);
+  mkdirSync(path.join(lib, "Castle Kit", "Doors"), { recursive: true });
+  writeFileSync(path.join(lib, "Castle Kit", "Doors", "Oak_Door.png"), PNG.sync.write(d));
 });
 
 let n = 0;
@@ -79,6 +84,23 @@ describe("what walls are built of", () => {
     const none = await tool(bare, "add_room", { x: 1, y: 1, w: 3, h: 3, wall_asset: asset });
     expect(none.isError).toBe(true);
     expect(textOf(none)).toMatch(/wall_look/);
+  });
+
+  it("lets Claude give doors and windows a picture from the packs, and take it off again", async () => {
+    const hub = await fresh();
+    const door = (await ok(hub, "search_assets", { query: "door", category: "portals" })).items[0].id;
+    await ok(hub, "add_room", { x: 1, y: 1, w: 4, h: 3, doors: [{ side: "top", offset: 1, picture: door }, { side: "left", offset: 1, kind: "secret", picture: door }] });
+    expect(walls(hub).find((w) => w.kind === "door")?.portal).toBe(door);
+    expect(walls(hub).find((w) => w.kind === "secret")).not.toHaveProperty("portal"); // (a secret door looks like the wall)
+    const added = await ok(hub, "add_door", { x: 5, y: 2.5, kind: "window", picture: door });
+    expect(walls(hub).find((w) => w.id === added.door.id)?.portal).toBe(door);
+    await ok(hub, "update_wall", { id: added.door.id, picture: null });
+    expect(walls(hub).find((w) => w.id === added.door.id)).not.toHaveProperty("portal");
+    expect((await ok(hub, "list_battle")).walls.some((w: { picture?: string }) => w.picture === door)).toBe(true);
+    const bad = await tool(hub, "add_door", { x: 3, y: 4, picture: "nope:Doors/none.png" });
+    expect(bad.isError).toBe(true);
+    // the picture reaches the server's pictures too
+    expect(Object.keys((await hub.battleAssets(hub.session.doc)).opts.wallPictures ?? {})).toEqual([door]);
   });
 
   it("draws a wall's pack picture in the server's pictures (previews and exports)", async () => {

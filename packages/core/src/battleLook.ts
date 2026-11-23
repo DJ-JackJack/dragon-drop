@@ -347,8 +347,10 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
     }
   }
 
-  // ---- windows: glass in the stone
+  // ---- windows: glass in the stone, or the window's picture from the asset packs over its opening
   for (const p of windows) {
+    const pic = p.wall.portal && opts.pictureFor ? opts.pictureFor(p.wall.portal) : null;
+    if (pic) { paintPortal(out, pic, p.ax, p.ay, p.ux, p.uy, p.len, half); continue; }
     const gh = T * 0.2;
     paintSlab(out, p.ax, p.ay, p.ux, p.uy, p.len, gh, (x, y, s, c, ins) => {
       const hi = smooth(0.1, 0.9, -c / gh) * 0.45 + 0.1 * (vnoise(s / (px * 0.3), 3) - 0.5);
@@ -372,6 +374,8 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
       }
       dx = nx; dy = ny;
     }
+    const pic = p.wall.portal && opts.pictureFor ? opts.pictureFor(p.wall.portal) : null;
+    if (pic) { paintPortal(out, pic, ox, oy, dx, dy, p.len, ht); continue; }
     const base = open ? WOOD_OPEN : WOOD;
     paintSlab(out, ox, oy, dx, dy, p.len, ht, (x, y, s, c, ins) => {
       const groove = Math.abs(Math.abs(c) - ht * 0.38) < 0.55 ? 0.8 : 1;
@@ -465,6 +469,19 @@ function samplePicture(pic: WallPicture, along: number, across: number, half: nu
   const sx = Math.floor((u - Math.floor(u)) * pic.w), sy = clamp(Math.floor((v - Math.floor(v)) * pic.h), 0, pic.h - 1);
   const o = (sy * pic.w + clamp(sx, 0, pic.w - 1)) * 4;
   return [pic.data[o], pic.data[o + 1], pic.data[o + 2], pic.data[o + 3]];
+}
+
+/**
+ * A door's or window's picture from the asset packs, drawn in its opening: its width along the opening (from the hinge, so an open door's picture swings
+ * with it), its height across it in proportion (never thinner than the wall), its see-through parts left so.
+ */
+function paintPortal(img: LookImage, pic: WallPicture, ox: number, oy: number, dx: number, dy: number, len: number, minHalf: number) {
+  const half = Math.max(minHalf, (len * pic.h) / pic.w / 2);
+  paintSlab(img, ox, oy, dx, dy, len, half, (_x, _y, s, c, ins) => {
+    const sx = clamp(Math.floor((s / len) * pic.w), 0, pic.w - 1), sy = clamp(Math.floor(((c + half) / (2 * half)) * pic.h), 0, pic.h - 1);
+    const o = (sy * pic.w + sx) * 4;
+    return [pic.data[o], pic.data[o + 1], pic.data[o + 2], (pic.data[o + 3] / 255) * clamp(ins + 0.5, 0, 1)];
+  });
 }
 
 /** Paint a slab (butt ends, `halfWidth` each side of the line a -> a + dir * len) with a per-pixel colour function. */

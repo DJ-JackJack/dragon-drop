@@ -117,6 +117,8 @@ export interface MapWall {
   asset?: string;
   /** For a square texture: squares one repeat covers (default 1). */
   tile?: number;
+  /** Doors and windows: a picture from the asset packs drawn in the opening (an asset id), instead of the wooden door or the glass. Stretched to the opening's width, keeping its shape. */
+  portal?: string;
 }
 
 /** The straight pieces a wall is made of (a closed wall includes the piece back to its start). */

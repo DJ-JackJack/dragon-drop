@@ -39,6 +39,7 @@ const assetsDir = path.join(tmp, "Assets");
     { path: "textures/terrain/Grass.png", data: png(1024, 1024, [50, 160, 50]) },
     { path: "textures/terrain/Cobbles.png", data: png(512, 512, [128, 128, 128]) },
     { path: "textures/walls/Stone_Wall.png", data: png(512, 64, [70, 90, 200]) },
+    { path: "textures/portals/Oak_Door.png", data: png(256, 64, [40, 200, 60]) },
   ];
   const pad = (n, a) => (a - (n % a)) % a;
   const names = files.map((f) => enc.encode(`res://${f.path}`));
@@ -691,8 +692,14 @@ try {
     if (!(brickWall[0] > brickWall[2] + 30)) fail(`the room's other walls aren't brick (got ${brickWall})`);
     // a door in its top wall; then try one on bare floor, which should explain itself
     await page.getByTestId("btool-door").click();
+    // a door picture from the pack (doors open from a button in the tool bar, like walls)
+    await page.getByTestId("door-look-menu").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-portal"]').length === 1, null, { timeout: 15000 });
+    await page.getByTestId("pack-portal").click();
+    await page.getByTestId("door-look-menu").getByText("Oak Door").waitFor({ timeout: 5000 });
     await click(12, 5);
     await page.getByTestId("history").getByText("Add door").waitFor({ timeout: 10000 });
+    await page.getByTestId("portal-look").getByText("Oak Door").waitFor({ timeout: 5000 });
     await page.getByTestId("battle-inspector").getByText("Door").first().waitFor({ timeout: 5000 });
     await page.getByTestId("wall-open").click(); // a controlled checkbox: it ticks when the server echoes the change
     await page.getByTestId("history").getByText("Change door").first().waitFor({ timeout: 10000 });

@@ -57,6 +57,38 @@ describe("what walls are built of", () => {
   });
 });
 
+describe("doors and windows with a picture from the asset packs", () => {
+  // a door picture: green, four times as wide as it is deep, a see-through margin round it
+  const door = { w: 160, h: 40, data: new Uint8ClampedArray(160 * 40 * 4) };
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 160; x++) if (y > 4 && y < 36) door.data.set([40, 200, 60, 255], (y * 160 + x) * 4);
+  const pictureFor = (a: string) => (a === "kit:door.png" ? door : null);
+
+  it("draws the picture in the opening instead of the wooden door, and swings it with an open door", () => {
+    const shut = renderWallLayer(spec(), [wall("d", "door", [[4, 5], [6, 5]], { portal: "kit:door.png" })], { pictureFor });
+    const mid = at(shut, 5, 5);
+    expect(mid.g).toBeGreaterThan(mid.r + 80); // green, not wood
+    const plain = at(renderWallLayer(spec(), [wall("d", "door", [[4, 5], [6, 5]])]), 5, 5);
+    expect(plain.r).toBeGreaterThan(plain.g); // (the wooden door, without a picture)
+    // open: it swings back on its hinge (the first point) to lie across the opening
+    const open = renderWallLayer(spec(), [wall("d", "door", [[4, 5], [6, 5]], { portal: "kit:door.png", open: true })], { pictureFor });
+    const doorway = at(open, 5, 5);
+    expect(doorway.g).toBeLessThan(doorway.r + 30); // (only the soft shadow along the wall's line: no door in the opening)
+    const swung = at(open, 4, 6);
+    expect(swung.g).toBeGreaterThan(swung.r + 80);
+    // not loaded yet: the wooden door
+    const waiting = at(renderWallLayer(spec(), [wall("d", "door", [[4, 5], [6, 5]], { portal: "kit:door.png" })], { pictureFor: () => null }), 5, 5);
+    expect(waiting.r).toBeGreaterThan(waiting.g);
+  });
+
+  it("draws a window's picture over its opening, its frame of the wall's own look", () => {
+    const l = renderWallLayer(spec(), [wall("w", "window", [[4, 5], [6, 5]], { portal: "kit:door.png", look: "brick" })], { pictureFor });
+    const mid = at(l, 5, 5);
+    expect(mid.g).toBeGreaterThan(mid.r + 80);
+    const glass = at(renderWallLayer(spec(), [wall("w", "window", [[4, 5], [6, 5]])]), 5, 5);
+    expect(glass.b).toBeGreaterThan(glass.r); // (the glass, without a picture)
+  });
+});
+
 describe("the wall layer", () => {
   it("is empty without walls and sized to the map", () => {
     const l = renderWallLayer(spec(), []);

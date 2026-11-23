@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   type MapAmbientZone, type MapLight, type MapNote, type MapWall, type RGBAImage, type Rect, type Shape, LIGHT_PRESETS, LIGHT_PRESET_NAMES, MATERIALS, ambientOf, applyLightPreset, battleSizeError, battleSpec, circlePolygon, cropScale, drawLabel, insertDoor,
   connectorTo, lightPresetName, nextNoteNumber, readingOrderNumbers, sortedNotes,
-  materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS, WALL_LOOKS, type WallStyle, wallStyleOf,
+  materialByName, newFeatureId, renderBattle, roomWalls, textWidth, wallSegments, wallsAroundFloor, BATTLE_EXPORT_FORMATS, WALL_LOOKS, type WallStyle, portalOf, wallStyleOf,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext } from "./tools.ts";
@@ -32,6 +32,16 @@ async function wallStyleFrom(ctx: ToolContext, i: { wall_look?: string; wall_ass
     if (!info) return `No asset has the id "${i.wall_asset}". Find one with search_assets (category walls).`;
   }
   return wallStyleOf({ ...(i.wall_look && { look: i.wall_look as WallStyle["look"] }), ...(i.wall_asset && { asset: i.wall_asset }), ...(i.wall_tile && { tile: i.wall_tile }) });
+}
+const PortalPictureSchema = z.string().min(1).describe(
+  "A door or window picture from the DM's asset packs, drawn in the opening instead of the built-in wooden door or glass: an id from search_assets (category portals). Prefer one when the packs have a fitting door or window",
+);
+/** A door or window picture, checked against the library; or a message why not. */
+async function portalFrom(ctx: ToolContext, picture: string | undefined): Promise<string | undefined | { problem: string }> {
+  if (!picture) return undefined;
+  if (!ctx.assets) return { problem: "There's no asset library set up (Settings), so there are no door or window pictures: leave picture out for the built-in look." };
+  if (!(await ctx.assets.info(picture))) return { problem: `No asset has the id "${picture}". Find one with search_assets (category portals).` };
+  return picture;
 }
 const WallStyleFields = {
   wall_look: WallLookSchema.optional(),
@@ -166,6 +176,7 @@ export const BATTLE_TOOLS = [
         side: z.enum(["top", "bottom", "left", "right"]), offset: z.number().min(0),
         width: z.number().min(0.5).max(4).optional().describe("Squares (default 1)"),
         kind: z.enum(["door", "secret", "window"]).optional(),
+        picture: PortalPictureSchema.optional(),
       })).max(24).optional(),
       ...WallStyleFields,
     }),
@@ -174,6 +185,7 @@ export const BATTLE_TOOLS = [
       if (i.x < 0 || i.y < 0 || i.x + i.w > sp.squaresX || i.y + i.h > sp.squaresY) return fail(`The room runs off the map (${sp.squaresX} x ${sp.squaresY} squares).`);
       const style = await wallStyleFrom(ctx, i);
       if (typeof style === "string") return fail(style);
+      for (const d of i.doors ?? []) { const pic = await portalFrom(ctx, d.picture); if (typeof pic === "object") return fail(pic.problem); }
       const floor = materialId(ctx, i.floor ?? "flagstone");
       ctx.execute({ op: "paint_floor", params: { shape: { type: "rect", x: i.x * sp.sub, y: i.y * sp.sub, w: i.w * sp.sub, h: i.h * sp.sub }, material: floor } }, `Room floor (${i.w}x${i.h})`);
       let walls: MapWall[] = [];
@@ -278,11 +290,14 @@ export const BATTLE_TOOLS = [
       kind: z.enum(["door", "secret", "window"]).optional(),
       open: z.boolean().optional(),
       locked: z.boolean().optional(),
+      picture: PortalPictureSchema.optional(),
     }),
     async run(ctx, i) {
+      const pic = await portalFrom(ctx, i.picture);
+      if (typeof pic === "object") return fail(pic.problem);
       const res = insertDoor(wallsOf(ctx), i.x, i.y, i.width ?? 1, i.kind ?? "door", () => newFeatureId("w"));
       if (!res) return fail("There's no wall near that point. Use list_battle to see the walls, or add_wall with kind=door to draw a free-standing one.");
-      const door: MapWall = { ...res.door, ...(i.open && { open: true }), ...(i.locked && { locked: true }) };
+      const door: MapWall = { ...res.door, ...(i.open && { open: true }), ...(i.locked && { locked: true }), ...(i.kind !== "secret" && portalOf(pic)) };
       const add = res.add.map((w) => (w.id === door.id ? door : w));
       const r = ctx.execute({ op: "features", patch: { removeWalls: res.remove, upsertWalls: add }, label: `Add ${door.kind}` });
       return json({ change: r.seq, door: { id: door.id, kind: door.kind, from: door.points[0], to: door.points[1] } });
@@ -291,12 +306,15 @@ export const BATTLE_TOOLS = [
 
   define({
     name: "update_wall",
-    description: "Change a wall piece, door or window: open or close a door, lock it, or change its kind. Ids come from list_battle.",
-    schema: z.object({ id: z.string(), kind: WallKindSchema.optional(), open: z.boolean().optional(), locked: z.boolean().optional() }),
+    description: "Change a wall piece, door or window: open or close a door, lock it, change its kind, or give a door or window a picture from the asset packs (picture: null for the built-in look again). Ids come from list_battle. What walls are built of: set_wall_look.",
+    schema: z.object({ id: z.string(), kind: WallKindSchema.optional(), open: z.boolean().optional(), locked: z.boolean().optional(), picture: PortalPictureSchema.nullable().optional() }),
     async run(ctx, i) {
       const w = wallsOf(ctx).find((x) => x.id === i.id);
       if (!w) return fail(`No wall with id ${i.id}. Use list_battle.`);
-      const next: MapWall = { ...w, ...(i.kind && { kind: i.kind }), ...(i.open !== undefined && { open: i.open }), ...(i.locked !== undefined && { locked: i.locked }) };
+      const pic = await portalFrom(ctx, i.picture ?? undefined);
+      if (typeof pic === "object") return fail(pic.problem);
+      const next: MapWall = { ...w, ...(i.kind && { kind: i.kind }), ...(i.open !== undefined && { open: i.open }), ...(i.locked !== undefined && { locked: i.locked }), ...portalOf(pic) };
+      if (i.picture === null) delete next.portal;
       const r = ctx.execute({ op: "features", patch: { upsertWalls: [next] }, label: `Update ${next.kind}` });
       return json({ change: r.seq, wall: next });
     },
@@ -385,7 +403,7 @@ export const BATTLE_TOOLS = [
     async run(ctx) {
       return json({
         summary: battleSummary(ctx),
-        walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), ...wallStyleOf(w), pieces: wallSegments(w).length })),
+        walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), ...wallStyleOf(w), ...(w.portal && { picture: w.portal }), pieces: wallSegments(w).length })),
         lights: lightsOf(ctx).map((l) => ({ id: l.id, x: round(l.x), y: round(l.y), radius: l.radius, bright: l.bright, colour: l.colour })),
         connectors: (ctx.session().doc.features?.connectors ?? []).map((c) => ({ id: c.id, kind: c.kind, ...(c.name && { name: c.name }), x: c.x, y: c.y, w: c.w, h: c.h, leads: connectorTo(c) })),
         roofs: (ctx.session().doc.features?.roofs ?? []).map((r) => ({ id: r.id, ...(r.name && { name: r.name }), style: r.style, ...(r.asset && { asset: r.asset }), points: r.points.map(([x, y]) => [round(x), round(y)]) })),
