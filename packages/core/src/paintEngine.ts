@@ -18,10 +18,11 @@ import type { NoiseCache } from "./noisecache.ts";
 import { paintPrep, renderPainted } from "./painted.ts";
 import { renderPlaceholder } from "./placeholder.ts";
 import { renderInto } from "./render.ts";
+import { type InkSymbol, inkMargin, inkSymbols, renderInk } from "./inkStyle.ts";
 
 export interface PaintView {
   /** The style the user chose. "painted" falls back to a preview until the noise and climate layers are here. */
-  mode: "painted" | "relief";
+  mode: "painted" | "relief" | "ink";
   meta: MapMeta;
   /** Relief style only. */
   hillshade: boolean;
@@ -44,6 +45,8 @@ export class PaintEngine {
   derived: Derived | null = null;
   /** Full-size RGBA the painters write into (they index it by map position); rows are copied out of it. */
   private scratch: Uint8ClampedArray;
+  /** The ink style's symbols, worked out again when the land or the climate changes. */
+  private ink: InkSymbol[] | null = null;
 
   constructor(readonly W: number, readonly H: number, heights: Float32Array) {
     this.heights = new HeightField(W, H, heights);
@@ -60,11 +63,13 @@ export class PaintEngine {
     if (d.W !== this.W || d.H !== this.H) throw new Error("Those climate layers are for another map size.");
     const prev = this.derived;
     this.derived = d;
+    this.ink = null;
     return prev ? derivedChange(prev, d) : "all";
   }
 
   patch(rect: Rect, data: Float32Array) {
     this.heights.pasteRect(rect, data);
+    this.ink = null;
   }
 
   /** Is the painted style possible yet? */
@@ -88,13 +93,16 @@ export class PaintEngine {
   /** Draw a rect of the map in the current style (the plain relief while the painted style isn't ready). */
   private draw(rect: Rect, view: PaintView, prep?: ReturnType<typeof paintPrep>) {
     const doc = this.doc(view);
-    if (view.mode === "painted" && this.noise && this.derived) renderPainted(doc, this.derived, this.noise, rect, this.scratch, prep, { rivers: view.rivers !== false });
+    if (view.mode === "ink" && this.derived) renderInk(doc, this.derived, rect, this.scratch, (this.ink ??= inkSymbols(doc, this.derived)), { rivers: view.rivers !== false });
+    else if (view.mode === "painted" && this.noise && this.derived) renderPainted(doc, this.derived, this.noise, rect, this.scratch, prep, { rivers: view.rivers !== false });
     else renderInto(doc, rect, this.scratch, { hillshade: view.mode === "relief" ? view.hillshade : true });
   }
 
   /** The pixels of one area. */
   tile(rect: Rect, view: PaintView): Pixels | null {
-    const r = clipRect(rect, this.W, this.H);
+    // (in the ink style a symbol reaches past its spot: an area is drawn again with a margin, so a changed symbol leaves nothing behind)
+    const m = view.mode === "ink" ? inkMargin(this.W, this.H) : 0;
+    const r = clipRect({ x: rect.x - m, y: rect.y - m, w: rect.w + 2 * m, h: rect.h + 2 * m }, this.W, this.H);
     if (!r) return null;
     this.draw(r, view);
     return this.take(r);
@@ -104,7 +112,7 @@ export class PaintEngine {
   *slices(view: PaintView, band = 128): Generator<Pixels> {
     const { W, H } = this;
     const bands = function* () { for (let y = 0; y < H; y += band) yield { x: 0, y, w: W, h: Math.min(band, H - y) }; };
-    if (view.mode === "painted" && !this.paintedReady()) {
+    if ((view.mode === "painted" && !this.paintedReady()) || (view.mode === "ink" && !this.derived)) {
       renderPlaceholder(this.doc(view), this.scratch);
       for (const r of bands()) yield this.take(r);
       return;

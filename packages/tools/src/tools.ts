@@ -922,8 +922,8 @@ export const TOOLS = [
 
   define({
     name: "set_style",
-    description: "Switch how the map is drawn: 'painted' (Painted Relief: textured biomes, rock, snow, coastal glow) or 'relief' (plain elevation colours, handy while sculpting).",
-    schema: z.object({ style: z.enum(["painted", "relief"]) }),
+    description: "Switch how the map is drawn: 'painted' (Painted Relief: textured biomes, rock, snow, coastal glow), 'relief' (plain elevation colours, handy while sculpting) or 'ink' (hand-drawn: parchment, an inked coast with ripple lines, rivers in ink, peaks, hills and woods drawn as small symbols from the terrain and climate). Only when the DM asks for a style.",
+    schema: z.object({ style: z.enum(["painted", "relief", "ink"]) }),
     async run(ctx, i) {
       const r = ctx.execute({ op: "set_meta", patch: { style: i.style }, label: `Style: ${i.style}` });
       return json({ change: r.seq, style: i.style });

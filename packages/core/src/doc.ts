@@ -7,7 +7,7 @@ import type { BattleSpec } from "./battle.ts";
 import type { CitySpec } from "./city.ts";
 import type { BaseClimate, ParentLink } from "./regional.ts";
 
-export type MapStyle = "painted" | "relief";
+export type MapStyle = "painted" | "relief" | "ink";
 
 /** Elevations are stored in metres relative to the datum; sea level is meta.seaLevel. */
 export class HeightField {

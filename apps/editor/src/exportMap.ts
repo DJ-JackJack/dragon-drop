@@ -35,7 +35,7 @@ function renderRegion(ctx: CanvasRenderingContext2D, src: ExportSource, o: Expor
   ctx.imageSmoothingQuality = "high";
   // the whole bitmap, scaled and shifted: every tile samples it the same way, so tiles join without seams
   ctx.drawImage(src.off, -x, -y, fullW, fullH);
-  if (o.rivers && (meta.style ?? "painted") !== "painted") { // (the painted style has its rivers in the picture already)
+  if (o.rivers && meta.style === "relief") { // (the painted and ink styles have their rivers in the picture already)
     ctx.save();
     ctx.setTransform(k, 0, 0, k, -x, -y);
     ctx.strokeStyle = "rgba(70, 88, 116, 0.92)";

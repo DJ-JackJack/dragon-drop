@@ -159,6 +159,18 @@ try {
   // switch style to Relief and back (undoable, shows in history)
   await page.getByRole("button", { name: "Relief", exact: true }).click();
   await page.getByTestId("history").getByText("Style: relief").waitFor({ timeout: 10000 });
+  // the hand-drawn ink style: the map is painted on parchment (pale, warm) with the coast in ink
+  await page.getByRole("button", { name: "Ink", exact: true }).click();
+  await page.getByTestId("history").getByText("Style: ink").waitFor({ timeout: 10000 });
+  await page.waitForFunction(() => {
+    const c = document.querySelector(".mapview canvas");
+    if (!c) return false;
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let warm = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4 * 211) { n++; if (d[i] > 200 && d[i + 1] > 185 && d[i] > d[i + 2] + 15) warm++; }
+    return warm / n > 0.05;
+  }, null, { timeout: 30000 }).catch(() => fail("the ink style didn't paint parchment"));
+  await page.screenshot({ path: path.join(shots, "e2e-2b-ink.png") });
   await page.getByRole("button", { name: "Painted", exact: true }).click();
   await page.getByTestId("history").getByText("Style: painted").waitFor({ timeout: 10000 });
 

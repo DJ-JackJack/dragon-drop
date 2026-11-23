@@ -371,14 +371,15 @@ export function App() {
           <section>
             <h3>Style</h3>
             <div className="seg" role="group" aria-label="Map style">
-              {(["painted", "relief"] as const).map((st) => (
+              {(["painted", "relief", "ink"] as const).map((st) => (
                 <button
                   key={st}
                   className={style === st ? "on" : ""}
                   onClick={() => style !== st && store.send({ t: "cmd", cmd: { op: "set_meta", patch: { style: st }, label: `Style: ${st}` } })}
-                  title={st === "painted" ? "Painted Relief: biomes, rock, snow, coastal glow" : "Plain elevation colours, handy while sculpting"}
+                  title={st === "painted" ? "Painted Relief: biomes, rock, snow, coastal glow" : st === "ink" ? "Hand-drawn: parchment, an inked coast with ripples, peaks, hills and woods drawn as symbols" : "Plain elevation colours, handy while sculpting"}
+                  data-testid={`style-${st}`}
                 >
-                  {st === "painted" ? "Painted" : "Relief"}
+                  {st === "painted" ? "Painted" : st === "ink" ? "Ink" : "Relief"}
                 </button>
               ))}
             </div>

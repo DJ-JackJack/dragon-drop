@@ -217,7 +217,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   /** What the paint worker should draw: the chosen style and its settings. */
   const paintView = useCallback((): PaintView | null => {
     const m = metaRef.current;
-    return m ? { mode: (m.style ?? "painted") === "painted" ? "painted" : "relief", meta: m, hillshade: optsRef.current.hillshade, rivers: optsRef.current.showRivers } : null;
+    return m ? { mode: m.style === "relief" || m.style === "ink" ? m.style : "painted", meta: m, hillshade: optsRef.current.hillshade, rivers: optsRef.current.showRivers } : null;
   }, []);
 
   // The map is painted in a worker (heights, climate layers and noise all live there): this thread only draws the pixels it sends back.
@@ -409,7 +409,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     ctx.strokeStyle = "rgba(0,0,0,0.5)";
     ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, m.width * v.scale + 1, m.height * v.scale + 1);
     // (the painted style paints its rivers into the map itself; only the relief style has them drawn over it)
-    if (optsRef.current.showRivers && riverChunks.current.length && (metaRef.current?.style ?? "painted") !== "painted") {
+    if (optsRef.current.showRivers && riverChunks.current.length && metaRef.current?.style === "relief") {
       ctx.save();
       ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.ox, dpr * v.oy);
       ctx.strokeStyle = "rgba(70, 88, 116, 0.92)";

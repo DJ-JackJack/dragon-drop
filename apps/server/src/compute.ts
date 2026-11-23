@@ -7,7 +7,7 @@ import {
   type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, boxResize, type ShrinkJob, type ShrunkPicture, shrinkPicture, pictureKindHint, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
-  type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator,
+  type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator, inkSymbols, renderInk,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
 
@@ -193,7 +193,8 @@ export class JobRunner {
     };
     if (job.op === "derive") return computeDerived(doc, this.climateNoise(job.W, job.H, job.meta.seed), job.seq, { inflows: job.inflows });
     const out = new Uint8ClampedArray(job.W * job.H * 4);
-    renderPainted(doc, job.derived, this.fullNoise(job.W, job.H, job.meta.seed), null, out);
+    if (job.meta.style === "ink") renderInk(doc, job.derived, { x: 0, y: 0, w: job.W, h: job.H }, out, inkSymbols(doc, job.derived));
+    else renderPainted(doc, job.derived, this.fullNoise(job.W, job.H, job.meta.seed), null, out);
     return out;
   }
 }
