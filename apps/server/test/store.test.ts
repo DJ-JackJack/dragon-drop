@@ -201,6 +201,22 @@ describe("checkpoints and rolling backups", () => {
     expect((await names(store, doc.meta.id)).sort()).toEqual(["One", "Two"]);
   });
 
+  // (found 2026-11-22 by the rolling-backup test: the list was read between a first checkpoint's land file and its entry, and shown as "recovered")
+  it("never shows a checkpoint half-written: the list is read after it is saved", async () => {
+    const store = new ProjectStore(root);
+    const doc = await store.create({ name: "Half written", width: 1024, height: 1024, kmPerPx: 4 });
+    const id = doc.meta.id, dir = path.join(root, id, "map", "checkpoints");
+    const saving = store.saveCheckpoint(id, "Backup", doc, 1, "Saved automatically", { auto: true });
+    // the moment its land file is on disk (before its entry and the list are), read the list
+    const landFile = () => existsSync(dir) && readdirSync(dir).some((n) => n.endsWith(".f32.gz"));
+    while (!landFile()) await new Promise((r) => setImmediate(r));
+    const seen = await store.listCheckpoints(id);
+    await saving;
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ name: "Backup", auto: true, note: "Saved automatically" });
+    expect(await store.lastAutoCheckpointTime(id)).toBeGreaterThan(0);
+  });
+
   // (found 2026-11-22: a damaged list was read as empty, and the next checkpoint, an automatic backup say, wrote a list with only itself)
   it("rebuilds a damaged list from the checkpoints instead of starting a new one", async () => {
     const store = new ProjectStore(root);

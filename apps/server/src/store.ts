@@ -640,9 +640,12 @@ export class ProjectStore {
     return out.sort((a, b) => a.time.localeCompare(b.time));
   }
 
+  // (the list is read after any checkpoint change running for this map, never in the middle of one: a first checkpoint's land file is on disk a moment
+  // before its entry and the list, and a list read then was rebuilt from the half-written checkpoint, as "recovered". Found 2026-11-22 by the
+  // rolling-backup test.)
   async listCheckpoints(id: string): Promise<CheckpointInfo[]> {
     try {
-      return (await this.cpIndex(id)).map(({ meta: _m, features: _f, levels: _l, ...info }) => info);
+      return (await this.serial(id, () => this.cpIndex(id))).map(({ meta: _m, features: _f, levels: _l, ...info }) => info);
     } catch (e) {
       console.error(`[${id}] The checkpoint list couldn't be read just now:`, (e as Error).message); // (only shown: nothing is written from this)
       return [];
@@ -713,14 +716,14 @@ export class ProjectStore {
   /** When the newest automatic checkpoint was taken (ms since 1970), or 0 if there is none. */
   async lastAutoCheckpointTime(id: string): Promise<number> {
     try {
-      return (await this.cpIndex(id)).filter((c) => c.auto).reduce((t, c) => Math.max(t, Date.parse(c.time) || 0), 0);
+      return (await this.serial(id, () => this.cpIndex(id))).filter((c) => c.auto).reduce((t, c) => Math.max(t, Date.parse(c.time) || 0), 0);
     } catch {
       return 0; // (can't be read just now: the next backup tries again, and says so if it fails)
     }
   }
 
   async readCheckpoint(id: string, name: string) {
-    const entry = (await this.cpIndex(id)).find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
+    const entry = (await this.serial(id, () => this.cpIndex(id))).find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
     if (!entry) return null;
     const read = async (file: string) => {
       const raw = await gunzipAsync(await readFile(path.join(this.cpDir(id), safeFileName(file))));

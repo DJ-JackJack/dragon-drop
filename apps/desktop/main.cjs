@@ -279,7 +279,8 @@ function ownPicture(url) {
 function createWindow() {
   const overlay = process.platform === "win32" || process.platform === "darwin";
   win = new BrowserWindow({
-    width: 1500, height: 940, minWidth: 980, minHeight: 640, backgroundColor: "#0a0a0c", title: APP_NAME, icon: iconPath,
+    // (720 wide still fits the top bar and a usable map with both panels open, and lets the window share a screen with another one: styles.css narrows the rest)
+    width: 1500, height: 940, minWidth: 720, minHeight: 640, backgroundColor: "#0a0a0c", title: APP_NAME, icon: iconPath,
     show: false, autoHideMenuBar: true,
     ...(overlay && { titleBarStyle: "hidden", titleBarOverlay: { color: "#0a0a0c", symbolColor: "#d4af37", height: 44 } }),
     // (no developer tools in the installed app: "press F12 and paste this" is how a scammer would get a person to run code in the page, which can drive
@@ -874,13 +875,32 @@ async function takeShots(base) {
   await win.webContents.executeJavaScript(`document.querySelector('[data-testid="settings-button"]')?.click()`);
   await new Promise((r) => setTimeout(r, 800));
   fs.writeFileSync(`${base}-settings.png`, (await win.webContents.capturePage()).toPNG());
-  // the AI assistant section, further down (the map tools key and its note)
+  // the AI assistant tab, further down (the map tools key and its note)
   await win.webContents.executeJavaScript(`document.querySelector('[data-testid="mcp-key-note"]')?.scrollIntoView({ block: "center" })`);
   await new Promise((r) => setTimeout(r, 400));
   fs.writeFileSync(`${base}-settings-assistant.png`, (await win.webContents.capturePage()).toPNG());
+  // every other tab
+  for (const tab of ["maps", "phone", "help"]) {
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="settings-tab-${tab}"]')?.click()`);
+    await new Promise((r) => setTimeout(r, 300));
+    fs.writeFileSync(`${base}-settings-${tab}.png`, (await win.webContents.capturePage()).toPNG());
+  }
   // (nothing in the Settings dialog may be wider than it: a sideways scrollbar there once hid the start of every line)
-  const wide = await win.webContents.executeJavaScript(`(() => { const m = document.querySelector('[data-testid="desktop-settings"]'); return m ? m.scrollWidth - m.clientWidth : 0; })()`);
-  if (wide > 1) console.warn(`The Settings dialog is ${wide} px wider than its window: something in it doesn't wrap.`);
+  const wideBy = () => win.webContents.executeJavaScript(`Math.max(...['desktop-settings', 'settings-body'].map((id) => { const m = document.querySelector('[data-testid="' + id + '"]'); return m ? m.scrollWidth - m.clientWidth : 0; }))`);
+  if (await wideBy() > 1) console.warn(`The Settings dialog is ${await wideBy()} px wider than its window: something in it doesn't wrap.`);
+  // and the window at its narrowest, with Settings open and then closed
+  const [w0, h0] = win.getSize();
+  win.setSize(1, h0);
+  await win.webContents.executeJavaScript(`document.querySelector('[data-testid="settings-tab-ai"]')?.click()`);
+  await new Promise((r) => setTimeout(r, 800));
+  fs.writeFileSync(`${base}-narrow-settings.png`, (await win.webContents.capturePage()).toPNG());
+  if (await wideBy() > 1) console.warn(`In the narrowest window the Settings dialog is ${await wideBy()} px wider than its window.`);
+  await win.webContents.executeJavaScript(`document.querySelector('.modal-back')?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
+  await new Promise((r) => setTimeout(r, 500));
+  fs.writeFileSync(`${base}-narrow-main.png`, (await win.webContents.capturePage()).toPNG());
+  const spill = await win.webContents.executeJavaScript(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
+  if (spill > 1) console.warn(`In the narrowest window the page is ${spill} px wider than the window.`);
+  win.setSize(w0, h0);
 }
 
 async function smokeTest() {

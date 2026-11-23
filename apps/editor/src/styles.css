@@ -141,7 +141,7 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .who.system { background: #3a372e; }
 
 /* a map view: the map, then its bottom bar (StatusBar.tsx) */
-.mapview-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.mapview-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; container-type: inline-size; }
 .mapview { position: relative; overflow: hidden; background: #0d0d10; min-width: 0; flex: 1; min-height: 0; }
 .statusbar { flex: none; display: flex; align-items: center; gap: 12px; min-height: 30px; padding: 2px 8px 2px 10px; background: #101013; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sb-save { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -249,7 +249,8 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
   .main { --mapw: 180px; --claudew: 260px; }
   .main.assets-wide { --mapw: 260px; }
 }
-@media (max-width: 760px) {
+/* (only a browser gets this narrow: the Windows app stops at 720, main.cjs) */
+@media (max-width: 600px) {
   .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; }
   .side, .rail { display: none; }
   .chat { border-left: none; border-top: 1px solid var(--line); }
@@ -604,3 +605,44 @@ button.link { background: none; border: none; padding: 0; color: var(--gold-hi);
 .compare-pics figure { flex: 1 1 0; margin: 0; min-width: 0; }
 .compare-pics img { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 6px; background: #0c0c0e; }
 .compare-pics figcaption { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+
+/* Settings (DesktopSettings.tsx): tabs along the top, the open tab's sections scroll under them, and Close stays in view; one height for every tab, so the dialog doesn't jump when you switch */
+.modal.settings { width: min(540px, calc(100vw - 32px)); height: min(720px, 92vh); max-height: none; overflow: hidden; }
+.settings-tabs { flex: none; display: flex; flex-wrap: wrap; border-bottom: 1px solid #2a2822; }
+.settings-tabs button { flex: 1 1 auto; border: none; border-radius: 0; background: transparent; padding: 7px 8px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+.settings-tabs button:hover { background: transparent; color: var(--text); }
+.settings-tabs button.on { color: var(--gold-hi); border-bottom-color: var(--accent); }
+.settings-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.settings-panel:not(.tab-off) { display: flex; flex-direction: column; gap: 10px; }
+
+/* a narrow window (the Windows app goes down to 720 wide, main.cjs): the top bar's buttons keep their pictures and lose their words (still their names, for
+   screen readers and the tooltips), the tool rail shows pictures only, the side panels narrow, and the Map panel's tabs squeeze */
+.tb-icon { display: none; }
+@media (max-width: 900px) {
+  .tb-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .tb-icon { display: inline; }
+  .top { gap: 6px; }
+  .top .toggle { padding: 4px 7px; }
+  .project { min-width: 0; width: 150px; }
+}
+@media (max-width: 820px) {
+  /* (one class for the widths, so a hidden panel's .no-map / .no-claude still wins) */
+  .main { --mapw: 180px; --claudew: 240px; }
+  .main, .main.rail-icons { --railw: 46px; }
+  .main.wide:not(.no-claude) { --claudew: 300px; }
+  .main.assets-wide { --mapw: 240px; }
+  .rail .rail-name, .rail .rail-key, .rail .rail-names { display: none; }
+  .rail .rail-tool { max-width: 38px; padding: 6px 0; }
+}
+@media (max-width: 960px) { .side .tabs button { padding: 7px 2px; font-size: 11.5px; } }
+/* the bottom bar follows its map view's width, not the window's: with both panels open the view can be narrow */
+@container (max-width: 420px) {
+  .statusbar { gap: 6px; padding: 2px 6px; }
+  .sb-info { display: none; }
+  .sb-right { margin-left: auto; }
+}
+@container (max-width: 300px) {
+  .sb-save { font-size: 0; }
+  .sb-pct { min-width: 40px; }
+  .statusbar button { padding: 2px 5px; }
+}

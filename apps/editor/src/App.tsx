@@ -555,17 +555,18 @@ function TopBar({ s, onNew, onHelp, onSettings, mapOpen, onMap, claudeOpen, onCl
       >
         {s.projects.map((p) => <option key={p.id} value={p.id}>{p.parent ? `${p.name} (part of ${p.parent.name})` : p.kind === "battle" ? `${p.name} (battlemap)` : p.kind === "city" ? `${p.name} (city)` : p.name}</option>)}
       </select>
-      <button className="ghost" onClick={onNew}>+ New map</button>
+      {/* (in a narrow window the words in .tb-word are hidden from sight but stay the buttons' names: styles.css) */}
+      <button className="ghost" onClick={onNew} title="Make a new map">+<span className="tb-word"> New map</span></button>
       <div className="spacer" />
-      <button className="ghost" disabled={!s.canUndo} onClick={() => store.send({ t: "undo" })} title="Undo (Ctrl+Z)" data-testid="undo">↶ Undo</button>
-      <button className="ghost" disabled={!s.canRedo} onClick={() => store.send({ t: "redo" })} title="Redo (Ctrl+Shift+Z)" data-testid="redo">↷ Redo</button>
-      <button className={`ghost toggle${mapOpen ? " on" : ""}`} aria-pressed={mapOpen} onClick={() => onMap(!mapOpen)} title="Show or hide the Map panel: layers, lists, history and assets" data-testid="toggle-map-panel">Map panel</button>
+      <button className="ghost" disabled={!s.canUndo} onClick={() => store.send({ t: "undo" })} title="Undo (Ctrl+Z)" data-testid="undo">↶<span className="tb-word"> Undo</span></button>
+      <button className="ghost" disabled={!s.canRedo} onClick={() => store.send({ t: "redo" })} title="Redo (Ctrl+Shift+Z)" data-testid="redo">↷<span className="tb-word"> Redo</span></button>
+      <button className={`ghost toggle${mapOpen ? " on" : ""}`} aria-pressed={mapOpen} onClick={() => onMap(!mapOpen)} title="Show or hide the Map panel: layers, lists, history and assets" data-testid="toggle-map-panel">Map<span className="tb-word"> panel</span></button>
       <button className={`ghost toggle${claudeOpen ? " on" : ""}`} aria-pressed={claudeOpen} onClick={() => onClaude(!claudeOpen)} title="Show or hide the Claude panel" data-testid="toggle-claude-panel">
         Claude{claudeDot && !claudeOpen ? <span className="tab-dot" title="Claude has suggestions for you"> ●</span> : null}
       </button>
       <span className={`conn ${s.connected ? "ok" : "bad"}`} title={s.connected ? "Connected to the map server" : "Reconnecting to the map server…"}>{s.connected ? "Connected" : "Reconnecting…"}</span>
       <button className="ghost" onClick={onHelp} title="Keyboard and mouse controls (?)" data-testid="shortcuts-button">?</button>
-      {onSettings && <button className="ghost" onClick={onSettings} title="API key, maps folder, Claude Code connection" data-testid="settings-button">Settings</button>}
+      {onSettings && <button className="ghost" onClick={onSettings} title="API key, maps folder, Claude Code connection" data-testid="settings-button"><span className="tb-icon" aria-hidden="true">⚙</span><span className="tb-word">Settings</span></button>}
     </header>
   );
 }
