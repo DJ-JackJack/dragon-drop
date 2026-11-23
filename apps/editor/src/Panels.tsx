@@ -385,6 +385,8 @@ export function ClimatePanel({ meta }: { meta: MapMeta }) {
         <button onClick={() => store.send({ t: "regional_refresh" })} title="Use this after changing the parent map's climate or climate regions">Update from {meta.parent.name}</button>
         <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => `${Math.round(v)} m`} onCommit={(v) => set({ snowlineM: v })} />
         <Slider label="Rivers" value={c.riverDensity} min={0} max={1} step={0.01} fmt={(v) => (v < 0.34 ? "few" : v < 0.67 ? "some" : "many")} onCommit={(v) => set({ riverDensity: v })} />
+        <label className="check" title="A river needs real rain, not just a share of the map's water: dry land has few rivers, however small the map (new maps and detail maps start with this on)"><input type="checkbox" checked={!!c.riversFollowRain} onChange={(e) => set({ riversFollowRain: e.target.checked })} data-testid="rivers-follow-rain" /> Dry land has few rivers</label>
+        <label className="check" title="Take away every river the rain makes. Lakes stay, and so do rivers from a river source or drawn with the Rivers tool"><input type="checkbox" checked={!!c.noRainRivers} onChange={(e) => set({ noRainRivers: e.target.checked })} data-testid="no-rain-rivers" /> No rivers from the rain</label>
       </details>
     );
   }
@@ -406,6 +408,8 @@ export function ClimatePanel({ meta }: { meta: MapMeta }) {
       <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => `${Math.round(v)} m`} onCommit={(v) => set({ snowlineM: v })} />
       <Slider label="Snowline drop toward poles" value={c.snowLat} min={0} max={1.2} step={0.01} fmt={(v) => v.toFixed(2)} onCommit={(v) => set({ snowLat: v })} />
       <Slider label="Rivers" value={c.riverDensity} min={0} max={1} step={0.01} fmt={(v) => (v < 0.34 ? "few" : v < 0.67 ? "some" : "many")} onCommit={(v) => set({ riverDensity: v })} />
+        <label className="check" title="A river needs real rain, not just a share of the map's water: dry land has few rivers, however small the map (new maps and detail maps start with this on)"><input type="checkbox" checked={!!c.riversFollowRain} onChange={(e) => set({ riversFollowRain: e.target.checked })} data-testid="rivers-follow-rain" /> Dry land has few rivers</label>
+        <label className="check" title="Take away every river the rain makes. Lakes stay, and so do rivers from a river source or drawn with the Rivers tool"><input type="checkbox" checked={!!c.noRainRivers} onChange={(e) => set({ noRainRivers: e.target.checked })} data-testid="no-rain-rivers" /> No rivers from the rain</label>
     </details>
   );
 }

@@ -868,6 +868,8 @@ export const TOOLS = [
       snow_lat: z.number().min(0).max(1.5).optional().describe("How much the snowline drops toward the poles"),
       wind: z.enum(WIND_NAMES as [string, ...string[]]).optional().describe("Prevailing wind, named for where it blows FROM: west = westerlies, northwest = it blows toward the south-east (rain shadows fall downwind of ranges)"),
       river_density: z.number().min(0).max(1).optional().describe("More, smaller rivers (default 0.5)"),
+      rivers_follow_rain: z.boolean().optional().describe("Rivers need real rain, so dry land has few whatever the rest of the map holds (on for maps made from 0.1.13; maps made before have it off so their rivers stay)"),
+      no_rain_rivers: z.boolean().optional().describe("No rivers from the rain at all: only river sources (springs, drawn rivers) make rivers; lakes stay. For a desert, or when the DM wants no rivers"),
       lowland_rivers: z.boolean().optional().describe("Big rivers on flat ground wander in wide loops with oxbow lakes beside them, and widen into estuaries at the sea (default off; only when the DM wants it, since every river is worked out again)"),
     }),
     async run(ctx, i) {
@@ -885,6 +887,8 @@ export const TOOLS = [
         ...(i.wind !== undefined && { wind: i.wind as WindName }),
         ...(i.river_density !== undefined && { riverDensity: i.river_density }),
         ...(i.lowland_rivers !== undefined && { lowlandRivers: i.lowland_rivers }),
+        ...(i.rivers_follow_rain !== undefined && { riversFollowRain: i.rivers_follow_rain }),
+        ...(i.no_rain_rivers !== undefined && { noRainRivers: i.no_rain_rivers }),
       };
       const r = ctx.execute({ op: "set_meta", patch: { climate: next }, label: "Change climate" });
       return json({ change: r.seq, before: cur, after: { ...DEFAULT_CLIMATE, ...next } });

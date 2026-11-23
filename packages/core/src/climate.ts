@@ -40,6 +40,14 @@ export interface ClimateParams {
   wind: WindName;
   /** 0..1 more = more, smaller rivers. */
   riverDensity: number;
+  /**
+   * Rivers need real rain: besides its share of the map's water, a river must carry as much as it would gather in ordinarily rainy country, so dry
+   * land has few rivers whatever else the map holds (a desert made into a map of its own isn't filled with them). Off when missing, so maps made
+   * before keep their rivers (a named one never disappears by itself); new maps and detail maps are made with it on.
+   */
+  riversFollowRain?: boolean;
+  /** No rivers from the rain at all: only the rivers of river sources (a spring, a drawn river) flow. Lakes stay. */
+  noRainRivers?: boolean;
   /** Lowland rivers: wide meanders on flat ground, oxbow lakes, estuaries (hydrology.ts). Off when missing, so maps made before keep their rivers. */
   lowlandRivers?: boolean;
 }
@@ -181,7 +189,7 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
     const lb = upsampleBase(b.lakes, b.w, b.h, W, H);
     const lakeMask = new Uint8Array(N);
     for (let i = 0; i < N; i++) lakeMask[i] = lb[i] > 0.15 ? 1 : 0;
-    const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, lakeMask, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers });
+    const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, lakeMask, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers, followRain: c.riversFollowRain, noRainRivers: c.noRainRivers });
     return {
       W, H, seq,
       temp: q(tB, 255), moist: q(mB, 255),
@@ -230,7 +238,7 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
   const rock = regionRock(doc.features?.regions, W, H, doc.meta.kmPerPx);
   const volcanic = regionVolcanic(doc.features?.regions, W, H, doc.meta.kmPerPx);
 
-  const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers });
+  const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers, followRain: c.riversFollowRain, noRainRivers: c.noRainRivers });
   return {
     W, H, seq,
     temp: q(tB, 255), moist: q(mB, 255),

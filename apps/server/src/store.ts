@@ -459,6 +459,8 @@ export class ProjectStore {
   async create(o: { name: string; width: number; height: number; kmPerPx: number; seed?: number }): Promise<MapDoc> {
     const id = await this.uniqueId(o.name);
     const doc = createDoc({ id, ...o });
+    // (new maps: rivers need real rain, so dry land has few: ClimateParams.riversFollowRain)
+    doc.meta.climate = { ...(doc.meta.climate ?? {}), riversFollowRain: true };
     await mkdir(this.dir(id), { recursive: true });
     await this.save(doc);
     if (!existsSync(path.join(this.dir(id), "brief.md"))) {

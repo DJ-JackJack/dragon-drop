@@ -180,12 +180,23 @@ export interface HydrologyOptions {
    * oxbow lakes beside them, and widen into an estuary where they meet the sea.
    */
   lowland?: boolean;
+  /** Rivers need real rain (ClimateParams.riversFollowRain): a river must also carry what it would gather in ordinarily rainy country. */
+  followRain?: boolean;
+  /** No rivers from the rain (ClimateParams.noRainRivers): only the sources' water makes rivers. */
+  noRainRivers?: boolean;
 }
+
+/**
+ * The water an ordinarily rainy cell sheds (runoffOf for moderately wet, temperate ground is about 0.7; semi-arid about 0.25): with `followRain`, a
+ * river must carry at least what a catchment of this wetness would, so a dry map's biggest gullies don't count as rivers just for being its biggest.
+ */
+export const RAINY_RUNOFF = 0.35;
 
 export function computeHydrology(h: Float32Array, W: number, H: number, seaLevel: number, opts: HydrologyOptions = {}, flow?: FlowField): Hydrology {
   const N = W * H;
+  const noRain = !!opts.noRainRivers;
   let f = flow;
-  if (!f) {
+  if (!f || noRain) {
     // sources: extra flow at the land cell nearest each point (a source on the sea is ignored)
     let inflow: Map<number, number> | undefined;
     if (opts.inflows?.length) {
@@ -196,13 +207,17 @@ export function computeHydrology(h: Float32Array, W: number, H: number, seaLevel
         if (c >= 0) inflow.set(c, (inflow.get(c) ?? 0) + Math.max(0, s.share) * total);
       }
     }
-    f = computeFlow(h, W, H, seaLevel, opts.runoff, inflow);
+    // (with no rivers from the rain, only the sources' water flows: the rain is left out of the flow, so it makes no river)
+    f = computeFlow(h, W, H, seaLevel, noRain ? new Float32Array(N) : opts.runoff, inflow);
   }
   const scale = (W * H) / (1024 * 1024);
   const density = Math.min(1, Math.max(0, opts.riverDensity ?? 0.5));
   // a river must carry a given share of the map's runoff (as before, a given share of its land), and at least 25 average cells' worth
   const meanRunoff = f.runoffTotal / Math.max(1, f.landCells);
-  const thr = Math.max(25 * meanRunoff, f.runoffTotal * (0.0035 - 0.003 * density));
+  const share = 0.0035 - 0.003 * density;
+  let thr = Math.max(25 * meanRunoff, f.runoffTotal * share);
+  if (opts.followRain) thr = Math.max(thr, 25 * RAINY_RUNOFF, f.landCells * RAINY_RUNOFF * share);
+  if (noRain) thr = 1e-9; // (any water from a source)
 
   // --- lakes: deep enough depressions, opened (no slivers), not tiny
   let lakes: Uint8Array = new Uint8Array(N);

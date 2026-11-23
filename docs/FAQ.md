@@ -69,6 +69,10 @@ Deleted maps are moved, not erased: look in the **Deleted maps** folder inside y
 **A map won't open after an update.**
 A map saved by a newer Dragon Drop can't be opened by an older one: update Dragon Drop. An older map is copied to its `backups` folder before it is changed to the new format, so nothing is lost.
 
+### My map has too many rivers, or I want none
+
+Rivers aren't drawn one by one: they come from the land and the rain, so they can't be deleted like a road. In the Map panel's **Climate**, slide **Rivers** toward few, tick **Dry land has few rivers** (an older map's deserts can look too wet without it; new maps have it on), or tick **No rivers from the rain** for none at all. A river from a river source, or one drawn with the Rivers tool, still flows, so a desert can keep its one great river. The AI assistant can do the same for you.
+
 ## Updates, the phone page and the rest
 
 **How do I update?**

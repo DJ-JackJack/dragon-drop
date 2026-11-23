@@ -808,7 +808,8 @@ export class Hub {
       meta: {
         id, name, kind: "world", width: plan.width, height: plan.height, kmPerPx: parent.meta.kmPerPx / factor,
         seaLevel: parent.meta.seaLevel, seed, createdAt: now, updatedAt: now, style: parent.meta.style,
-        climate: { ...(parent.meta.climate ?? {}), latTop: latAtRow(rect.y), latBot: latAtRow(rect.y + rect.h) },
+        // (rivers need real rain: a dry area made into a map of its own stays as dry as it looks on its world map)
+        climate: { ...(parent.meta.climate ?? {}), latTop: latAtRow(rect.y), latBot: latAtRow(rect.y + rect.h), riversFollowRain: true },
         parent: { id: parent.meta.id, name: parent.meta.name, rect, factor },
         zoom: (parent.meta.zoom ?? 1) * factor,
         ...(parent.meta.grid && { grid: parent.meta.grid }),
