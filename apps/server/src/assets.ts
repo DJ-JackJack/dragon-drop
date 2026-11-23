@@ -52,6 +52,8 @@ interface Entry {
   offset: number;
   size: number;
   encrypted?: boolean;
+  /** what kind of asset it is (core's categoryOf), worked out once when the pack is read */
+  cat?: AssetCategory;
   /** zip files */
   csize?: number;
   method?: number;
@@ -76,6 +78,7 @@ interface CachedIndex {
   entries: [string, number, number][];
 }
 
+const catOf = (e: Entry): AssetCategory => e.cat ?? (e.cat = categoryOf(e.path));
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const MAX_DECODE_PIXELS = 40_000_000;
 const MAX_FOLDER_DEPTH = 12;
@@ -278,7 +281,7 @@ export class AssetLibrary {
 
   private build(kind: PackKind, file: string, name: string, st: { size: number; mtimeMs: number }, entries: Entry[], extra: { formatVersion: number; engine: string }, d: { packJson?: Record<string, unknown>; tags: Map<string, string[]> }): PackIndex {
     const categories: Record<string, number> = {};
-    for (const e of entries) { const c = categoryOf(e.path); categories[c] = (categories[c] ?? 0) + 1; }
+    for (const e of entries) { const c = (e.cat = categoryOf(e.path)); categories[c] = (categories[c] ?? 0) + 1; }
     const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : v != null && typeof v !== "object" ? String(v) : undefined);
     const info: PackInfo = {
       key: "", name: str(d.packJson?.name) ?? name, file, kind, bytes: st.size, mtimeMs: st.mtimeMs, formatVersion: extra.formatVersion, engine: extra.engine,
@@ -384,7 +387,7 @@ export class AssetLibrary {
     const matches: { p: PackIndex; e: Entry; cat: AssetCategory }[] = [];
     for (const p of packs) {
       for (const e of p.entries) {
-        const cat = categoryOf(e.path);
+        const cat = catOf(e);
         if (cat === "data" || (o.cat && cat !== o.cat)) continue;
         if (tokens.length) {
           const hay = `${e.path} ${p.info.name} ${(p.tags.get(e.path.toLowerCase()) ?? []).join(" ")}`.toLowerCase();
@@ -414,7 +417,7 @@ export class AssetLibrary {
     for (const p of this.usablePacks()) {
       for (const e of p.entries) {
         if (!/roof/i.test(e.path)) continue;
-        const cat = categoryOf(e.path);
+        const cat = catOf(e);
         if (cat === "data") continue;
         const it: RoofAsset = { id: assetId(p.info.key, e.path), pack: p.info.key, packName: p.info.name, path: e.path, name: assetLabel(e.path), cat };
         if (roofLookOfAsset(it)) items.push(it);
@@ -432,7 +435,7 @@ export class AssetLibrary {
     const entry = pack.byPath.get(a.path.toLowerCase());
     if (!entry) return null;
     const tags = pack.tags.get(entry.path.toLowerCase());
-    const item: AssetItem = { id: assetId(pack.info.key, entry.path), pack: pack.info.key, packName: pack.info.name, path: entry.path, name: assetLabel(entry.path), cat: categoryOf(entry.path), ...(tags && { tags }) };
+    const item: AssetItem = { id: assetId(pack.info.key, entry.path), pack: pack.info.key, packName: pack.info.name, path: entry.path, name: assetLabel(entry.path), cat: catOf(entry), ...(tags && { tags }) };
     return (await this.withSizes([item]))[0];
   }
 
@@ -623,7 +626,7 @@ export class AssetLibrary {
       if (p.info.kind === "pck") formats.add(`v${p.info.formatVersion} (engine ${p.info.engine})`);
       for (const e of p.entries) {
         const x = (e.path.split(".").pop() ?? "").toLowerCase();
-        if (categoryOf(e.path) === "data") dataTypes[x] = (dataTypes[x] ?? 0) + 1; else ext[x] = (ext[x] ?? 0) + 1;
+        if (catOf(e) === "data") dataTypes[x] = (dataTypes[x] ?? 0) + 1; else ext[x] = (ext[x] ?? 0) + 1;
         const d = e.path.split("/").slice(0, 2).join("/");
         dirs[d] = (dirs[d] ?? 0) + 1;
       }
@@ -651,7 +654,7 @@ export class AssetLibrary {
     L.push("", "SAMPLE FILE PATHS (first 4 per category in 6 packs):");
     for (const p of all.filter((_, i) => i % Math.max(1, Math.floor(this.packs.size / 6)) === 0).slice(0, 6)) {
       L.push(`${p.info.name}:`);
-      for (const c of [...ASSET_CATEGORIES, "data"]) for (const e of p.entries.filter((x) => categoryOf(x.path) === c).slice(0, 4)) L.push(`  [${c}] ${e.path} (${e.size} bytes)`);
+      for (const c of [...ASSET_CATEGORIES, "data"]) for (const e of p.entries.filter((x) => catOf(x) === c).slice(0, 4)) L.push(`  [${c}] ${e.path} (${e.size} bytes)`);
     }
     // the first small data file of each kind, so the formats are known
     const seen = new Set<string>();
@@ -659,7 +662,7 @@ export class AssetLibrary {
     for (const p of all) {
       for (const e of p.entries) {
         const x = (e.path.split(".").pop() ?? "").toLowerCase();
-        if (categoryOf(e.path) !== "data" || seen.has(x) || e.size > 6000 || x === "json" && /^packs\//.test(e.path)) continue;
+        if (catOf(e) !== "data" || seen.has(x) || e.size > 6000 || x === "json" && /^packs\//.test(e.path)) continue;
         seen.add(x);
         const src = await this.source(p).catch(() => null);
         if (!src) continue;

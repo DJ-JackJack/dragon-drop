@@ -52,7 +52,7 @@ export const FORMATS_READ: FormatInfo[] = [
   },
   {
     id: "asset-pictures", name: "Asset pictures", files: ".png, .jpg, .jpeg, .webp (loose in folders)",
-    use: "Objects and floor textures for battlemaps, from folders of pictures. A folder called Floors, Props, Doors and so on says what is inside.",
+    use: "Objects and floor textures for battlemaps, from folders of pictures. The words in folder and file names say what each picture is (Floor Textures, Furniture & Props, WoodenDoors, oak_table.png...).",
     limits: "PNG, JPEG and WebP are used everywhere: in the editor, in previews and in exports. An animated WebP is skipped (only still pictures are drawn), and a picture over 40 million pixels is too big to draw. GIF, BMP, SVG and others are not listed.",
   },
   {

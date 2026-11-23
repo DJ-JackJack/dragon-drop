@@ -80,7 +80,7 @@ export function PackFloors({ meta, current, onChosen, onBrowse }: { meta: MapMet
           );
         })}
       </div>
-      {!items.length && !busy && <p className="muted">{q ? `No floor textures match "${q}".` : "Your asset packs have no floor textures (pictures in a folder called Floors, Tiles, Ground or Terrain)."}</p>}
+      {!items.length && !busy && <p className="muted">{q ? `No floor textures match "${q}".` : "No floor textures were found in your asset packs. Dragon Drop knows a floor texture by the words in its folder or file name (floor, ground, terrain, tiles, textures, grass, cobblestone...)."}</p>}
       {items.length < total && <button className="ghost pack-floors-more" disabled={busy} onClick={() => void load(items.length)} data-testid="pack-floors-more">{busy ? "Loading…" : `More (${(total - items.length).toLocaleString()} left)`}</button>}
     </div>
   );

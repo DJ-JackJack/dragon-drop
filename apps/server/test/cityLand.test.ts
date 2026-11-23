@@ -73,7 +73,12 @@ describe("a city's land", () => {
     expect(g.max).toBeGreaterThan(29);
     const after = renderCity(doc, { maxSize: 400 }).img;
     // the lit side (top left of the hill) is brighter than the far side (bottom right)
-    const lum = (x: number, y: number) => { const o = (y * after.w + x) * 4; return after.data[o] + after.data[o + 1] + after.data[o + 2]; };
+    // (the mean of a small patch: the ground's texture noise is seeded from the map's random id, and a single pixel could land on a dark speck; found 2026-11-23)
+    const lum = (x: number, y: number) => {
+      let t = 0;
+      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const o = ((y + dy) * after.w + x + dx) * 4; t += after.data[o] + after.data[o + 1] + after.data[o + 2]; }
+      return t / 81;
+    };
     expect(lum(150, 100)).toBeGreaterThan(lum(250, 200) + 30);
     // far from the hill nothing changed
     const far = (5 * after.w + 5) * 4;

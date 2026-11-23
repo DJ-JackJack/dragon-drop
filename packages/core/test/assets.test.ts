@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUSTOM_MATERIAL_BASE, MapSession, assetId, assetLabel, categoryOf, createBattleDoc, defaultTileSquares, drawBattleProps, memoryAccess, paintFloor,
+  CUSTOM_MATERIAL_BASE, MapSession, assetId, assetLabel, categoryOf, kindOfName, nameWords, createBattleDoc, defaultTileSquares, drawBattleProps, memoryAccess, paintFloor,
   PCK_MAGIC, imageSize, isPckSignature, parseAssetId, pngSize, readPck, readPckFile, renderBattle, renderBattleFloor, writePck, type SpriteData, type TileData,
 } from "../src/index.ts";
 
@@ -74,11 +74,114 @@ describe("asset kinds from folder names (loose folders and zip files)", () => {
     expect(categoryOf("Roofs/thatch.png")).toBe("roofs");
     expect(categoryOf("Lights/torch.png")).toBe("lights");
     expect(categoryOf("tiles/cobble.png")).toBe("terrain");
-    expect(categoryOf("barrel.png")).toBe("other");
-    expect(categoryOf("Stuff/barrel.png")).toBe("other");
+    expect(categoryOf("barrel.png")).toBe("objects"); // (the file name's words, when no folder says)
+    expect(categoryOf("Stuff/barrel.png")).toBe("objects");
+    expect(categoryOf("Stuff/asset_0001.png")).toBe("other"); // nothing says what it is
     expect(categoryOf("Floors/readme.txt")).toBe("data"); // not a picture
     expect(categoryOf("textures/objects/a.png")).toBe("objects"); // the pack-file layout still works
     expect(categoryOf("textures/floors/a.png")).toBe("terrain");
+  });
+});
+
+// No asset packs ship with Dragon Drop: each buyer brings a library laid out their own way. These are made-up libraries in the common layouts.
+describe("asset kinds in any library", () => {
+  const kinds = (paths: string[]) => Object.fromEntries(paths.map((p) => [p, categoryOf(p)]));
+
+  it("reads the words in folder names, not only names that are exactly a kind", () => {
+    expect(kinds([
+      "Battlemap Assets/Floor Textures/Rough Stone 01.png",
+      "Battlemap Assets/Stone_Floors/slab-a.jpg",
+      "Battlemap Assets/Furniture & Props/Tavern/stool.png",
+      "Battlemap Assets/WoodenDoors/door_oak_open.png",
+      "Battlemap Assets/Doors and Windows/arched.png",
+      "Battlemap Assets/Roof Tiles/red.png",
+      "Battlemap Assets/Wall Sections/stone_corner.png",
+      "Battlemap Assets/Roads & Paths/dirt_curve.png",
+      "Battlemap Assets/Light Sources/glow_warm.png",
+      "Battlemap Assets/Trees/oak_03.png",
+      "Battlemap Assets/Bushes/b1.png",
+      "Battlemap Assets/Seamless/grass_01.jpg",
+      "Battlemap Assets/Tilesets/Marble/m2.webp",
+    ])).toEqual({
+      "Battlemap Assets/Floor Textures/Rough Stone 01.png": "terrain",
+      "Battlemap Assets/Stone_Floors/slab-a.jpg": "terrain",
+      "Battlemap Assets/Furniture & Props/Tavern/stool.png": "objects", // (Tavern says nothing: the folder above does)
+      "Battlemap Assets/WoodenDoors/door_oak_open.png": "portals",
+      "Battlemap Assets/Doors and Windows/arched.png": "portals",
+      "Battlemap Assets/Roof Tiles/red.png": "roofs", // (roof outweighs tiles)
+      "Battlemap Assets/Wall Sections/stone_corner.png": "walls",
+      "Battlemap Assets/Roads & Paths/dirt_curve.png": "paths",
+      "Battlemap Assets/Light Sources/glow_warm.png": "lights",
+      "Battlemap Assets/Trees/oak_03.png": "objects",
+      "Battlemap Assets/Bushes/b1.png": "objects",
+      "Battlemap Assets/Seamless/grass_01.jpg": "terrain",
+      "Battlemap Assets/Tilesets/Marble/m2.webp": "terrain",
+    });
+  });
+
+  it("reads the file name when no folder says, and a Textures folder means floors when nothing else does", () => {
+    expect(kinds([
+      "My Pack/WoodFloor_Planks_02.png",
+      "My Pack/table_round_large.png",
+      "My Pack/portcullis.png",
+      "My Pack/Textures/rough_01.jpg",
+      "My Pack/Textures/Wall Textures/brick.jpg",
+      "My Pack/misc/x77.png",
+    ])).toEqual({
+      "My Pack/WoodFloor_Planks_02.png": "terrain",
+      "My Pack/table_round_large.png": "objects",
+      "My Pack/portcullis.png": "portals",
+      "My Pack/Textures/rough_01.jpg": "terrain",
+      "My Pack/Textures/Wall Textures/brick.jpg": "walls",
+      "My Pack/misc/x77.png": "other",
+    });
+  });
+
+  it("follows a pack file's own layout, with or without its packs/<id>/ folder, before any words", () => {
+    expect(kinds([
+      "packs/AB12CD34/textures/objects/terrain/moss_patch.png", // a placeable decal in a folder called terrain: still an object
+      "packs/AB12CD34/textures/objects/walls/shelf_wall.png",
+      "packs/AB12CD34/textures/terrain/stone_floor_terrain/s1.png",
+      "packs/AB12CD34/textures/tilesets/simple/Wood_Floor_Tilesets/oak.webp",
+      "packs/AB12CD34/textures/materials/lava_tile.png",
+      "packs/AB12CD34/textures/portals/doors/d.png",
+      "textures/objects/Doors/door_prop.png",
+    ])).toEqual({
+      "packs/AB12CD34/textures/objects/terrain/moss_patch.png": "objects",
+      "packs/AB12CD34/textures/objects/walls/shelf_wall.png": "objects",
+      "packs/AB12CD34/textures/terrain/stone_floor_terrain/s1.png": "terrain",
+      "packs/AB12CD34/textures/tilesets/simple/Wood_Floor_Tilesets/oak.webp": "terrain",
+      "packs/AB12CD34/textures/materials/lava_tile.png": "terrain",
+      "packs/AB12CD34/textures/portals/doors/d.png": "portals",
+      "textures/objects/Doors/door_prop.png": "objects",
+    });
+  });
+
+  it("never offers a pack's own thumbnails, its cover picture, or a Mac's hidden copies", () => {
+    expect(kinds([
+      "packs/AB12CD34/thumbnails/00128efa0baaa5e10d27aed396ee92a1.png",
+      "packs/AB12CD34/preview.png",
+      "Forest Pack/Thumbnails/oak.png",
+      "__MACOSX/Forest Pack/._oak.png",
+      "Forest Pack/Trees/._oak.png",
+      "Forest Pack/Trees/oak.png",
+    ])).toEqual({
+      "packs/AB12CD34/thumbnails/00128efa0baaa5e10d27aed396ee92a1.png": "data",
+      "packs/AB12CD34/preview.png": "data",
+      "Forest Pack/Thumbnails/oak.png": "data",
+      "__MACOSX/Forest Pack/._oak.png": "data",
+      "Forest Pack/Trees/._oak.png": "data",
+      "Forest Pack/Trees/oak.png": "objects",
+    });
+  });
+
+  it("splits names into words the ways people write them", () => {
+    expect(nameWords("StoneFloor_Tiles-02")).toEqual(["Stone", "Floor", "Tiles"]);
+    expect(nameWords("HTMLDoors and windows")).toEqual(["HTML", "Doors", "and", "windows"]);
+    expect(kindOfName("Shelves")).toBe("objects");
+    expect(kindOfName("Wall Decorations")).toBeUndefined(); // a tie: the folder above decides
+    expect(kindOfName("textures")).toBeUndefined(); // a hint, not enough alone
+    expect(kindOfName("constructor")).toBeUndefined();
   });
 });
 
