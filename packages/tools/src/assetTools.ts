@@ -16,21 +16,23 @@ export const ASSET_TOOLS = [
     name: "search_assets",
     description:
       "Search the user's asset library (objects like furniture and trees, terrain textures for floors, walls, paths...; it can hold folders of pictures, zip files and asset packs). Results give an id to use with add_props or add_floor_texture, " +
-      "the pack, the image size and its size in grid squares (pixels / 256). Use view_assets to see what they look like. The search matches names, pack names and tags.",
+      "the pack, the image size and its size in grid squares (pixels / 256). Use view_assets to see what they look like. The search matches names, pack names and tags (the packs' own, and words given with tag_assets). " +
+      "only: favourites lists the pictures the DM starred (prefer those when they fit), recent the ones used most recently; a starred result says favourite: true.",
     schema: z.object({
       query: z.string().max(100).optional().describe("Words to look for, e.g. 'oak table' or 'torch'. All words must match"),
       category: z.enum(["objects", "terrain", "walls", "paths", "portals", "roofs", "patterns", "lights", "other"]).optional().describe("objects are things to place; terrain are floor textures"),
       pack: z.string().optional().describe("A pack key from an earlier result"),
       limit: z.number().int().min(1).max(40).optional().describe("Default 20"),
       offset: z.number().int().min(0).optional(),
+      only: z.enum(["favourites", "recent"]).optional().describe("Only the DM's starred pictures, or the ones used most recently"),
     }),
     async run(ctx, i) {
       if (!ctx.assets) return fail(NO_ASSETS);
       const st = ctx.assets.status();
-      const r = await ctx.assets.search({ q: i.query, cat: i.category, pack: i.pack, limit: i.limit ?? 20, offset: i.offset });
+      const r = await ctx.assets.search({ q: i.query, cat: i.category, pack: i.pack, limit: i.limit ?? 20, offset: i.offset, ...(i.only && { only: i.only }) });
       return json({
         total: r.total, shown: r.items.length, ...(st.scanning && { note: `Still scanning the packs (${st.scanned}/${st.total}); results may be incomplete.` }),
-        items: r.items.map((a) => ({ id: a.id, name: a.name, category: a.cat, pack: a.packName, ...(a.w && { px: [a.w, a.h], squares: [squaresOf(a.w), squaresOf(a.h)] }), ...(a.tags && { tags: a.tags }) })),
+        items: r.items.map((a) => ({ id: a.id, name: a.name, category: a.cat, pack: a.packName, ...(a.w && { px: [a.w, a.h], squares: [squaresOf(a.w), squaresOf(a.h)] }), ...(a.tags && { tags: a.tags }), ...(a.favourite && { favourite: true }) })),
       });
     },
   }),
@@ -65,6 +67,25 @@ export const ASSET_TOOLS = [
       const display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
       const note = i.ids.map((id, n) => `${n + 1}: ${id}`).join("\n") + (missing.length ? `\n(couldn't show: ${missing.join(", ")})` : "");
       return { content: [{ type: "text", text: note }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
+    },
+  }),
+
+  define({
+    name: "tag_assets",
+    description:
+      "Give pictures of the asset library words for what they show (look at them first with view_assets): later searches, the DM's and yours, find them by these words. " +
+      "Use it when a pack's names say little (asset_0001.png) or leave out what matters (a colour, a material, what the thing is): e.g. ['round table', 'oak', 'tavern']. " +
+      "Words are added to any a picture has; they stay on the DM's PC, never in the packs. Up to 60 pictures a call, up to 12 words each.",
+    schema: z.object({
+      tags: z.array(z.object({ id: z.string().describe("An id from search_assets"), tags: z.array(z.string().min(1).max(40)).min(1).max(12) })).min(1).max(60),
+    }),
+    async run(ctx, i) {
+      if (!ctx.assets?.tag) return fail(NO_ASSETS);
+      const missing: string[] = [];
+      for (const t of i.tags) if (!(await ctx.assets.info(t.id))) missing.push(t.id);
+      const ok = i.tags.filter((t) => !missing.includes(t.id));
+      const n = ok.length ? await ctx.assets.tag(ok) : 0;
+      return json({ tagged: n, ...(missing.length && { not_found: missing, note: "These ids aren't in the library: use ids from search_assets." }) });
     },
   }),
 

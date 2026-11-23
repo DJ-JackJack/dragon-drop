@@ -63,4 +63,6 @@ export interface AssetItem {
   tags?: string[];
   w?: number;
   h?: number;
+  /** Starred by the person (their favourites, in every picker). */
+  favourite?: boolean;
 }

@@ -4,7 +4,7 @@
  */
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { AssetItem } from "@mapmaker/core";
-import { type AssetPack, type AssetStatus, assetUrl, fetchAssetStatus, fetchAssets, fetchPacks } from "./assetsApi.ts";
+import { type AssetPack, type AssetStatus, assetUrl, fetchAssetStatus, fetchAssets, fetchPacks, markAssetUsed, starAsset } from "./assetsApi.ts";
 
 const PAGE = 48;
 
@@ -37,6 +37,10 @@ export function PackGrid(p: PackGridProps) {
   const [items, setItems] = useState<AssetItem[]>([]);
   const [total, setTotal] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** All the pictures, only the starred ones, or the recently used ones (newest first). */
+  const [only, setOnly] = useState<"" | "favourites" | "recent">("");
+  /** Stars changed here since the list was fetched. */
+  const [stars, setStars] = useState<Record<string, boolean>>({});
   const seq = useRef(0);
 
   useEffect(() => {
@@ -54,7 +58,7 @@ export function PackGrid(p: PackGridProps) {
     const mine = ++seq.current;
     setBusy(true);
     try {
-      const r = await fetchAssets({ cat, pack, q, offset, limit: PAGE });
+      const r = await fetchAssets({ cat, pack, q, offset, limit: PAGE, ...(only && { only }) });
       if (mine !== seq.current) return;
       setTotal(r.total);
       setItems((prev) => (offset === 0 ? r.items : [...prev, ...r.items]));
@@ -62,7 +66,10 @@ export function PackGrid(p: PackGridProps) {
       if (mine === seq.current) setBusy(false);
     }
   };
-  useEffect(() => { if (status?.configured) void load(0); }, [status?.configured, cat, pack, q]);
+  useEffect(() => { if (status?.configured) void load(0); }, [status?.configured, cat, pack, q, only]);
+  const starred = (it: AssetItem) => stars[it.id] ?? !!it.favourite;
+  const toggleStar = (it: AssetItem) => { const on = !starred(it); setStars((s) => ({ ...s, [it.id]: on })); void starAsset(it.id, on); };
+  const choose = (it: AssetItem) => { void markAssetUsed(it.id); p.onChoose(it); };
 
   if (!status) return null;
   if (!status.configured) return <p className="muted pack-floors-note" data-testid={`${p.testId}-none`}>{p.noFolder}</p>;
@@ -80,6 +87,11 @@ export function PackGrid(p: PackGridProps) {
           {p.kinds.map((k) => <button key={k.cat} className={k.cat === cat ? "on" : ""} onClick={() => setCat(k.cat)} data-testid={`${p.testId}-kind-${k.cat}`}>{k.label}</button>)}
         </div>
       )}
+      <div className="seg pack-only" role="group" aria-label="Which of them" data-testid={`${p.testId}-only`}>
+        {([["", "All"], ["favourites", "★ Starred"], ["recent", "Recent"]] as const).map(([id, label]) => (
+          <button key={id || "all"} className={only === id ? "on" : ""} onClick={() => setOnly(id)} title={id === "favourites" ? "Only the pictures you starred (right-click a picture to star it)" : id === "recent" ? "The pictures you used most recently" : "Every picture"} data-testid={`${p.testId}-only-${id || "all"}`}>{label}</button>
+        ))}
+      </div>
       <div className="pack-floors-find">
         <input placeholder={p.placeholder} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} data-testid={`${p.testId}-search`} autoFocus />
         {withKind.length > 1 && (
@@ -94,13 +106,15 @@ export function PackGrid(p: PackGridProps) {
         {items.map((it) => {
           const st = p.stateOf?.(it) ?? {};
           return (
-            <button key={it.id} className={`swatch tex${st.on ? " on" : ""}${st.added ? " added" : ""}`}
-              style={{ backgroundImage: `url(${assetUrl(it.id, 64)})` }} onClick={() => p.onChoose(it)}
-              title={`${it.name} (${it.packName})${st.note ? `: ${st.note}` : ""}`} aria-label={`${it.name}, from ${it.packName}`} data-testid={p.item} />
+            <button key={it.id} className={`swatch tex${st.on ? " on" : ""}${st.added ? " added" : ""}${starred(it) ? " starred" : ""}`}
+              style={{ backgroundImage: `url(${assetUrl(it.id, 64)})` }} onClick={() => choose(it)} onContextMenu={(e) => { e.preventDefault(); toggleStar(it); }}
+              title={`${it.name} (${it.packName})${st.note ? `: ${st.note}` : ""}${it.tags?.length ? `
+${it.tags.join(", ")}` : ""}
+Right-click to ${starred(it) ? "take its star away" : "star it"}`} aria-label={`${it.name}, from ${it.packName}${starred(it) ? ", starred" : ""}`} data-testid={p.item} />
           );
         })}
       </div>
-      {!items.length && !busy && <p className="muted">{q ? `Nothing here matches "${q}".` : p.noneFound}</p>}
+      {!items.length && !busy && <p className="muted">{only === "favourites" ? "No starred pictures of this kind yet: right-click a picture to star it." : only === "recent" ? "None of this kind used yet." : q ? `Nothing here matches "${q}".` : p.noneFound}</p>}
       {items.length < total && <button className="ghost pack-floors-more" disabled={busy} onClick={() => void load(items.length)} data-testid={`${p.testId}-more`}>{busy ? "Loading…" : `More (${(total - items.length).toLocaleString()} left)`}</button>}
     </div>
   );

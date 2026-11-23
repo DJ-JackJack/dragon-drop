@@ -1624,6 +1624,7 @@ export class Hub {
         search: async (o) => { const r = self.assets!.list(o); return { total: r.total, items: await self.assets!.withSizes(r.items) }; },
         thumbnail: async (aid, size) => (await self.assets!.thumbnail(aid, size))?.bytes ?? null,
         info: (aid) => self.assets!.info(aid),
+        tag: (list) => self.assets!.addTags(list),
       } : undefined,
       createBattle: async (o) => {
         const info = await self.createBattle(o);

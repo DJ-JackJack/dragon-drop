@@ -207,6 +207,18 @@ export function createAppServer(cfg: Config, hub: Hub) {
  * Claude Code's hooks (installed by the desktop app) post their JSON here so the editor knows whether Claude is idle, working
  * or waiting at a question. The answer is empty on purpose: a hook's output can be fed back to Claude as text.
  */
+/** A request's body, at most `max` bytes (a bigger one throws). */
+async function readBody(req: IncomingMessage, max: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > max) throw new Error("Too big.");
+    chunks.push(c as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function handleClaudeHook(hub: Hub, req: IncomingMessage, res: ServerResponse) {
   if (req.method !== "POST") return void res.writeHead(405, { allow: "POST" }).end();
   const chunks: Buffer[] = [];
@@ -302,6 +314,7 @@ async function handleAssets(hub: Hub, url: URL, req: IncomingMessage, res: Serve
     const r = lib.list({
       pack: url.searchParams.get("pack") || undefined, cat: url.searchParams.get("cat") || undefined, q: url.searchParams.get("q") || undefined,
       offset: Number(url.searchParams.get("offset") ?? 0), limit: Number(url.searchParams.get("limit") ?? 60),
+      only: url.searchParams.get("only") === "favourites" ? "favourites" : url.searchParams.get("only") === "recent" ? "recent" : undefined,
     });
     return sendJson(res, { total: r.total, items: await lib.withSizes(r.items) });
   }
@@ -320,6 +333,18 @@ async function handleAssets(hub: Hub, url: URL, req: IncomingMessage, res: Serve
   if (route === "report") {
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-cache" }).end(await lib.report());
     return;
+  }
+  // the person's notes on pictures: a star, a picture just used, words for a picture
+  if ((route === "favourite" || route === "used" || route === "tags") && req.method === "POST") {
+    let body: { id?: unknown; on?: unknown; tags?: unknown; remove?: unknown };
+    try { body = JSON.parse((await readBody(req, 64 * 1024)).toString("utf8")) as typeof body; } catch { return void res.writeHead(400, { "content-type": "text/plain" }).end("Bad request."); }
+    const id = typeof body.id === "string" ? body.id : "";
+    if (!id) return void res.writeHead(400, { "content-type": "text/plain" }).end("No picture.");
+    if (route === "favourite") await lib.setFavourite(id, body.on !== false);
+    else if (route === "used") await lib.markUsed(id);
+    else if (body.remove === true) await lib.removeTags(id, Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : undefined);
+    else await lib.addTags([{ id, tags: Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : [] }]);
+    return sendJson(res, { ok: true });
   }
   if (route === "rescan" && req.method === "POST") {
     void lib.scan().catch(() => {});

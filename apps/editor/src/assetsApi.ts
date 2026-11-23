@@ -35,10 +35,18 @@ export async function fetchPacks(): Promise<AssetPack[]> {
   return (await (await fetch("/api/assets/packs")).json()) as AssetPack[];
 }
 
-export async function fetchAssets(o: { pack?: string; cat?: string; q?: string; offset?: number; limit?: number }): Promise<{ total: number; items: AssetItem[] }> {
+export async function fetchAssets(o: { pack?: string; cat?: string; q?: string; offset?: number; limit?: number; only?: "favourites" | "recent" }): Promise<{ total: number; items: AssetItem[] }> {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== "") p.set(k, String(v));
   return (await fetch(`/api/assets/list?${p}`)).json();
 }
+
+const post = (route: string, body: unknown) => fetch(`/api/assets/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(() => undefined).catch(() => undefined);
+/** Star a picture (a favourite in every picker), or take its star away. */
+export const starAsset = (id: string, on: boolean) => post("favourite", { id, on });
+/** A picture was just chosen: it goes to the front of the recent ones. */
+export const markAssetUsed = (id: string) => post("used", { id });
+/** Words for a picture (what it shows), searched with its name; or take them away. */
+export const tagAsset = (id: string, tags: string[], remove = false) => post("tags", { id, tags, ...(remove && { remove: true }) });
 
 export const assetUrl = (id: string, thumb?: number) => `/api/assets/file?id=${encodeURIComponent(id)}${thumb ? `&thumb=${thumb}` : ""}`;

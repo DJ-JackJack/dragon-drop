@@ -124,6 +124,14 @@ export function pictureAskMessage(o: { name: string; text: string }): string {
   return `[Picture] About the reference picture "${oneLine(o.name, 120)}" in Dragon Drop, look at it with view_reference first. ${oneLine(o.text, 600)}`;
 }
 
+/**
+ * The one-line message the Assets tab's "Ask Claude to tag this pack" button types into Claude Code: which pack (its key, for search_assets) and how
+ * to go about it. One line, no control characters.
+ */
+export function tagPackMessage(o: { pack: string; key: string; count: number }): string {
+  return `[Assets] Please give the pictures of the pack "${oneLine(o.pack, 120)}" in my asset library words for what each shows (${o.count} pictures): search_assets with pack ${oneLine(o.key, 80)}, look at them with view_assets 12 at a time, and tag_assets what you see (the thing, its material, colour, mood). Only words for what is in the pictures.`;
+}
+
 /** The one-line message typed into Claude Code. `since` is the last change Claude has already been told about. */
 export function assistMessage(o: { since: number; latest: number; labels: string[]; manual?: boolean }): string {
   const shown = o.labels.slice(-6).map((l) => oneLine(l));

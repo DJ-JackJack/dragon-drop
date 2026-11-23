@@ -505,7 +505,7 @@ export function App() {
             </div>
           </section>
                 </div>
-                {tabNow === "assets" && isBattle && <AssetPanel meta={s.meta} ui={bui} onUi={onBui} desktop={!!desktop} focus={assetFocus} />}
+                {tabNow === "assets" && isBattle && <AssetPanel meta={s.meta} ui={bui} onUi={onBui} desktop={!!desktop} focus={assetFocus} {...(desktop && { onAskTags: (pack: string, key: string, count: number) => assist.askTags(pack, key, count) })} />}
               </div>
             </>
           )}

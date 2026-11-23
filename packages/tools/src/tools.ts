@@ -43,9 +43,11 @@ export interface ToolContext {
   /** Optional: the user's asset library (present when a folder is set). */
   assets?: {
     status(): { scanning: boolean; scanned: number; total: number; usablePacks: number; files: number };
-    search(o: { q?: string; cat?: string; pack?: string; offset?: number; limit?: number }): Promise<{ total: number; items: AssetItem[] }>;
+    search(o: { q?: string; cat?: string; pack?: string; offset?: number; limit?: number; only?: "favourites" | "recent" }): Promise<{ total: number; items: AssetItem[] }>;
     thumbnail(id: string, size: number): Promise<Uint8Array | null>;
     info(id: string): Promise<AssetItem | null>;
+    /** Optional: give pictures words (what they show), searched with their names; returns how many got words. */
+    tag?(list: { id: string; tags: string[] }[]): Promise<number>;
   };
   /** Optional: the roof textures of the asset packs by roof look (null without an asset library): city buildings are drawn from these in preference to drawing a roof. */
   roofPools?(): RoofPools | null;

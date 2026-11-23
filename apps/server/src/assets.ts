@@ -81,6 +81,8 @@ interface CachedIndex {
 const catOf = (e: Entry): AssetCategory => e.cat ?? (e.cat = categoryOf(e.path));
 const slug = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const MAX_DECODE_PIXELS = 40_000_000;
+/** How many recently used pictures are remembered. */
+const RECENT_KEPT = 48;
 /** At most this many pictures without names are looked at after one scan (the rest after the next: what was found is remembered). */
 const MAX_LOOKS = 50_000;
 /** Raise when core pictureKindHint judges differently, so every picture is looked at again. */
@@ -204,6 +206,7 @@ export class AssetLibrary {
 
   async scan(): Promise<void> {
     if (this.scanning) return;
+    await this.loadNotes();
     this.scanning = true;
     this.errors = [];
     this.scanned = 0;
@@ -460,28 +463,123 @@ export class AssetLibrary {
     return [...this.packs.values()].map((p) => p.info).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  list(o: { pack?: string; cat?: string; q?: string; offset?: number; limit?: number }): { total: number; items: AssetItem[] } {
+  /**
+   * The pictures of the usable packs, filtered by pack, kind and search words (in the path, the pack's name, the pack's own tags and the person's or
+   * Claude's tags), or only the starred ones or the recently used ones (`only`: the recent ones newest first).
+   */
+  list(o: { pack?: string; cat?: string; q?: string; offset?: number; limit?: number; only?: "favourites" | "recent" }): { total: number; items: AssetItem[] } {
     const tokens = (o.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
     const packs = o.pack ? this.usablePacks().filter((p) => p.info.key === o.pack) : this.usablePacks();
+    const notes = this.notes;
+    const onlyIds = o.only === "favourites" ? notes?.favourites ?? new Set<string>() : o.only === "recent" ? new Set(notes?.recent ?? []) : null;
+    const tagsOf = (p: PackIndex, e: Entry) => {
+      const own = p.tags.get(e.path.toLowerCase()), mine = notes?.tagsByPack.get(p.info.key)?.get(e.path.toLowerCase());
+      return own && mine ? [...new Set([...own, ...mine])] : own ?? mine;
+    };
     const matches: { p: PackIndex; e: Entry; cat: AssetCategory }[] = [];
     for (const p of packs) {
+      if (onlyIds && ![...onlyIds].some((id) => id.startsWith(`${p.info.key}:`))) continue;
       for (const e of p.entries) {
         const cat = catOf(e);
         if (cat === "data" || (o.cat && cat !== o.cat)) continue;
+        if (onlyIds && !onlyIds.has(assetId(p.info.key, e.path))) continue;
         if (tokens.length) {
-          const hay = `${e.path} ${p.info.name} ${(p.tags.get(e.path.toLowerCase()) ?? []).join(" ")}`.toLowerCase();
+          const hay = `${e.path} ${p.info.name} ${(tagsOf(p, e) ?? []).join(" ")}`.toLowerCase();
           if (!tokens.every((t) => hay.includes(t))) continue;
         }
         matches.push({ p, e, cat });
       }
     }
-    matches.sort((a, b) => a.e.path.localeCompare(b.e.path, undefined, { numeric: true }) || a.p.info.name.localeCompare(b.p.info.name));
+    if (o.only === "recent") {
+      const order = new Map((notes?.recent ?? []).map((id, i) => [id, i]));
+      matches.sort((a, b) => (order.get(assetId(a.p.info.key, a.e.path)) ?? 0) - (order.get(assetId(b.p.info.key, b.e.path)) ?? 0));
+    } else matches.sort((a, b) => a.e.path.localeCompare(b.e.path, undefined, { numeric: true }) || a.p.info.name.localeCompare(b.p.info.name));
     const offset = Math.max(0, o.offset ?? 0), limit = Math.min(200, Math.max(1, o.limit ?? 60));
-    const items: AssetItem[] = matches.slice(offset, offset + limit).map(({ p, e, cat }) => ({
-      id: assetId(p.info.key, e.path), pack: p.info.key, packName: p.info.name, path: e.path, name: assetLabel(e.path), cat,
-      ...(p.tags.get(e.path.toLowerCase()) && { tags: p.tags.get(e.path.toLowerCase()) }),
-    }));
+    const items: AssetItem[] = matches.slice(offset, offset + limit).map(({ p, e, cat }) => {
+      const id = assetId(p.info.key, e.path), tags = tagsOf(p, e);
+      return { id, pack: p.info.key, packName: p.info.name, path: e.path, name: assetLabel(e.path), cat, ...(tags && { tags }), ...(notes?.favourites.has(id) && { favourite: true }) };
+    });
     return { total: matches.length, items };
+  }
+
+  // ---------------------------------------------------------------- the person's own notes on pictures
+  /**
+   * Starred pictures (favourites), the ones used most recently, and tags the person or Claude gave pictures whose names say too little. Kept in the
+   * cache folder (asset-notes.json), never in the packs, and shared by every picker and by Claude's search.
+   */
+  private notes: { favourites: Set<string>; recent: string[]; tags: Map<string, string[]>; tagsByPack: Map<string, Map<string, string[]>> } | null = null;
+  private notesFile() { return path.join(this.cacheDir, "asset-notes.json"); }
+
+  async loadNotes() {
+    if (this.notes) return this.notes;
+    let j: { favourites?: unknown; recent?: unknown; tags?: unknown } = {};
+    try { j = JSON.parse(await readFile(this.notesFile(), "utf8")) as typeof j; } catch { /* none yet */ }
+    const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+    const tags = new Map<string, string[]>();
+    if (j.tags && typeof j.tags === "object") for (const [id, t] of Object.entries(j.tags as Record<string, unknown>)) { const list = strings(t); if (list.length) tags.set(id, list); }
+    this.notes = { favourites: new Set(strings(j.favourites)), recent: strings(j.recent).slice(0, RECENT_KEPT), tags, tagsByPack: new Map() };
+    this.indexTags();
+    return this.notes;
+  }
+
+  private indexTags() {
+    const n = this.notes!;
+    n.tagsByPack = new Map();
+    for (const [id, t] of n.tags) {
+      const a = parseAssetId(id);
+      if (!a) continue;
+      if (!n.tagsByPack.has(a.pack)) n.tagsByPack.set(a.pack, new Map());
+      n.tagsByPack.get(a.pack)!.set(a.path.toLowerCase(), t);
+    }
+  }
+
+  private async saveNotes() {
+    const n = this.notes!;
+    const f = this.notesFile(), tmp = `${f}.${process.pid}.tmp`;
+    try {
+      await mkdir(this.cacheDir, { recursive: true });
+      await writeFile(tmp, JSON.stringify({ v: 1, favourites: [...n.favourites], recent: n.recent, tags: Object.fromEntries(n.tags) }));
+      await rename(tmp, f);
+    } catch { /* kept in memory until the next save */ }
+  }
+
+  /** Star a picture, or take its star away. */
+  async setFavourite(id: string, on: boolean) {
+    const n = await this.loadNotes();
+    if (on) n.favourites.add(id); else n.favourites.delete(id);
+    await this.saveNotes();
+  }
+
+  /** A picture was just used (chosen in a picker): it goes to the front of the recent ones. */
+  async markUsed(id: string) {
+    const n = await this.loadNotes();
+    n.recent = [id, ...n.recent.filter((x) => x !== id)].slice(0, RECENT_KEPT);
+    await this.saveNotes();
+  }
+
+  /** Words for pictures (what each shows), added to any it has: they are searched with its name. Returns how many pictures got words. */
+  async addTags(list: { id: string; tags: string[] }[]): Promise<number> {
+    const n = await this.loadNotes();
+    let done = 0;
+    for (const { id, tags } of list) {
+      if (!parseAssetId(id)) continue;
+      const clean = tags.map((t) => t.toLowerCase().replace(/[^\p{L}\p{N} '-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 40)).filter(Boolean);
+      if (!clean.length) continue;
+      n.tags.set(id, [...new Set([...(n.tags.get(id) ?? []), ...clean])].slice(0, 24));
+      done++;
+    }
+    this.indexTags();
+    await this.saveNotes();
+    return done;
+  }
+
+  /** Take a picture's words away (all of them, or the ones listed). */
+  async removeTags(id: string, tags?: string[]) {
+    const n = await this.loadNotes();
+    if (!tags) n.tags.delete(id);
+    else { const left = (n.tags.get(id) ?? []).filter((t) => !tags.includes(t)); if (left.length) n.tags.set(id, left); else n.tags.delete(id); }
+    this.indexTags();
+    await this.saveNotes();
   }
 
   private roofCache: { scan: string | null; items: RoofAsset[] } | null = null;
@@ -514,7 +612,9 @@ export class AssetLibrary {
     const entry = pack.byPath.get(a.path.toLowerCase());
     if (!entry) return null;
     const tags = pack.tags.get(entry.path.toLowerCase());
-    const item: AssetItem = { id: assetId(pack.info.key, entry.path), pack: pack.info.key, packName: pack.info.name, path: entry.path, name: assetLabel(entry.path), cat: catOf(entry), ...(tags && { tags }) };
+    const id2 = assetId(pack.info.key, entry.path), mine = this.notes?.tags.get(id2);
+    const all = tags && mine ? [...new Set([...tags, ...mine])] : tags ?? mine;
+    const item: AssetItem = { id: id2, pack: pack.info.key, packName: pack.info.name, path: entry.path, name: assetLabel(entry.path), cat: catOf(entry), ...(all && { tags: all }), ...(this.notes?.favourites.has(id2) && { favourite: true }) };
     return (await this.withSizes([item]))[0];
   }
 

@@ -911,6 +911,12 @@ try {
     if (await page.locator('[data-testid="pack-floor"].added').count() !== 1) fail("the floor picker doesn't mark the pack texture already on this map");
     await page.getByTestId("pack-floors-search").fill("cobb");
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-floor"]').length === 1, null, { timeout: 10000 });
+    // star it (right-click), then find it again among the starred
+    await page.getByTestId("pack-floor").click({ button: "right" });
+    await page.locator('[data-testid="pack-floor"].starred').waitFor({ timeout: 5000 });
+    await page.getByTestId("pack-floors-search").fill("");
+    await page.getByTestId("pack-floors-only-favourites").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-floor"]').length === 1, null, { timeout: 10000 });
     await page.getByTestId("pack-floor").click();
     await page.getByTestId("history").getByText("Add floor texture Cobbles").waitFor({ timeout: 10000 });
     if (await page.getByTestId("pack-floors").count()) fail("the floor picker stayed open after a pack texture was chosen");
@@ -931,6 +937,10 @@ try {
     await page.getByTestId("assets-cat-objects").click();
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 2, null, { timeout: 10000 });
     await page.getByTestId("asset-item").filter({ hasText: "Oak Table" }).click();
+    // words for it (searched with its name)
+    await page.getByTestId("asset-words-input").fill("tavern, round");
+    await page.getByTestId("asset-words-add").click();
+    await page.getByTestId("asset-word").filter({ hasText: "tavern" }).waitFor({ timeout: 5000 });
     await page.getByTestId("btool-prop").waitFor();
     await page.getByTestId("prop-options").waitFor({ timeout: 5000 });
     await click(16, 4);
