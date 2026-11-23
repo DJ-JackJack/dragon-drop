@@ -980,6 +980,13 @@ try {
     await page.getByTestId("battle-inspector").getByText("Object").first().waitFor({ timeout: 5000 });
     await page.keyboard.press("e");
     await page.getByTestId("history").getByText("Change object").first().waitFor({ timeout: 10000 });
+    // a drop shadow and a tint (the box follows the map: a click, then it is ticked once the server has it)
+    await page.getByTestId("prop-shadow").click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="prop-shadow"]')?.checked === true, null, { timeout: 10000 });
+    await page.getByTestId("prop-tint").fill("#3366ff");
+    await page.getByTestId("prop-tint-clear").waitFor({ timeout: 10000 });
+    const tintedPx = await pixelAt(sq(16, 4));
+    if (!(tintedPx[2] > tintedPx[0])) fail(`the tinted object isn't blue (got ${tintedPx})`);
     await page.getByTestId("prop-delete").click();
     await page.getByTestId("history").getByText("Delete object").waitFor({ timeout: 10000 });
     // the Object tool's Scatter mode: a drag strews several tables in one undo step

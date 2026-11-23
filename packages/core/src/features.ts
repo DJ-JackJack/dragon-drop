@@ -228,6 +228,11 @@ export interface MapProp {
   /** Drawn under the walls ("below") or over them (default "above"). */
   layer?: "below" | "above";
   opacity?: number;
+  /** A soft drop shadow down and to the right (PROP_SHADOW), the same in the editor and every picture. */
+  shadow?: boolean;
+  /** "#rrggbb": the picture's colours multiplied by it (a grey "colour it yourself" picture takes the colour), `tintStrength` of the way (0..1, default 1). */
+  tint?: string;
+  tintStrength?: number;
 }
 
 export type RoofStyle = "slate" | "tile" | "thatch" | "shingle";

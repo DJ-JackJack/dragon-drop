@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, type MapReveal, revealFrom, rectPoints, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, PROP_SHADOW, type MapReveal, revealFrom, rectPoints, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -57,6 +57,8 @@ export interface BattleUi {
   propFlip: boolean;
   /** The Object tool strews objects with a drag (Scatter) instead of placing one a click. */
   propScatter: boolean;
+  /** New objects cast a soft drop shadow. */
+  propShadow: boolean;
   scatter: ScatterSettings;
   /** The shape the Area and Room tools make. */
   roomShape: "rect" | "circle" | "free";
@@ -97,7 +99,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
-  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
+  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, propShadow: false, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
   wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
   prefabMode: "place", prefab: null, prefabTurn: 0, prefabMirror: false, prefabDraft: null, revealMode: "spot",
 };
@@ -216,6 +218,28 @@ interface ViewProps {
 }
 
 const BAND = 96;
+
+/** Objects' pictures with a tint (MapProp.tint: the colours multiplied by it, `strength` of the way, as the pictures do: core drawSprite), kept by picture and tint. */
+const tinted = new Map<string, HTMLCanvasElement>();
+function tintedSprite(asset: string, bmp: CanvasImageSource & { width: number; height: number }, tint: string, strength: number): HTMLCanvasElement {
+  const key = `${asset}|${tint}|${strength}|${bmp.width}`;
+  let c = tinted.get(key);
+  if (c) return c;
+  c = document.createElement("canvas");
+  c.width = bmp.width; c.height = bmp.height;
+  const g = c.getContext("2d")!;
+  g.drawImage(bmp, 0, 0);
+  g.globalCompositeOperation = "multiply";
+  g.globalAlpha = Math.min(1, Math.max(0, strength));
+  g.fillStyle = tint;
+  g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = "destination-in";
+  g.globalAlpha = 1;
+  g.drawImage(bmp, 0, 0);
+  if (tinted.size > 300) tinted.delete(tinted.keys().next().value!);
+  tinted.set(key, c);
+  return c;
+}
 
 /** The part of the battlemap on screen now, in squares (the Map panel's "Show my view" for the player screen); set by the view while it is shown. */
 let viewRectNow: () => { x: number; y: number; w: number; h: number } | null = () => null;
@@ -684,8 +708,18 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.rotate(((pr.rotation ?? 0) * Math.PI) / 180);
       if (pr.flip) ctx.scale(-1, 1);
       ctx.globalAlpha = alpha * (pr.opacity ?? 1);
-      if (spr) ctx.drawImage(spr.bmp, (-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k);
-      else { ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.setLineDash([4, 4]); ctx.strokeRect(-v.scale / 2, -v.scale / 2, v.scale, v.scale); }
+      if (spr && pr.shadow) {
+        // (a canvas shadow falls the same way whatever the object's turn: down and to the right, as in every picture: PROP_SHADOW)
+        const dpr = window.devicePixelRatio || 1;
+        ctx.shadowColor = `rgba(0, 0, 0, ${PROP_SHADOW.alpha})`;
+        ctx.shadowBlur = PROP_SHADOW.blur * v.scale * 2 * dpr;
+        ctx.shadowOffsetX = PROP_SHADOW.dx * v.scale * dpr;
+        ctx.shadowOffsetY = PROP_SHADOW.dy * v.scale * dpr;
+      }
+      if (spr) {
+        ctx.drawImage(pr.tint ? tintedSprite(pr.asset, spr.bmp, pr.tint, pr.tintStrength ?? 1) : spr.bmp, (-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k);
+        ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+      } else { ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.setLineDash([4, 4]); ctx.strokeRect(-v.scale / 2, -v.scale / 2, v.scale, v.scale); }
       if (isSel(pr.id) && spr) { ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k); }
       ctx.restore();
     };
@@ -1213,7 +1247,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       if (!o.asset) { flash("Choose an object in the Assets tab first."); return; }
       const hf = store.heights, sub = spec.sub;
       const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < spec.squaresX && y < spec.squaresY && (!o.scatter.floorOnly || !hf || (hf.get(Math.floor(x * sub), Math.floor(y * sub)) | 0) > 0);
-      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer },
+      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer, shadow: o.propShadow },
         (featRef.current.props ?? []).map((pr) => [pr.x, pr.y] as [number, number]), ok);
       scatterStroke.current.at(q.x, q.y);
       drag.current = { mode: "scatter", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
@@ -1225,6 +1259,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const prop: MapProp = {
         id: newFeatureId("o"), asset: o.asset, x: snapProp(q.x, e.altKey || e.shiftKey), y: snapProp(q.y, e.altKey || e.shiftKey),
         ...(o.propRotation && { rotation: o.propRotation }), ...(o.propScale !== 1 && { scale: o.propScale }), ...(o.propFlip && { flip: true }), ...(o.propLayer === "below" && { layer: "below" as const }),
+        ...(o.propShadow && { shadow: true }),
       };
       sendFeatures({ upsertProps: [prop] }, "Add object");
       return;
@@ -1701,6 +1736,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
             <button className={ui.propScatter ? "on" : ""} onClick={() => onUi({ propScatter: true })} title="Drag to strew objects under a round brush: trees, rocks, debris" data-testid="prop-mode-scatter">Scatter</button>
           </div>
           <span className="muted">{ui.asset ? `${ui.propScatter ? "Strewing" : "Placing"}: ${assetLabel(parseAssetId(ui.asset)?.path ?? ui.asset)}` : "No object chosen yet: open the Assets tab and click one."}</span>
+          <label className="check" title="New objects cast a soft drop shadow (each object's panel can change it)"><input type="checkbox" checked={ui.propShadow} onChange={(e) => onUi({ propShadow: e.target.checked })} data-testid="prop-new-shadow" /> Shadow</label>
           {ui.propScatter && (
             <>
               <label className="slider"><span>Brush <b>{ui.scatter.radius}</b> sq</span>
@@ -1822,6 +1858,17 @@ function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Fe
         <button className="danger" onClick={() => { sendFeatures(deleteFeatures(features, ids), `Delete ${ids.length} items`); onClear(); }} data-testid="group-delete" title="Delete">Delete</button>
         <button className="ghost" onClick={onClear}>Deselect</button>
       </div>
+      {count("prop") > 1 && (() => {
+        const props = (features.props ?? []).filter((p) => ids.includes(p.id));
+        const shade = (on: boolean) => sendFeatures({ upsertProps: props.map(({ shadow: _s, ...p }) => (on ? { ...p, shadow: true } : p)) }, `${on ? "Shadows on" : "Shadows off"} for ${props.length} objects`);
+        return (
+          <div className="row">
+            <span className="muted">Shadows:</span>
+            <button onClick={() => shade(true)} data-testid="group-shadow-on">On</button>
+            <button onClick={() => shade(false)} data-testid="group-shadow-off">Off</button>
+          </div>
+        );
+      })()}
       {buildable.length > 0 && (
         <>
           <button className="built-of" onClick={() => setPicking((v) => !v)} aria-expanded={picking} title="Choose what the selected walls are built of" data-testid="group-built-of">
@@ -2180,6 +2227,20 @@ function PropEditor({ p, onClear }: { p: MapProp; onClear: () => void }) {
         <input type="range" min={10} max={400} step={5} value={Math.round((p.scale ?? 1) * 100)} onChange={(e) => set({ scale: Number(e.target.value) / 100 })} />
       </label>
       <label className="check"><input type="checkbox" checked={!!p.flip} onChange={(e) => set({ flip: e.target.checked })} /> Mirror (X)</label>
+      <label className="check"><input type="checkbox" checked={!!p.shadow} onChange={(e) => set({ shadow: e.target.checked || undefined })} data-testid="prop-shadow" /> Shadow</label>
+      <div className="row tint-row">
+        <label className="field">Tint
+          <input type="color" value={p.tint ?? "#ffffff"} onChange={(e) => set({ tint: e.target.value })} data-testid="prop-tint" />
+        </label>
+        {p.tint && (
+          <>
+            <label className="slider"><span>Strength <b>{Math.round((p.tintStrength ?? 1) * 100)}%</b></span>
+              <input type="range" min={5} max={100} step={5} value={Math.round((p.tintStrength ?? 1) * 100)} onChange={(e) => set({ tintStrength: Number(e.target.value) / 100 })} />
+            </label>
+            <button onClick={() => set({ tint: undefined, tintStrength: undefined })} data-testid="prop-tint-clear">No tint</button>
+          </>
+        )}
+      </div>
       <GmOnlyBox on={!!p.gmOnly} what="this object (a trap, a hidden chest)" onChange={(on) => set({ gmOnly: on || undefined })} />
       <label className="field">Layer
         <select value={p.layer ?? "above"} onChange={(e) => set({ layer: e.target.value as "above" | "below" })}>

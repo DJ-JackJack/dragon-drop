@@ -719,8 +719,13 @@ export interface SpriteData {
 export type SpriteSource = (assetId: string) => SpriteData | null;
 
 /** Composite one image onto the buffer, centred at (cx, cy) with the given size in px, rotated and optionally mirrored. */
+/** An object's drop shadow (MapProp.shadow): how far down and right it falls, how soft it is (squares), and how dark. The editor draws the same. */
+export const PROP_SHADOW = { dx: 0.07, dy: 0.1, blur: 0.08, alpha: 0.62 } as const;
+
 export function drawSprite(
   img: { w: number; h: number; data: Uint8ClampedArray }, spr: SpriteData, cx: number, cy: number, dw: number, dh: number, rotDeg: number, flip: boolean, opacity: number,
+  /** Multiply the colours by this (r, g, b 0..255), `s` of the way; or, with `mask`, add the sprite's coverage into it (a shadow) instead of drawing. */
+  o: { tint?: [number, number, number]; s?: number; mask?: { data: Float32Array; x0: number; y0: number; w: number; h: number } } = {},
 ) {
   const rad = (rotDeg * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad), hw = dw / 2, hh = dh / 2;
   const ex = Math.abs(hw * cos) + Math.abs(hh * sin), ey = Math.abs(hw * sin) + Math.abs(hh * cos);
@@ -741,12 +746,19 @@ export function drawSprite(
       const a00 = px(iu, iv, 3) * w00, a10 = px(iu + 1, iv, 3) * w10, a01 = px(iu, iv + 1, 3) * w01, a11 = px(iu + 1, iv + 1, 3) * w11;
       const a = (a00 + a10 + a01 + a11) / 255 * opacity;
       if (a <= 0.004) continue;
-      const o = (y * img.w + x) * 4;
+      if (o.mask) {
+        const m = o.mask, mx = x - m.x0, my = y - m.y0;
+        if (mx >= 0 && my >= 0 && mx < m.w && my < m.h) m.data[my * m.w + mx] = Math.max(m.data[my * m.w + mx], a);
+        continue;
+      }
+      const at = (y * img.w + x) * 4;
       // premultiplied interpolation so transparent pixels' colour doesn't bleed into the edge
       const mixc = (ch: number) => (px(iu, iv, ch) * a00 + px(iu + 1, iv, ch) * a10 + px(iu, iv + 1, ch) * a01 + px(iu + 1, iv + 1, ch) * a11) / ((a00 + a10 + a01 + a11) || 1);
-      img.data[o] = img.data[o] * (1 - a) + mixc(0) * a;
-      img.data[o + 1] = img.data[o + 1] * (1 - a) + mixc(1) * a;
-      img.data[o + 2] = img.data[o + 2] * (1 - a) + mixc(2) * a;
+      const tint = o.tint, s = o.s ?? 1;
+      const c = (ch: number) => { const v = mixc(ch); return tint ? v * (1 - s) + ((v * tint[ch]) / 255) * s : v; };
+      img.data[at] = img.data[at] * (1 - a) + c(0) * a;
+      img.data[at + 1] = img.data[at + 1] * (1 - a) + c(1) * a;
+      img.data[at + 2] = img.data[at + 2] * (1 - a) + c(2) * a;
     }
   }
 }
@@ -762,8 +774,34 @@ export function drawBattleProps(
     if (!spr) continue;
     const k = ((p.scale ?? 1) * spec.pxPerSquare) / PROP_PX_PER_SQUARE;
     // a sprite prepared at a smaller size still stands for its original footprint
-    const f = footprint(spr);
-    drawSprite(img, spr, p.x * spec.pxPerSquare, p.y * spec.pxPerSquare, f.w * k, f.h * k, p.rotation ?? 0, !!p.flip, p.opacity ?? 1);
+    const f = footprint(spr), cx = p.x * spec.pxPerSquare, cy = p.y * spec.pxPerSquare, dw = f.w * k, dh = f.h * k;
+    if (p.shadow) dropShadow(img, spr, spec.pxPerSquare, cx, cy, dw, dh, p.rotation ?? 0, !!p.flip, p.opacity ?? 1);
+    const tint = p.tint && /^#[0-9a-f]{6}$/i.test(p.tint) ? hexToRgb(p.tint) : undefined;
+    drawSprite(img, spr, cx, cy, dw, dh, p.rotation ?? 0, !!p.flip, p.opacity ?? 1, tint ? { tint, s: Math.min(1, Math.max(0, p.tintStrength ?? 1)) } : {});
+  }
+}
+
+/** An object's soft drop shadow (PROP_SHADOW): its coverage, blurred, darkening what is under it a little down and to the right. */
+function dropShadow(img: { w: number; h: number; data: Uint8ClampedArray }, spr: SpriteData, px: number, cx: number, cy: number, dw: number, dh: number, rot: number, flip: boolean, opacity: number) {
+  const blur = Math.max(1, Math.round(PROP_SHADOW.blur * px)), r = Math.hypot(dw, dh) / 2 + blur * 2;
+  const x0 = Math.floor(cx - r), y0 = Math.floor(cy - r), w = Math.ceil(2 * r) + 1, h = Math.ceil(2 * r) + 1;
+  const mask = { data: new Float32Array(w * h), x0, y0, w, h };
+  // (the coverage is worked out in the mask's own box, so the sprite is drawn into a picture as big as the map with no pixels changed)
+  drawSprite({ w: x0 + w, h: y0 + h, data: img.data }, spr, cx, cy, dw, dh, rot, flip, opacity, { mask });
+  boxBlur(mask.data, w, h, blur);
+  const soft = mask.data;
+  const ox = Math.round(PROP_SHADOW.dx * px), oy = Math.round(PROP_SHADOW.dy * px);
+  for (let y = 0; y < h; y++) {
+    const iy = y0 + y + oy;
+    if (iy < 0 || iy >= img.h) continue;
+    for (let x = 0; x < w; x++) {
+      const v = soft[y * w + x] * PROP_SHADOW.alpha;
+      if (v < 0.01) continue;
+      const ix = x0 + x + ox;
+      if (ix < 0 || ix >= img.w) continue;
+      const at = (iy * img.w + ix) * 4, k = 1 - v;
+      img.data[at] *= k; img.data[at + 1] *= k; img.data[at + 2] *= k;
+    }
   }
 }
 

@@ -3,7 +3,7 @@
  * and place objects on a battlemap. The pictures stay on the user's PC and are read in place.
  */
 import { z } from "zod";
-import {
+import { type MapProp,
   type PaletteEntry, type RGBAImage, type XY, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, MAX_FLOOR_TEXTURES, PROP_PX_PER_SQUARE,
   SpotIndex, battleSpec, parseAssetId, scatterInArea, scatterLook, seededRandom, variantStem,
 } from "@mapmaker/core";
@@ -131,6 +131,8 @@ export const ASSET_TOOLS = [
         x: z.number(), y: z.number(),
         rotation: z.number().optional(), scale: z.number().min(0.05).max(10).optional(), flip: z.boolean().optional(),
         layer: z.enum(["below", "above"]).optional(), opacity: z.number().min(0.05).max(1).optional(),
+        shadow: z.boolean().optional().describe("A soft drop shadow"), tint: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("#rrggbb: the colours multiplied by it (colours a grey picture)"),
+        tint_strength: z.number().min(0).max(1).optional(),
       })).min(1).max(60),
     }),
     async run(ctx, i) {
@@ -147,6 +149,7 @@ export const ASSET_TOOLS = [
       const props = i.props.map((p) => ({
         id: newFeatureId("o"), asset: p.asset, x: p.x, y: p.y,
         ...(p.rotation && { rotation: p.rotation }), ...(p.scale && p.scale !== 1 && { scale: p.scale }), ...(p.flip && { flip: true }), ...(p.layer && p.layer !== "above" && { layer: p.layer }), ...(p.opacity && { opacity: p.opacity }),
+        ...(p.shadow && { shadow: true }), ...(p.tint && { tint: p.tint }), ...(p.tint && p.tint_strength !== undefined && p.tint_strength < 1 && { tintStrength: p.tint_strength }),
       }));
       const off = props.filter((p) => p.x < -1 || p.y < -1 || p.x > spec.squaresX + 1 || p.y > spec.squaresY + 1);
       if (off.length) return fail(`${off.length} object(s) are off the map (${spec.squaresX} x ${spec.squaresY} squares).`);
@@ -177,6 +180,7 @@ export const ASSET_TOOLS = [
       mix_variants: z.boolean().optional(),
       on_floor_only: z.boolean().optional(),
       layer: z.enum(["below", "above"]).optional(),
+      shadow: z.boolean().optional().describe("Each object casts a soft drop shadow"),
       seed: z.number().int().optional().describe("The same seed gives the same spots"),
     }),
     async run(ctx, i) {
@@ -199,7 +203,7 @@ export const ASSET_TOOLS = [
         return {
           id: newFeatureId("o"), asset: pics[Math.floor(rnd() * pics.length)], x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100,
           ...(look.rotation && { rotation: look.rotation }), ...(Math.abs(look.scale - 1) > 0.005 && { scale: Math.round(look.scale * 100) / 100 }), ...(look.flip && { flip: true }),
-          ...(i.layer === "below" && { layer: "below" as const }),
+          ...(i.layer === "below" && { layer: "below" as const }), ...(i.shadow && { shadow: true }),
         };
       });
       const r = ctx.execute({ op: "features", patch: { upsertProps: props }, label: `Scatter ${props.length} object${props.length === 1 ? "" : "s"}` });
@@ -209,16 +213,21 @@ export const ASSET_TOOLS = [
 
   define({
     name: "update_prop",
-    description: "Move, rotate, resize, mirror or re-layer an object on the battlemap. Ids come from list_battle.",
+    description: "Move, rotate, resize, mirror or re-layer an object on the battlemap, give it a drop shadow or a tint (a colour its picture is multiplied by; \"none\" takes it off). Ids come from list_battle.",
     schema: z.object({
       id: z.string(), x: z.number().optional(), y: z.number().optional(), rotation: z.number().optional(), scale: z.number().min(0.05).max(10).optional(),
       flip: z.boolean().optional(), layer: z.enum(["below", "above"]).optional(), opacity: z.number().min(0.05).max(1).optional(),
+      shadow: z.boolean().optional(), tint: z.string().regex(/^(#[0-9a-fA-F]{6}|none)$/).optional(), tint_strength: z.number().min(0).max(1).optional(),
     }),
     async run(ctx, i) {
       const p = ctx.session().doc.features?.props?.find((x) => x.id === i.id);
       if (!p) return fail(`No object with id ${i.id}. Use list_battle.`);
-      const { id: _id, ...patch } = i;
-      const r = ctx.execute({ op: "features", patch: { upsertProps: [{ ...p, ...patch }] }, label: "Change object" });
+      const { id: _id, shadow, tint, tint_strength, ...patch } = i;
+      const next: MapProp = { ...p, ...patch };
+      if (shadow !== undefined) { if (shadow) next.shadow = true; else delete next.shadow; }
+      if (tint === "none") { delete next.tint; delete next.tintStrength; } else if (tint) next.tint = tint;
+      if (tint_strength !== undefined && next.tint) next.tintStrength = tint_strength;
+      const r = ctx.execute({ op: "features", patch: { upsertProps: [next] }, label: "Change object" });
       return json({ change: r.seq });
     },
   }),
