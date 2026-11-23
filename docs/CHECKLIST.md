@@ -11,7 +11,7 @@ water gates, districts and streets and water from a picture; the bottom bar, eye
 rivers; drawn rivers and carving part of the map; Muse Code.
 
 - [x] Quick fixes and the lake problem, a test copy with its own settings and maps folder (`RELEASING.md`), release notes, the person's try of it (rounds 1 to 3 good, with the Rivers tool and carving changed after round 1), and the release. *(2026-11-21: https://github.com/DJ-JackJack/dragon-drop/releases/tag/v0.1.11)*
-- [ ] The person: update the installed Dragon Drop (Settings → Updates → Check now) and check it reads 0.1.11; then the Desktop test build folders can be deleted.
+- [x] The person: update the installed Dragon Drop (Settings → Updates → Check now) and check it reads 0.1.11; then the Desktop test build folders can be deleted. *(2026-11-23: the installed 0.1.11 updated itself to 0.1.12, so it was on 0.1.11; the Desktop test build folders are the person's to delete)*
 
 ## Next release (0.1.12)
 
@@ -23,7 +23,7 @@ On `main` already: Settings says what each AI assistant needs (and whether it is
 - [x] **A wider smoothing brush** (found 2026-11-21 on the DM's world map): straight steps in the land tens of pixels wide (from old flat landmasses) can't be softened with `sculpt smooth` or `erode`; Claude and the DM need a smoothing that reaches across a wide step. *(2026-11-22, on `selling-prep`: the Smooth brush's **Reach** (up to 128 px) and Claude's `sculpt` smooth `reach_px`; a 300 m step that plain smoothing leaves at 63 m a pixel becomes a slope of 7 m a pixel with a reach of 30 (a brush stroke takes about 16 ms, the whole 2048 map at the widest reach about 0.2 s); the coast stays put unless `keep_coast` is false. Still to try on the DM's south-west island.)*
 - [x] ~~A test copy with its own settings and maps folder, a START HERE guide and draft notes~~ (2026-11-21: `Desktop\Dragon Drop 0.1.12 test build`, with the shops and the rebuild and mending tools, and a copy-based prompt for remaking the DM's world map; its start-up check and the whole browser test pass against it), the person's try of it. *(2026-11-22: replaced by one release of `main` and `selling-prep` together: the test copy in `apps\desktop\release\win-unpacked` (Test Dragon Drop), the automatic checks, and the person's hand test, all passed but the phone page (not tried: Tailscale wouldn't open))*
 - [x] **The release of 0.1.12** (chosen 2026-11-22 before the asset-pack work): release notes written (in the scratchpad, for the person to read), `selling-prep` merged into `main` and pushed, a green build, the tag `v0.1.12`, the notes on the Release, and the after-tag checks (`RELEASING.md`). The notes that said "from 0.1.13" now say 0.1.12 (that number was planned for a second release that didn't happen). *(2026-11-23: https://github.com/DJ-JackJack/dragon-drop/releases/tag/v0.1.12, built, smoke-tested (also on Windows Server 2022) and published by the new publish job; three files, `latest.yml` says 0.1.12 with the installer's size)*
-- [ ] The person: update the installed Dragon Drop (Settings → Help and updates → Check now) and check it reads 0.1.12; tell the two friends.
+- [x] The person: update the installed Dragon Drop and check it reads 0.1.12. *(2026-11-23: it offered the update, installed it and restarted into 0.1.12)* The two friends' copies offer it by themselves.
 
 ## Quick fixes
 
