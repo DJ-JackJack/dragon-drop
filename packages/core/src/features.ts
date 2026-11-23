@@ -171,6 +171,14 @@ export interface MapNote {
   text?: string;
 }
 
+/** A battlemap's object layer (objectLayers.ts): a named group of objects, hidden or locked together; `features.layers` lists them bottom to top. */
+export interface MapLayer {
+  id: string;
+  name: string;
+  hidden?: boolean;
+  locked?: boolean;
+}
+
 /** A realm of a world map (realms.ts): a kingdom, province or other territory, painted into `features.realmCells` under its number `n` (1..255). */
 export interface MapRealm {
   id: string;
@@ -234,6 +242,8 @@ export interface MapProp {
   opacity?: number;
   /** A soft drop shadow down and to the right (PROP_SHADOW), the same in the editor and every picture. */
   shadow?: boolean;
+  /** The object layer it is in (`features.layers`, objectLayers.ts); none: the bottom one. */
+  layerId?: string;
   /** "#rrggbb": the picture's colours multiplied by it (a grey "colour it yourself" picture takes the colour), `tintStrength` of the way (0..1, default 1). */
   tint?: string;
   tintStrength?: number;
@@ -484,6 +494,8 @@ export interface Features {
   zones?: MapAmbientZone[];
   /** What the players have been shown on the player screen (fog.ts), in order. */
   reveals?: MapReveal[];
+  /** Battlemaps: the object layers, bottom to top (objectLayers.ts). */
+  layers?: MapLayer[];
   /** World maps: the realms (realms.ts), and where each is painted. */
   realms?: MapRealm[];
   realmCells?: RealmGrid;
@@ -538,6 +550,8 @@ export interface FeaturesPatch {
   removeNotes?: string[];
   upsertZones?: MapAmbientZone[];
   removeZones?: string[];
+  /** The object layers in their new order (all of them: the order is the point). */
+  setLayers?: MapLayer[];
   upsertRealms?: MapRealm[];
   removeRealms?: string[];
   /** The whole painting of the realms (it is small: run-length coded), or null to clear it. */
@@ -628,6 +642,8 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertNotes ?? []) notes.set(x.id, x);
     out.notes = [...notes.values()];
   }
+  if (p.setLayers !== undefined) { if (p.setLayers.length) out.layers = p.setLayers; }
+  else if (f.layers) out.layers = f.layers;
   if (f.realms || p.upsertRealms || p.removeRealms) {
     const realms = new Map((f.realms ?? []).map((x) => [x.id, x]));
     for (const id of p.removeRealms ?? []) realms.delete(id);

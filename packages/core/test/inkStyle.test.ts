@@ -9,7 +9,7 @@ function island(): MapDoc {
     h[y * W + x] = 2600 * Math.max(0, 1 - d / 80) ** 1.3 - 200;
   }
   const now = new Date().toISOString();
-  return { meta: { id: "i", name: "Isle", width: W, height: H, kmPerPx: 2, seaLevel: 0, seed: 5, createdAt: now, updatedAt: now, style: "ink" }, height: new HeightField(W, H, h) };
+  return { meta: { id: "i", name: "Isle", kind: "world", width: W, height: H, kmPerPx: 2, seaLevel: 0, seed: 5, createdAt: now, updatedAt: now, style: "ink" }, height: new HeightField(W, H, h) };
 }
 
 describe("the ink style", () => {

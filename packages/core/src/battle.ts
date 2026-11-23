@@ -14,6 +14,7 @@ import { boxBlur, compositeOver, renderWallLayer, type WallPictureSource } from 
 import { type RoofPictureRect, type RoofTileSource, renderRoofLayer, renderRoofPicture, roofPictureRect } from "./battleRoof.ts";
 import { renderPathLayer } from "./battlePaths.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
+import { layeredProps } from "./objectLayers.ts";
 import { type FoundryStairInput, type FoundrySurfaceInput, type FoundryTileInput, foundryScene } from "./foundryScene.ts";
 import { type Rect, type Shape, clipRect, expandRect, shapeBounds, signedDistance } from "./geom.ts";
 
@@ -820,14 +821,16 @@ export function renderBattle(
   renderBattleFloor(doc, img.data, undefined, opts.tiles);
   // roads, tracks and streams lie on the ground: over the floor, under everything else (their pack pictures come with the walls')
   if (doc.features?.paths?.length) compositeOver(img, renderPathLayer(spec, doc.features.paths, { pictureFor: opts.wallPictures }));
-  drawBattleProps(img, spec, doc.features?.props, opts.sprites, "below");
+  // (objects in their layers' order; a hidden layer's objects are drawn nowhere: objectLayers.ts)
+  const props = layeredProps(doc.features);
+  drawBattleProps(img, spec, props, opts.sprites, "below");
   if (opts.overlay !== false) {
     compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures, dmMarks: opts.dmMarks }));
-    drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
+    drawBattleProps(img, spec, props, opts.sprites, "above");
     if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones, opts.wallPictures);
     if (opts.notes) drawBattleNotes(img, spec, doc.features?.notes);
   } else {
-    drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
+    drawBattleProps(img, spec, props, opts.sprites, "above");
   }
   // the roofs over everything, at the opacity asked for (previews only: they would hide the rooms in an ordinary picture)
   if (opts.roofs && opts.roofs > 0 && doc.features?.roofs?.length) {

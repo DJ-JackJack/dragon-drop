@@ -695,3 +695,21 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 /* a link to the DM's own notes (NoteLink.tsx) */
 .note-link .row { gap: 6px; flex-wrap: wrap; }
 .realm-item .note-link { padding: 4px 6px 8px 36px; }
+
+/* the battlemap's object layers (ObjectLayers.tsx) */
+.olayers .olayer { display: flex; align-items: center; gap: 4px; border-radius: 6px; padding: 1px 2px; }
+.olayers .olayer.on { background: rgba(255, 224, 120, 0.12); }
+.olayers .olayer-name { flex: 1; text-align: left; background: none; border: 1px solid transparent; padding: 3px 4px; }
+.olayers .olayer-name:hover { border-color: var(--line); }
+.olayers .olayer-new { color: var(--gold, #d4af37); font-size: 0.85em; }
+.olayers .olayer-lock { background: none; border: none; padding: 0 2px; opacity: 0.55; }
+.olayers .olayer-lock.on { opacity: 1; }
+.olayers .olayer-pad { width: 44px; flex: none; }
+.olayers .olayer-actions { display: flex; gap: 2px; flex: none; }
+.olayers .olayer-actions button { padding: 1px 5px; }
+.olayers .row { margin-top: 4px; gap: 6px; }
+.olayers .row { display: flex; }
+.olayers .row input { flex: 1; min-width: 0; }
+.olayers .row button { flex: none; }
+.olayers .olayer-name { min-width: 0; overflow-wrap: break-word; }
+.olayers .olayer-actions button { padding: 1px 4px; }

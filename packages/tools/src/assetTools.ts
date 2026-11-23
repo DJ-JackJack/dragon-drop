@@ -9,6 +9,7 @@ import { type MapProp,
 } from "@mapmaker/core";
 import { decodeImage, encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext } from "./tools.ts";
+import { objectLayerBy } from "./objectLayerTools.ts";
 import { define, fail, json } from "./toolKit.ts";
 
 const NO_ASSETS = "No asset folder is set up. The user can choose their assets folder in Dragon Drop's Settings.";
@@ -131,6 +132,7 @@ export const ASSET_TOOLS = [
         x: z.number(), y: z.number(),
         rotation: z.number().optional(), scale: z.number().min(0.05).max(10).optional(), flip: z.boolean().optional(),
         layer: z.enum(["below", "above"]).optional(), opacity: z.number().min(0.05).max(1).optional(),
+        object_layer: z.string().optional().describe("The object layer it goes into (name or id, list_object_layers); default the bottom one"),
         shadow: z.boolean().optional().describe("A soft drop shadow"), tint: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("#rrggbb: the colours multiplied by it (colours a grey picture)"),
         tint_strength: z.number().min(0).max(1).optional(),
       })).min(1).max(60),
@@ -149,7 +151,7 @@ export const ASSET_TOOLS = [
       const props = i.props.map((p) => ({
         id: newFeatureId("o"), asset: p.asset, x: p.x, y: p.y,
         ...(p.rotation && { rotation: p.rotation }), ...(p.scale && p.scale !== 1 && { scale: p.scale }), ...(p.flip && { flip: true }), ...(p.layer && p.layer !== "above" && { layer: p.layer }), ...(p.opacity && { opacity: p.opacity }),
-        ...(p.shadow && { shadow: true }), ...(p.tint && { tint: p.tint }), ...(p.tint && p.tint_strength !== undefined && p.tint_strength < 1 && { tintStrength: p.tint_strength }),
+        ...(p.shadow && { shadow: true }), ...(p.tint && { tint: p.tint }), ...(p.object_layer && objectLayerBy(ctx, p.object_layer) && { layerId: objectLayerBy(ctx, p.object_layer)!.id }), ...(p.tint && p.tint_strength !== undefined && p.tint_strength < 1 && { tintStrength: p.tint_strength }),
       }));
       const off = props.filter((p) => p.x < -1 || p.y < -1 || p.x > spec.squaresX + 1 || p.y > spec.squaresY + 1);
       if (off.length) return fail(`${off.length} object(s) are off the map (${spec.squaresX} x ${spec.squaresY} squares).`);
@@ -218,12 +220,17 @@ export const ASSET_TOOLS = [
       id: z.string(), x: z.number().optional(), y: z.number().optional(), rotation: z.number().optional(), scale: z.number().min(0.05).max(10).optional(),
       flip: z.boolean().optional(), layer: z.enum(["below", "above"]).optional(), opacity: z.number().min(0.05).max(1).optional(),
       shadow: z.boolean().optional(), tint: z.string().regex(/^(#[0-9a-fA-F]{6}|none)$/).optional(), tint_strength: z.number().min(0).max(1).optional(),
+      object_layer: z.string().optional().describe("Move it to this object layer (name or id); \"\" for the bottom one"),
     }),
     async run(ctx, i) {
       const p = ctx.session().doc.features?.props?.find((x) => x.id === i.id);
       if (!p) return fail(`No object with id ${i.id}. Use list_battle.`);
-      const { id: _id, shadow, tint, tint_strength, ...patch } = i;
+      const { id: _id, shadow, tint, tint_strength, object_layer, ...patch } = i;
       const next: MapProp = { ...p, ...patch };
+      if (object_layer !== undefined) {
+        if (!object_layer) delete next.layerId;
+        else { const l = objectLayerBy(ctx, object_layer); if (!l) return fail(`There is no object layer "${object_layer}".`); next.layerId = l.id; }
+      }
       if (shadow !== undefined) { if (shadow) next.shadow = true; else delete next.shadow; }
       if (tint === "none") { delete next.tint; delete next.tintStrength; } else if (tint) next.tint = tint;
       if (tint_strength !== undefined && next.tint) next.tintStrength = tint_strength;

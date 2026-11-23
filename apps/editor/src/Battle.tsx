@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, PROP_SHADOW, type MapReveal, revealFrom, rectPoints, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, PROP_SHADOW, layeredProps, propPickable, type MapReveal, revealFrom, rectPoints, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -33,6 +33,7 @@ import { GmOnlyBox } from "./GmOnly.tsx";
 import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, prefabSpot } from "./PrefabBar.tsx";
 import { GenerateBox } from "./GenerateBox.tsx";
 import { drawFog, drawRevealOutlines, openPlayerScreen } from "./fogDraw.ts";
+import { LayerSelect, ObjectLayers } from "./ObjectLayers.tsx";
 
 export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof" | "reveal";
 
@@ -59,6 +60,8 @@ export interface BattleUi {
   propScatter: boolean;
   /** New objects cast a soft drop shadow. */
   propShadow: boolean;
+  /** The object layer new objects go into (objectLayers.ts); null: the bottom one. */
+  activeLayer: string | null;
   scatter: ScatterSettings;
   /** The shape the Area and Room tools make. */
   roomShape: "rect" | "circle" | "free";
@@ -99,7 +102,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
-  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, propShadow: false, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
+  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, propShadow: false, activeLayer: null, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
   wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
   prefabMode: "place", prefab: null, prefabTurn: 0, prefabMirror: false, prefabDraft: null, revealMode: "spot",
 };
@@ -699,7 +702,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const shifted = <T extends { id: string; x: number; y: number }>(a: T): T => (mgSet?.has(a.id) ? { ...a, x: a.x + mg!.dx, y: a.y + mg!.dy } : a);
     const shiftedPoly = <T extends { id: string; points: [number, number][] }>(a: T): T => (mgSet?.has(a.id) ? { ...a, points: a.points.map(([x, y]) => [x + mg!.dx, y + mg!.dy] as [number, number]) } : a);
     const lights = (f.lights ?? []).map(shifted);
-    const props = (f.props ?? []).map(shifted);
+    const props = layeredProps(f).map(shifted);
     const drawProp = (pr: MapProp, alpha = 1) => {
       const spr = spriteFor(pr.asset);
       const k = ((pr.scale ?? 1) * v.scale) / PROP_PX_PER_SQUARE;
@@ -1100,7 +1103,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     }
     if (best) return best.id;
     // objects: topmost first, by their (rotated) picture
-    for (const pr of [...(f.props ?? [])].reverse()) {
+    for (const pr of [...layeredProps(f)].reverse()) {
+      if (!propPickable(f, pr)) continue; // (a locked layer's objects can't be clicked)
       const spr = sprites.current.get(pr.asset);
       const [w, h] = spr && spr !== "loading" && spr !== "failed" ? [spr.w / PROP_PX_PER_SQUARE, spr.h / PROP_PX_PER_SQUARE] : [1, 1];
       const dx = (sx - (v.ox + pr.x * v.scale)) / v.scale, dy = (sy - (v.oy + pr.y * v.scale)) / v.scale;
@@ -1247,7 +1251,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       if (!o.asset) { flash("Choose an object in the Assets tab first."); return; }
       const hf = store.heights, sub = spec.sub;
       const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < spec.squaresX && y < spec.squaresY && (!o.scatter.floorOnly || !hf || (hf.get(Math.floor(x * sub), Math.floor(y * sub)) | 0) > 0);
-      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer, shadow: o.propShadow },
+      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer, shadow: o.propShadow, ...(o.activeLayer && { layerId: o.activeLayer }) },
         (featRef.current.props ?? []).map((pr) => [pr.x, pr.y] as [number, number]), ok);
       scatterStroke.current.at(q.x, q.y);
       drag.current = { mode: "scatter", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
@@ -1259,7 +1263,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const prop: MapProp = {
         id: newFeatureId("o"), asset: o.asset, x: snapProp(q.x, e.altKey || e.shiftKey), y: snapProp(q.y, e.altKey || e.shiftKey),
         ...(o.propRotation && { rotation: o.propRotation }), ...(o.propScale !== 1 && { scale: o.propScale }), ...(o.propFlip && { flip: true }), ...(o.propLayer === "below" && { layer: "below" as const }),
-        ...(o.propShadow && { shadow: true }),
+        ...(o.propShadow && { shadow: true }), ...(o.activeLayer && { layerId: o.activeLayer }),
       };
       sendFeatures({ upsertProps: [prop] }, "Add object");
       return;
@@ -1355,7 +1359,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       if (Math.hypot(p.x - d.sx, p.y - d.sy) >= 4) {
         const a = toSq(d.sx, d.sy), b = toSq(p.x, p.y);
         const kinds: ("prop" | "light" | "note" | "wall" | "zone" | "connector" | "roof" | "path")[] = ["prop", "light", "wall", "zone", "connector", "roof", "path", ...(o.showNotes ? (["note"] as const) : [])];
-        const found = boxSelect(featRef.current, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, kinds);
+        const fb = featRef.current, locked = new Set((fb.props ?? []).filter((pr) => !propPickable(fb, pr)).map((pr) => pr.id));
+        const found = boxSelect(fb, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, kinds).filter((id) => !locked.has(id));
         onUiRef.current(selectionFromIds(d.add ? [...(d.base ?? []), ...found] : found));
       }
     }
@@ -1760,7 +1765,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
             <input type="range" min={0} max={345} step={15} value={ui.propRotation} onChange={(e) => onUi({ propRotation: Number(e.target.value) })} />
           </label>
           <label className="check"><input type="checkbox" checked={ui.propFlip} onChange={(e) => onUi({ propFlip: e.target.checked })} /> Mirror (X)</label>
-          <label className="field">Layer
+          <label className="field" title="Drawn over the walls, or under them (a rug, a stain)">Walls
             <select value={ui.propLayer} onChange={(e) => onUi({ propLayer: e.target.value as "above" | "below" })}>
               <option value="above">Above the walls</option><option value="below">Below the walls</option>
             </select>
@@ -1867,6 +1872,12 @@ function GroupPanel({ features, ids, bounds, onClear, onSelect }: { features: Fe
             <button onClick={() => shade(true)} data-testid="group-shadow-on">On</button>
             <button onClick={() => shade(false)} data-testid="group-shadow-off">Off</button>
           </div>
+        );
+      })()}
+      {count("prop") > 0 && (features.layers ?? []).length > 0 && (() => {
+        const props = (features.props ?? []).filter((p) => ids.includes(p.id));
+        return (
+          <LayerSelect value={undefined} label="Move them to a layer" onChange={(layerId) => sendFeatures({ upsertProps: props.map(({ layerId: _l, ...p }) => (layerId ? { ...p, layerId } : p)) }, `Move ${props.length} objects to ${(features.layers ?? []).find((l) => l.id === layerId)?.name ?? "the bottom layer"}`)} />
         );
       })()}
       {buildable.length > 0 && (
@@ -2242,11 +2253,12 @@ function PropEditor({ p, onClear }: { p: MapProp; onClear: () => void }) {
         )}
       </div>
       <GmOnlyBox on={!!p.gmOnly} what="this object (a trap, a hidden chest)" onChange={(on) => set({ gmOnly: on || undefined })} />
-      <label className="field">Layer
+      <label className="field" title="Drawn over the walls, or under them (a rug, a stain)">Walls
         <select value={p.layer ?? "above"} onChange={(e) => set({ layer: e.target.value as "above" | "below" })}>
           <option value="above">Above the walls</option><option value="below">Below the walls</option>
         </select>
       </label>
+      <LayerSelect value={p.layerId} onChange={(layerId) => set({ layerId })} />
       <div className="row">
         <button onClick={() => { const c = { ...p, id: newFeatureId("o"), x: p.x + 0.5, y: p.y + 0.5 }; sendFeatures({ upsertProps: [c] }, "Duplicate object"); }}>Duplicate</button>
         <button onClick={() => { sendFeatures({ removeProps: [p.id] }, "Delete object"); onClear(); }} data-testid="prop-delete">Delete</button>
@@ -2386,10 +2398,13 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <p className="muted">The grid type goes into exports (Foundry and Universal VTT draw their own grid).</p>
       <h3>Light level</h3>
       <LightLevel spec={spec} />
+      <ObjectLayers features={features} ui={ui} onUi={onUi} />
       <h3>Player screen</h3>
       <p className="muted">A window for a TV or second screen at the table: this level with its lights, without what is GM only. With the fog on it shows only what you reveal with the Reveal tool.</p>
       <div className="row">
-        <button onClick={() => void openPlayerScreen()} data-testid="player-screen-open">Open the player screen ↗</button>
+        <button className="primary" onClick={() => void openPlayerScreen()} data-testid="player-screen-open">Open the player screen ↗</button>
+      </div>
+      <div className="row">
         <button onClick={() => store.send({ t: "player_view", rect: viewRectNow() })} title="The player screen shows the part of the map you are looking at now" data-testid="player-view-mine">Show my view</button>
         <button onClick={() => store.send({ t: "player_view", rect: null })} title="The player screen shows the whole map" data-testid="player-view-all">Whole map</button>
       </div>

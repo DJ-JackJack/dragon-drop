@@ -1837,7 +1837,7 @@ const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n 
 export const LOOK_ONLY_TOOLS = new Set([
   "get_map_summary", "get_brief", "render_preview", "query_points", "measure", "list_places", "list_labels", "list_lines", "list_climate_regions", "list_river_sources", "check_hydrology",
   "list_waters", "list_realms", "find_straits", "list_references", "view_reference", "list_checkpoints", "get_trace_picture",
-  "list_battle", "render_battlemap", "list_connectors", "list_roofs",
+  "list_battle", "render_battlemap", "list_connectors", "list_roofs", "list_object_layers",
   "render_city", "list_buildings", "list_streets", "list_land", "list_trees", "list_city_walls", "list_city_districts", "list_city_labels", "check_city",
 ]);
 const MAP_OPTION = { type: "string", description: "Look at another map instead of the open one (its id or name, see list_projects), without opening it: the open map and the DM's editor stay as they are" };

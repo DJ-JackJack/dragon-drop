@@ -55,7 +55,7 @@ export class ScatterStroke {
   private taken: SpotIndex;
   private rnd = seededRandom(Date.now() & 0x7fffffff);
   private pics: string[];
-  constructor(private o: ScatterSettings & { asset: string; scale: number; rotation: number; flip: boolean; layer: "above" | "below"; shadow?: boolean }, existing: [number, number][],
+  constructor(private o: ScatterSettings & { asset: string; scale: number; rotation: number; flip: boolean; layer: "above" | "below"; shadow?: boolean; layerId?: string }, existing: [number, number][],
     private ok: (x: number, y: number) => boolean) {
     this.taken = new SpotIndex(Math.max(0.1, o.spacing), existing);
     this.pics = [o.asset];
@@ -68,7 +68,7 @@ export class ScatterStroke {
       this.placed.push({
         id: newFeatureId("o"), asset: this.pics[Math.floor(this.rnd() * this.pics.length)], x: Math.round(px * 100) / 100, y: Math.round(py * 100) / 100,
         ...(look.rotation && { rotation: look.rotation }), ...(Math.abs(look.scale - 1) > 0.005 && { scale: Math.round(look.scale * 100) / 100 }), ...(look.flip && { flip: true }),
-        ...(this.o.layer === "below" && { layer: "below" as const }), ...(this.o.shadow && { shadow: true }),
+        ...(this.o.layer === "below" && { layer: "below" as const }), ...(this.o.shadow && { shadow: true }), ...(this.o.layerId && { layerId: this.o.layerId }),
       });
     }
   }

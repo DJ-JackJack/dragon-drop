@@ -1074,6 +1074,16 @@ try {
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByTestId("history").getByText("Reveal what can be seen from a spot").first().waitFor({ state: "detached", timeout: 10000 }).catch(() => {});
     await page.getByTestId("btool-select").click();
+    // object layers: a new one from the Map panel's list (new objects go into it), hidden, then both undone
+    await page.getByTestId("olayer-new-name").fill("Clutter");
+    await page.getByTestId("olayer-new").click();
+    await page.getByTestId("history").getByText("Add object layer Clutter").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("olayer-Clutter").getByText("✎ new").waitFor({ timeout: 5000 });
+    await page.getByTestId("olayer-Clutter").getByRole("checkbox").click();
+    await page.getByTestId("history").getByText("Hide layer Clutter").first().waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("olayer-Clutter").waitFor({ state: "detached", timeout: 10000 });
     await page.getByTestId("bgrid-hex").click();
     await page.getByTestId("history").getByText("Grid: hex").waitFor({ timeout: 10000 });
     await page.getByTestId("bgrid-square").click();
