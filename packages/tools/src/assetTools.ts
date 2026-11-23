@@ -71,10 +71,10 @@ export const ASSET_TOOLS = [
   define({
     name: "add_floor_texture",
     description:
-      "Add a terrain texture from the asset packs to this battlemap's floor materials. It then works as a material name in paint_floor and add_room. " +
+      "Add a terrain texture or a repeating pattern from the asset packs to this battlemap's floor materials. It then works as a material name in paint_floor and add_room. " +
       "squares is how many grid squares one repeat of the texture covers (default: its pixel width / 256, so a 1024 px texture repeats every 4 squares).",
     schema: z.object({
-      asset: z.string().describe("An id from search_assets (category terrain)"),
+      asset: z.string().describe("An id from search_assets (category terrain, or patterns)"),
       name: z.string().min(1).max(40).optional().describe("The material name to use (default: the file's name)"),
       squares: z.number().min(0.5).max(32).optional(),
     }),

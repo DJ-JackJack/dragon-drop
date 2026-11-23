@@ -3,7 +3,7 @@
  * view (focusBus). A city can hold thousands of buildings, so each kind lists at most LIST_CAP rows; the filter finds the rest.
  */
 import { useState } from "react";
-import { type Features, type MapWall, STREET_KINDS, WALL_KINDS, assetLabel, districtColour, pointsBounds, polygonArea } from "@mapmaker/core";
+import { type Features, type MapWall, STREET_KINDS, WALL_KINDS, assetLabel, districtColour, pointsBounds, polygonArea , PATH_LOOK_NAMES } from "@mapmaker/core";
 import { type FocusBox, focusBus } from "./focusBus.ts";
 import { landName } from "./cityUi.ts";
 
@@ -47,6 +47,7 @@ function battleGroups(f: Features): Group[] {
     { title: "Doors and windows", rows: doors.map((w, i) => ({ id: w.id, name: `${doorName[w.kind] ?? w.kind} ${i + 1}`, what: w.open ? "open" : w.locked ? "locked" : "", box: boxOf(w.points, 2) })) },
     { title: "Stairs, ladders and holes", rows: (f.connectors ?? []).map((c) => ({ id: c.id, name: c.name ?? c.kind.charAt(0).toUpperCase() + c.kind.slice(1), what: `leads ${c.to ?? (c.kind === "hole" ? "down" : "")}`.trim(), box: { x0: c.x - 1, y0: c.y - 1, x1: c.x + c.w + 1, y1: c.y + c.h + 1 } })) },
     { title: "Roofs", rows: (f.roofs ?? []).map((r) => ({ id: r.id, name: r.name ?? "Roof", what: r.style, box: boxOf(r.points, 1) })) },
+    { title: "Paths", rows: (f.paths ?? []).map((r, i) => ({ id: r.id, name: r.name ?? `Path ${i + 1}`, what: r.asset ? assetLabel(r.asset) : PATH_LOOK_NAMES[r.look ?? "dirt"], box: boxOf(r.points, Math.max(1, r.width ?? 1)) })) },
     { title: "Shaded areas", rows: (f.zones ?? []).map((z) => ({ id: z.id, name: z.name ?? "Shaded area", what: "light zone", box: boxOf(z.points, 1) })) },
   ].map((g) => (g.title === "Doors and windows" && plain ? { ...g, note: `and ${plain.toLocaleString()} wall piece${plain === 1 ? "" : "s"} (select them on the map)` } : g));
 }

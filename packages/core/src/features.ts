@@ -145,6 +145,8 @@ export interface MapLight {
   /** Blocked by walls (default true). */
   shadows?: boolean;
   notes?: string;
+  /** A picture from the asset packs giving the light its shape (a glow, the light through a window): its brightness, tinted with the light's colour, instead of the round fall-off. */
+  glow?: string;
 }
 
 /** A numbered note on a battlemap: a room or spot the DM wants to describe (the map's "key"). Grid squares. */

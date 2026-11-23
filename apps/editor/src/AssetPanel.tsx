@@ -12,9 +12,9 @@ const CATS: { id: string; label: string; usable: boolean; tip: string }[] = [
   { id: "walls", label: "Walls", usable: true, tip: "Wall pictures: click one, then draw walls with it (or choose one for a wall in the inspector)" },
   { id: "paths", label: "Paths", usable: true, tip: "Roads, tracks and streams: click one, then click the points of a path with it" },
   { id: "portals", label: "Doors", usable: true, tip: "Doors and windows: click one, then click a wall to put it there (or choose one for a door in the inspector)" },
-  { id: "roofs", label: "Roofs", usable: false, tip: "Roof patterns (browse only for now)" },
-  { id: "patterns", label: "Patterns", usable: false, tip: "Colourable patterns (browse only for now)" },
-  { id: "lights", label: "Lights", usable: false, tip: "Light shapes (browse only for now)" },
+  { id: "roofs", label: "Roofs", usable: true, tip: "Roof pictures: click one, then draw roofs with it (or choose one for a roof in its panel)" },
+  { id: "patterns", label: "Patterns", usable: true, tip: "Repeating patterns: click one to paint floors with it, like a floor texture" },
+  { id: "lights", label: "Lights", usable: true, tip: "Light shapes: click one, then place lights with it (or give a light that shape in its panel)" },
 ];
 
 export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta | null; ui: BattleUi; onUi: (p: Partial<BattleUi>) => void; desktop: boolean; focus: { cat: string; n: number } }) {
@@ -65,11 +65,13 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
   const pick = (it: AssetItem) => {
     setNote(null);
     if (it.cat === "objects" || it.cat === "other") { onUi({ asset: it.id, tool: "prop", propScale: 1, propRotation: 0 }); return; }
-    if (it.cat === "terrain") { useAsFloor(it); return; }
+    if (it.cat === "terrain" || it.cat === "patterns") { useAsFloor(it); return; }
     if (it.cat === "walls") { onUi({ tool: "wall", wallAsset: it.id }); return; }
     if (it.cat === "portals") { onUi(/window|shutter/i.test(it.path) ? { tool: "window", windowPicture: it.id } : { tool: "door", doorPicture: it.id }); return; }
     if (it.cat === "paths") { onUi({ tool: "path", pathAsset: it.id }); return; }
-    setNote("Only objects, floor textures, walls, doors, windows and paths can be used so far. Roofs (a roof's own picture: in the Roof tool) and patterns are on the way.");
+    if (it.cat === "roofs") { onUi({ tool: "roof", roofAsset: it.id, asset: it.id }); return; }
+    if (it.cat === "lights") { onUi({ tool: "light", lightGlow: it.id }); return; }
+    setNote("This kind of picture can't be used on a battlemap.");
   };
 
   const useAsFloor = (it: AssetItem) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Features, type MapPath, applyFeaturesPatch, boxSelect, copyFeatures, createBattleDoc, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, renderBattle, renderPathLayer,
+  type Features, type MapPath, applyFeaturesPatch, drawBattleLights, boxSelect, copyFeatures, createBattleDoc, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, renderBattle, renderPathLayer,
   smoothPath,
 } from "../src/index.ts";
 
@@ -56,5 +56,24 @@ describe("battlemap paths", () => {
     const pasted = pasteFeatures(clip, 0, 1);
     expect(pasted.patch.upsertPaths![0].id).not.toBe("k1");
     expect(applyFeaturesPatch(f, deleteFeatures(f, ["k1"])).paths).toEqual([]);
+  });
+});
+
+describe("a light's shape from a picture", () => {
+  it("lights where the picture is bright and leaves dark where it is dark, in the light's colour", () => {
+    // a glow picture: bright on its left half only
+    const glow = { w: 64, h: 64, data: new Uint8ClampedArray(64 * 64 * 4) };
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) glow.data.set(x < 32 ? [255, 255, 255, 255] : [0, 0, 0, 255], (y * 64 + x) * 4);
+    const base = () => ({ w: 480, h: 320, data: new Uint8ClampedArray(480 * 320 * 4).fill(60) });
+    const light = { id: "g", x: 6, y: 4, radius: 3, colour: "#ff0000", glow: "kit:Lights/half.png" };
+    const lit = base();
+    drawBattleLights(lit, spec, [light], undefined, undefined, () => glow);
+    const left = at(lit, 5, 4), right = at(lit, 7, 4);
+    expect(left[0]).toBeGreaterThan(left[1] + 40); // red light on the bright half
+    expect(right[0]).toBe(60); // nothing on the dark half
+    // without the picture (or before it loads): the round fall-off, on both sides
+    const round = base();
+    drawBattleLights(round, spec, [light], undefined, undefined, () => null);
+    expect(at(round, 7, 4)[0]).toBeGreaterThan(80);
   });
 });

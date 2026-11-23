@@ -44,6 +44,15 @@ async function portalFrom(ctx: ToolContext, picture: string | undefined): Promis
   if (!(await ctx.assets.info(picture))) return { problem: `No asset has the id "${picture}". Find one with search_assets (category portals).` };
   return picture;
 }
+const GlowSchema = z.string().min(1).describe(
+  "A light picture from the DM's asset packs giving the light its shape (a soft glow, light through a window): an id from search_assets (category lights). Its brightness, tinted with the light's colour, replaces the round fall-off",
+);
+async function glowFrom(ctx: ToolContext, picture: string | undefined): Promise<string | undefined | { problem: string }> {
+  if (!picture) return undefined;
+  if (!ctx.assets) return { problem: "There's no asset library set up (Settings), so there are no light pictures: leave glow out for the round fall-off." };
+  if (!(await ctx.assets.info(picture))) return { problem: `No asset has the id "${picture}". Find one with search_assets (category lights).` };
+  return picture;
+}
 const WallStyleFields = {
   wall_look: WallLookSchema.optional(),
   wall_asset: WallAssetSchema.optional(),
@@ -376,11 +385,40 @@ export const BATTLE_TOOLS = [
       colour: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("#rrggbb, default a warm torch colour"),
       intensity: z.number().min(0).max(1).optional(),
       shadows: z.boolean().optional().describe("Walls block it (default true)"),
+      glow: GlowSchema.optional(),
     }),
     async run(ctx, i) {
-      const light: MapLight = { id: newFeatureId("g"), x: i.x, y: i.y, radius: i.radius, ...(i.bright !== undefined && { bright: i.bright }), ...(i.colour && { colour: i.colour }), ...(i.intensity !== undefined && { intensity: i.intensity }), ...(i.shadows === false && { shadows: false }) };
+      const g = await glowFrom(ctx, i.glow);
+      if (typeof g === "object") return fail(g.problem);
+      const light: MapLight = { id: newFeatureId("g"), ...(g && { glow: g }), x: i.x, y: i.y, radius: i.radius, ...(i.bright !== undefined && { bright: i.bright }), ...(i.colour && { colour: i.colour }), ...(i.intensity !== undefined && { intensity: i.intensity }), ...(i.shadows === false && { shadows: false }) };
       const r = ctx.execute({ op: "features", patch: { upsertLights: [light] }, label: "Add light" });
       return json({ change: r.seq, light });
+    },
+  }),
+
+  define({
+    name: "update_light",
+    description: "Change a light (ids from list_battle): move it, its reach, colour, strength, whether walls block it, or its glow picture (glow: null for the round fall-off again).",
+    schema: z.object({
+      id: z.string(),
+      x: z.number().optional(), y: z.number().optional(),
+      radius: z.number().min(0.5).max(60).optional(),
+      bright: z.number().min(0).max(60).optional(),
+      colour: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      intensity: z.number().min(0).max(1).optional(),
+      shadows: z.boolean().optional(),
+      glow: GlowSchema.nullable().optional(),
+    }),
+    async run(ctx, i) {
+      const l = lightsOf(ctx).find((x) => x.id === i.id);
+      if (!l) return fail(`No light with id ${i.id}. Use list_battle.`);
+      const g = await glowFrom(ctx, i.glow ?? undefined);
+      if (typeof g === "object") return fail(g.problem);
+      const { id: _id, glow: _g, ...rest } = i;
+      const next: MapLight = { ...l, ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)), ...(g && { glow: g }) };
+      if (i.glow === null) delete next.glow;
+      const r = ctx.execute({ op: "features", patch: { upsertLights: [next] }, label: "Change light" });
+      return json({ change: r.seq, light: next });
     },
   }),
 
@@ -405,7 +443,7 @@ export const BATTLE_TOOLS = [
       return json({
         summary: battleSummary(ctx),
         walls: wallsOf(ctx).map((w) => ({ id: w.id, kind: w.kind, points: w.points.map(([x, y]) => [round(x), round(y)]), ...(w.closed && { closed: true }), ...(w.open && { open: true }), ...(w.locked && { locked: true }), ...wallStyleOf(w), ...(w.portal && { picture: w.portal }), pieces: wallSegments(w).length })),
-        lights: lightsOf(ctx).map((l) => ({ id: l.id, x: round(l.x), y: round(l.y), radius: l.radius, bright: l.bright, colour: l.colour })),
+        lights: lightsOf(ctx).map((l) => ({ id: l.id, x: round(l.x), y: round(l.y), radius: l.radius, bright: l.bright, colour: l.colour, ...(l.glow && { glow: l.glow }) })),
         connectors: (ctx.session().doc.features?.connectors ?? []).map((c) => ({ id: c.id, kind: c.kind, ...(c.name && { name: c.name }), x: c.x, y: c.y, w: c.w, h: c.h, leads: connectorTo(c) })),
         roofs: (ctx.session().doc.features?.roofs ?? []).map((r) => ({ id: r.id, ...(r.name && { name: r.name }), style: r.style, ...(r.asset && { asset: r.asset }), points: r.points.map(([x, y]) => [round(x), round(y)]) })),
         notes: sortedNotes(ctx.session().doc.features?.notes).map((n) => ({ id: n.id, n: n.n, x: round(n.x), y: round(n.y), title: n.title, ...(n.text && { text: n.text }) })),

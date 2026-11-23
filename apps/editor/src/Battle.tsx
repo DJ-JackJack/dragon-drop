@@ -19,7 +19,8 @@ import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { PackFloors } from "./PackFloors.tsx";
-import { type PathChoice, PathLookPicker, PathSwatch, PortalPicker, PortalSwatch, type WallChoice, WallLookPicker, WallSwatch, pathChoiceLabel, portalLabel, wallChoiceLabel } from "./WallLookPicker.tsx";
+import { PackGrid } from "./PackGrid.tsx";
+import { GlowPicker, glowLabel, type PathChoice, PathLookPicker, PathSwatch, PortalPicker, PortalSwatch, type WallChoice, WallLookPicker, WallSwatch, pathChoiceLabel, portalLabel, wallChoiceLabel } from "./WallLookPicker.tsx";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
@@ -66,6 +67,10 @@ export interface BattleUi {
   pathLook: PathLook;
   pathAsset: string | null;
   pathWidth: number;
+  /** The picture from the asset packs new roofs are tiled with (null: drawn in their look). */
+  roofAsset: string | null;
+  /** The light picture new lights take their shape from (null: round). */
+  lightGlow: string | null;
 }
 
 /** The new-wall style the tools put on a wall (nothing for plain stone, so such a wall is stored exactly as walls always were). */
@@ -76,7 +81,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
-  wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1,
+  wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
 };
 
 /** The name of a floor material, including pack textures. */
@@ -370,6 +375,29 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     return null;
   };
 
+  /** A light's glow picture tinted with its colour (its brightness as the opacity), for the editor's light pools; null until the picture has loaded. */
+  const glowCanvases = useRef(new Map<string, HTMLCanvasElement>());
+  const glowCanvasFor = (l: MapLight): HTMLCanvasElement | null => {
+    if (!l.glow) return null;
+    const key = `${l.glow}|${l.colour ?? "#ffd68c"}`;
+    const hit = glowCanvases.current.get(key);
+    if (hit) return hit;
+    const pic = wallPictureFor(l.glow);
+    if (!pic) return null;
+    const [r, g, b] = hexToRgb(l.colour ?? "#ffd68c");
+    const c = document.createElement("canvas");
+    c.width = pic.w; c.height = pic.h;
+    const out = new ImageData(pic.w, pic.h);
+    for (let i = 0; i < pic.w * pic.h * 4; i += 4) {
+      const v = ((0.299 * pic.data[i] + 0.587 * pic.data[i + 1] + 0.114 * pic.data[i + 2]) / 255) * pic.data[i + 3];
+      out.data[i] = r; out.data[i + 1] = g; out.data[i + 2] = b; out.data[i + 3] = v;
+    }
+    c.getContext("2d")!.putImageData(out, 0, 0);
+    if (glowCanvases.current.size > 64) glowCanvases.current.clear();
+    glowCanvases.current.set(key, c);
+    return c;
+  };
+
   /** The roof pictures from asset packs, as 512 px RGBA (loaded like floor textures: the roofs are drawn again when one arrives). */
   const roofTileFor: RoofTileSource = (asset) => {
     const hit = tiles.current.get(asset);
@@ -618,7 +646,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     if (wl && wl.px !== wallPx(spec, v.scale)) { window.clearTimeout(wallTimer.current); wallTimer.current = window.setTimeout(() => buildWalls(), 220); }
     for (const pr of props) if ((pr.layer ?? "above") === "above") drawProp(pr);
     if (o.showLights) {
-      drawLights(ctx, lights, f.walls, v);
+      drawLights(ctx, lights, f.walls, v, glowCanvasFor);
       const amb = ambientOf(spec);
       const dimmed = amb < 0.999 || (f.zones ?? []).some((z) => z.ambient < 0.999);
       if (dimmed) drawAmbient(ctx, lights, f.walls, f.zones ?? [], v, spec, amb, dpr, W, H);
@@ -888,7 +916,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
 
   /** A roof with this outline (squares), in the chosen look, selected so it can be changed. */
   function makeRoof(points: [number, number][]) {
-    const roof: MapRoof = { id: newFeatureId("f"), style: uiRef.current.roofStyle, points };
+    const ra = uiRef.current.roofAsset;
+    const roof: MapRoof = { id: newFeatureId("f"), style: uiRef.current.roofStyle, points, ...(ra && { asset: ra }) };
     sendFeatures({ upsertRoofs: [roof] }, "Add roof");
     onUiRef.current({ multi: [], selected: roof.id });
   }
@@ -1061,7 +1090,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       return;
     }
     if (o.tool === "light") {
-      const light: MapLight = { id: newFeatureId("g"), x: Math.min(spec.squaresX, Math.max(0, snap(q.x))), y: Math.min(spec.squaresY, Math.max(0, snap(q.y))), radius: 6, bright: 3, colour: "#ffb35c" };
+      const light: MapLight = { id: newFeatureId("g"), x: Math.min(spec.squaresX, Math.max(0, snap(q.x))), y: Math.min(spec.squaresY, Math.max(0, snap(q.y))), radius: 6, bright: 3, colour: "#ffb35c", ...(o.lightGlow && { glow: o.lightGlow }) };
       sendFeatures({ upsertLights: [light] }, "Add light");
       onUiRef.current({ multi: [], selected: light.id });
       return;
@@ -1275,7 +1304,7 @@ function drawWallMarks(ctx: CanvasRenderingContext2D, walls: MapWall[], v: View,
   ctx.restore();
 }
 
-function drawLights(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: MapWall[] | undefined, v: View) {
+function drawLights(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: MapWall[] | undefined, v: View, glowFor?: (l: MapLight) => HTMLCanvasElement | null) {
   ctx.save();
   for (const l of lights) {
     const [r, g, b] = hexToRgb(l.colour ?? "#ffd68c"), cx = v.ox + l.x * v.scale, cy = v.oy + l.y * v.scale, R = l.radius * v.scale;
@@ -1294,7 +1323,9 @@ function drawLights(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: Ma
       ctx.closePath();
       ctx.clip();
     }
-    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+    const glow = glowFor?.(l);
+    if (glow) { ctx.globalAlpha = Math.min(1, 0.45 * (l.intensity ?? 1)); ctx.drawImage(glow, cx - R, cy - R, 2 * R, 2 * R); } // (its own shape, tinted)
+    else { ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   }
   ctx.restore();
@@ -1456,11 +1487,23 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
   return (
     <ToolBar hint={BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "roof" && (
-        <label className="field">New roofs look like
-          <select value={ui.roofStyle} onChange={(e) => onUi({ roofStyle: e.target.value as RoofStyle })} data-testid="roof-new-style">
-            {ROOF_STYLES.map((s) => <option key={s} value={s}>{ROOF_STYLE_NAMES[s]}</option>)}
-          </select>
-        </label>
+        <>
+          <label className="field">New roofs look like
+            <select value={ui.roofStyle} onChange={(e) => onUi({ roofStyle: e.target.value as RoofStyle })} data-testid="roof-new-style">
+              {ROOF_STYLES.map((s) => <option key={s} value={s}>{ROOF_STYLE_NAMES[s]}</option>)}
+            </select>
+          </label>
+          <Popover label={ui.roofAsset ? <><span className="swatch now" style={{ backgroundImage: `url(${assetUrl(ui.roofAsset, 64)})` }} /> Picture: <b>{assetLabel(parseAssetId(ui.roofAsset)?.path ?? ui.roofAsset)}</b></> : "Picture: none"} title="A picture from your asset packs tiled across new roofs (none: drawn in their look)" testId="roof-picture-menu">
+            {(close) => (
+              <div className="wall-picker">
+                <div className="row"><button className={ui.roofAsset ? "" : "on"} onClick={() => { onUi({ roofAsset: null }); close(); }} data-testid="roof-picture-none">No picture: drawn in its look</button></div>
+                <PackGrid kinds={[{ cat: "roofs", label: "roofs" }, { cat: "patterns", label: "patterns" }, { cat: "terrain", label: "floor textures" }]} testId="pack-broofs" item="pack-broof" placeholder="Search: roof, slate, thatch…"
+                  noneFound="Nothing of this kind in your asset packs." noFolder="To tile roofs with the pictures in your asset packs, choose your asset folder in Settings (Maps and assets)."
+                  stateOf={(it) => ({ on: it.id === ui.roofAsset })} onChoose={(it) => { onUi({ roofAsset: it.id }); close(); }} />
+              </div>
+            )}
+          </Popover>
+        </>
       )}
       {(ui.tool === "stairs" || ui.tool === "ladder") && (
         <div className="seg" role="group" aria-label="Which way it leads" data-testid="connector-to">
@@ -1528,6 +1571,11 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
           </Popover>
         );
       })()}
+      {ui.tool === "light" && (
+        <Popover label={<>Shape: <b>{glowLabel(ui.lightGlow)}</b></>} title="Choose the shape of new lights: round, or a light picture from your asset packs" testId="light-glow-menu">
+          {(close) => <GlowPicker value={ui.lightGlow} onPick={(pic) => { onUi({ lightGlow: pic }); close(); }} />}
+        </Popover>
+      )}
       {(ui.tool === "wall" || ui.tool === "room") && (
         <Popover label={<><WallSwatch c={{ look: ui.wallLook, asset: ui.wallAsset }} /> Walls: <b>{wallChoiceLabel({ look: ui.wallLook, asset: ui.wallAsset })}</b></>} title="Choose what new walls are built of" testId="wall-look-menu">
           {(close) => <WallLookPicker value={{ look: ui.wallLook, asset: ui.wallAsset }} onPick={(c) => { onUi({ wallLook: c.look, wallAsset: c.asset }); close(); }} />}
@@ -1979,6 +2027,7 @@ function PropEditor({ p, onClear }: { p: MapProp; onClear: () => void }) {
 
 function LightEditor({ l, onClear }: { l: MapLight; onClear: () => void }) {
   const latest = useLatest(l);
+  const [picking, setPicking] = useState(false);
   const set = (patch: Partial<MapLight>) => {
     const next = { ...latest.current, ...patch };
     latest.current = next;
@@ -1999,6 +2048,10 @@ function LightEditor({ l, onClear }: { l: MapLight; onClear: () => void }) {
         <input type="range" min={10} max={100} value={Math.round((l.intensity ?? 1) * 100)} onChange={(e) => set({ intensity: Number(e.target.value) / 100 })} />
       </label>
       <label className="check"><input type="checkbox" checked={l.shadows !== false} onChange={(e) => set({ shadows: e.target.checked })} /> Walls block it (in the tabletop)</label>
+      <button className="built-of" onClick={() => setPicking((v) => !v)} aria-expanded={picking} title="Choose the light's shape: round, or a light picture from your asset packs" data-testid="light-shape">
+        Shape <b>{glowLabel(l.glow)}</b> <span aria-hidden="true">{picking ? "▴" : "▾"}</span>
+      </button>
+      {picking && <div className="inline-picker"><GlowPicker value={l.glow ?? null} onPick={(pic) => { const next: MapLight = { ...latest.current }; delete next.glow; if (pic) next.glow = pic; latest.current = next; sendFeatures({ upsertLights: [next] }, `Light shape: ${glowLabel(pic)}`); setPicking(false); }} /></div>}
       <div className="row">
         <button onClick={() => { sendFeatures({ removeLights: [l.id] }, "Delete light"); onClear(); }} data-testid="light-delete">Delete</button>
       </div>

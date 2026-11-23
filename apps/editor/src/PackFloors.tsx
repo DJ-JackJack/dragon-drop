@@ -14,7 +14,7 @@ export function PackFloors({ meta, current, onChosen, onBrowse }: { meta: MapMet
   };
   return (
     <PackGrid
-      kinds={[{ cat: "terrain", label: "floors" }]} testId="pack-floors" item="pack-floor" placeholder="Search: grass, cobble, planks…"
+      kinds={[{ cat: "terrain", label: "floors" }, { cat: "patterns", label: "patterns" }]} testId="pack-floors" item="pack-floor" placeholder="Search: grass, cobble, planks…"
       noneFound="No floor textures were found in your asset packs. Dragon Drop knows a floor texture by the words in its folder or file name (floor, ground, terrain, tiles, textures, grass, cobblestone...), or by its look."
       noFolder="To paint with the floors in your asset packs, choose your asset folder in Settings (Maps and assets)."
       stateOf={(it) => { const id = onMap.get(it.id.toLowerCase()); return { on: id !== undefined && id === current, added: id !== undefined, ...(id !== undefined && { note: "already on this map" }) }; }}

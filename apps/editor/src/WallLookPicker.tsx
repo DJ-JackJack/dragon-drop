@@ -100,3 +100,23 @@ export function PathLookPicker({ value, onPick }: { value: PathChoice; onPick: (
     </div>
   );
 }
+
+/** What gives a light its shape: the round fall-off, or a light picture from the asset packs (tinted with the light's colour). */
+export function GlowPicker({ value, onPick }: { value: string | null; onPick: (picture: string | null) => void }) {
+  return (
+    <div className="wall-picker" data-testid="glow-looks">
+      <div className="row"><button className={value ? "" : "on"} onClick={() => onPick(null)} data-testid="glow-round">Round (no picture)</button></div>
+      <PackGrid
+        kinds={[{ cat: "lights", label: "light pictures" }]} testId="pack-glows" item="pack-glow" placeholder="Search: glow, window, soft…"
+        noneFound="No light pictures were found in your asset packs (Dragon Drop knows them by the words light or glow in their folder or file names)."
+        noFolder="To shape lights with the pictures in your asset packs, choose your asset folder in Settings (Maps and assets)."
+        stateOf={(it) => ({ on: it.id === value })}
+        onChoose={(it) => onPick(it.id)}
+      />
+    </div>
+  );
+}
+
+export function glowLabel(picture: string | null | undefined): string {
+  return picture ? assetLabel(parseAssetId(picture)?.path ?? picture) : "Round";
+}

@@ -10,7 +10,7 @@ import { HeightField } from "./doc.ts";
 import { type PaletteEntry, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "./assets.ts";
 import { type Features, type MapAmbientZone, type MapConnector, type MapLight, type MapProp, type MapWall, connectorTo, emptyFeatures, wallSegments } from "./features.ts";
 import { lightVisibility, visibleDistance } from "./lighting.ts";
-import { boxBlur, compositeOver, renderWallLayer , type WallPictureSource } from "./battleLook.ts";
+import { boxBlur, compositeOver, renderWallLayer, type WallPictureSource } from "./battleLook.ts";
 import { type RoofPictureRect, type RoofTileSource, renderRoofLayer, renderRoofPicture, roofPictureRect } from "./battleRoof.ts";
 import { renderPathLayer } from "./battlePaths.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
@@ -629,6 +629,7 @@ export function ambientField(spec: BattleSpec, zones: MapAmbientZone[] | undefin
  */
 export function drawBattleLights(
   img: { w: number; h: number; data: Uint8ClampedArray }, spec: BattleSpec, lights: MapLight[] | undefined, walls: MapWall[] | undefined, zones?: MapAmbientZone[],
+  glows?: WallPictureSource,
 ) {
   const px = spec.pxPerSquare, amb = ambientOf(spec);
   const dimmed = amb < 0.999 || (zones ?? []).some((z) => z.points.length >= 3 && z.ambient < 0.999);
@@ -645,6 +646,13 @@ export function drawBattleLights(
     }
     const x0 = Math.max(0, Math.floor(l.x * px - R)), x1 = Math.min(img.w - 1, Math.ceil(l.x * px + R));
     const y0 = Math.max(0, Math.floor(l.y * px - R)), y1 = Math.min(img.h - 1, Math.ceil(l.y * px + R));
+    // a glow picture from the asset packs: its brightness (times its opacity) is the light's strength, over the square the light reaches
+    const glow = l.glow && glows ? glows(l.glow) : null;
+    const glowAt = glow ? (dx: number, dy: number) => {
+      const gx = Math.min(glow.w - 1, Math.max(0, Math.floor(((dx / R + 1) / 2) * glow.w))), gy = Math.min(glow.h - 1, Math.max(0, Math.floor(((dy / R + 1) / 2) * glow.h)));
+      const g = (gy * glow.w + gx) * 4;
+      return ((0.299 * glow.data[g] + 0.587 * glow.data[g + 1] + 0.114 * glow.data[g + 2]) / 255) * (glow.data[g + 3] / 255);
+    } : null;
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const dx = x + 0.5 - l.x * px, dy = y + 0.5 - l.y * px;
@@ -663,11 +671,12 @@ export function drawBattleLights(
           if (n === 0) continue;
           lit = n / 5;
         }
-        const o = (y * img.w + x) * 4, a = Math.pow(1 - d, 1.6) * 0.45 * inten * lit;
+        const shape = glowAt ? glowAt(dx, dy) : Math.pow(1 - d, 1.6);
+        const o = (y * img.w + x) * 4, a = shape * 0.45 * inten * lit;
         img.data[o] = Math.min(255, img.data[o] + (c[0] - img.data[o]) * a);
         img.data[o + 1] = Math.min(255, img.data[o + 1] + (c[1] - img.data[o + 1]) * a);
         img.data[o + 2] = Math.min(255, img.data[o + 2] + (c[2] - img.data[o + 2]) * a);
-        if (reveal) reveal[y * img.w + x] += Math.pow(1 - d, 1.4) * inten * lit;
+        if (reveal) reveal[y * img.w + x] += (glowAt ? shape : Math.pow(1 - d, 1.4)) * inten * lit;
       }
     }
   }
@@ -696,7 +705,7 @@ export function drawBattleLights(
 /** Walls, doors and windows (and, unless `lights` is false, light) onto an image of the whole battlemap (image px). */
 export function drawBattleOverlay(img: { w: number; h: number; data: Uint8ClampedArray }, spec: BattleSpec, f: Features | undefined, opts: { lights?: boolean; floorAt?: (xSquares: number, ySquares: number) => boolean; wallPictures?: WallPictureSource } = {}) {
   compositeOver(img, renderWallLayer(spec, f?.walls, { floorAt: opts.floorAt, connectors: f?.connectors, pictureFor: opts.wallPictures }));
-  if (opts.lights !== false) drawBattleLights(img, spec, f?.lights, f?.walls, f?.zones);
+  if (opts.lights !== false) drawBattleLights(img, spec, f?.lights, f?.walls, f?.zones, opts.wallPictures);
 }
 
 /** A decoded object image for drawing props. */
@@ -775,7 +784,7 @@ export function renderBattle(
   if (opts.overlay !== false) {
     compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures }));
     drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
-    if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones);
+    if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones, opts.wallPictures);
     if (opts.notes) drawBattleNotes(img, spec, doc.features?.notes);
   } else {
     drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");

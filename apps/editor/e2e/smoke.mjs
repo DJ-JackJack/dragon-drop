@@ -41,6 +41,7 @@ const assetsDir = path.join(tmp, "Assets");
     { path: "textures/walls/Stone_Wall.png", data: png(512, 64, [70, 90, 200]) },
     { path: "textures/portals/Oak_Door.png", data: png(256, 64, [40, 200, 60]) },
     { path: "textures/paths/Dirt_Road.png", data: png(512, 128, [150, 110, 60]) },
+    { path: "textures/lights/Soft_Glow.png", data: png(64, 64, [255, 255, 255]) },
   ];
   const pad = (n, a) => (a - (n % a)) % a;
   const names = files.map((f) => enc.encode(`res://${f.path}`));
@@ -725,6 +726,14 @@ try {
     await page.getByTestId("btool-light").click();
     await click(12, 7);
     await page.getByTestId("history").getByText("Add light").waitFor({ timeout: 10000 });
+    // its shape from the pack's light picture, then round again (the light-level checks below expect a round light)
+    await page.getByTestId("light-shape").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-glow"]').length === 1, null, { timeout: 15000 });
+    await page.getByTestId("pack-glow").click();
+    await page.getByTestId("history").getByText("Light shape: Soft Glow").waitFor({ timeout: 10000 });
+    await page.getByTestId("light-shape").click();
+    await page.getByTestId("glow-round").click();
+    await page.getByTestId("history").getByText("Light shape: Round").waitFor({ timeout: 10000 });
     await page.getByTestId("light-radius").waitFor({ timeout: 5000 });
     // duplicate and copy/paste: the torch is selected. Ctrl+D puts a copy a square along and down; Ctrl+C then Ctrl+V pastes one under the pointer
     {

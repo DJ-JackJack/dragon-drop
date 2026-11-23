@@ -30,6 +30,15 @@ beforeAll(() => {
   for (let i = 0; i < 512 * 128; i++) r.data.set([230, 140, 30, 255], i * 4);
   mkdirSync(path.join(lib, "Castle Kit", "Roads"), { recursive: true });
   writeFileSync(path.join(lib, "Castle Kit", "Roads", "Dirt_Road.png"), PNG.sync.write(r));
+  // a light picture (a soft white glow) and a repeating pattern
+  const g = new PNG({ width: 64, height: 64 });
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) { const v = Math.max(0, 255 - Math.hypot(x - 32, y - 32) * 8); g.data.set([v, v, v, 255], (y * 64 + x) * 4); }
+  mkdirSync(path.join(lib, "Castle Kit", "Lights"), { recursive: true });
+  writeFileSync(path.join(lib, "Castle Kit", "Lights", "Soft_Glow.png"), PNG.sync.write(g));
+  const t = new PNG({ width: 128, height: 128 });
+  for (let i = 0; i < 128 * 128; i++) t.data.set([180, 160, 120, 255], i * 4);
+  mkdirSync(path.join(lib, "Castle Kit", "Patterns"), { recursive: true });
+  writeFileSync(path.join(lib, "Castle Kit", "Patterns", "Herringbone.png"), PNG.sync.write(t));
 });
 
 let n = 0;
@@ -127,6 +136,22 @@ describe("what walls are built of", () => {
     expect(Object.keys((await hub.battleAssets(hub.session.doc)).opts.wallPictures ?? {})).toEqual([road]);
     await ok(hub, "remove_paths", { ids: [stream.path.id, r.path.id] });
     expect(paths()).toHaveLength(0);
+  });
+
+  it("lets Claude shape a light with a pack picture, and floor with a pattern", async () => {
+    const hub = await fresh();
+    const glow = (await ok(hub, "search_assets", { query: "glow", category: "lights" })).items[0].id;
+    const added = await ok(hub, "add_light", { x: 5, y: 5, radius: 4, glow });
+    expect(hub.session.doc.features!.lights![0].glow).toBe(glow);
+    expect((await ok(hub, "list_battle")).lights[0].glow).toBe(glow);
+    expect(Object.keys((await hub.battleAssets(hub.session.doc)).opts.wallPictures ?? {})).toEqual([glow]);
+    await ok(hub, "update_light", { id: added.light.id, glow: null, radius: 6 });
+    expect(hub.session.doc.features!.lights![0]).toMatchObject({ radius: 6 });
+    expect(hub.session.doc.features!.lights![0]).not.toHaveProperty("glow");
+    expect((await tool(hub, "update_light", { id: "nope" })).isError).toBe(true);
+    const pattern = (await ok(hub, "search_assets", { query: "herring", category: "patterns" })).items[0].id;
+    const tex = await ok(hub, "add_floor_texture", { asset: pattern });
+    await ok(hub, "paint_floor", { shape: { type: "rect", x: 1, y: 1, w: 3, h: 3 }, material: tex.material });
   });
 
   it("draws a wall's pack picture in the server's pictures (previews and exports)", async () => {
