@@ -535,6 +535,25 @@ try {
     await page.getByTestId("inspector").getByText("Reef").first().waitFor({ timeout: 5000 });
     await page.getByTestId("inspector").getByRole("button", { name: "Delete" }).click();
     await rows(/reef/).first().waitFor({ state: "detached", timeout: 10000 });
+    // realms: the Realm tool adds a realm under the DM's name and paints it (land only off: the test map's land isn't known here), one undo step each
+    await page.getByRole("button", { name: "Realm", exact: true }).click();
+    await page.getByTestId("realm-menu").click();
+    await page.getByTestId("realm-new-name").fill("Test Realm");
+    await page.getByTestId("realm-new").click();
+    await page.getByTestId("history").getByText("Add realm Test Realm").first().waitFor({ timeout: 10000 });
+    await page.getByLabel("Land only").uncheck();
+    await page.mouse.move(sx(300), sy(300));
+    await page.mouse.down();
+    await page.mouse.move(sx(600), sy(500), { steps: 8 });
+    await page.mouse.up();
+    await page.getByTestId("history").getByText("Paint realm Test Realm").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("realm-menu").click();
+    await page.getByTestId("realm-list").getByText(/km²/).waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-3e-realm.png") });
+    await page.keyboard.press("Escape");
+    await page.getByLabel("Land only").check();
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByRole("button", { name: "Select", exact: true }).click();
   }
 

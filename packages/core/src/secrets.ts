@@ -8,7 +8,7 @@ import type { Features } from "./features.ts";
 export function hasGmOnly(f: Features | null | undefined): boolean {
   if (!f) return false;
   return f.places.some((p) => p.gmOnly) || f.labels.some((l) => l.gmOnly) || !!f.lines?.some((l) => l.gmOnly) || !!f.props?.some((p) => p.gmOnly)
-    || !!f.lights?.some((l) => l.gmOnly) || !!f.buildings?.some((b) => b.gmOnly && b.name);
+    || !!f.lights?.some((l) => l.gmOnly) || !!f.buildings?.some((b) => b.gmOnly && b.name) || !!f.realms?.some((r) => r.gmOnly);
 }
 
 /** The features players may see: GM-only places, labels, roads, objects and lights left out, and GM-only buildings without their names. */
@@ -21,6 +21,7 @@ export function playerView(f: Features): Features {
     ...(f.lines && { lines: f.lines.filter((l) => !l.gmOnly) }),
     ...(f.props && { props: f.props.filter((p) => !p.gmOnly) }),
     ...(f.lights && { lights: f.lights.filter((l) => !l.gmOnly) }),
+    ...(f.realms && { realms: f.realms.filter((r) => !r.gmOnly) }),
     ...(f.buildings && { buildings: f.buildings.map((b) => (b.gmOnly && b.name ? (({ name: _n, ...rest }) => rest)(b) : b)) }),
   };
 }

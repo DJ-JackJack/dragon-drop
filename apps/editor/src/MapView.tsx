@@ -25,12 +25,13 @@ import { makeResizeKeeper } from "./viewResize.ts";
 import { type WaterPick, namedShape, pickWater, withWaterLabels } from "./waterUi.ts";
 import type { RiverMode } from "./WorldToolBar.tsx";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
+import { realmCtl } from "./realmUi.ts";
 import { measureCtl, worldLength } from "./measure.ts";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
 const MAX_ZOOM = 80;
-export type Tool = "pan" | "select" | "area" | "measure" | "place" | "label" | "region" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
+export type Tool = "pan" | "select" | "area" | "measure" | "place" | "label" | "region" | "realm" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
 /** The shape the Select area tool drags out. */
 export type AreaShape = "rect" | "circle" | "free" | "poly";
 const isBrush = (t: Tool): t is BrushTool => ["raise", "lower", "smooth", "flatten", "land", "water"].includes(t);
@@ -64,6 +65,8 @@ interface Props {
   /** The Layers switches for the labels and place names, and for the place markers. */
   showLabels?: boolean;
   showMarkers?: boolean;
+  /** The Layers switch for the realms (their wash, borders and names). */
+  showRealms?: boolean;
   /** Road tool: what is being drawn, and whether roads and trails are routed over the terrain for you. */
   lineKind: LineKind;
   lineAuto: boolean;
@@ -110,7 +113,7 @@ interface RiverChunk {
   w: number;
 }
 
-export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children, water = null, riverMode = "add", riverSize = "river", onWaterPick }: Props) {
+export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, showRealms = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children, water = null, riverMode = "add", riverSize = "river", onWaterPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -121,7 +124,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{
-    mode: "pan" | "brush" | "move" | "draw" | "river" | "rect" | "area" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
+    mode: "pan" | "brush" | "move" | "draw" | "river" | "rect" | "area" | "marquee" | "trace" | "realm"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
     hit?: Hit;
     /** move: the places and labels moving together (when there are two or more), whether the pointer has really moved yet, and whether it went down on one of a group (a click without a drag then picks that one). marquee: whether it adds to the group, and what was in it before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[];
@@ -158,8 +161,8 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const metaRef = useRef(meta);
   metaRef.current = meta;
-  const optsRef = useRef({ labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, showLabels, showMarkers, lineKind, lineAuto, areaShape });
-  optsRef.current = { labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, showLabels, showMarkers, lineKind, lineAuto, areaShape };
+  const optsRef = useRef({ labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, showLabels, showMarkers, showRealms, lineKind, lineAuto, areaShape });
+  optsRef.current = { labelScale, tool, brush, showGrid, hillshade, smooth, showRivers, placeType, labelKind, showRegions, showLabels, showMarkers, showRealms, lineKind, lineAuto, areaShape };
   const selectionRef = useRef({ selection, lock: selectionLock });
   selectionRef.current = { selection, lock: selectionLock };
   const onAreaRef = useRef(onArea);
@@ -505,7 +508,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       for (const [x, y] of rd) { ctx.beginPath(); ctx.arc(v.ox + x * v.scale, v.oy + y * v.scale, 3.5, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     }
-    hitsRef.current = drawFeatures(ctx, withWaterLabels(f, waterRef.current), { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers, faintGmOnly: true }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
+    hitsRef.current = drawFeatures(ctx, withWaterLabels(f, waterRef.current), { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers, realms: optsRef.current.showRealms || optsRef.current.tool === "realm", faintGmOnly: true }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
     drawSelectionOverlay(ctx, v, selectionRef.current.selection, selectionRef.current.lock, f, drag.current, pointer.current, optsRef.current.areaShape, toMapRef.current);
     // title, scale bar, compass and frame (what exports will show)
     drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });
@@ -600,6 +603,15 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.moveTo(q.x - 15, q.y); ctx.lineTo(q.x + 15, q.y); ctx.moveTo(q.x, q.y - 15); ctx.lineTo(q.x, q.y + 15); ctx.stroke();
       ctx.restore();
     }
+    // a realm being painted, and the Realm tool's brush
+    realmCtl.draw(ctx, v);
+    if (optsRef.current.tool === "realm" && pointer.current && !spaceDownRef.current) {
+      const q = pointer.current, r = Math.max(2, realmCtl.state.radius * v.scale);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.x, q.y, r + 1.5, 0, Math.PI * 2); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+      ctx.restore();
+    }
     // brush cursor
     const p = pointer.current;
     const { tool: t, brush: b } = optsRef.current;
@@ -655,7 +667,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   }), [paintView]);
   // a new style, or relief shading switched on or off
   useEffect(() => { const v = paintView(); if (v) clientRef.current?.repaint(null, v); }, [hillshade, showRivers, meta?.style, paintView]);
-  useEffect(() => { requestDraw(); }, [labelScale, showGrid, smooth, showRivers, showRegions, showLabels, showMarkers, tool, brush, features, selectedId, meta, selection, selectionLock, areaShape, water, riverMode, requestDraw]);
+  useEffect(() => { requestDraw(); }, [labelScale, showGrid, smooth, showRivers, showRegions, showLabels, showMarkers, showRealms, tool, brush, features, selectedId, meta, selection, selectionLock, areaShape, water, riverMode, requestDraw]);
   useEffect(() => {
     // fonts load asynchronously; redraw labels once Cinzel is ready
     void loadLabelFonts().then(() => requestDraw());
@@ -792,6 +804,13 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     const m = toMap(p.x, p.y);
     const tl = optsRef.current.tool;
     if (tl === "measure") { measureCtl.down(m, p); requestDraw(); return; }
+    if (tl === "realm") {
+      const why = realmCtl.down(m);
+      if (why) { store.note(why); return; }
+      drag.current = { mode: "realm", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y };
+      requestDraw();
+      return;
+    }
     if (tl === "battlehere") {
       onBattleRef.current(m.x, m.y);
       return;
@@ -933,6 +952,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       setHover({ x: Math.floor(m.x), y: Math.floor(m.y), e: Math.round(hf.sample(m.x, m.y) - mt.seaLevel) });
     } else setHover(null);
     const d = drag.current;
+    if (d?.mode === "realm") { realmCtl.move(m); requestDraw(); return; }
     if (d?.mode === "trace") { traceCtl.move(m); return; }
     if (optsRef.current.tool === "river") waterHover.current = !d && riverRef.current.mode === "name" ? pickAt(m.x, m.y) : null;
     if (optsRef.current.tool === "measure" && !d) measureCtl.move(m);
@@ -973,6 +993,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   const endDrag = () => {
     const d = drag.current;
     if (d?.mode === "trace") { drag.current = null; traceCtl.up(); return; }
+    if (d?.mode === "realm") { drag.current = null; realmCtl.up(); requestDraw(); return; }
     if (d?.mode === "brush") store.send({ t: "txn_end" });
     if (d?.mode === "pan" && d.pick && optsRef.current.tool === "select") {
       const pp = pointer.current;

@@ -78,6 +78,9 @@ Rivers aren't drawn one by one: they come from the land and the rain, so they ca
 **How do I update?**
 **Settings → Updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
 
+**Can I colour in kingdoms and provinces?**
+Yes: the world map's **Realm** tool (`B`) paints realms onto the land, each in its own colour with its name in the middle. They stop at the coast and meet their neighbours exactly.
+
 **Can I show the map to my players on a TV?**
 Yes: the battlemap's **Player screen** (in the Map panel) opens a second window for the TV, without anything GM only. With the fog on it shows only what you reveal with the **Reveal** tool: click a room and the players see it.
 

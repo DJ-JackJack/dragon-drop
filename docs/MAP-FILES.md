@@ -5,7 +5,7 @@ Every map is a plain folder on your PC. Nothing is stored in an account or in th
 ```
 projects\<map-name>\
   project.json              the map's settings: name, size, scale, sea level, climate, style, grid, title and scale bar, `formatVersion`; for a copy, `copiedFrom` (which map, when)
-  features.json             places, labels, roads, borders, climate regions, reefs, river sources, the names of rivers and lakes (battlemaps: walls, doors, lights, notes; settlement maps: buildings and streets),
+  features.json             places, labels, roads, borders, climate regions, reefs, river sources, the names of rivers and lakes, realms (their names and colours, and where they are painted: a run-length coded grid) (battlemaps: walls, doors, lights, notes; settlement maps: buildings and streets),
                             and where the trace picture lies (which reference picture, its corner, size and turn)
   brief.md                  your notes about the map, shared with Claude
   chat.json                 the chat history with Claude

@@ -23,6 +23,7 @@ import { CITY_WALL_TOOLS, CITY_WALL_TOOL_NAMES } from "./cityWallTools.ts";
 import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
+import { REALM_TOOLS, REALM_TOOL_NAMES } from "./realmTools.ts";
 import { MAP_TOOLS } from "./mapTools.ts";
 import { type PictureWork, encodeJpeg, inlinePictures, toBase64 } from "./images.ts";
 import { refusal, riskOf } from "./risky.ts";
@@ -1794,6 +1795,7 @@ export const TOOLS = [
   ...CITY_WALL_TOOLS,
   ...CITY_NAME_TOOLS,
   ...WATER_TOOLS,
+  ...REALM_TOOLS,
   ...MAP_TOOLS,
 ] as const;
 
@@ -1815,7 +1817,7 @@ const WORLD_ONLY = new Set([
   "list_labels", "add_climate_region", "update_climate_region", "remove_climate_region", "list_climate_regions", "set_map_furniture", "set_grid", "route_road",
   "add_line", "update_line", "remove_line", "list_lines", "export_gazetteer", "find_straits", "add_strait_reefs", "add_coast_reefs",
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
-  "get_selection", "select_area", "clear_selection", "restore_area", "copy_from_map", ...WATER_TOOL_NAMES,
+  "get_selection", "select_area", "clear_selection", "restore_area", "copy_from_map", ...WATER_TOOL_NAMES, ...REALM_TOOL_NAMES,
 ]);
 const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES, ...CITY_NAME_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);
@@ -1826,7 +1828,7 @@ const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n 
  */
 export const LOOK_ONLY_TOOLS = new Set([
   "get_map_summary", "get_brief", "render_preview", "query_points", "measure", "list_places", "list_labels", "list_lines", "list_climate_regions", "list_river_sources", "check_hydrology",
-  "list_waters", "find_straits", "list_references", "view_reference", "list_checkpoints", "get_trace_picture",
+  "list_waters", "list_realms", "find_straits", "list_references", "view_reference", "list_checkpoints", "get_trace_picture",
   "list_battle", "render_battlemap", "list_connectors", "list_roofs",
   "render_city", "list_buildings", "list_streets", "list_land", "list_trees", "list_city_walls", "list_city_districts", "list_city_labels", "check_city",
 ]);

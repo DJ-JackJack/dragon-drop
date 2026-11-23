@@ -69,6 +69,8 @@ export function App() {
   const [showLabels, setShowLabelsState] = useState(() => { try { return localStorage.getItem("dd.showLabels") !== "0"; } catch { return true; } });
   const setShowLabels = (on: boolean) => { setShowLabelsState(on); try { localStorage.setItem("dd.showLabels", on ? "1" : "0"); } catch { /* private window */ } };
   const [showMarkers, setShowMarkersState] = useState(() => { try { return localStorage.getItem("dd.showMarkers") !== "0"; } catch { return true; } });
+  const [showRealms, setShowRealmsState] = useState(() => { try { return localStorage.getItem("dd.showRealms") !== "0"; } catch { return true; } });
+  const setShowRealms = (on: boolean) => { setShowRealmsState(on); try { localStorage.setItem("dd.showRealms", on ? "1" : "0"); } catch { /* private window */ } };
   const setShowMarkers = (on: boolean) => { setShowMarkersState(on); try { localStorage.setItem("dd.showMarkers", on ? "1" : "0"); } catch { /* private window */ } };
   const [lineKind, setLineKind] = useState<LineKind>("road");
   const [lineAuto, setLineAuto] = useState(true);
@@ -327,7 +329,7 @@ export function App() {
         ) : (
         <MapView
           meta={s.meta} tool={tool} brush={brush} showGrid={showGrid} onShowGrid={() => setShowGrid((g) => !g)} hillshade={hillshade} smooth={smooth} labelScale={labelSize} showRivers={showRivers}
-          features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions} showLabels={showLabels} showMarkers={showMarkers}
+          features={s.features} selectedId={selectedId} onSelect={onSelect} placeType={placeType} labelKind={labelKind} showRegions={showRegions} showLabels={showLabels} showMarkers={showMarkers} showRealms={showRealms}
           lineKind={lineKind} lineAuto={lineAuto} onRouting={onRouting} childMaps={childMaps} onDetailArea={onDetailArea} onBattleHere={onBattleHere} onCityHere={onCityHere}
           selection={s.selection} selectionLock={s.selectionLock} areaShape={areaShape} onArea={onArea} onPoint={onPoint}
           water={s.water} riverMode={riverMode} riverSize={riverSize} onWaterPick={onWaterPick}
@@ -385,6 +387,7 @@ export function App() {
             <label className="check eye"><input type="checkbox" checked={showRegions} onChange={(e) => setShowRegions(e.target.checked)} /> Climate region outlines</label>
             <label className="check eye" title="The map's labels and the names of places (hidden, they can't be clicked either)"><input type="checkbox" data-testid="show-labels" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} /> Labels and names</label>
             <label className="check eye" title="The places' markers (towns, castles, temples...)"><input type="checkbox" data-testid="show-markers" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} /> Place markers</label>
+            <label className="check eye" title="The realms: kingdoms and provinces painted with the Realm tool (B)"><input type="checkbox" data-testid="show-realms" checked={showRealms} onChange={(e) => setShowRealms(e.target.checked)} /> Realms</label>
             {style === "relief" && (
               <label className="check eye"><input type="checkbox" checked={hillshade} onChange={(e) => setHillshade(e.target.checked)} /> Relief shading</label>
             )}

@@ -170,6 +170,9 @@ class Store {
     this.send({ t: "generate", req });
   }
 
+  /** A short note at the bottom of the window (it goes by itself). */
+  note(text: string, ms = 5000) { this.set({ pictureNote: { text, busy: false, at: Date.now(), ms } }); }
+
   /** The DM chose another name instead of replacing a prefab. */
   clearPrefabAsk() { this.set({ prefabAsk: null }); }
 

@@ -35,6 +35,8 @@ const P: Record<string, ReactNode> = {
   zone: <><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" /></>,
   note: <><path d="M5 4h14v12l-5 4H5z" /><path d="M14 20v-4h5" /></>,
   prop: <><path d="M12 3l8 4v10l-8 4-8-4V7z" /><path d="M12 12l8-5M12 12v9M12 12L4 7" /></>,
+  // a banner on a pole: a realm
+  realm: <><path d="M5 21V3" /><path d="M5 4h12l-3 4 3 4H5" /></>,
   // an eye: what the players see
   reveal: <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
   // a room plan in a dashed frame: a saved piece to place again

@@ -5,6 +5,7 @@
 import {
   type Features, LABEL_SIZE, type LineKind, type MapLabel, type MapLine, type NamePos, PLACE_SIZE, type Place, type PlaceType, PLACE_KINDS, chaikin, drawPlaceIcon, placeKind, labelText,
 } from "@mapmaker/core";
+import { drawRealms, realmNameLabels } from "./drawRealms.ts";
 
 export interface Hit {
   kind: "label" | "place" | "region" | "line";
@@ -35,6 +36,8 @@ export interface FeatureView {
   markers?: boolean;
   /** Draw GM-only places, labels and roads faintly (the editor; exports for players leave them out instead). */
   faintGmOnly?: boolean;
+  /** The Layers switch for the realms (drawRealms.ts): false leaves their wash, borders and names out. */
+  realms?: boolean;
 }
 
 /** The scale names and markers are sized by: the map's own scale when zooming out (they shrink with it), but only a little bigger than at "fit" when zoomed in, never more than 1.8 times. */
@@ -425,11 +428,14 @@ export function drawFeatures(ctx: CanvasRenderingContext2D, f: Features | null, 
     if (!(gm && v.faintGmOnly)) { draw(); return; }
     ctx.save(); ctx.globalAlpha *= 0.45; draw(); ctx.restore();
   };
+  // the realms under everything else, and their names with the labels
+  const realmNames = v.realms !== false && f.realmCells ? (drawRealms(ctx, f, v), realmNameLabels(f, v.mapWidth)) : [];
   for (const l of f.lines ?? []) {
     faint(l.gmOnly, () => { const h = drawLine(ctx, l, v, isSelected(l.id)); if (h) hits.push(h); });
   }
   const showLabels = v.labels !== false, showMarkers = v.markers !== false;
   if (showLabels) {
+    for (const l of realmNames) faint(l.gmOnly, () => { const h = drawLabel(ctx, l, v, false); if (h) occupied.push(h); }); // (not clickable: the realm is chosen in the Realm tool)
     for (const l of f.labels) {
       faint(l.gmOnly, () => { const h = drawLabel(ctx, l, v, isSelected(l.id)); if (h) { hits.push(h); occupied.push(h); } });
     }

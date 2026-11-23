@@ -24,6 +24,8 @@ export const RISKY_TOOLS = new Set([
   "save_prefab",
   // the generators replace a level's floor and walls, or a settlement's streets and buildings (added 2026-11-23)
   "generate_dungeon", "generate_village",
+  // realms are named canon too (added 2026-11-23)
+  "remove_realm", "update_realm",
 ]);
 
 /** Renaming `from` to `to` (both names): the question, or null when the name stays (or there was none). */
@@ -66,6 +68,11 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
   let f: Features;
   try { f = ctx.session().doc.features ?? { places: [], labels: [] }; } catch { return null; } // (no map open: the tool says so itself)
   const ids = Array.isArray(i.ids) ? (i.ids as string[]) : [];
+  if (name === "remove_realm" || name === "update_realm") {
+    const r = find(f.realms, String(i.realm ?? ""));
+    if (!r) return null;
+    return name === "remove_realm" ? `Remove the realm ${q(r.name)} and its painting` : renaming("realm", r.name, i.name);
+  }
   if (name === "generate_dungeon") {
     const d = ctx.session().doc, n = (f.walls?.length ?? 0) + (f.lights?.length ?? 0);
     let floored = false;

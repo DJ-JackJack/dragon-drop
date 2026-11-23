@@ -169,6 +169,29 @@ export interface MapNote {
   text?: string;
 }
 
+/** A realm of a world map (realms.ts): a kingdom, province or other territory, painted into `features.realmCells` under its number `n` (1..255). */
+export interface MapRealm {
+  id: string;
+  n: number;
+  /** The DM's name for it (canon: only one the DM gave). */
+  name: string;
+  /** "#rrggbb". */
+  colour: string;
+  /** Don't write its name on the map. */
+  hideName?: boolean;
+  /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
+  gmOnly?: boolean;
+  notes?: string;
+}
+
+/** The realms painted on a world map: a grid of cells over the map (`scale` map px a cell), each the number of its realm (0: nobody's), run-length coded row by row as [n, count, n, count...]. */
+export interface RealmGrid {
+  w: number;
+  h: number;
+  scale: number;
+  cells: number[];
+}
+
 /** A part of a battlemap level revealed to the players on the player screen, or (`hide`) covered again: a polygon in squares, applied in order (fog.ts). */
 export interface MapReveal {
   id: string;
@@ -452,6 +475,9 @@ export interface Features {
   zones?: MapAmbientZone[];
   /** What the players have been shown on the player screen (fog.ts), in order. */
   reveals?: MapReveal[];
+  /** World maps: the realms (realms.ts), and where each is painted. */
+  realms?: MapRealm[];
+  realmCells?: RealmGrid;
   /** Battlemaps: stairs, ladders and holes between levels. */
   connectors?: MapConnector[];
   /** Battlemaps: roofs over this level. */
@@ -503,6 +529,10 @@ export interface FeaturesPatch {
   removeNotes?: string[];
   upsertZones?: MapAmbientZone[];
   removeZones?: string[];
+  upsertRealms?: MapRealm[];
+  removeRealms?: string[];
+  /** The whole painting of the realms (it is small: run-length coded), or null to clear it. */
+  setRealmCells?: RealmGrid | null;
   /** Reveals are added at the end (their order matters); `removeReveals: ["*"]` takes every one away. */
   upsertReveals?: MapReveal[];
   removeReveals?: string[];
@@ -589,6 +619,15 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertNotes ?? []) notes.set(x.id, x);
     out.notes = [...notes.values()];
   }
+  if (f.realms || p.upsertRealms || p.removeRealms) {
+    const realms = new Map((f.realms ?? []).map((x) => [x.id, x]));
+    for (const id of p.removeRealms ?? []) realms.delete(id);
+    for (const x of p.upsertRealms ?? []) realms.set(x.id, x);
+    out.realms = [...realms.values()];
+  }
+  // (the painting is kept as it was unless this patch sets it)
+  if (p.setRealmCells !== undefined) { if (p.setRealmCells) out.realmCells = p.setRealmCells; }
+  else if (f.realmCells) out.realmCells = f.realmCells;
   if (f.reveals || p.upsertReveals || p.removeReveals) {
     const all = p.removeReveals?.includes("*");
     const reveals = new Map(all ? [] : (f.reveals ?? []).map((x) => [x.id, x]));
