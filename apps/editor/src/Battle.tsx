@@ -18,6 +18,7 @@ import { CompareBar } from "./CompareMaps.tsx";
 import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
+import { PackFloors } from "./PackFloors.tsx";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
@@ -1382,6 +1383,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
       {isFloorTool(ui.tool) && (
         <Popover label={<><span className="swatch now" style={swatchStyle} /> <b>{materialLabel(meta, ui.material)}</b></>} title="Choose the floor material" testId="floor-material-menu">
           {(close) => (
+            <>
             <div className="materials" data-testid="materials">
               {MATERIALS.map((m) => (
                 <button
@@ -1398,8 +1400,10 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
                   onContextMenu={(ev) => { ev.preventDefault(); removeTexture(meta!, e, ui, onUi); }}
                 />
               ))}
-              {assetsOn && <button className="swatch add" onClick={() => { close(); onOpenAssets(); }} title="Add a floor texture from your asset packs">＋</button>}
             </div>
+            {/* (every floor texture in the asset packs, searched; the Assets tab shows them bigger) */}
+            {assetsOn && <PackFloors meta={meta} current={ui.material} onChosen={(material) => { onUi({ material }); close(); }} onBrowse={() => { close(); onOpenAssets(); }} />}
+            </>
           )}
         </Popover>
       )}

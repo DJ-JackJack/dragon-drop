@@ -3,7 +3,7 @@
  * and place objects on a battlemap. The pictures stay on the user's PC and are read in place.
  */
 import { z } from "zod";
-import { type PaletteEntry, type RGBAImage, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE } from "@mapmaker/core";
+import { type PaletteEntry, type RGBAImage, boxResize, defaultTileSquares, drawLabel, newFeatureId, CUSTOM_MATERIAL_BASE, MAX_FLOOR_TEXTURES, PROP_PX_PER_SQUARE } from "@mapmaker/core";
 import { decodeImage, encodeJpeg, toBase64 } from "./images.ts";
 import type { ToolContext } from "./tools.ts";
 import { define, fail, json } from "./toolKit.ts";
@@ -87,7 +87,7 @@ export const ASSET_TOOLS = [
       const palette = spec.palette ?? [];
       const existing = palette.find((e) => e.asset.toLowerCase() === info.id.toLowerCase());
       if (existing) return json({ name: existing.name, note: "Already added.", material: existing.name });
-      if (palette.length >= 40) return fail("This battlemap already has 40 floor textures.");
+      if (palette.length >= MAX_FLOOR_TEXTURES) return fail(`This battlemap already has ${MAX_FLOOR_TEXTURES} floor textures.`);
       const name = i.name ?? info.name;
       if (palette.some((e) => e.name.toLowerCase() === name.toLowerCase())) return fail(`A floor texture called "${name}" already exists: choose another name.`);
       const entry: PaletteEntry = { id: Math.max(CUSTOM_MATERIAL_BASE - 1, ...palette.map((e) => e.id)) + 1, name, asset: info.id, squares: i.squares ?? defaultTileSquares(info.w) };

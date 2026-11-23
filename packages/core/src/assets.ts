@@ -15,6 +15,8 @@ export const PROP_PX_PER_SQUARE = 256;
 
 /** Floor material ids at or above this refer to the battlemap's palette (pack textures). */
 export const CUSTOM_MATERIAL_BASE = 100;
+/** At most this many pack floor textures on one battlemap (the editor's floor picker and Claude's add_floor_texture). */
+export const MAX_FLOOR_TEXTURES = 40;
 
 /** A pack texture used as a floor material. */
 export interface PaletteEntry {

@@ -1,9 +1,9 @@
 /** The Assets tab: browse and search the user's asset library, and pick objects to place or textures to paint with. */
 import { useEffect, useRef, useState } from "react";
-import { type AssetItem, CUSTOM_MATERIAL_BASE, PROP_PX_PER_SQUARE, defaultTileSquares } from "@mapmaker/core";
+import { type AssetItem, PROP_PX_PER_SQUARE } from "@mapmaker/core";
 import { type AssetPack, type AssetStatus, assetUrl, fetchAssetStatus, fetchAssets, fetchPacks } from "./assetsApi.ts";
+import { floorTextureFor } from "./floorTextures.ts";
 import type { BattleUi } from "./Battle.tsx";
-import { store } from "./store.ts";
 import type { MapMeta } from "@mapmaker/core";
 
 const CATS: { id: string; label: string; usable: boolean; tip: string }[] = [
@@ -70,17 +70,9 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
   };
 
   const useAsFloor = (it: AssetItem) => {
-    const spec = meta?.battle;
-    if (!spec) { setNote("Open a battlemap first."); return; }
-    const palette = spec.palette ?? [];
-    let entry = palette.find((e) => e.asset.toLowerCase() === it.id.toLowerCase());
-    if (!entry) {
-      let name = it.name, n = 2;
-      while (palette.some((e) => e.name.toLowerCase() === name.toLowerCase())) name = `${it.name} ${n++}`;
-      entry = { id: Math.max(CUSTOM_MATERIAL_BASE - 1, ...palette.map((e) => e.id)) + 1, name, asset: it.id, squares: defaultTileSquares(it.w) };
-      store.send({ t: "cmd", cmd: { op: "set_meta", patch: { battle: { ...spec, palette: [...palette, entry] } }, label: `Add floor texture ${name}` } });
-    }
-    onUi({ material: entry.id, tool: "brush" });
+    const r = floorTextureFor(meta, it);
+    if ("problem" in r) { setNote(r.problem); return; }
+    onUi({ material: r.id, tool: "brush" });
   };
 
   if (status && !status.configured) {

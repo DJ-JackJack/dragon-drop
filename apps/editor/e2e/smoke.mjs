@@ -37,6 +37,7 @@ const assetsDir = path.join(tmp, "Assets");
     { path: "textures/objects/Oak_Table.png", data: png(512, 256, [150, 100, 50]) },
     { path: "textures/objects/Barrel.png", data: png(256, 256, [120, 80, 40]) },
     { path: "textures/terrain/Grass.png", data: png(1024, 1024, [50, 160, 50]) },
+    { path: "textures/terrain/Cobbles.png", data: png(512, 512, [128, 128, 128]) },
   ];
   const pad = (n, a) => (a - (n % a)) % a;
   const names = files.map((f) => enc.encode(`res://${f.path}`));
@@ -844,12 +845,22 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 1, null, { timeout: 10000 });
     await page.getByTestId("assets-search").fill("");
     await page.getByTestId("assets-cat-terrain").click();
-    await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 1, null, { timeout: 10000 });
-    await page.getByTestId("asset-item").first().click(); // adds the texture to the palette and picks the brush
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="asset-item"]').length === 2, null, { timeout: 10000 });
+    await page.getByTestId("asset-item").filter({ hasText: "Grass" }).click(); // adds the texture to the palette and picks the brush
     await page.getByTestId("history").getByText("Add floor texture Grass").waitFor({ timeout: 10000 });
+    // the floor picker lists every floor texture in the packs too: search, pick one (it is added to the map), then go back to Grass
     await page.getByTestId("floor-material-menu").click();
     await page.getByTestId("material-tex-Grass").waitFor({ timeout: 10000 });
-    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-floor"]').length === 2, null, { timeout: 10000 });
+    if (await page.locator('[data-testid="pack-floor"].added').count() !== 1) fail("the floor picker doesn't mark the pack texture already on this map");
+    await page.getByTestId("pack-floors-search").fill("cobb");
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-floor"]').length === 1, null, { timeout: 10000 });
+    await page.getByTestId("pack-floor").click();
+    await page.getByTestId("history").getByText("Add floor texture Cobbles").waitFor({ timeout: 10000 });
+    if (await page.getByTestId("pack-floors").count()) fail("the floor picker stayed open after a pack texture was chosen");
+    await page.getByTestId("floor-material-menu").getByText("Cobbles").waitFor({ timeout: 5000 });
+    await page.getByTestId("floor-material-menu").click();
+    await page.getByTestId("material-tex-Grass").click();
     await drag([4, 12], [8, 12]);
     await page.getByTestId("history").getByText("Paint Grass").first().waitFor({ timeout: 10000 });
     await page.waitForTimeout(1500); // the texture loads, then the floor repaints
