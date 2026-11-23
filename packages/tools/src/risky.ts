@@ -17,7 +17,7 @@ export const RISKY_TOOLS = new Set([
   "generate_terrain", "import_sketch", "set_sea_level", "restore_checkpoint", "copy_from_map", "carve_valleys", "update_brief", "drain_lake",
   "remove_place", "remove_label", "remove_climate_region", "remove_river_source", "remove_line", "remove_water_name",
   "remove_city_labels", "remove_city_districts", "remove_buildings", "remove_streets", "remove_city_walls",
-  "remove_props", "remove_walls", "remove_lights", "remove_light_zones", "remove_notes", "remove_land", "remove_trees", "remove_connectors", "remove_roofs",
+  "remove_props", "remove_walls", "remove_lights", "remove_light_zones", "remove_notes", "remove_land", "remove_trees", "remove_connectors", "remove_roofs", "remove_paths",
   // renaming a named thing replaces the DM's canon as surely as removing it (added 2026-11-22)
   "update_place", "update_label", "update_climate_region", "name_water", "update_city_labels", "update_city_districts",
 ]);
@@ -113,6 +113,7 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
     case "remove_trees": return removal(ids, undefined, "group of trees", "groups of trees");
     case "remove_connectors": return removal(ids, undefined, "stair, ladder or hole", "stairs, ladders and holes");
     case "remove_roofs": return removal(ids, undefined, "roof", "roofs");
+    case "remove_paths": return removal(ids, f.paths, "path", "paths");
     case "update_place": return renaming("place", find(f.places, String(i.place))?.name, i.name);
     case "update_label": { const l = find(f.labels as Named[], String(i.label)); return renaming("label", l?.text ?? l?.name, i.text); }
     case "update_climate_region": return renaming("climate region", find(f.regions, String(i.region))?.name, i.name);

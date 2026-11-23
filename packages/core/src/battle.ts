@@ -12,6 +12,7 @@ import { type Features, type MapAmbientZone, type MapConnector, type MapLight, t
 import { lightVisibility, visibleDistance } from "./lighting.ts";
 import { boxBlur, compositeOver, renderWallLayer , type WallPictureSource } from "./battleLook.ts";
 import { type RoofPictureRect, type RoofTileSource, renderRoofLayer, renderRoofPicture, roofPictureRect } from "./battleRoof.ts";
+import { renderPathLayer } from "./battlePaths.ts";
 import { drawBattleNotes } from "./battleNotes.ts";
 import { type FoundryStairInput, type FoundrySurfaceInput, type FoundryTileInput, foundryScene } from "./foundryScene.ts";
 import { type Rect, type Shape, clipRect, expandRect, shapeBounds, signedDistance } from "./geom.ts";
@@ -768,6 +769,8 @@ export function renderBattle(
   const { w, h } = battleImageSize(spec);
   const img = { w, h, data: new Uint8ClampedArray(w * h * 4) };
   renderBattleFloor(doc, img.data, undefined, opts.tiles);
+  // roads, tracks and streams lie on the ground: over the floor, under everything else (their pack pictures come with the walls')
+  if (doc.features?.paths?.length) compositeOver(img, renderPathLayer(spec, doc.features.paths, { pictureFor: opts.wallPictures }));
   drawBattleProps(img, spec, doc.features?.props, opts.sprites, "below");
   if (opts.overlay !== false) {
     compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures }));

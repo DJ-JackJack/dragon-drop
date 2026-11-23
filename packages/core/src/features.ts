@@ -196,6 +196,27 @@ export const ROOF_STYLES: readonly RoofStyle[] = ["slate", "tile", "thatch", "sh
  * drawn into one transparent picture that becomes the level's foreground (it hides the inside from a distance, and Foundry fades it as tokens go under it: docs/FOUNDRY.md).
  * They are never part of the ordinary picture or the Universal VTT file, or they would hide the rooms.
  */
+/** What a battlemap path is made of, when no picture from the asset packs is given (missing = dirt). */
+export type PathLook = "dirt" | "gravel" | "cobble" | "water";
+export const PATH_LOOKS: PathLook[] = ["dirt", "gravel", "cobble", "water"];
+export const PATH_LOOK_NAMES: Record<PathLook, string> = { dirt: "Dirt track", gravel: "Gravel", cobble: "Cobblestones", water: "Stream" };
+
+/**
+ * A road, track or stream across a battlemap (grid squares): a line of points, rounded at its corners, drawn on the ground (below objects and walls) in
+ * a look or with a picture from the asset packs laid along it. It is only paint: it blocks nothing.
+ */
+export interface MapPath {
+  id: string;
+  points: [number, number][];
+  /** Squares across (default 1). */
+  width?: number;
+  /** What it is made of (missing: dirt). */
+  look?: PathLook;
+  /** A picture from the asset packs laid along it instead (an asset id): a long strip runs along the path, a square texture is tiled along it. */
+  asset?: string;
+  name?: string;
+}
+
 export interface MapRoof {
   id: string;
   name?: string;
@@ -412,6 +433,8 @@ export interface Features {
   connectors?: MapConnector[];
   /** Battlemaps: roofs over this level. */
   roofs?: MapRoof[];
+  /** Battlemaps: roads, tracks and streams on the ground. */
+  paths?: MapPath[];
   /** Roads, trails and borders (optional: older projects have none). */
   lines?: MapLine[];
   /** Climate regions (optional: older projects have none). */
@@ -461,6 +484,8 @@ export interface FeaturesPatch {
   removeConnectors?: string[];
   upsertRoofs?: MapRoof[];
   removeRoofs?: string[];
+  upsertPaths?: MapPath[];
+  removePaths?: string[];
   /** Lay a trace picture over the map (replacing any), or null to take it away. */
   setTrace?: TracePicture | null;
   upsertBuildings?: MapBuilding[];
@@ -556,6 +581,12 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
     for (const x of p.upsertRoofs ?? []) roofs.set(x.id, x);
     out.roofs = [...roofs.values()];
   }
+  if (f.paths || p.upsertPaths || p.removePaths) {
+    const paths = new Map((f.paths ?? []).map((x) => [x.id, x]));
+    for (const id of p.removePaths ?? []) paths.delete(id);
+    for (const x of p.upsertPaths ?? []) paths.set(x.id, x);
+    out.paths = [...paths.values()];
+  }
   if (f.buildings || p.upsertBuildings || p.removeBuildings) {
     const buildings = new Map((f.buildings ?? []).map((x) => [x.id, x]));
     for (const id of p.removeBuildings ?? []) buildings.delete(id);
@@ -630,6 +661,8 @@ export function describeFeaturesPatch(p: FeaturesPatch): string {
   if (p.upsertConnectors?.length) parts.push(p.upsertConnectors.length === 1 ? (p.upsertConnectors[0].name ?? p.upsertConnectors[0].kind) : `${p.upsertConnectors.length} stairs, ladders and holes`);
   if (p.upsertRoofs?.length) parts.push(p.upsertRoofs.length === 1 ? (p.upsertRoofs[0].name ?? "roof") : `${p.upsertRoofs.length} roofs`);
   if (p.removeRoofs?.length) parts.push(`remove ${p.removeRoofs.length} roof(s)`);
+  if (p.upsertPaths?.length) parts.push(p.upsertPaths.length === 1 ? (p.upsertPaths[0].name ?? "path") : `${p.upsertPaths.length} paths`);
+  if (p.removePaths?.length) parts.push(`remove ${p.removePaths.length} path(s)`);
   if (p.removeConnectors?.length) parts.push(`remove ${p.removeConnectors.length} stair(s), ladder(s) or hole(s)`);
   if (p.setTrace !== undefined) parts.push(p.setTrace ? `trace picture ${p.setTrace.ref}` : "remove the trace picture");
   if (p.upsertBuildings?.length) parts.push(p.upsertBuildings.length === 1 ? (p.upsertBuildings[0].name ?? p.upsertBuildings[0].kind ?? "building") : `${p.upsertBuildings.length} buildings`);
@@ -712,6 +745,6 @@ export function labelText(l: MapLabel): string {
 }
 
 let counter = 0;
-export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f" | "b" | "t" | "h" | "v"): string {
+export function newFeatureId(prefix: "p" | "l" | "r" | "m" | "w" | "g" | "o" | "n" | "z" | "s" | "c" | "f" | "b" | "t" | "h" | "v" | "k"): string {
   return `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }

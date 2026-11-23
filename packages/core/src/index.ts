@@ -60,6 +60,7 @@ export * from "./roofAssets.ts";
 export * from "./cityRender.ts";
 export * from "./lighting.ts";
 export * from "./battleLook.ts";
+export * from "./battlePaths.ts";
 export * from "./battleRoof.ts";
 export * from "./battleNotes.ts";
 export * from "./straits.ts";

@@ -476,7 +476,8 @@ export class Hub {
     const palette = spec.palette ?? [];
     const props = doc.features?.props ?? [];
     const pictured = (doc.features?.roofs ?? []).filter((r) => r.asset);
-    const wallAssets = [...new Set((doc.features?.walls ?? []).flatMap((w) => [w.asset, w.portal]).filter((a): a is string => !!a))];
+    // (walls, doors and windows, and paths: pictures laid along a line, prepared alike)
+    const wallAssets = [...new Set([...(doc.features?.walls ?? []).flatMap((w) => [w.asset, w.portal]), ...(doc.features?.paths ?? []).map((p) => p.asset)].filter((a): a is string => !!a))];
     if (!lib || (!palette.length && !props.length && !pictured.length && !wallAssets.length)) return { opts: {}, missing: palette.length + props.length + pictured.length + wallAssets.length };
     let missing = 0;
     // walls drawn with a picture from an asset pack (a long strip or a square texture, kept in its own shape)

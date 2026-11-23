@@ -2,7 +2,7 @@
  * What walls are built of: the five built-in looks (core WALL_LOOKS), then the pictures in the asset packs (wall strips, or square textures such as brick
  * floors, tiled along the wall). The Wall and Room tools use it for new walls, the inspector for chosen ones.
  */
-import { WALL_BASE, WALL_LOOKS, WALL_LOOK_NAMES, type WallLook, assetLabel, parseAssetId } from "@mapmaker/core";
+import { PATH_BASE, PATH_LOOKS, PATH_LOOK_NAMES, type PathLook, WALL_BASE, WALL_LOOKS, WALL_LOOK_NAMES, type WallLook, assetLabel, parseAssetId } from "@mapmaker/core";
 import { assetUrl } from "./assetsApi.ts";
 import { PackGrid } from "./PackGrid.tsx";
 
@@ -63,6 +63,39 @@ export function PortalPicker({ kind, value, onPick }: { kind: "door" | "window";
         noFolder="To use the doors and windows in your asset packs, choose your asset folder in Settings (Maps and assets)."
         stateOf={(it) => ({ on: it.id === value })}
         onChoose={(it) => onPick(it.id)}
+      />
+    </div>
+  );
+}
+
+/** What a path is made of: a look, or a picture from the asset packs. */
+export interface PathChoice { look: PathLook; asset: string | null }
+
+export function pathChoiceLabel(c: PathChoice): string {
+  return c.asset ? assetLabel(parseAssetId(c.asset)?.path ?? c.asset) : PATH_LOOK_NAMES[c.look];
+}
+
+export function PathSwatch({ c }: { c: PathChoice }) {
+  const style = c.asset ? { backgroundImage: `url(${assetUrl(c.asset, 64)})` } : { background: `rgb(${PATH_BASE[c.look].join(",")})` };
+  return <span className="swatch now" style={style} />;
+}
+
+/** The four built-in path looks, then the packs' path pictures (or square textures, tiled along the path). */
+export function PathLookPicker({ value, onPick }: { value: PathChoice; onPick: (c: PathChoice) => void }) {
+  return (
+    <div className="wall-picker" data-testid="path-looks">
+      <div className="materials">
+        {PATH_LOOKS.map((l) => (
+          <button key={l} className={`swatch${!value.asset && value.look === l ? " on" : ""}`} style={{ background: `rgb(${PATH_BASE[l].join(",")})` }}
+            title={PATH_LOOK_NAMES[l]} aria-label={PATH_LOOK_NAMES[l]} onClick={() => onPick({ look: l, asset: null })} data-testid={`path-look-${l}`} />
+        ))}
+      </div>
+      <PackGrid
+        kinds={[{ cat: "paths", label: "paths" }, { cat: "terrain", label: "square textures" }]} testId="pack-paths" item="pack-path" placeholder="Search: road, dirt, river…"
+        noneFound="No path pictures were found in your asset packs: try Square textures (a cobble or gravel floor makes a good road), or a look above."
+        noFolder="To lay paths from the pictures in your asset packs, choose your asset folder in Settings (Maps and assets)."
+        stateOf={(it) => ({ on: it.id === value.asset })}
+        onChoose={(it) => onPick({ look: value.look, asset: it.id })}
       />
     </div>
   );

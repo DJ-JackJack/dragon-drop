@@ -97,7 +97,7 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
                   <option value="essentials">A smaller set (for small or local models)</option>
                 </select>
               </label>
-              {s?.toolSet === "essentials" && <p className="muted" data-testid="tool-set-note">The assistant sees about 40 map tools instead of about 155, with shorter instructions: everyday work on world maps, battlemaps and city maps fits in a much smaller model. Changing this ends the running session.</p>}
+              {s?.toolSet === "essentials" && <p className="muted" data-testid="tool-set-note">The assistant sees about 40 map tools instead of about 160, with shorter instructions: everyday work on world maps, battlemaps and city maps fits in a much smaller model. Changing this ends the running session.</p>}
               {!!s?.terminalCommand && (
                 <p className="muted" data-testid="assistant-status">
                   {s.assistant?.auto

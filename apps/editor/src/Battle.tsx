@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
-  CUSTOM_MATERIAL_BASE, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  CUSTOM_MATERIAL_BASE, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -19,7 +19,7 @@ import { compareCtl } from "./compare.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { PackFloors } from "./PackFloors.tsx";
-import { PortalPicker, PortalSwatch, type WallChoice, WallLookPicker, WallSwatch, portalLabel, wallChoiceLabel } from "./WallLookPicker.tsx";
+import { type PathChoice, PathLookPicker, PathSwatch, PortalPicker, PortalSwatch, type WallChoice, WallLookPicker, WallSwatch, pathChoiceLabel, portalLabel, wallChoiceLabel } from "./WallLookPicker.tsx";
 import { drawMapGrid } from "./drawMapGrid.ts";
 import { downloadBlob } from "./exportMap.ts";
 import { store } from "./store.ts";
@@ -27,7 +27,7 @@ import { makeResizeKeeper } from "./viewResize.ts";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { focusBus, viewForBox } from "./focusBus.ts";
 
-export type BattleTool = "pan" | "select" | "brush" | "area" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
+export type BattleTool = "pan" | "select" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
 export interface BattleUi {
   tool: BattleTool;
@@ -62,6 +62,10 @@ export interface BattleUi {
   /** The pictures from the asset packs new doors and windows get (null: the wooden door, the glass). */
   doorPicture: string | null;
   windowPicture: string | null;
+  /** What new paths are made of, and how wide they are (squares). */
+  pathLook: PathLook;
+  pathAsset: string | null;
+  pathWidth: number;
 }
 
 /** The new-wall style the tools put on a wall (nothing for plain stone, so such a wall is stored exactly as walls always were). */
@@ -72,7 +76,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
   asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
-  wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null,
+  wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1,
 };
 
 /** The name of a floor material, including pack textures. */
@@ -89,6 +93,7 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   { name: "Floor", tools: [
     { id: "brush", label: "Brush", key: "B", tip: "Paint the chosen floor material. Choose \"void\" to erase" },
     { id: "area", label: "Area", key: "A", tip: "Drag a rectangle of floor" },
+    { id: "path", label: "Path", key: "Y", tip: "Click the points of a road, track or stream; double-click or Enter to finish" },
   ] },
   { name: "Build", tools: [
     { id: "room", label: "Room", key: "R", tip: "Drag a room: floors it and builds its walls" },
@@ -122,6 +127,7 @@ export const BATTLE_TOOLS = BATTLE_TOOL_GROUPS.flatMap((g) => g.tools);
 export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
   pan: "Drag to move the map. Hold Space, or drag with the right button, to move it with any tool. + and - zoom.",
   brush: "Drag to paint the chosen floor. Pick a material with the floor button above. [ and ] change the brush size.",
+  path: "Click the points of a road, track or stream: its corners are rounded off. Double-click or press Enter to finish; Backspace removes the last point, Esc cancels. It lies on the ground under objects and walls, and blocks nothing.",
   area: "Drag a shape (rectangles snap to whole squares): it floors the area but builds no walls. Choose Rectangle, Circle (drag out from the centre) or Free-form (click the corners, double-click to finish).",
   room: "Drag a shape: it is floored with the chosen material and walled in. Choose Rectangle, Circle (drag out from the centre) or Free-form (click the corners, double-click or Enter to finish). Add doors afterwards with the Door tool.",
   wall: "Click the points of the wall. Double-click or press Enter to finish; click the first point to close a loop. Backspace removes the last point, Esc cancels. Points snap to half squares.",
@@ -185,10 +191,13 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   /** The wall layer (stone, doors, windows, shadows) from the shared renderer, and what it was drawn from. */
   const wallRef = useRef<{ cv: HTMLCanvasElement; px: number } | null>(null);
   const wallSig = useRef("");
+  const pathRef = useRef<{ cv: HTMLCanvasElement; px: number } | null>(null);
+  const pathSig = useRef("");
   /** The roofs as one see-through layer, and what it was drawn from. */
   const roofRef = useRef<{ cv: HTMLCanvasElement; px: number } | null>(null);
   const roofSig = useRef("");
   const wallTimer = useRef<number | undefined>(undefined);
+  const pathTimer = useRef<number | undefined>(undefined);
   const viewRef = useRef<View>({ scale: 20, ox: 0, oy: 0 });
   // when the canvas changes size (a panel shown or hidden): a fitted view is fitted again, any other keeps its middle (viewResize.ts)
   const keeper = useRef(makeResizeKeeper(() => viewRef.current, (v) => { viewRef.current = v; }, () => fit())).current;
@@ -198,7 +207,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
   const drag = useRef<{ mode: "pan" | "brush" | "rect" | "circle" | "move" | "marquee" | "trace"; sx: number; sy: number; ox: number; oy: number; ax: number; ay: number; lastX: number; lastY: number; id?: string;
     /** move: what is being dragged, whether the pointer has really moved yet, and whether it started on a member of a group (a click without a drag then picks that one). marquee: whether it adds to the selection, and what was selected before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[] } | null>(null);
-  const draft = useRef<{ kind: WallKind; pts: [number, number][] } | null>(null);
+  const draft = useRef<{ kind: WallKind | "path"; pts: [number, number][] } | null>(null);
   /** Corners of a free-form floor or room being clicked out. */
   const shapeDraft = useRef<[number, number][] | null>(null);
   const lastClick = useRef<{ t: number; x: number; y: number } | null>(null);
@@ -313,6 +322,25 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     requestDraw();
   }, []);
 
+  /** Draw the path layer again if the paths, the map size or the zoom step changed (or `force`: a picture arrived). */
+  const buildPaths = useCallback((force = false) => {
+    const m = metaRef.current;
+    if (!m?.battle) return;
+    const paths = featRef.current.paths ?? [];
+    if (!paths.length) { if (pathRef.current) { pathRef.current = null; pathSig.current = ""; requestDraw(); } return; }
+    const spec = m.battle, px = wallPx(spec, viewRef.current.scale);
+    const sig = `${m.id}|${px}|${spec.squaresX}x${spec.squaresY}|${JSON.stringify(paths)}`;
+    if (!force && sig === pathSig.current && pathRef.current) return;
+    pathSig.current = sig;
+    const layer = renderPathLayer({ ...spec, pxPerSquare: px }, paths, { pictureFor: wallPictureFor });
+    const cv = pathRef.current?.cv ?? document.createElement("canvas");
+    cv.width = layer.w; cv.height = layer.h;
+    cv.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(layer.data), layer.w, layer.h), 0, 0);
+    pathRef.current = { cv, px };
+    requestDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /**
    * The wall pictures from asset packs in their own shape, as the server prepares them (a long strip at most 128 px high, a squarer texture at most
    * 512 px a side): loaded once, and the walls are drawn again when one arrives.
@@ -334,6 +362,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         cx.drawImage(img, 0, 0, w, h);
         wallPictures.current.set(asset, { w, h, data: cx.getImageData(0, 0, w, h).data });
         buildWalls(true);
+        buildPaths(true);
       };
       img.onerror = () => wallPictures.current.set(asset, "failed");
       img.src = assetUrl(asset);
@@ -551,6 +580,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const gh = ghostRef.current;
     if (gh && gh.id === belowRef.current) { ctx.globalAlpha = 0.38; ctx.drawImage(gh.bmp, v.ox, v.oy, MW, MH); ctx.globalAlpha = 1; }
     ctx.drawImage(off, v.ox, v.oy, MW, MH);
+    // roads, tracks and streams lie on the floor, under everything else
+    const pl = pathRef.current;
+    if (pl) { ctx.drawImage(pl.cv, v.ox, v.oy, MW, MH); if (pl.px !== wallPx(spec, v.scale)) { window.clearTimeout(pathTimer.current); pathTimer.current = window.setTimeout(() => buildPaths(), 220); } }
     ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1);
     // the trace picture: over the floor, under the grid, walls, objects and lights
@@ -596,6 +628,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     if (o.tool === "roof" || o.tool === "select" || (f.roofs ?? []).some((r) => isSel(r.id))) drawRoofOutlines(ctx, (f.roofs ?? []).map(shiftedPoly), v, isSel, o.tool === "roof");
     if (o.tool === "zone" || o.tool === "select") drawZoneOutlines(ctx, f.zones ?? [], v, isSel, o.tool === "zone");
     drawConnectorMarks(ctx, (f.connectors ?? []).map(shifted), v, isSel, o.tool === "select" || isConnectorTool(o.tool));
+    drawPathMarks(ctx, (f.paths ?? []).map(shiftedPoly), v, isSel);
     drawLightMarkers(ctx, lights, v, isSel);
     if (o.showNotes) drawNoteBadges(ctx, (f.notes ?? []).map(shifted), v, isSel);
     // walls and light zones being dragged: where they will land (their picture stays until they are dropped), and the box being drawn
@@ -646,7 +679,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     const dr = draft.current;
     if (dr && dr.pts.length) {
       ctx.save();
-      ctx.strokeStyle = dr.kind === "invisible" ? "rgba(214, 120, 230, 0.95)" : "rgba(255, 210, 120, 0.97)";
+      ctx.strokeStyle = dr.kind === "invisible" ? "rgba(214, 120, 230, 0.95)" : dr.kind === "path" ? "rgba(170, 226, 140, 0.97)" : "rgba(255, 210, 120, 0.97)";
       ctx.fillStyle = ctx.strokeStyle;
       ctx.lineWidth = 3;
       ctx.setLineDash([7, 5]);
@@ -730,7 +763,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     return () => { dead = true; };
   }, [projectId, belowId, activeLevel, requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) repaint(null); }, [meta, repaint]);
-  useEffect(() => { buildWalls(); buildRoofs(); requestDraw(); }, [features, ui, meta, requestDraw, buildWalls, buildRoofs]);
+  useEffect(() => { buildWalls(); buildRoofs(); buildPaths(); requestDraw(); }, [features, ui, meta, requestDraw, buildWalls, buildRoofs, buildPaths]);
   useEffect(() => { draft.current = null; shapeDraft.current = null; requestDraw(); }, [ui.tool, ui.roomShape, requestDraw]);
 
   useEffect(() => {
@@ -878,6 +911,13 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     draft.current = null;
     requestDraw();
     if (!dr || dr.pts.length < 2) return;
+    if (dr.kind === "path") {
+      const o = uiRef.current, pts = closed ? [...dr.pts, dr.pts[0]] : dr.pts;
+      const path: MapPath = { id: newFeatureId("k"), points: pts, ...(o.pathWidth !== 1 && { width: o.pathWidth }), ...(!o.pathAsset && o.pathLook !== "dirt" && { look: o.pathLook }), ...(o.pathAsset && { asset: o.pathAsset }) };
+      sendFeatures({ upsertPaths: [path] }, "Add path");
+      onUiRef.current({ multi: [], selected: path.id });
+      return;
+    }
     const wall: MapWall = { id: newFeatureId("w"), kind: dr.kind, points: dr.pts, ...(closed && dr.pts.length >= 3 && { closed: true }), ...(dr.kind === "wall" && newWallStyle(uiRef.current)) };
     sendFeatures({ upsertWalls: [wall] }, `Add ${dr.kind === "wall" ? "wall" : "invisible wall"}`);
     onUiRef.current({ multi: [], selected: wall.id });
@@ -903,6 +943,18 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const a = -((pr.rotation ?? 0) * Math.PI) / 180, lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
       const sc = pr.scale ?? 1;
       if (Math.abs(lx) <= (w * sc) / 2 && Math.abs(ly) <= (h * sc) / 2) return pr.id;
+    }
+    // paths: on the (rounded) line, within half the path's width
+    {
+      let near: { id: string; d: number } | null = null;
+      for (const pa of f.paths ?? []) {
+        const pts = smoothPath(pa.points), reach = Math.max(6, ((pa.width ?? 1) * v.scale) / 2);
+        for (let i = 1; i < pts.length; i++) {
+          const d = distToSegment(sx, sy, v.ox + pts[i - 1][0] * v.scale, v.oy + pts[i - 1][1] * v.scale, v.ox + pts[i][0] * v.scale, v.oy + pts[i][1] * v.scale);
+          if (d < reach && (!near || d < near.d)) near = { id: pa.id, d };
+        }
+      }
+      if (near) return near.id;
     }
     // stairs, ladders and holes: inside the rectangle, the smallest first
     const qc = toSq(sx, sy);
@@ -972,8 +1024,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       drag.current = { mode: "rect", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
       return;
     }
-    if (o.tool === "wall" || o.tool === "invisible") {
-      const kind: WallKind = o.tool === "invisible" ? "invisible" : "wall";
+    if (o.tool === "wall" || o.tool === "invisible" || o.tool === "path") {
+      const kind: WallKind | "path" = o.tool === "invisible" ? "invisible" : o.tool === "path" ? "path" : "wall";
       const dr = draft.current ?? { kind, pts: [] };
       const [fx, fy] = dr.pts[0] ?? [0, 0];
       const nearFirst = dr.pts.length >= 3 && Math.hypot((fx - q.x) * v.scale, (fy - q.y) * v.scale) < 10;
@@ -1104,7 +1156,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const o = uiRef.current;
       if (Math.hypot(p.x - d.sx, p.y - d.sy) >= 4) {
         const a = toSq(d.sx, d.sy), b = toSq(p.x, p.y);
-        const kinds: ("prop" | "light" | "note" | "wall" | "zone" | "connector" | "roof")[] = ["prop", "light", "wall", "zone", "connector", "roof", ...(o.showNotes ? (["note"] as const) : [])];
+        const kinds: ("prop" | "light" | "note" | "wall" | "zone" | "connector" | "roof" | "path")[] = ["prop", "light", "wall", "zone", "connector", "roof", "path", ...(o.showNotes ? (["note"] as const) : [])];
         const found = boxSelect(featRef.current, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }, kinds);
         onUiRef.current(selectionFromIds(d.add ? [...(d.base ?? []), ...found] : found));
       }
@@ -1481,6 +1533,16 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
           {(close) => <WallLookPicker value={{ look: ui.wallLook, asset: ui.wallAsset }} onPick={(c) => { onUi({ wallLook: c.look, wallAsset: c.asset }); close(); }} />}
         </Popover>
       )}
+      {ui.tool === "path" && (
+        <>
+          <Popover label={<><PathSwatch c={{ look: ui.pathLook, asset: ui.pathAsset }} /> Made of: <b>{pathChoiceLabel({ look: ui.pathLook, asset: ui.pathAsset })}</b></>} title="Choose what new paths are made of" testId="path-look-menu">
+            {(close) => <PathLookPicker value={{ look: ui.pathLook, asset: ui.pathAsset }} onPick={(c) => { onUi({ pathLook: c.look, pathAsset: c.asset }); close(); }} />}
+          </Popover>
+          <label className="slider"><span>Width <b>{ui.pathWidth}</b> square{ui.pathWidth === 1 ? "" : "s"}</span>
+            <input type="range" min={1} max={24} value={Math.round(ui.pathWidth * 4)} onChange={(e) => onUi({ pathWidth: Number(e.target.value) / 4 })} data-testid="path-width" />
+          </label>
+        </>
+      )}
       {ui.tool === "brush" && (
         <label className="slider">
           <span>Brush size <b>{(ui.brush * 2).toFixed(1)}</b> squares across</span>
@@ -1573,10 +1635,11 @@ export function BattleInspector({ features, levels, chosenAsset, selected, multi
   const zone = selected ? features.zones?.find((z) => z.id === selected) : undefined;
   const conn = selected ? features.connectors?.find((c) => c.id === selected) : undefined;
   const roof = selected ? features.roofs?.find((r) => r.id === selected) : undefined;
-  if (!wall && !light && !prop && !note && !zone && !conn && !roof) return null;
+  const path = selected ? features.paths?.find((r) => r.id === selected) : undefined;
+  if (!wall && !light && !prop && !note && !zone && !conn && !roof && !path) return null;
   return (
     <section data-testid="battle-inspector">
-      <h3>{wall ? (wall.kind === "wall" ? "Wall" : wall.kind === "secret" ? "Secret door" : wall.kind === "invisible" ? "Invisible wall" : wall.kind === "window" ? "Window" : "Door") : prop ? "Object" : note ? "Note" : zone ? "Light zone" : conn ? (conn.kind === "stairs" ? "Stairs" : conn.kind === "ladder" ? "Ladder" : "Hole") : roof ? "Roof" : "Light"}</h3>
+      <h3>{wall ? (wall.kind === "wall" ? "Wall" : wall.kind === "secret" ? "Secret door" : wall.kind === "invisible" ? "Invisible wall" : wall.kind === "window" ? "Window" : "Door") : prop ? "Object" : note ? "Note" : zone ? "Light zone" : conn ? (conn.kind === "stairs" ? "Stairs" : conn.kind === "ladder" ? "Ladder" : "Hole") : roof ? "Roof" : path ? "Path" : "Light"}</h3>
       {wall && <WallEditor w={wall} onClear={onClear} />}
       {light && <LightEditor l={light} onClear={onClear} />}
       {prop && <PropEditor p={prop} onClear={onClear} />}
@@ -1584,8 +1647,58 @@ export function BattleInspector({ features, levels, chosenAsset, selected, multi
       {zone && <ZoneEditor key={zone.id} z={zone} onClear={onClear} />}
       {conn && <ConnectorEditor key={conn.id} c={conn} levels={levels ?? null} onClear={onClear} />}
       {roof && <RoofEditor key={roof.id} r={roof} chosenAsset={chosenAsset ?? null} onClear={onClear} />}
+      {path && <PathEditor key={path.id} p={path} onClear={onClear} />}
     </section>
   );
+}
+
+/** Edit a path: what it is made of, and how wide it is. */
+function PathEditor({ p, onClear }: { p: MapPath; onClear: () => void }) {
+  const latest = useLatest(p);
+  const [picking, setPicking] = useState(false);
+  const send = (next: MapPath, label: string) => { latest.current = next; sendFeatures({ upsertPaths: [next] }, label); };
+  const choice = { look: p.look ?? "dirt", asset: p.asset ?? null } as PathChoice;
+  return (
+    <>
+      <button className="built-of" onClick={() => setPicking((v) => !v)} aria-expanded={picking} title="Choose what this path is made of" data-testid="path-made-of">
+        Made of <PathSwatch c={choice} /> <b>{pathChoiceLabel(choice)}</b> <span aria-hidden="true">{picking ? "▴" : "▾"}</span>
+      </button>
+      {picking && (
+        <div className="inline-picker">
+          <PathLookPicker value={choice} onPick={(c) => {
+            const next: MapPath = { ...latest.current };
+            delete next.look; delete next.asset;
+            if (c.asset) next.asset = c.asset; else if (c.look !== "dirt") next.look = c.look;
+            send(next, `Path made of ${pathChoiceLabel(c)}`);
+            setPicking(false);
+          }} />
+        </div>
+      )}
+      <label className="slider"><span>Width <b>{p.width ?? 1}</b> square{(p.width ?? 1) === 1 ? "" : "s"}</span>
+        <input type="range" min={1} max={48} value={Math.round((p.width ?? 1) * 4)} onChange={(e) => send({ ...latest.current, width: Number(e.target.value) / 4 }, "Change path")} data-testid="path-width-one" />
+      </label>
+      <p className="muted">{p.points.length} points. Drag it with Select to move it; it blocks nothing (add walls or invisible walls for that).</p>
+      <div className="row">
+        <button onClick={() => { sendFeatures({ removePaths: [p.id] }, "Delete path"); onClear(); }} data-testid="path-delete">Delete</button>
+      </div>
+    </>
+  );
+}
+
+/** Where the paths run: a dashed line down the middle of a selected one (its picture is in the path layer under everything). */
+function drawPathMarks(ctx: CanvasRenderingContext2D, paths: MapPath[], v: { ox: number; oy: number; scale: number }, isSel: (id: string) => boolean) {
+  for (const p of paths) {
+    if (!isSel(p.id)) continue;
+    const pts = smoothPath(p.points);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 224, 120, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(v.ox + x * v.scale, v.oy + y * v.scale) : ctx.moveTo(v.ox + x * v.scale, v.oy + y * v.scale)));
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 /** Edit a numbered note: number, title and text are saved when you leave the field. */

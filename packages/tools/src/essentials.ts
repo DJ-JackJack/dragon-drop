@@ -1,6 +1,6 @@
 /**
  * The smaller set of map tools, for smaller AI models (Settings → AI assistant → Map tools: "A smaller set"; the map tools address `/mcp?tools=essentials`).
- * The full set is about 155 tools and 160,000 characters of definitions plus 29,000 of instructions: more than a small or local model can hold beside a
+ * The full set is about 160 tools and 160,000 characters of definitions plus 29,000 of instructions: more than a small or local model can hold beside a
  * conversation. This one is the everyday work on each kind of map (about 40 tools), with long descriptions cut to their first sentences, and short
  * instructions. Every tool still answers when called by name; the set only changes what is listed.
  */

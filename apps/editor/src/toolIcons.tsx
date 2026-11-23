@@ -35,6 +35,7 @@ const P: Record<string, ReactNode> = {
   note: <><path d="M5 4h14v12l-5 4H5z" /><path d="M14 20v-4h5" /></>,
   prop: <><path d="M12 3l8 4v10l-8 4-8-4V7z" /><path d="M12 12l8-5M12 12v9M12 12L4 7" /></>,
   roof: <path d="M3 13l9-8 9 8M6 11v9h12v-9" />,
+  path: <path d="M5 21c1-6 5-7 6-11s0-6 2-7M13 21c0-4 3-5 4-9s1-5 2-8" />,
   stairs: <path d="M4 20h5v-4h5v-4h5V8" />,
   ladder: <path d="M8 3v18M16 3v18M8 7h8M8 12h8M8 17h8" />,
   hole: <><ellipse cx="12" cy="9" rx="8" ry="4" /><path d="M4 9v6c0 2.2 3.6 4 8 4s8-1.8 8-4V9" /></>,

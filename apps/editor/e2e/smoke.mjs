@@ -40,6 +40,7 @@ const assetsDir = path.join(tmp, "Assets");
     { path: "textures/terrain/Cobbles.png", data: png(512, 512, [128, 128, 128]) },
     { path: "textures/walls/Stone_Wall.png", data: png(512, 64, [70, 90, 200]) },
     { path: "textures/portals/Oak_Door.png", data: png(256, 64, [40, 200, 60]) },
+    { path: "textures/paths/Dirt_Road.png", data: png(512, 128, [150, 110, 60]) },
   ];
   const pad = (n, a) => (a - (n % a)) % a;
   const names = files.map((f) => enc.encode(`res://${f.path}`));
@@ -690,6 +691,21 @@ try {
     const blueWall = await wallAt(sq(10, 7.5)), brickWall = await wallAt(sq(14, 7.5));
     if (!(blueWall[2] > blueWall[0] + 40)) fail(`the wall's pack picture isn't drawn (got ${blueWall})`);
     if (!(brickWall[0] > brickWall[2] + 30)) fail(`the room's other walls aren't brick (got ${brickWall})`);
+    // a cobbled road with the Path tool (click the points, Enter finishes), then made of the pack's road picture in the inspector
+    await page.getByTestId("btool-path").click();
+    await page.getByTestId("path-look-menu").click();
+    await page.getByTestId("path-look-cobble").click();
+    await page.getByTestId("path-look-menu").getByText("Cobblestones").waitFor({ timeout: 5000 });
+    await click(16, 3); await click(20, 3); await click(22, 6);
+    await page.keyboard.press("Enter");
+    await page.getByTestId("history").getByText("Add path").waitFor({ timeout: 10000 });
+    await page.getByTestId("path-made-of").getByText("Cobblestones").waitFor({ timeout: 5000 });
+    await page.getByTestId("path-made-of").click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="pack-path"]').length === 1, null, { timeout: 15000 });
+    await page.getByTestId("pack-path").click();
+    await page.getByTestId("history").getByText("Path made of Dirt Road").waitFor({ timeout: 10000 });
+    await page.getByTestId("btool-select").click();
+    await page.keyboard.press("Escape");
     // a door in its top wall; then try one on bare floor, which should explain itself
     await page.getByTestId("btool-door").click();
     // a door picture from the pack (doors open from a button in the tool bar, like walls)

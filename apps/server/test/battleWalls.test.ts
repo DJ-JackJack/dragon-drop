@@ -25,6 +25,11 @@ beforeAll(() => {
   for (let i = 0; i < 256 * 64; i++) d.data.set([40, 200, 60, 255], i * 4);
   mkdirSync(path.join(lib, "Castle Kit", "Doors"), { recursive: true });
   writeFileSync(path.join(lib, "Castle Kit", "Doors", "Oak_Door.png"), PNG.sync.write(d));
+  // a road strip, orange
+  const r = new PNG({ width: 512, height: 128 });
+  for (let i = 0; i < 512 * 128; i++) r.data.set([230, 140, 30, 255], i * 4);
+  mkdirSync(path.join(lib, "Castle Kit", "Roads"), { recursive: true });
+  writeFileSync(path.join(lib, "Castle Kit", "Roads", "Dirt_Road.png"), PNG.sync.write(r));
 });
 
 let n = 0;
@@ -101,6 +106,27 @@ describe("what walls are built of", () => {
     expect(bad.isError).toBe(true);
     // the picture reaches the server's pictures too
     expect(Object.keys((await hub.battleAssets(hub.session.doc)).opts.wallPictures ?? {})).toEqual([door]);
+  });
+
+  it("lets Claude lay roads, tracks and streams, of a look or a pack picture, and change and remove them", async () => {
+    const hub = await fresh();
+    const paths = () => hub.session.doc.features!.paths ?? [];
+    const stream = await ok(hub, "add_path", { points: [[0, 5], [6, 5], [11, 2]], look: "water", width: 2 });
+    expect(paths()[0]).toMatchObject({ look: "water", width: 2 });
+    const road = (await ok(hub, "search_assets", { query: "road", category: "paths" })).items[0].id;
+    const r = await ok(hub, "add_path", { points: [[2, 0], [2, 9]], asset: road });
+    expect(paths().find((p) => p.id === r.path.id)?.asset).toBe(road);
+    expect((await ok(hub, "list_paths")).paths).toHaveLength(2);
+    await ok(hub, "update_path", { id: r.path.id, asset: null, look: "cobble", width: 1.5 });
+    expect(paths().find((p) => p.id === r.path.id)).toMatchObject({ look: "cobble", width: 1.5 });
+    expect(paths().find((p) => p.id === r.path.id)).not.toHaveProperty("asset");
+    const off = await tool(hub, "add_path", { points: [[0, 0], [40, 0]] });
+    expect(off.isError).toBe(true); // off the map
+    // the picture reaches the server's pictures, and the stream is drawn under the walls
+    await ok(hub, "update_path", { id: stream.path.id, asset: road });
+    expect(Object.keys((await hub.battleAssets(hub.session.doc)).opts.wallPictures ?? {})).toEqual([road]);
+    await ok(hub, "remove_paths", { ids: [stream.path.id, r.path.id] });
+    expect(paths()).toHaveLength(0);
   });
 
   it("draws a wall's pack picture in the server's pictures (previews and exports)", async () => {

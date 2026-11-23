@@ -3,16 +3,16 @@
  * editor's views only decide what was clicked or pressed and these decide what changes. Each one returns a `FeaturesPatch`, which the
  * editor sends as a single command: one undo step for the whole group.
  *
- * What a group can hold: on a battlemap walls, lights, objects, room notes, light zones, stairs, ladders and holes, and roofs; on a world map places and labels.
+ * What a group can hold: on a battlemap walls, lights, objects, room notes, light zones, stairs, ladders and holes, roofs and paths; on a world map places and labels.
  * Regions and roads/borders (world maps) can be moved and deleted as part of a group too, but not copied or selected by a box.
  * Positions are in whatever unit the map uses (squares on a battlemap, map px on a world map); the caller says which with `bounds`.
  */
 import {
-  type ClimateRegion, type Features, type FeaturesPatch, type MapAmbientZone, type MapConnector, type MapRoof, type MapLabel, type MapLight, type MapLine, type MapNote, type MapProp, type MapWall, type Place,
+  type ClimateRegion, type Features, type FeaturesPatch, type MapAmbientZone, type MapConnector, type MapPath, type MapRoof, type MapLabel, type MapLight, type MapLine, type MapNote, type MapProp, type MapWall, type Place,
   moveLabel, newFeatureId,
 } from "./features.ts";
 
-export type FeatureKind = "wall" | "light" | "prop" | "note" | "zone" | "connector" | "roof" | "place" | "label" | "region" | "line";
+export type FeatureKind = "wall" | "light" | "prop" | "note" | "zone" | "connector" | "roof" | "path" | "place" | "label" | "region" | "line";
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 
@@ -45,6 +45,7 @@ export function featureKindOf(f: Features, id: string): FeatureKind | null {
   if (f.zones?.some((x) => x.id === id)) return "zone";
   if (f.connectors?.some((x) => x.id === id)) return "connector";
   if (f.roofs?.some((x) => x.id === id)) return "roof";
+  if (f.paths?.some((x) => x.id === id)) return "path";
   if (f.places.some((x) => x.id === id)) return "place";
   if (f.labels.some((x) => x.id === id)) return "label";
   if (f.regions?.some((x) => x.id === id)) return "region";
@@ -63,6 +64,7 @@ export function featuresBounds(f: Features, ids: string[]): Box | null {
     if (kind === "wall") for (const [x, y] of f.walls!.find((w) => w.id === id)!.points) add(x, y);
     else if (kind === "zone") for (const [x, y] of f.zones!.find((z) => z.id === id)!.points) add(x, y);
     else if (kind === "roof") for (const [x, y] of f.roofs!.find((r) => r.id === id)!.points) add(x, y);
+    else if (kind === "path") for (const [x, y] of f.paths!.find((r) => r.id === id)!.points) add(x, y);
     else if (kind === "connector") { const c = f.connectors!.find((x) => x.id === id)!; add(c.x, c.y); add(c.x + c.w, c.y + c.h); }
     else if (kind === "region") for (const [x, y] of f.regions!.find((r) => r.id === id)!.polygon) add(x, y);
     else if (kind === "line") for (const [x, y] of f.lines!.find((l) => l.id === id)!.points) add(x, y);
@@ -101,6 +103,7 @@ function shifted(f: Features, id: string, dx: number, dy: number): { kind: Featu
     case "light": { const l = f.lights!.find((x) => x.id === id)!; return { kind, item: { ...l, x: l.x + dx, y: l.y + dy } satisfies MapLight }; }
     case "connector": { const c = f.connectors!.find((x) => x.id === id)!; return { kind, item: { ...c, x: c.x + dx, y: c.y + dy } satisfies MapConnector }; }
     case "roof": { const r = f.roofs!.find((x) => x.id === id)!; return { kind, item: { ...r, points: sh(r.points) } satisfies MapRoof }; }
+    case "path": { const r = f.paths!.find((x) => x.id === id)!; return { kind, item: { ...r, points: sh(r.points) } satisfies MapPath }; }
     case "prop": { const p = f.props!.find((x) => x.id === id)!; return { kind, item: { ...p, x: p.x + dx, y: p.y + dy } satisfies MapProp }; }
     case "note": { const n = f.notes!.find((x) => x.id === id)!; return { kind, item: { ...n, x: n.x + dx, y: n.y + dy } satisfies MapNote }; }
     case "place": { const p = f.places.find((x) => x.id === id)!; return { kind, item: { ...p, x: p.x + dx, y: p.y + dy } satisfies Place }; }
@@ -118,6 +121,7 @@ function intoPatch(patch: FeaturesPatch, kind: FeatureKind, item: unknown) {
     case "light": (patch.upsertLights ??= []).push(item as MapLight); break;
     case "connector": (patch.upsertConnectors ??= []).push(item as MapConnector); break;
     case "roof": (patch.upsertRoofs ??= []).push(item as MapRoof); break;
+    case "path": (patch.upsertPaths ??= []).push(item as MapPath); break;
     case "prop": (patch.upsertProps ??= []).push(item as MapProp); break;
     case "note": (patch.upsertNotes ??= []).push(item as MapNote); break;
     case "place": (patch.upsertPlaces ??= []).push(item as Place); break;
@@ -156,6 +160,7 @@ export function deleteFeatures(f: Features, ids: string[]): FeaturesPatch {
       case "zone": (patch.removeZones ??= []).push(id); break;
       case "connector": (patch.removeConnectors ??= []).push(id); break;
       case "roof": (patch.removeRoofs ??= []).push(id); break;
+      case "path": (patch.removePaths ??= []).push(id); break;
       case "place": (patch.removePlaces ??= []).push(id); break;
       case "label": (patch.removeLabels ??= []).push(id); break;
       case "region": (patch.removeRegions ??= []).push(id); break;
@@ -181,6 +186,7 @@ export function boxSelect(f: Features, box: Box, kinds: FeatureKind[]): string[]
   if (want.has("wall")) for (const w of f.walls ?? []) if (all(w.points)) out.push(w.id);
   if (want.has("zone")) for (const z of f.zones ?? []) if (all(z.points)) out.push(z.id);
   if (want.has("roof")) for (const r of f.roofs ?? []) if (all(r.points)) out.push(r.id);
+  if (want.has("path")) for (const r of f.paths ?? []) if (all(r.points)) out.push(r.id);
   if (want.has("connector")) for (const c of f.connectors ?? []) if (all([[c.x, c.y], [c.x + c.w, c.y + c.h]])) out.push(c.id);
   if (want.has("place")) for (const p of f.places) if (at(p.x, p.y)) out.push(p.id);
   if (want.has("label")) for (const l of f.labels) if (l.path?.length ? all(l.path) : at(l.x, l.y)) out.push(l.id);
@@ -197,6 +203,8 @@ export interface FeatureClip {
   zones: MapAmbientZone[];
   connectors: MapConnector[];
   roofs: MapRoof[];
+  /** (optional: clips copied before there were paths have none) */
+  paths?: MapPath[];
   places: Place[];
   labels: MapLabel[];
 }
@@ -213,17 +221,18 @@ export function copyFeatures(f: Features, ids: string[]): FeatureClip | null {
     zones: clone((f.zones ?? []).filter((x) => set.has(x.id))),
     connectors: clone((f.connectors ?? []).filter((x) => set.has(x.id))),
     roofs: clone((f.roofs ?? []).filter((x) => set.has(x.id))),
+    paths: clone((f.paths ?? []).filter((x) => set.has(x.id))),
     places: clone(f.places.filter((x) => set.has(x.id))),
     labels: clone(f.labels.filter((x) => set.has(x.id))),
   };
-  const n = clip.walls.length + clip.lights.length + clip.props.length + clip.zones.length + clip.connectors.length + clip.roofs.length + clip.places.length + clip.labels.length;
+  const n = clip.walls.length + clip.lights.length + clip.props.length + clip.zones.length + clip.connectors.length + clip.roofs.length + (clip.paths?.length ?? 0) + clip.places.length + clip.labels.length;
   return n ? clip : null;
 }
 
 /** The corners of a clip (the same measure as `featuresBounds`). */
 export function clipBounds(c: FeatureClip): Box {
-  const scratch: Features = { places: c.places, labels: c.labels, walls: c.walls, lights: c.lights, props: c.props, zones: c.zones, connectors: c.connectors, roofs: c.roofs };
-  const ids = [...c.walls, ...c.lights, ...c.props, ...c.zones, ...c.connectors, ...c.roofs, ...c.places, ...c.labels].map((x) => x.id);
+  const scratch: Features = { places: c.places, labels: c.labels, walls: c.walls, lights: c.lights, props: c.props, zones: c.zones, connectors: c.connectors, roofs: c.roofs, paths: c.paths ?? [] };
+  const ids = [...c.walls, ...c.lights, ...c.props, ...c.zones, ...c.connectors, ...c.roofs, ...(c.paths ?? []), ...c.places, ...c.labels].map((x) => x.id);
   return featuresBounds(scratch, ids)!;
 }
 
@@ -252,6 +261,7 @@ export function pasteFeatures(c: FeatureClip, dx: number, dy: number, opts: Past
   if (c.zones.length) patch.upsertZones = c.zones.map((z) => ({ ...z, id: fresh("z"), points: sh(z.points) }));
   if (c.connectors.length) patch.upsertConnectors = c.connectors.map((k) => ({ ...k, id: fresh("c"), x: k.x + dx, y: k.y + dy }));
   if (c.roofs.length) patch.upsertRoofs = c.roofs.map((r) => ({ ...r, id: fresh("f"), points: sh(r.points) }));
+  if (c.paths?.length) patch.upsertPaths = c.paths.map((r) => ({ ...r, id: fresh("k"), points: sh(r.points) }));
   if (c.places.length) patch.upsertPlaces = c.places.map((p) => ({ ...p, id: fresh("p"), name: placeName(p.name), x: p.x + dx, y: p.y + dy }));
   if (c.labels.length) patch.upsertLabels = c.labels.map((l) => ({ ...moveLabel(l, dx, dy), id: fresh("l") }));
   return { patch, ids, dx, dy };

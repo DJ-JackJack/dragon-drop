@@ -10,7 +10,7 @@ const CATS: { id: string; label: string; usable: boolean; tip: string }[] = [
   { id: "objects", label: "Objects", usable: true, tip: "Furniture, trees, rubble... click one, then click the map" },
   { id: "terrain", label: "Floors", usable: true, tip: "Seamless ground textures: click one to paint with it" },
   { id: "walls", label: "Walls", usable: true, tip: "Wall pictures: click one, then draw walls with it (or choose one for a wall in the inspector)" },
-  { id: "paths", label: "Paths", usable: false, tip: "Path styles (browse only for now)" },
+  { id: "paths", label: "Paths", usable: true, tip: "Roads, tracks and streams: click one, then click the points of a path with it" },
   { id: "portals", label: "Doors", usable: true, tip: "Doors and windows: click one, then click a wall to put it there (or choose one for a door in the inspector)" },
   { id: "roofs", label: "Roofs", usable: false, tip: "Roof patterns (browse only for now)" },
   { id: "patterns", label: "Patterns", usable: false, tip: "Colourable patterns (browse only for now)" },
@@ -68,7 +68,8 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus }: { meta: MapMeta |
     if (it.cat === "terrain") { useAsFloor(it); return; }
     if (it.cat === "walls") { onUi({ tool: "wall", wallAsset: it.id }); return; }
     if (it.cat === "portals") { onUi(/window|shutter/i.test(it.path) ? { tool: "window", windowPicture: it.id } : { tool: "door", doorPicture: it.id }); return; }
-    setNote("Only objects, floor textures, walls, doors and windows can be used so far. Paths, roofs and patterns are on the way.");
+    if (it.cat === "paths") { onUi({ tool: "path", pathAsset: it.id }); return; }
+    setNote("Only objects, floor textures, walls, doors, windows and paths can be used so far. Roofs (a roof's own picture: in the Roof tool) and patterns are on the way.");
   };
 
   const useAsFloor = (it: AssetItem) => {

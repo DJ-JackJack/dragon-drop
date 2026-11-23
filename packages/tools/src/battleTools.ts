@@ -13,6 +13,7 @@ import type { ToolContext } from "./tools.ts";
 import { define, fail, json } from "./toolKit.ts";
 import { LEVEL_TOOLS } from "./levelTools.ts";
 import { ROOF_TOOLS } from "./roofTools.ts";
+import { PATH_TOOLS } from "./pathTools.ts";
 import { traceOverlay } from "./traceTools.ts";
 
 const XY = z.array(z.number()).length(2).describe("[x, y] in grid squares");
@@ -603,6 +604,7 @@ export const BATTLE_TOOLS = [
 
   ...LEVEL_TOOLS,
   ...ROOF_TOOLS,
+  ...PATH_TOOLS,
 ] as const;
 
 /** A labelled square grid on a battlemap preview: a line every square, numbered every 5 (or 10 on big crops). */
