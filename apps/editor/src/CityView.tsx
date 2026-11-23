@@ -3,6 +3,7 @@
  * and the tools to build them. Everything is in metres from the map's top-left corner. The ground is the map's own grid of material cells in the climate's colours, shaded by the
  * land, drawn as a small picture that is scaled up smoothly; the contour lines go over it. Every change is one undoable edit sent to the server when the mouse is let go.
  */
+import { playerView } from "@mapmaker/core";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ARROW_DIRECTION, BRIDGE_COLOURS, CITY_LABEL_KINDS, KEY_ZOOM_STEP, MATERIALS, cityBattleBoxAt, cityBattleSquares, type CityClip, cityClipBounds, copyCity, pasteCity, STREET_EDGE, STREET_SURFACE, WALL_COLOURS, WALL_KINDS, type BridgeSpan, type CityClimate, type Features, type MapBuilding, type MapCityWall, type MapLandform, type MapMeta, type MapStreet, type MapTrees,
@@ -39,7 +40,7 @@ const GOLD = "rgba(255, 224, 120, 0.95)";
 interface Props { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }
 
 /** Somewhere else to draw the city: a tile of a picture export, at its own scale, with only the map on it (no selection, tools, trace picture or scale bar). */
-export interface CityPaintTarget { ctx: CanvasRenderingContext2D; v: View; W: number; H: number; names: boolean; contours: boolean }
+export interface CityPaintTarget { ctx: CanvasRenderingContext2D; v: View; W: number; H: number; names: boolean; contours: boolean; /** Leave out GM-only names (secrets.ts). */ players?: boolean }
 
 type Drag = {
   mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope" | "reader" | "battlebox";
@@ -389,12 +390,12 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ? { ...f, labels: f.labels.map((l) => (mvSet!.has(l.id) ? { ...l, x: l.x + mv.dx, y: l.y + mv.dy } : l)), districts: (f.districts ?? []).map((d) => (mvSet!.has(d.id) ? { ...d, points: d.points.map(([x, y]) => [x + mv.dx, y + mv.dy] as Pt) } : d)) } : f;
     if (!screen) {
       // (a picture is sized as if it were the whole city fitted on the screen: names keep the size they have on the map as a whole)
-      if (target!.names) drawCityNames(ctx, f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H }, null);
+      if (target!.names) drawCityNames(ctx, target!.players ? playerView(f) : f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H }, null);
       return;
     }
     // another map being compared with this one, over it (compare.ts)
     compareCtl.draw(ctx, m.id, v, W, H);
-    labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H }, sel) : [];
+    labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H, faintGmOnly: true }, sel) : [];
     if (o.tool === "measure") measureCtl.draw(ctx, v, cityLength);
 
     // what is selected

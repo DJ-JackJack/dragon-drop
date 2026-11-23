@@ -20,6 +20,8 @@ export interface CityNameView {
   W: number; H: number;
   /** The user's Label size setting. */
   labelScale?: number;
+  /** Draw GM-only labels and building names faintly (the editor; exports for players leave them out instead). */
+  faintGmOnly?: boolean;
 }
 
 const INK = "#17171c", GLOW = "rgba(255, 255, 255, 0.92)", STREET_INK = "#3a3125", STREET_GLOW = "rgba(214, 205, 180, 0.95)";
@@ -30,7 +32,7 @@ const meets = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b
 export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: CityNameView, selected?: ReadonlySet<string> | null): Hit[] {
   // the labels and districts' names first, so a street's or building's name never lands on one (it is left out where it would)
   const districtNames: MapLabel[] = (f.districts ?? []).filter((d) => d.name).map((d) => { const [x, y] = districtCentre(d.points); return { id: d.id, text: d.name!, kind: "region", x, y }; });
-  const hits = drawFeatures(ctx, { places: [], labels: [...districtNames, ...(f.labels ?? [])], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false }, selected ?? null);
+  const hits = drawFeatures(ctx, { places: [], labels: [...districtNames, ...(f.labels ?? [])], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false, faintGmOnly: v.faintGmOnly }, selected ?? null);
   const taken: Box[] = hits.map(({ x0, y0, x1, y1 }) => ({ x0, y0, x1, y1 }));
   ctx.save();
   for (const s of f.streets ?? []) if (s.name) streetName(ctx, s, v, taken);
@@ -47,6 +49,7 @@ export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: Cit
     if (taken.some((t) => meets(t, box))) continue;
     taken.push(box);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.globalAlpha = b.gmOnly && v.faintGmOnly ? 0.45 : 1;
     ctx.lineJoin = "round"; ctx.lineWidth = Math.max(2, px * 0.3); ctx.strokeStyle = GLOW; ctx.shadowColor = GLOW; ctx.shadowBlur = px * 0.4;
     ctx.strokeText(b.name, cx, cy);
     ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.fillStyle = INK; ctx.fillText(b.name, cx, cy);

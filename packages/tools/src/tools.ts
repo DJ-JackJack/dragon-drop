@@ -73,7 +73,7 @@ export interface ToolContext {
    * Optional: write the open battlemap as a tabletop file (Universal VTT, Foundry scene zip, or PNG) into the project's exports folder. For a battlemap with several levels the
    * picture and the Universal VTT file are of one level (`level`: its id or name; default the level being worked on); the Foundry scene holds every level.
    */
-  exportBattle?(format: BattleExportFormat, level?: string, print?: import("@mapmaker/core").PrintOptions): Promise<{ name: string; bytes: number; path: string }>;
+  exportBattle?(format: BattleExportFormat, level?: string, print?: import("@mapmaker/core").PrintOptions, gm?: boolean): Promise<{ name: string; bytes: number; path: string }>;
   /** Optional: the levels of the open battlemap (a cellar under a ground floor under an attic), and the one being worked on. Every other tool works on that level. */
   levels?: {
     /** The levels from the lowest to the highest, each with what is on it. Throws on a world map. */
@@ -525,6 +525,33 @@ export const TOOLS = [
         travel: travelEstimates(s, i.paces as Partial<Record<TravelModeId, number>> | undefined).map((t) => ({ how: t.name, time: t.time, days: Math.round(t.days * 100) / 100, ...(t.note && { note: t.note }) })),
         ...(!s.climateKnown && { note: "The climate isn't worked out yet, so forest, jungle and marsh count as open ground." }),
       });
+    },
+  }),
+
+  define({
+    name: "set_gm_only",
+    description:
+      "Mark things as GM only (for the DM's eyes) or show them to players again: places, labels, roads and borders on world maps, objects and lights on " +
+      "battlemaps, labels and a building's name on settlement maps. GM-only things show faintly in the editor and are left out of pictures and exports " +
+      "for players (the DM can still export their own copy). Only when the DM says something is secret or GM only.",
+    schema: z.object({
+      items: z.array(z.string()).min(1).max(200).describe("Ids, or the names of places, labels, roads and buildings"),
+      gm_only: z.boolean().describe("true: GM only; false: shown to players"),
+    }),
+    async run(ctx, i) {
+      const f = featuresOf(ctx), want = i.items.map((s) => s.trim()), lc = (s?: string) => (s ?? "").trim().toLowerCase();
+      const hit = (id: string, name?: string) => want.some((w) => w === id || (!!name && lc(name) === lc(w)));
+      const mark = <T extends { id: string; gmOnly?: boolean }>(x: T): T => { const { gmOnly: _g, ...rest } = x; return (i.gm_only ? { ...x, gmOnly: true } : rest) as T; };
+      const places = f.places.filter((p) => hit(p.id, p.name)).map(mark), labels = f.labels.filter((l) => hit(l.id, l.text)).map(mark);
+      const lines = (f.lines ?? []).filter((l) => hit(l.id, l.name)).map(mark), props = (f.props ?? []).filter((p) => hit(p.id)).map(mark);
+      const lights = (f.lights ?? []).filter((l) => hit(l.id)).map(mark), buildings = (f.buildings ?? []).filter((b) => hit(b.id, b.name)).map(mark);
+      const n = places.length + labels.length + lines.length + props.length + lights.length + buildings.length;
+      if (!n) return { ...text(`Nothing found for ${want.join(", ")}. Use the list tools for ids.`), isError: true };
+      const r = ctx.execute({ op: "features", label: `${i.gm_only ? "Make" : "Show"} ${n} thing${n === 1 ? "" : "s"} ${i.gm_only ? "GM only" : "to players"}`, patch: {
+        ...(places.length && { upsertPlaces: places }), ...(labels.length && { upsertLabels: labels }), ...(lines.length && { upsertLines: lines }),
+        ...(props.length && { upsertProps: props }), ...(lights.length && { upsertLights: lights }), ...(buildings.length && { upsertBuildings: buildings }),
+      } });
+      return json({ change: r.seq, gm_only: i.gm_only, marked: [...places.map((p) => p.name), ...labels.map((l) => l.text), ...lines.map((l) => l.name ?? l.id), ...props.map((p) => p.id), ...lights.map((l) => l.id), ...buildings.map((b) => b.name ?? b.id)] });
     },
   }),
 

@@ -1,4 +1,5 @@
 /** Exporting the map as one PNG, or as tiles in a ZIP when it's too big for one image. */
+import { playerView } from "@mapmaker/core";
 import { type Features, type MapMeta, MAX_SINGLE_PX, createZip, planExport } from "@mapmaker/core";
 import { drawFeatures } from "./drawFeatures.ts";
 import { drawFurniture } from "./drawFurniture.ts";
@@ -18,6 +19,8 @@ export interface ExportOptions {
   features: boolean;
   grid: boolean;
   furniture: boolean;
+  /** A picture for players: GM-only places, labels and roads are left out (secrets.ts). */
+  players?: boolean;
 }
 
 export const EXPORT_FACTORS = [1, 2, 4, 8];
@@ -43,7 +46,7 @@ function renderRegion(ctx: CanvasRenderingContext2D, src: ExportSource, o: Expor
   }
   const view = { scale: k, ox: -x, oy: -y, mapWidth: meta.width, mapHeight: meta.height, kmPerPx: meta.kmPerPx };
   if (o.grid) drawMapGrid(ctx, meta.grid, view, w, h);
-  if (o.features) drawFeatures(ctx, src.features, { scale: k, ox: -x, oy: -y, mapWidth: meta.width }, null);
+  if (o.features) drawFeatures(ctx, o.players ? playerView(src.features) : src.features, { scale: k, ox: -x, oy: -y, mapWidth: meta.width }, null);
   if (o.furniture) {
     ctx.save();
     ctx.translate(-x, -y);

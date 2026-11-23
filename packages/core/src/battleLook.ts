@@ -150,6 +150,8 @@ export interface WallLayerOptions {
   pictureFor?: WallPictureSource;
   /** Stairs, ladders and holes: painted first, so walls and their shadows lie over them. */
   connectors?: MapConnector[];
+  /** The DM's marks: a secret door's small gold mark and an invisible wall's dashed line (on unless false; pictures for players leave them out). */
+  dmMarks?: boolean;
 }
 
 const STAIR: [number, number, number] = [176, 168, 154];
@@ -412,7 +414,7 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
   }
 
   // ---- secret doors (a small gold mark, for the DM) and invisible walls (a faint dashed line)
-  for (const p of secrets) {
+  for (const p of opts.dmMarks === false ? [] : secrets) {
     const mx = (p.ax + p.bx) / 2, my = (p.ay + p.by) / 2, r = Math.max(1.6, 0.055 * px);
     for (let y = Math.floor(my - r); y <= Math.ceil(my + r); y++) for (let x = Math.floor(mx - r); x <= Math.ceil(mx + r); x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
@@ -420,7 +422,7 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
       if (dd <= r) over(d, (y * W + x) * 4, 232, 192, 92, clamp(r - dd + 0.5, 0, 1));
     }
   }
-  for (const p of ghosts) {
+  for (const p of opts.dmMarks === false ? [] : ghosts) {
     const dash = 0.16 * px, gap = 0.1 * px;
     for (let s = 0; s < p.len; s += dash + gap) {
       const e = Math.min(p.len, s + dash);

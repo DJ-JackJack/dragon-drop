@@ -277,6 +277,11 @@ try {
   await page.getByTestId("place-kind-current").click();
   await page.getByTestId("inspector-kind-port").click();
   await page.getByTestId("places").getByText("Port", { exact: true }).waitFor({ timeout: 10000 });
+  // GM only: the place is marked (it shows faintly), and the export below offers a version for players without it
+  // (a click, not check(): the box follows the map, so it ticks once the server has the change)
+  await page.getByTestId("gm-only").click();
+  await page.getByTestId("history").getByText("Make Test Harbour GM only").waitFor({ timeout: 10000 });
+  if (!(await page.getByTestId("gm-only").isChecked())) fail("the place should show as GM only once marked");
   // and one of the new pictures: choose a lighthouse in the Place tool, place one, see it in the list
   await page.getByRole("button", { name: "Place", exact: true }).click();
   await page.getByTestId("place-kind-menu").click(); // (the kinds open from a button in the tool bar, and it closes when one is chosen)
@@ -366,7 +371,8 @@ try {
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(shots, "e2e-3e-extras.png") });
   await page.getByTestId("export-button").click();
-  await page.getByTestId("export-dialog").getByText(/4096 × 4096 px/).waitFor({ timeout: 5000 }); // (the first map is 1024 px: its 4× size; tiling is covered by the exportPlan unit tests)
+  await page.getByTestId("export-dialog").getByText(/4096 × 4096 px/).waitFor({ timeout: 5000 });
+  if (!(await page.getByTestId("export-players").isChecked())) fail("the export should be for players by default when something is GM only"); // (the first map is 1024 px: its 4× size; tiling is covered by the exportPlan unit tests)
   await page.getByTestId("export-size-1").check();
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("export-go").click()]);
   if (!/\(1x\)\.png$/.test(download.suggestedFilename())) fail(`unexpected export name ${download.suggestedFilename()}`);
@@ -514,7 +520,7 @@ try {
     await page.mouse.click(sx(100) + 2, sy(380) + 2);
     await rows(/border/).first().waitFor({ timeout: 10000 });
     await page.getByTestId("inspector").getByText(/Closed \(joins back/).waitFor({ timeout: 10000 });
-    if (!(await page.getByTestId("inspector").getByRole("checkbox").first().isChecked())) fail("the border did not close");
+    if (!(await page.getByTestId("inspector").getByRole("checkbox", { name: /Closed \(joins back/ }).isChecked())) fail("the border did not close");
     // delete the border from the inspector; the road stays
     await page.getByTestId("inspector").getByRole("button", { name: "Delete" }).click();
     await rows(/border/).first().waitFor({ state: "detached", timeout: 10000 });

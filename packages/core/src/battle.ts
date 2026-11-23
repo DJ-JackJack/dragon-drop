@@ -772,7 +772,7 @@ export function footprint(spr: SpriteData & { origW?: number; origH?: number }):
 
 /** The whole battlemap as an image: floors, objects below the walls, walls and doors, objects above, then lights; with `roofs` (an opacity, 0 to 1) the level's roofs over everything. */
 export function renderBattle(
-  doc: MapDoc, opts: { overlay?: boolean; lights?: boolean; notes?: boolean; tiles?: TileSource; sprites?: SpriteSource; roofs?: number; roofTiles?: RoofTileSource; wallPictures?: WallPictureSource } = {},
+  doc: MapDoc, opts: { overlay?: boolean; lights?: boolean; notes?: boolean; tiles?: TileSource; sprites?: SpriteSource; roofs?: number; roofTiles?: RoofTileSource; wallPictures?: WallPictureSource; dmMarks?: boolean } = {},
 ): { w: number; h: number; data: Uint8ClampedArray } {
   const spec = battleSpec(doc);
   const { w, h } = battleImageSize(spec);
@@ -782,7 +782,7 @@ export function renderBattle(
   if (doc.features?.paths?.length) compositeOver(img, renderPathLayer(spec, doc.features.paths, { pictureFor: opts.wallPictures }));
   drawBattleProps(img, spec, doc.features?.props, opts.sprites, "below");
   if (opts.overlay !== false) {
-    compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures }));
+    compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures, dmMarks: opts.dmMarks }));
     drawBattleProps(img, spec, doc.features?.props, opts.sprites, "above");
     if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones, opts.wallPictures);
     if (opts.notes) drawBattleNotes(img, spec, doc.features?.notes);

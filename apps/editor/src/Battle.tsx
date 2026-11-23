@@ -10,7 +10,7 @@ import {
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
-import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, routeLength, type PaperId, MAX_PRINT_PAGES, describePlan, planPrint, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
+import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, routeLength, hasGmOnly, type PaperId, MAX_PRINT_PAGES, describePlan, planPrint, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
 import { traceCtl } from "./trace.ts";
 import { TraceBar } from "./TraceBar.tsx";
@@ -29,6 +29,7 @@ import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { focusBus, viewForBox } from "./focusBus.ts";
 import { MEASURE_HINT, battleLength, measureCtl, useMeasure } from "./measure.ts";
 import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterUi.ts";
+import { GmOnlyBox } from "./GmOnly.tsx";
 
 export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "stairs" | "ladder" | "hole" | "roof";
 
@@ -648,12 +649,12 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       if (isSel(pr.id) && spr) { ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k); }
       ctx.restore();
     };
-    for (const pr of props) if ((pr.layer ?? "above") === "below") drawProp(pr);
+    for (const pr of props) if ((pr.layer ?? "above") === "below") drawProp(pr, pr.gmOnly ? 0.45 : 1);
     const wl = wallRef.current;
     if (wl) { ctx.imageSmoothingEnabled = true; ctx.drawImage(wl.cv, v.ox, v.oy, MW, MH); }
     drawWallMarks(ctx, f.walls ?? [], v, isSel);
     if (wl && wl.px !== wallPx(spec, v.scale)) { window.clearTimeout(wallTimer.current); wallTimer.current = window.setTimeout(() => buildWalls(), 220); }
-    for (const pr of props) if ((pr.layer ?? "above") === "above") drawProp(pr);
+    for (const pr of props) if ((pr.layer ?? "above") === "above") drawProp(pr, pr.gmOnly ? 0.45 : 1);
     if (o.showLights) {
       drawLights(ctx, lights, f.walls, v, glowCanvasFor);
       const amb = ambientOf(spec);
@@ -2083,6 +2084,7 @@ function PropEditor({ p, onClear }: { p: MapProp; onClear: () => void }) {
         <input type="range" min={10} max={400} step={5} value={Math.round((p.scale ?? 1) * 100)} onChange={(e) => set({ scale: Number(e.target.value) / 100 })} />
       </label>
       <label className="check"><input type="checkbox" checked={!!p.flip} onChange={(e) => set({ flip: e.target.checked })} /> Mirror (X)</label>
+      <GmOnlyBox on={!!p.gmOnly} what="this object (a trap, a hidden chest)" onChange={(on) => set({ gmOnly: on || undefined })} />
       <label className="field">Layer
         <select value={p.layer ?? "above"} onChange={(e) => set({ layer: e.target.value as "above" | "below" })}>
           <option value="above">Above the walls</option><option value="below">Below the walls</option>
@@ -2124,6 +2126,7 @@ function LightEditor({ l, onClear }: { l: MapLight; onClear: () => void }) {
       </button>
       {picking && <div className="inline-picker"><GlowPicker value={l.glow ?? null} onPick={(pic) => { const next: MapLight = { ...latest.current }; delete next.glow; if (pic) next.glow = pic; latest.current = next; sendFeatures({ upsertLights: [next] }, `Light shape: ${glowLabel(pic)}`); setPicking(false); }} /></div>}
       <div className="row">
+        <GmOnlyBox on={!!l.gmOnly} what="this light" onChange={(on) => set({ gmOnly: on || undefined })} />
         <button onClick={() => { sendFeatures({ removeLights: [l.id] }, "Delete light"); onClear(); }} data-testid="light-delete">Delete</button>
       </div>
     </>
@@ -2233,6 +2236,9 @@ export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; l
   const [paper, setPaper] = useState<PaperId>(() => { try { return localStorage.getItem("dd.printPaper") === "a4" ? "a4" : "letter"; } catch { return "letter"; } });
   const [printGrid, setPrintGrid] = useState(true);
   const [ink, setInk] = useState(false);
+  const secrets = hasGmOnly(store.state.features);
+  /** The DM's own copy: GM-only objects and lights kept (exports are for players otherwise). */
+  const [gmCopy, setGmCopy] = useState(false);
   const plan = meta.battle ? planPrint(meta.battle.squaresX, meta.battle.squaresY, { paper }) : null;
   const files = [
     { fmt: "uvtt", name: `${meta.id}.dd2vtt`, title: "Universal VTT (.dd2vtt)", text: "One file with the image, walls, doors and lights (of the level you are working on). Use it in virtual tabletops that read Universal VTT files, or with the Universal Battlemap Importer module in Foundry. The format has no see-through wall, so windows and invisible walls are written as plain walls. In Foundry, the Foundry scene below is better: it keeps them (and your levels)." },
@@ -2247,6 +2253,7 @@ export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; l
       const params = new URLSearchParams();
       if (many && (f.fmt === "png" || f.fmt === "uvtt" || f.fmt === "print")) params.set("level", levelId);
       if (f.fmt === "print") { params.set("paper", paper); if (printGrid) params.set("grid", "1"); if (ink) params.set("ink", "1"); try { localStorage.setItem("dd.printPaper", paper); } catch { /* fine */ } }
+      if (gmCopy && secrets && f.fmt !== "key") params.set("gm", "1");
       const q = params.size ? `?${params}` : "";
       const r = await fetch(`/api/projects/${encodeURIComponent(meta.id)}/export/${f.fmt}${q}`);
       if (!r.ok) throw new Error((await r.text()) || `The export failed (${r.status}).`);
@@ -2272,6 +2279,7 @@ export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; l
             </select>
           </label>
         )}
+        {secrets && <label className="check" title="Objects and lights you marked GM only are left out of every export unless you tick this"><input type="checkbox" checked={gmCopy} onChange={(e) => setGmCopy(e.target.checked)} data-testid="export-gm-copy" /> My own copy: keep what is GM only (exports are for players otherwise)</label>}
         {files.map((f) => (
           <div key={f.fmt} className="export-choice">
             <div><b>{f.title}</b><p className="muted">{f.text}</p></div>

@@ -2,6 +2,8 @@
  * A city map exported as a picture: drawn by the city view itself (`paint`) at a chosen number of pixels per metre, as one PNG or, when that is too big for one picture,
  * as PNG tiles in a ZIP (the same plan as the world map's export: planExport). Roof pictures and fonts are loaded first (`prepare`), so nothing is drawn as a placeholder.
  */
+import { hasGmOnly } from "@mapmaker/core";
+import { store } from "./store.ts";
 import { useState } from "react";
 import { type MapMeta, createZip, planExport } from "@mapmaker/core";
 import type { CityPaintTarget } from "./CityView.tsx";
@@ -39,6 +41,8 @@ export function CityExportDialog({ meta, names: namesOn, contours: contoursOn, p
   const spec = meta.city!;
   const [k, setK] = useState(() => [...CITY_EXPORT_SCALES].reverse().find((s) => Math.max(spec.widthM, spec.heightM) * s <= 4096) ?? 1);
   const [names, setNames] = useState(namesOn);
+  const secrets = hasGmOnly(store.state.features);
+  const [players, setPlayers] = useState(true);
   const [contours, setContours] = useState(contoursOn);
   const [scaleBar, setScaleBar] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -54,7 +58,7 @@ export function CityExportDialog({ meta, names: namesOn, contours: contoursOn, p
         const c = document.createElement("canvas");
         c.width = w; c.height = h;
         const ctx = c.getContext("2d")!;
-        paint({ ctx, v: { scale: k, ox: -x, oy: -y }, W: w, H: h, names, contours });
+        paint({ ctx, v: { scale: k, ox: -x, oy: -y }, W: w, H: h, names, contours, players: secrets && players });
         if (scaleBar) drawScaleBar(ctx, k, plan.width, plan.height, x, y);
         return c;
       };
@@ -110,6 +114,7 @@ export function CityExportDialog({ meta, names: namesOn, contours: contoursOn, p
         <fieldset disabled={!!busy}>
           <legend>Include</legend>
           <label className="check"><input type="checkbox" checked={names} onChange={(e) => setNames(e.target.checked)} data-testid="export-names" /> Names and labels</label>
+          {secrets && names && <label className="check" title="Labels and building names you marked GM only are left out"><input type="checkbox" checked={players} onChange={(e) => setPlayers(e.target.checked)} data-testid="export-players" /> For players: leave out what is GM only</label>}
           <label className="check"><input type="checkbox" checked={contours} onChange={(e) => setContours(e.target.checked)} /> Contour lines</label>
           <label className="check"><input type="checkbox" checked={scaleBar} onChange={(e) => setScaleBar(e.target.checked)} /> Scale bar</label>
         </fieldset>

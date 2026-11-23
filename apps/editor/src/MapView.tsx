@@ -505,7 +505,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       for (const [x, y] of rd) { ctx.beginPath(); ctx.arc(v.ox + x * v.scale, v.oy + y * v.scale, 3.5, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     }
-    hitsRef.current = drawFeatures(ctx, withWaterLabels(f, waterRef.current), { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
+    hitsRef.current = drawFeatures(ctx, withWaterLabels(f, waterRef.current), { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers, faintGmOnly: true }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
     drawSelectionOverlay(ctx, v, selectionRef.current.selection, selectionRef.current.lock, f, drag.current, pointer.current, optsRef.current.areaShape, toMapRef.current);
     // title, scale bar, compass and frame (what exports will show)
     drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });

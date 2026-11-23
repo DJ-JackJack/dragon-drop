@@ -641,10 +641,11 @@ export const BATTLE_TOOLS = [
       paper: z.enum(["letter", "a4"]).optional().describe("print only: US Letter (default) or A4"),
       ink_saver: z.boolean().optional().describe("print only: grey and lighten the picture and draw the walls again dark, to save ink"),
       grid: z.boolean().optional().describe("print only: draw the grid (default true)"),
+      include_gm_only: z.boolean().optional().describe("Keep the objects and lights the DM marked GM only (the DM's own copy); default false: an export is for players"),
     }),
     async run(ctx, i) {
       if (!ctx.exportBattle) return fail("Exports aren't available here.");
-      const f = await ctx.exportBattle(i.format, i.level, i.format === "print" ? { paper: i.paper, ink: i.ink_saver, grid: i.grid ?? true } : undefined);
+      const f = await ctx.exportBattle(i.format, i.level, i.format === "print" ? { paper: i.paper, ink: i.ink_saver, grid: i.grid ?? true } : undefined, i.include_gm_only);
       return json({ file: f.name, saved_to: f.path, megabytes: +(f.bytes / 1048576).toFixed(1), note: "The user can also download it from the editor's Export button." });
     },
   }),

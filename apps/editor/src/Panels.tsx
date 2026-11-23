@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { GmOnlyBox } from "./GmOnly.tsx";
 import { placeKind,
   GROUND_INFO, MI_PER_KM, WIND_NAMES, type ClimateParams, type ClimateRegion, DEFAULT_CLIMATE, type Corner, type Features, type MapFurniture, type MapGrid, type MapLine, describeFurniture, lineLengthKm, clampGridSize, describeGrid, gridCellPx, niceGridSize, type LabelKind, type MapLabel, type MapMeta, type NamePos, type Place, type PlaceType,
 } from "@mapmaker/core";
@@ -73,6 +74,7 @@ function PlaceEditor({ p }: { p: Place }) {
       <label className="field">Notes<textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (p.notes ?? "") && sendPlace({ ...p, notes })} /></label>
       <label className="check"><input type="checkbox" checked={!p.hideName} onChange={(e) => sendPlace({ ...p, hideName: !e.target.checked })} /> Show name on map</label>
       <label className="check"><input type="checkbox" checked={!p.hideMarker} onChange={(e) => sendPlace({ ...p, hideMarker: !e.target.checked })} /> Show marker (turn off for a peak the map already shows)</label>
+      <GmOnlyBox on={!!p.gmOnly} what="this place" onChange={(on) => { const { gmOnly: _g, ...rest } = p; sendPlace(on ? { ...p, gmOnly: true } : rest, on ? `Make ${p.name} GM only` : `Show ${p.name} to players`); }} />
       <label className="field">Name position
         <select value={p.namePos ?? "auto"} onChange={(e) => sendPlace({ ...p, namePos: e.target.value as NamePos })}>
           <option value="auto">Automatic (first free side)</option>
@@ -108,6 +110,7 @@ function LabelEditor({ l }: { l: MapLabel }) {
   return (
     <>
       <label className="field">Text<input value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text.trim() && text !== l.text && sendLabel({ ...l, text: text.trim() }, `Edit label ${l.text}`)} /></label>
+      <GmOnlyBox on={!!l.gmOnly} what="this label" onChange={(on) => { const { gmOnly: _g, ...rest } = l; sendLabel(on ? { ...l, gmOnly: true } : rest, on ? `Make label ${l.text} GM only` : `Show label ${l.text} to players`); }} />
       <label className="field">Kind
         <select value={l.kind} onChange={(e) => sendLabel({ ...l, kind: e.target.value as LabelKind })}>
           {LABEL_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
@@ -167,6 +170,7 @@ function LineEditor({ l, kmPerPx }: { l: MapLine; kmPerPx: number }) {
           <option value="reef">Reef</option>
         </select>
       </label>
+      <GmOnlyBox on={!!l.gmOnly} what={`this ${l.kind}`} onChange={(on) => (on ? set({ gmOnly: true }) : set({}, "gmOnly"))} />
       {l.kind === "border" && (
         <label className="check"><input type="checkbox" checked={!!l.closed} onChange={(e) => (e.target.checked ? set({ closed: true }) : set({}, "closed"))} /> Closed (joins back to its start)</label>
       )}

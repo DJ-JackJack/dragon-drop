@@ -6,6 +6,8 @@ import { PLACE_KINDS, type PlaceType } from "./placeKinds.ts"; // (PlaceType its
 
 export interface Place {
   id: string;
+  /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
+  gmOnly?: boolean;
   name: string;
   type: PlaceType;
   /** Map px. */
@@ -26,6 +28,8 @@ export type LabelKind = "sea" | "region" | "range" | "island" | "feature";
 
 export interface MapLabel {
   id: string;
+  /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
+  gmOnly?: boolean;
   text: string;
   kind: LabelKind;
   /** Centre of the label, map px. */
@@ -81,6 +85,8 @@ export type LineKind = "road" | "trail" | "border" | "reef";
 /** A road, trail or border: a polyline on the map. */
 export interface MapLine {
   id: string;
+  /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
+  gmOnly?: boolean;
   kind: LineKind;
   name?: string;
   /** Map px. */
@@ -132,6 +138,8 @@ export function wallSegments(w: MapWall): [[number, number], [number, number]][]
 /** A light on a battlemap (grid squares). */
 export interface MapLight {
   id: string;
+  /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
+  gmOnly?: boolean;
   x: number;
   y: number;
   /** Reach of the dim light, in squares. */
@@ -174,6 +182,8 @@ export interface MapAmbientZone {
 /** An object from an asset pack placed on a battlemap (grid squares). */
 export interface MapProp {
   id: string;
+  /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
+  gmOnly?: boolean;
   /** "<pack>:<path>" */
   asset: string;
   /** Centre, in squares. */
@@ -246,6 +256,8 @@ export type BuildingKind = (typeof BUILDING_KINDS)[number];
  */
 export interface MapBuilding {
   id: string;
+  /** Its name is for the DM's eyes only: the building is drawn for players, its name isn't (secrets.ts). */
+  gmOnly?: boolean;
   name?: string;
   /** The outline, closed, in metres: a rectangle's four corners or any polygon. */
   points: [number, number][];

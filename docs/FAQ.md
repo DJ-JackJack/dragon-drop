@@ -78,6 +78,9 @@ Rivers aren't drawn one by one: they come from the land and the rain, so they ca
 **How do I update?**
 **Settings → Updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
 
+**Can I keep things secret from my players?**
+Yes. Tick **GM only** on a place, label, road, object, light or a building's name: it shows faintly for you, and exports for players leave it out (you can still export your own copy with everything).
+
 **Can I see the map on my phone?**
 No. Dragon Drop only answers your own PC, so nothing on your network or the internet can reach your maps. You can still talk to Claude from your phone with Claude Code's Remote Control (the setup guide, section 6); the map itself changes in the Dragon Drop window on your PC.
 

@@ -7,6 +7,7 @@ import {
 } from "@mapmaker/core";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
+import { GmOnlyBox } from "./GmOnly.tsx";
 import { store } from "./store.ts";
 import { forAssistant } from "./assistantName.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -315,6 +316,7 @@ function BuildingEditor({ b, roofSource, onClear, onRemove }: { b: MapBuilding; 
       <label className="field">Name (only a name you chose)
         <input key={b.id + (b.name ?? "")} defaultValue={b.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (b.name ?? "")) { const { name: _n, ...rest } = b; sendCityFeatures({ upsertBuildings: [v ? { ...rest, name: v } : rest] }, v ? `Name building ${v}` : "Clear building name"); } }} data-testid="city-name" />
       </label>
+      {b.name && <GmOnlyBox on={!!b.gmOnly} what="this building's name" onChange={(on) => set({ gmOnly: on || undefined }, on ? `Make ${b.name} GM only` : `Show ${b.name} to players`)} />}
       <label className="field">What it is
         <select value={b.kind ?? "other"} onChange={(e) => set({ kind: e.target.value as BuildingKind }, `Kind: ${e.target.value}`)} data-testid="city-edit-kind">
           {BUILDING_KINDS.map((k) => <option key={k} value={k}>{KIND_NAMES[k]}</option>)}
@@ -418,6 +420,7 @@ function LabelEditor({ l, onClear, onRemove }: { l: MapLabel; onClear: () => voi
       <label className="field">Text
         <input key={l.id + l.text} defaultValue={l.text} maxLength={80} data-testid="city-label-text" onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== l.text) set({ text: v }, `Rename ${l.text} to ${v}`); }} />
       </label>
+      <GmOnlyBox on={!!l.gmOnly} what="this name" onChange={(on) => set({ gmOnly: on || undefined }, on ? `Make ${l.text} GM only` : `Show ${l.text} to players`)} />
       <label className="field">What it names
         <select value={cityLabelKind(l.kind)} onChange={(e) => set({ kind: CITY_LABEL_KINDS.find((k) => k.id === (e.target.value as CityLabelKind))!.kind }, `Name kind: ${e.target.value}`)} data-testid="city-label-edit-kind">
           {CITY_LABEL_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}

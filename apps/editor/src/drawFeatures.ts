@@ -33,6 +33,8 @@ export interface FeatureView {
   /** The Layers switches: false hides the labels and place names, or the place markers (and they can't be clicked while hidden). */
   labels?: boolean;
   markers?: boolean;
+  /** Draw GM-only places, labels and roads faintly (the editor; exports for players leave them out instead). */
+  faintGmOnly?: boolean;
 }
 
 /** The scale names and markers are sized by: the map's own scale when zooming out (they shrink with it), but only a little bigger than at "fit" when zoomed in, never more than 1.8 times. */
@@ -419,26 +421,29 @@ export function drawFeatures(ctx: CanvasRenderingContext2D, f: Features | null, 
   const isSelected = (id: string) => (typeof selected === "string" ? id === selected : !!selected && selected.has(id));
   const hits: Hit[] = [];
   const occupied: Box[] = [];
+  const faint = (gm: boolean | undefined, draw: () => void) => {
+    if (!(gm && v.faintGmOnly)) { draw(); return; }
+    ctx.save(); ctx.globalAlpha *= 0.45; draw(); ctx.restore();
+  };
   for (const l of f.lines ?? []) {
-    const h = drawLine(ctx, l, v, isSelected(l.id));
-    if (h) hits.push(h);
+    faint(l.gmOnly, () => { const h = drawLine(ctx, l, v, isSelected(l.id)); if (h) hits.push(h); });
   }
   const showLabels = v.labels !== false, showMarkers = v.markers !== false;
   if (showLabels) {
     for (const l of f.labels) {
-      const h = drawLabel(ctx, l, v, isSelected(l.id));
-      if (h) { hits.push(h); occupied.push(h); }
+      faint(l.gmOnly, () => { const h = drawLabel(ctx, l, v, isSelected(l.id)); if (h) { hits.push(h); occupied.push(h); } });
     }
   }
   if (!showLabels && !showMarkers) return hits;
   const layouts = f.places.map((p) => layoutPlace(p, v));
   for (const L of layouts) {
-    if (!L.p.hideMarker && showMarkers) { drawPlaceMarker(ctx, L.p.type, L.x, L.y, L.r); occupied.push(L.markerBox); }
+    if (!L.p.hideMarker && showMarkers) { faint(L.p.gmOnly, () => drawPlaceMarker(ctx, L.p.type, L.x, L.y, L.r)); occupied.push(L.markerBox); }
   }
   const nameBox = new Map<string, Box>();
   for (const L of [...layouts].sort((a, b) => RANK[a.p.type] - RANK[b.p.type])) {
     if (L.p.hideName || !showLabels) continue;
-    const b = drawPlaceName(ctx, L, occupied);
+    let b!: Box;
+    faint(L.p.gmOnly, () => { b = drawPlaceName(ctx, L, occupied); });
     occupied.push(b);
     nameBox.set(L.p.id, b);
   }

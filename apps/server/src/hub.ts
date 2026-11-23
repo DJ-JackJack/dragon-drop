@@ -14,7 +14,7 @@ import {
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
-  surveyRoute, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
+  surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -683,7 +683,7 @@ export class Hub {
    * A battlemap level as a printable PDF at one inch a square (core printPlan.ts, pdf.ts): drawn at up to 150 px a square (fewer on a very big map, to stay
    * under 40 million pixels), cut into pages, each a JPEG.
    */
-  private async printBattle(doc: MapDoc, title: string, o: PrintOptions): Promise<Uint8Array> {
+  private async printBattle(doc: MapDoc, title: string, o: PrintOptions, dmMarks = true): Promise<Uint8Array> {
     const spec = battleSpec(doc);
     const plan = planPrint(spec.squaresX, spec.squaresY, { paper: o.paper });
     if (plan.tiles.length > MAX_PRINT_PAGES) {
@@ -691,7 +691,7 @@ export class Hub {
     }
     const pps = Math.max(40, Math.min(150, Math.floor(Math.sqrt(40e6 / (spec.squaresX * spec.squaresY)))));
     const big: MapDoc = { ...doc, meta: { ...doc.meta, battle: { ...spec, pxPerSquare: pps } } };
-    const data = await this.compute.battle(big, { overlay: true, lights: false, ...(await this.battleAssets(big)).opts });
+    const data = await this.compute.battle(big, { overlay: true, lights: false, dmMarks, ...(await this.battleAssets(big)).opts });
     const W = spec.squaresX * pps, H = spec.squaresY * pps;
     if (o.ink) inkSaver(data);
     const jpeg = (img: RGBAImage) => ({ jpeg: encodeJpeg(img, 88, 6_000_000), pw: img.w, ph: img.h });
@@ -710,9 +710,9 @@ export class Hub {
     return writePdf(pages, title);
   }
 
-  private async renderLevelArt(doc: MapDoc): Promise<{ png: Uint8Array; w: number; h: number }> {
+  private async renderLevelArt(doc: MapDoc, dmMarks = true): Promise<{ png: Uint8Array; w: number; h: number }> {
     const { w, h } = battleImageSize(battleSpec(doc));
-    const data = await this.compute.battle(doc, { overlay: true, lights: false, ...(await this.battleAssets(doc)).opts });
+    const data = await this.compute.battle(doc, { overlay: true, lights: false, dmMarks, ...(await this.battleAssets(doc)).opts });
     return { png: encodePng({ w, h, data }), w, h };
   }
 
@@ -720,15 +720,18 @@ export class Hub {
    * The open battlemap as a file for a virtual tabletop: image, Universal VTT, or a Foundry scene (zip). A battlemap of several levels gives a Foundry
    * scene with every level (one picture each); the image and the Universal VTT file are of the level being worked on, named with it.
    */
-  async battleExport(format: BattleExportFormat, level?: string, print: PrintOptions = {}): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
+  async battleExport(format: BattleExportFormat, level?: string, print: PrintOptions = {}, gm = false): Promise<{ name: string; mime: string; bytes: Uint8Array }> {
     const op = this.open;
     if (!op) throw new Error("No project is open.");
     if (!isBattle(op.session.doc)) throw new Error("Only battlemaps can be exported this way.");
     if (op.session.inTransaction) op.session.commit();
     // the picture and the Universal VTT file are of one level: the one asked for, else the one being worked on
     const chosen = level ? this.levelByRef(op, level) : op.levels.levels.find((l) => l.id === op.levels.active)!;
-    const doc = op.runtime.find((r) => r.id === chosen.id)!.session.doc;
-    const docs = this.levelDocs(op);
+    // (for players, unless the DM asks for their own copy: GM-only objects and lights left out, and no gold marks on secret doors in the pictures;
+    // the key is the DM's own anyway. A Foundry scene keeps its secret doors: Foundry hides them from players itself.)
+    const shown = (d: MapDoc): MapDoc => (gm || format === "key" || !d.features ? d : { ...d, features: playerView(d.features) });
+    const doc = shown(op.runtime.find((r) => r.id === chosen.id)!.session.doc);
+    const docs = this.levelDocs(op).map((x) => ({ ...x, doc: shown(x.doc) }));
     const many = docs.length > 1;
     const base = op.id;
     const active = chosen;
@@ -740,10 +743,10 @@ export class Hub {
         : battleKey(doc);
       return { name: `${base}-key.md`, mime: "text/markdown; charset=utf-8", bytes: enc.encode(text) };
     }
-    if (format === "print") return { name: `${many ? `${base}-${fileSlug(active.name)}` : base}-print.pdf`, mime: "application/pdf", bytes: await this.printBattle(doc, many ? `${doc.meta.name}, ${active.name}` : doc.meta.name, print) };
+    if (format === "print") return { name: `${many ? `${base}-${fileSlug(active.name)}` : base}-print.pdf`, mime: "application/pdf", bytes: await this.printBattle(doc, many ? `${doc.meta.name}, ${active.name}` : doc.meta.name, print, gm) };
     if (format === "png" || format === "uvtt") {
       const stem = many ? `${base}-${fileSlug(active.name)}` : base;
-      const { png } = await this.renderLevelArt(doc);
+      const { png } = await this.renderLevelArt(doc, gm);
       if (format === "png") return { name: `${stem}.png`, mime: "image/png", bytes: png };
       return { name: `${stem}.dd2vtt`, mime: "application/json", bytes: enc.encode(JSON.stringify(toUniversalVtt(doc, Buffer.from(png).toString("base64")))) };
     }
@@ -752,7 +755,7 @@ export class Hub {
     const levels: FoundryLevelDoc[] = [];
     for (const [i, { level, doc: d }] of docs.entries()) {
       const image = many ? `${base}-${i + 1}-${fileSlug(level.name)}.png` : `${base}.png`;
-      files.push({ name: image, data: (await this.renderLevelArt(d)).png });
+      files.push({ name: image, data: (await this.renderLevelArt(d, gm)).png });
       // the level's roofs, each as a picture of its own (cropped to the roof) that becomes a Foundry tile with a ceiling region over it
       let roofImages: (string | null)[] | undefined;
       const rects = battleRoofRects(d);
@@ -1680,8 +1683,8 @@ export class Hub {
         self.projectsCache = await self.store.list();
         return info;
       },
-      exportBattle: async (format, level, print) => {
-        const f = await self.battleExport(format, level, print);
+      exportBattle: async (format, level, print, gm) => {
+        const f = await self.battleExport(format, level, print, gm);
         return { name: f.name, bytes: f.bytes.byteLength, path: await self.store.saveExport(id(), f.name, f.bytes) };
       },
       levels: {

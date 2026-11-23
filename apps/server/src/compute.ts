@@ -56,6 +56,8 @@ export interface BattleRenderOpts {
   lights?: boolean;
   /** Draw the numbered notes (previews only: they are the DM's, so never in an export). */
   notes?: boolean;
+  /** The secret doors' gold marks and the invisible walls' dashed lines (on unless false: pictures for players leave them out). */
+  dmMarks?: boolean;
   tiles?: Record<number, TileData>;
   sprites?: Record<string, SpriteData>;
   /** Draw the roofs over everything at this opacity (previews). */
@@ -174,7 +176,7 @@ export class JobRunner {
       const tileFor = roofTiles ? (a: string) => roofTiles[a] ?? null : undefined;
       if (job.roofPictures) return renderBattleRoofPictures(bdoc, tileFor);
       return renderBattle(bdoc, {
-        overlay: job.overlay, lights: job.lights, notes: job.notes, roofs: job.roofs, roofTiles: tileFor,
+        overlay: job.overlay, lights: job.lights, notes: job.notes, roofs: job.roofs, roofTiles: tileFor, dmMarks: job.dmMarks,
         ...(wallPictures && { wallPictures: (a: string) => wallPictures[a] ?? null }),
         ...(tiles && { tiles: (id: number) => tiles[id] ?? null }), ...(sprites && { sprites: (id: string) => sprites[id] ?? null }),
       }).data;
