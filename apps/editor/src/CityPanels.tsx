@@ -4,7 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
-  cityWallPieces, wallPieces, wallSettings, cityRoute,
+  cityWallPieces, wallPieces, wallSettings, cityRoute, LAND_STARTS, type LandStart, newSeed, startLand,
 } from "@mapmaker/core";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
@@ -232,12 +232,48 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
           <input key={`${meta!.id}-${c.elevation ?? 0}`} type="number" min={-500} max={9000} step={10} defaultValue={c.elevation ?? 0} data-testid="city-elevation"
             onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v !== (c.elevation ?? 0)) setCity({ elevation: Math.max(-500, Math.min(9000, v)) }, `Height above the sea: ${v} m`); }} />
         </label>
-        {row("Hills, valleys and slopes", String((features.land ?? []).length))}
+        <LandStartBox spec={c} land={features.land ?? []} onUi={onUi} />
         <h3>Layers</h3>
         <label className="check eye"><input type="checkbox" checked={ui.contours} onChange={(e) => onUi({ contours: e.target.checked })} data-testid="city-contours" /> Contour lines</label>
         <label className="check eye"><input type="checkbox" checked={ui.names} onChange={(e) => onUi({ names: e.target.checked })} data-testid="city-names" /> Names and labels</label>
       </section>
     </>
+  );
+}
+
+/**
+ * The settlement's hills, valleys and slopes: how many there are, the Land tool to shape them by hand, and a start of a kind of country (core cityLandStart.ts) that
+ * replaces them in one step (asked first when there are some; Undo takes it back).
+ */
+function LandStartBox({ spec, land, onUi }: { spec: NonNullable<MapMeta["city"]>; land: MapLandform[]; onUi: (p: Partial<CityUi>) => void }) {
+  const [style, setStyle] = useState<LandStart>("rolling");
+  const [asking, setAsking] = useState(false);
+  const chosen = LAND_STARTS.find((s) => s.id === style)!;
+  const make = () => {
+    const made = startLand(spec, style, newSeed());
+    sendCityFeatures({ ...(land.length && { removeLand: land.map((l) => l.id) }), ...(made.length && { upsertLand: made }) }, `Land: ${chosen.name.toLowerCase()}`);
+    setAsking(false);
+  };
+  return (
+    <div className="land-start" data-testid="city-land-start">
+      <div className="kv"><span>Hills, valleys and slopes</span><b>{land.length}</b></div>
+      <div className="row"><button onClick={() => onUi({ tool: "hills" })} title="The Land tool: add a hill, ridge, valley, plateau, hollow or slope where you want it, or click one to change it" data-testid="city-land-tool">Shape the land by hand (L)</button></div>
+      <label className="field">Or start the land as
+        <select value={style} onChange={(e) => { setStyle(e.target.value as LandStart); setAsking(false); }} data-testid="city-land-style">
+          {LAND_STARTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </label>
+      <p className="muted">{chosen.hint}{style !== "flat" && " A new one each time you click."}</p>
+      {asking ? (
+        <div className="row">
+          <span className="muted">This replaces the {land.length === 1 ? "one hill, valley or slope" : `${land.length} hills, valleys and slopes`} here. Undo takes it back.</span>
+          <button className="danger" onClick={make} data-testid="city-land-confirm">Replace</button>
+          <button onClick={() => setAsking(false)}>Cancel</button>
+        </div>
+      ) : (
+        <div className="row"><button className="primary" onClick={() => (land.length ? setAsking(true) : make())} disabled={style === "flat" && !land.length} data-testid="city-land-make">{style === "flat" ? "Make it flat" : "Make the land"}</button></div>
+      )}
+    </div>
   );
 }
 

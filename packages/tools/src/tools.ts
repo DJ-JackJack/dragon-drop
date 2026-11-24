@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import {
-  type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo,
+  type AssetItem, type ChangeEntry, type ChatImage, type CheckpointInfo, type Command, type MapSession, type ProjectInfo, type RefInfo, type LandStart,
   MI_PER_KM, linkProblem, type ClimateRegion, type Derived, type Features, type LineKind, type MapFurniture, type MapGrid, type MapLabel, type MapLine, type Place, type Rect, type RGBAImage, type RiverPath, DEFAULT_CLIMATE, climateOf, cropScale,
   clampGridSize, describeFurniture, describeGrid, drawGrid, drawLabel, drawMarker, gridCellPx, drawRivers, drawText, labelText, lineLengthKm, mapStats, newFeatureId, niceGridSize, pathMidpoint, polygonCentroid, reliefPicture, renderFull,
   isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle, type StreetKind,
@@ -55,7 +55,7 @@ export interface ToolContext {
   /** Optional: the roof pictures the open city's buildings use, decoded by asset id, for drawing it. */
   cityTiles?(): Promise<Record<string, { data: Uint8ClampedArray; size: number }>>;
   /** Optional: make a city map (sized in metres) and open it. */
-  createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number }): Promise<ProjectInfo>;
+  createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number; land?: LandStart }): Promise<ProjectInfo>;
   /** Start a city from a spot on the open world map (cityWorld.ts); returns what it took from the world map, in words. */
   /** The city picture reader (the open city's trace picture): what it finds, in metres, not yet added. */
   readCityPicture?(o: { area?: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground?: [number, number][]; tolerance?: number; minAreaM2?: number; maxAreaM2?: number }): Promise<{ buildings: { points: [number, number][]; look: RoofStyle }[]; skipped: { small: number; large: number }; alreadyThere: number; colours: { roofs: [number, number, number][]; ground: [number, number, number][] } }>;

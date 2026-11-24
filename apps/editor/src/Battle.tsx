@@ -1247,11 +1247,14 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       onUiRef.current({ multi: [], selected: light.id });
       return;
     }
+    // the object layer new objects go into: the one chosen, if this level has it (a layer chosen on another level or map is the bottom one here)
+    const intoLayer = o.tool === "prop" ? (featRef.current.layers ?? []).find((l) => l.id === o.activeLayer) ?? null : null;
+    if (o.tool === "prop" && o.asset && intoLayer?.hidden) flash(`New objects go into the layer ${intoLayer.name}, which is hidden: show it with its eye in the Map panel's Object layers.`);
     if (o.tool === "prop" && o.propScatter) {
       if (!o.asset) { flash("Choose an object in the Assets tab first."); return; }
       const hf = store.heights, sub = spec.sub;
       const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < spec.squaresX && y < spec.squaresY && (!o.scatter.floorOnly || !hf || (hf.get(Math.floor(x * sub), Math.floor(y * sub)) | 0) > 0);
-      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer, shadow: o.propShadow, ...(o.activeLayer && { layerId: o.activeLayer }) },
+      scatterStroke.current = new ScatterStroke({ ...o.scatter, asset: o.asset, scale: o.propScale, rotation: o.propRotation, flip: o.propFlip, layer: o.propLayer, shadow: o.propShadow, ...(intoLayer && { layerId: intoLayer.id }) },
         (featRef.current.props ?? []).map((pr) => [pr.x, pr.y] as [number, number]), ok);
       scatterStroke.current.at(q.x, q.y);
       drag.current = { mode: "scatter", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, ax: q.x, ay: q.y, lastX: q.x, lastY: q.y };
@@ -1263,7 +1266,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const prop: MapProp = {
         id: newFeatureId("o"), asset: o.asset, x: snapProp(q.x, e.altKey || e.shiftKey), y: snapProp(q.y, e.altKey || e.shiftKey),
         ...(o.propRotation && { rotation: o.propRotation }), ...(o.propScale !== 1 && { scale: o.propScale }), ...(o.propFlip && { flip: true }), ...(o.propLayer === "below" && { layer: "below" as const }),
-        ...(o.propShadow && { shadow: true }), ...(o.activeLayer && { layerId: o.activeLayer }),
+        ...(o.propShadow && { shadow: true }), ...(intoLayer && { layerId: intoLayer.id }),
       };
       sendFeatures({ upsertProps: [prop] }, "Add object");
       return;
@@ -1438,6 +1441,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
         <>{spec.squaresX}×{spec.squaresY} squares · {spec.squaresX * spec.feetPerSquare}×{spec.squaresY * spec.feetPerSquare} ft</>
       ) : null}
     >
+      <button onClick={() => void openPlayerScreen()} title="Open the player screen: a window for a TV or second screen that shows the players this level (with the fog on, only what you reveal with the Reveal tool)" data-testid="bar-player-screen"><span aria-hidden="true">▣</span><span className="bar-word"> Player screen</span></button>
       <button onClick={() => setExportOpen(true)} title="Export for Foundry, Universal VTT or as an image" data-testid="battle-export-button">⤓ Export</button>
     </StatusBar>
     </div>
@@ -1770,6 +1774,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
               <option value="above">Above the walls</option><option value="below">Below the walls</option>
             </select>
           </label>
+          <IntoLayer ui={ui} onUi={onUi} />
         </div>
       )}
       {(ui.tool === "door" || ui.tool === "window") && (() => {
@@ -2319,6 +2324,21 @@ function RevealToolBar({ ui, onUi, meta }: { ui: BattleUi; onUi: (p: Partial<Bat
       <button onClick={() => store.send({ t: "cmd", cmd: { op: "features", patch: { removeReveals: ["*"] } }, label: "Hide everything from the players" })} disabled={!reveals?.length} data-testid="reveal-reset">Hide everything</button>
       <button onClick={() => void openPlayerScreen()} title="A window for the TV or a second screen (double-click it for full screen)" data-testid="open-player-screen">Player screen ↗</button>
     </>
+  );
+}
+
+/** The Object tool's choice of the object layer new objects go into (the same choice as clicking a layer in the Map panel's Object layers). */
+function IntoLayer({ ui, onUi }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void }) {
+  const layers = useSyncExternalStore(store.subscribe, () => store.getState().features.layers) ?? [];
+  if (!layers.length) return null;
+  const current = layers.some((l) => l.id === ui.activeLayer) ? ui.activeLayer! : "";
+  return (
+    <label className="field" title="The object layer new objects go into. The Map panel's Object layers adds, hides, locks and orders them.">Into layer
+      <select value={current} onChange={(e) => onUi({ activeLayer: e.target.value || null })} data-testid="prop-into-layer">
+        {[...layers].reverse().map((l) => <option key={l.id} value={l.id}>{l.name}{l.hidden ? " (hidden)" : l.locked ? " (locked)" : ""}</option>)}
+        <option value="">Objects (the bottom layer)</option>
+      </select>
+    </label>
   );
 }
 

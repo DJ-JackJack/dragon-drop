@@ -26,6 +26,18 @@ const ok = async (hub: Hub, name: string, input: Record<string, unknown> = {}) =
 };
 
 describe("a city's land", () => {
+  it("can start with land of a kind (the New settlement box, create_city's land), and a wrong one is refused", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Top Town", width_m: 600, height_m: 400, land: "hilltop" });
+    const land = hub.session.doc.features?.land ?? [];
+    expect(land.some((l) => l.kind === "hill")).toBe(true);
+    expect(textOf(await tool(hub, "list_land"))).not.toMatch(/flat/);
+    await hub.createCity({ name: "Plain", widthM: 300, heightM: 200, land: "flat" });
+    expect(hub.session.doc.features?.land ?? []).toEqual([]);
+    await expect(hub.createCity({ name: "Odd", widthM: 300, heightM: 200, land: "volcano" })).rejects.toThrow(/start for the land/);
+    expect(textOf(await tool(hub, "create_city", { name: "Odd", width_m: 300, height_m: 200, land: "volcano" }))).toMatch(/Invalid/);
+  });
+
   it("is shaped with hills, valleys and slopes in one edit, read back with land_at, changed, undone and removed", async () => {
     const { hub } = fresh();
     await ok(hub, "create_city", { name: "Hill Town", width_m: 600, height_m: 400 });

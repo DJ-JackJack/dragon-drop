@@ -18,6 +18,7 @@ import type { LevelsFile } from "./levels.ts";
 import type { RouteSurvey } from "./measure.ts";
 import type { PrefabInfo } from "./prefabs.ts";
 import type { GenerateRequest } from "./generators.ts";
+import type { LandStart } from "./cityLandStart.ts";
 
 export type WireCommand = Exclude<Command, { op: "replace_heights" | "patch_heights" }>;
 
@@ -169,7 +170,7 @@ export type ClientMsg =
   | { t: "chat_settings"; settings: Partial<ChatSettings> }
   | { t: "chat_reset" }
   /** Make a city map (a city seen from above, made of buildings and streets, sized in metres) and open it. */
-  | { t: "create_city"; name: string; widthM: number; heightM: number; cellM?: number }
+  | { t: "create_city"; name: string; widthM: number; heightM: number; cellM?: number; /** a start for its land (cityLandStart.ts); none: flat */ land?: LandStart }
   /** A city started from a spot on the open world map: its climate, height, slope, coast and river come from there (cityWorld.ts). */
   | { t: "create_city_here"; name: string; x: number; y: number; widthM: number; heightM: number }
   /** Reference pictures (they are added with POST /api/projects/<id>/refs): give one a new name (its file type stays), or take it off the list (it is moved to the map's backups folder). */

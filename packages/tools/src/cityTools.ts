@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   BUILDING_KINDS, MATERIALS, type MapBuilding, type MapStreet, type Rect, type RoofChoice, type Shape, ROOF_STYLES, STREET_KINDS, chooseRoof, citySpec, cityGroundMaterial, cleanBuilding, cleanStreet,
   cityBattleBoxAt, drawCityNames, drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
+  LAND_START_IDS, LAND_STARTS,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
@@ -109,15 +110,16 @@ export const CITY_TOOLS = [
     name: "create_city",
     description:
       "Create a new city map (a city seen from above, made of buildings and streets on a ground) and open it. Sizes are in metres: a village is about 300 x 200, a walled town 1000 x 700, a big city 3000 x 2000 (at most 6000 on a side). " +
-      "It starts as grass. Then use paint_ground (water, cobbles, fields), add_streets and add_buildings, and render_city to look.",
+      "It starts as grass, flat unless `land` gives it a start (a few hills, a valley...: ordinary landforms to change with shape_land). Then use paint_ground (water, cobbles, fields), add_streets and add_buildings, and render_city to look.",
     schema: z.object({
       name: z.string().min(1).max(80),
       width_m: z.number().min(50).max(6000), height_m: z.number().min(50).max(6000),
       cell_m: z.number().min(0.5).max(32).optional().describe("Metres per ground cell (automatic by default: finer for small cities)"),
+      land: z.enum(LAND_START_IDS).optional().describe(`A start for the land: ${LAND_STARTS.map((s) => `${s.id} (${s.hint.replace(/\.$/, "")})`).join("; ")}. Default flat`),
     }),
     async run(ctx, i) {
       if (!ctx.createCity) return fail("City maps can't be created here.");
-      const info = await ctx.createCity({ name: i.name, widthM: i.width_m, heightM: i.height_m, cellM: i.cell_m });
+      const info = await ctx.createCity({ name: i.name, widthM: i.width_m, heightM: i.height_m, cellM: i.cell_m, land: i.land });
       return json({ created: info, summary: citySummary(ctx) });
     },
   }),

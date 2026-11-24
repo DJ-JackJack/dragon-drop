@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { citySizeForPlace, placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
+import { LAND_STARTS, type LandStart, citySizeForPlace, placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
 import { PICTURE_RULE, References } from "./References.tsx";
 import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipboard.ts";
@@ -580,6 +580,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("New Map");
   const [cw, setCw] = useState(600);
   const [ch, setCh] = useState(400);
+  const [cityLand, setCityLand] = useState<LandStart>("gentle");
   const [size, setSize] = useState(1024);
   const [miles, setMiles] = useState(1000);
   const [template, setTemplate] = useState("ocean");
@@ -641,6 +642,11 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
           <>
             <label>Width in metres<input type="number" min={50} max={6000} value={cw} onChange={(e) => setCw(Number(e.target.value))} data-testid="new-cw" /></label>
             <label>Height in metres<input type="number" min={50} max={6000} value={ch} onChange={(e) => setCh(Number(e.target.value))} data-testid="new-ch" /></label>
+            <label title={LAND_STARTS.find((s) => s.id === cityLand)?.hint}>The land
+              <select value={cityLand} onChange={(e) => setCityLand(e.target.value as LandStart)} data-testid="new-city-land">
+                {LAND_STARTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
             <p className="muted">
               {cityOk ? <>A village, a town or a city seen from above, made of buildings and streets on a ground. A village is about 300 × 200 m, a walled town 1,000 × 700, a big city 3,000 × 2,000.</>
                 : <>Between 50 and 6,000 metres each way.</>}
@@ -671,7 +677,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
             className="primary" data-testid="new-create" disabled={(kind === "battle" && !battleOk) || (kind === "city" && !cityOk)}
             onClick={() => {
               if (kind === "city") {
-                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: cw, heightM: ch });
+                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: cw, heightM: ch, land: cityLand });
               } else if (kind === "battle") {
                 store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: feet, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
               } else {

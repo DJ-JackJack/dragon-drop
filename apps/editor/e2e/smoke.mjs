@@ -1391,6 +1391,7 @@ try {
     await page.getByRole("button", { name: "+ New map" }).click();
     await page.getByTestId("new-kind-city").click();
     await page.getByTestId("new-name").fill("E2E City");
+    await page.getByTestId("new-city-land").selectOption("flat"); // (the steps below shape the land by hand)
     await page.getByTestId("new-create").click();
     await page.getByTestId("city-canvas").waitFor({ timeout: 20000 });
     await page.getByTestId("city-status").getByText(/600 × 400 m · 0 buildings · 0 streets/).waitFor({ timeout: 10000 });
@@ -1496,6 +1497,15 @@ try {
     await page.getByRole("button", { name: /Undo/ }).click(); // (the keyboard is in the climate list, where Ctrl+Z is the list's own)
     await page.getByTestId("history").getByText("Undo: Climate: Cold").first().waitFor({ timeout: 5000 });
     await page.waitForFunction(() => document.querySelector('[data-testid="city-climate"]')?.value === "temperate", null, { timeout: 5000 });
+    // a start for the land replaces the hill and the valley in one step, after asking; Undo brings them back
+    await page.getByTestId("city-land-start").getByText("2", { exact: true }).waitFor({ timeout: 5000 });
+    await page.getByTestId("city-land-style").selectOption("hilltop");
+    await page.getByTestId("city-land-make").click();
+    await page.getByTestId("city-land-confirm").click();
+    await page.getByTestId("history").getByText("Land: hilltop").first().waitFor({ timeout: 5000 });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("history").getByText("Undo: Land: hilltop").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-land-start").getByText("2", { exact: true }).waitFor({ timeout: 5000 });
     // the trace picture works on a city map too (a new map has no pictures of its own: add one first)
     await page.getByTestId("references").getByTestId("ref-file").setInputFiles(path.join(tmp, "e2e-sketch.png"));
     await page.getByTestId("references").getByTestId("ref-card").first().waitFor({ timeout: 15000 });

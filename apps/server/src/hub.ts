@@ -15,7 +15,7 @@ import {
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
-  type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet,
+  type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -424,13 +424,18 @@ export class Hub {
   }
 
   /** Make a city map (a city seen from above, made of buildings and streets, sized in metres) and open it. */
-  async createCity(o: { name: string; widthM: number; heightM: number; cellM?: number }) {
+  async createCity(o: { name: string; widthM: number; heightM: number; cellM?: number; land?: unknown }) {
     const cell = o.cellM ?? defaultCellM(o.widthM, o.heightM);
     const err = citySizeError(o.widthM, o.heightM, cell);
     if (err) throw new Error(err);
+    if (o.land !== undefined && !isLandStart(o.land)) throw new Error("Unknown start for the land.");
     const name = (o.name ?? "").trim() || "City";
     const id = await this.store.uniqueId(name);
-    const doc = createCityDoc({ id, name, widthM: o.widthM, heightM: o.heightM, cellM: cell, seed: Math.floor(Math.random() * 2 ** 31) });
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const doc = createCityDoc({ id, name, widthM: o.widthM, heightM: o.heightM, cellM: cell, seed });
+    // a start for its land (hills, a valley...): ordinary landforms the DM can change
+    const land = o.land && o.land !== "flat" ? startLand(doc.meta.city!, o.land, seed) : [];
+    if (land.length) doc.features = { ...doc.features!, land };
     await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A settlement map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres. Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
     await this.openProject(id);
     return (await this.store.list()).find((p) => p.id === id)!;

@@ -13,6 +13,8 @@ const setLayers = (layers: MapLayer[], label: string, extra: Record<string, unkn
 
 export function ObjectLayers({ features, ui, onUi }: { features: Features; ui: BattleUi; onUi: (p: Partial<BattleUi>) => void }) {
   const layers = features.layers ?? [], counts = layerCounts(features);
+  // (a layer chosen on another level or map isn't here: new objects go into the bottom layer)
+  const active = layers.some((l) => l.id === ui.activeLayer) ? ui.activeLayer : null;
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const add = () => {
@@ -21,6 +23,7 @@ export function ObjectLayers({ features, ui, onUi }: { features: Features; ui: B
     const l: MapLayer = { id: newFeatureId("h"), name: n };
     setLayers([...layers, l], `Add object layer ${n}`);
     onUi({ activeLayer: l.id });
+    store.note(`New objects now go into ${n}. Choose an object in the Assets tab, then click the map with the Object tool.`, 6000);
     setName("");
   };
   const change = (id: string, patch: Partial<MapLayer>, label: string) => setLayers(layers.map((l) => (l.id === id ? clean({ ...l, ...patch }) : l)), label);
@@ -37,7 +40,7 @@ export function ObjectLayers({ features, ui, onUi }: { features: Features; ui: B
     if (ui.activeLayer === l.id) onUi({ activeLayer: null });
   };
   const row = (l: MapLayer | null, i: number) => {
-    const id = l?.id ?? null, on = ui.activeLayer === id;
+    const id = l?.id ?? null, on = active === id;
     return (
       <div key={id ?? "bottom"} className={`olayer${on ? " on" : ""}`} data-testid={`olayer-${l ? l.name : "bottom"}`}>
         {l ? (
