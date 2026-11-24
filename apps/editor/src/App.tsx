@@ -581,6 +581,11 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const [cw, setCw] = useState(600);
   const [ch, setCh] = useState(400);
   const [cityLand, setCityLand] = useState<LandStart>("gentle");
+  // shaped like one of the open map's reference pictures: the height follows the width (as the server works it out), and the picture is the new map's trace picture
+  const refs = useSyncExternalStore(store.subscribe, () => store.getState().refs);
+  const [cityPic, setCityPic] = useState("");
+  const pic = refs.find((r) => r.name === cityPic && r.w && r.h);
+  const [cityW, cityH] = !pic ? [cw, ch] : (() => { const h = Math.round((cw * pic.h!) / pic.w!); return h > 6000 ? [Math.round((6000 * pic.w!) / pic.h!), 6000] : [cw, h]; })();
   const [size, setSize] = useState(1024);
   const [miles, setMiles] = useState(1000);
   const [template, setTemplate] = useState("ocean");
@@ -592,7 +597,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const [room, setRoom] = useState(true);
   const kmPerPx = Number(((miles * 1.609344) / size).toFixed(3));
   const battleOk = sx >= 3 && sy >= 3 && sx <= 150 && sy <= 150 && sx * sy * 70 * 70 <= 25_000_000;
-  const cityOk = cw >= 50 && ch >= 50 && cw <= 6000 && ch <= 6000;
+  const cityOk = cityW >= 50 && cityH >= 50 && cityW <= 6000 && cityH <= 6000;
   const switchKind = (k: "world" | "battle" | "city") => {
     const stock: Record<string, string> = { world: "New Map", battle: "New Battlemap", city: "New Settlement" };
     setName((n) => (Object.values(stock).includes(n) ? stock[k] : n));
@@ -640,8 +645,17 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
           </>
         ) : kind === "city" ? (
           <>
+            {refs.some((r) => r.w && r.h) && (
+              <label title="To redraw a city map you have as a picture: the settlement takes the picture's shape, and the picture lies over the whole map to trace">Shaped like a picture
+                <select value={cityPic} onChange={(e) => setCityPic(e.target.value)} data-testid="new-city-picture">
+                  <option value="">No: the size below</option>
+                  {refs.filter((r) => r.w && r.h).map((r) => <option key={r.name} value={r.name}>{r.name} ({r.w} × {r.h} px)</option>)}
+                </select>
+              </label>
+            )}
             <label>Width in metres<input type="number" min={50} max={6000} value={cw} onChange={(e) => setCw(Number(e.target.value))} data-testid="new-cw" /></label>
-            <label>Height in metres<input type="number" min={50} max={6000} value={ch} onChange={(e) => setCh(Number(e.target.value))} data-testid="new-ch" /></label>
+            <label>Height in metres<input type="number" min={50} max={6000} value={pic ? cityH : ch} disabled={!!pic} title={pic ? "Follows the picture's shape" : undefined} onChange={(e) => setCh(Number(e.target.value))} data-testid="new-ch" /></label>
+            {pic && cityW !== cw && <p className="muted">The picture is tall: the map is {cityW.toLocaleString()} × {cityH.toLocaleString()} m (at most 6,000 a side).</p>}
             <label title={LAND_STARTS.find((s) => s.id === cityLand)?.hint}>The land
               <select value={cityLand} onChange={(e) => setCityLand(e.target.value as LandStart)} data-testid="new-city-land">
                 {LAND_STARTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -677,7 +691,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
             className="primary" data-testid="new-create" disabled={(kind === "battle" && !battleOk) || (kind === "city" && !cityOk)}
             onClick={() => {
               if (kind === "city") {
-                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: cw, heightM: ch, land: cityLand });
+                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: cw, heightM: ch, land: cityLand, ...(pic && { picture: pic.name }) });
               } else if (kind === "battle") {
                 store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: feet, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
               } else {

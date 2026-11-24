@@ -116,10 +116,13 @@ export const CITY_TOOLS = [
       width_m: z.number().min(50).max(6000), height_m: z.number().min(50).max(6000),
       cell_m: z.number().min(0.5).max(32).optional().describe("Metres per ground cell (automatic by default: finer for small cities)"),
       land: z.enum(LAND_START_IDS).optional().describe(`A start for the land: ${LAND_STARTS.map((s) => `${s.id} (${s.hint.replace(/\.$/, "")})`).join("; ")}. Default flat`),
+      picture: z.string().min(1).optional().describe("To redraw a city from a picture: one of the OPEN map's reference pictures (list_references). The settlement takes the picture's shape " +
+        "(width_m stays, the height follows the picture; the longer side at most 6000 m) and the picture comes along, laid over the whole map as the trace picture"),
     }),
     async run(ctx, i) {
       if (!ctx.createCity) return fail("City maps can't be created here.");
-      const info = await ctx.createCity({ name: i.name, widthM: i.width_m, heightM: i.height_m, cellM: i.cell_m, land: i.land });
+      let info;
+      try { info = await ctx.createCity({ name: i.name, widthM: i.width_m, heightM: i.height_m, cellM: i.cell_m, land: i.land, picture: i.picture }); } catch (e) { return fail((e as Error).message); }
       return json({ created: info, summary: citySummary(ctx) });
     },
   }),

@@ -15,7 +15,7 @@ import {
   type RiverNet, resolveWaterNames, riverNet, seaNear, type NamedWater, type RiverSize, type RiverSource, type SelectableShape, RIVER_SIZE_SHARE, courseRivers, riverChannel, riverCourse, riverHeadAt, shapeBounds,
   type LinkedMap, type ProjectInfo, mapKindOf, mapRectOn,
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
-  type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand,
+  type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand, fitTrace, imageSize, IMAGE_HEAD_BYTES,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
@@ -424,7 +424,22 @@ export class Hub {
   }
 
   /** Make a city map (a city seen from above, made of buildings and streets, sized in metres) and open it. */
-  async createCity(o: { name: string; widthM: number; heightM: number; cellM?: number; land?: unknown }) {
+  async createCity(o: { name: string; widthM: number; heightM: number; cellM?: number; land?: unknown; picture?: string }) {
+    // shaped like a picture (one of the open map's reference pictures): the width stays and the height follows the picture (the longer side at most 6000 m),
+    // and the picture comes along, laid over the whole map as the trace picture, so redrawing it leaves no band of map the picture doesn't cover
+    let pic: { name: string; bytes: Uint8Array; w: number; h: number } | null = null;
+    if (o.picture !== undefined) {
+      const from = this.open?.id;
+      const refs = from ? await this.store.listRefs(from) : [];
+      const ref = refs.find((r) => r.name === o.picture) ?? refs.find((r) => r.name.toLowerCase() === String(o.picture).toLowerCase());
+      if (!from || !ref) throw new Error(`There is no reference picture called "${o.picture}" on the open map. Add it in the References panel first.`);
+      const bytes = await this.store.readRef(from, ref.name), size = bytes && imageSize(bytes.subarray(0, IMAGE_HEAD_BYTES));
+      if (!bytes || !size) throw new Error(`"${ref.name}" can't be read as a picture.`);
+      pic = { name: ref.name, bytes, w: size.w, h: size.h };
+      let w = o.widthM, h = Math.round((w * size.h) / size.w);
+      if (h > 6000) { h = 6000; w = Math.round((6000 * size.w) / size.h); }
+      o = { ...o, widthM: w, heightM: h };
+    }
     const cell = o.cellM ?? defaultCellM(o.widthM, o.heightM);
     const err = citySizeError(o.widthM, o.heightM, cell);
     if (err) throw new Error(err);
@@ -436,7 +451,13 @@ export class Hub {
     // a start for its land (hills, a valley...): ordinary landforms the DM can change
     const land = o.land && o.land !== "flat" ? startLand(doc.meta.city!, o.land, seed) : [];
     if (land.length) doc.features = { ...doc.features!, land };
-    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A settlement map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres. Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
+    const shaped = pic ? ` Shaped like the reference picture ${pic.name} (${pic.w} x ${pic.h} px, ${Math.round((doc.meta.city!.widthM / pic.w) * 100) / 100} m a pixel), which lies over the whole map as its trace picture.` : "";
+    await this.store.createFrom(doc, `# ${name}: Design Brief\n\n*A settlement map, ${doc.meta.city!.widthM} x ${doc.meta.city!.heightM} metres.${shaped} Record what the city is, how it is laid out and what the DM has decided. Names and history are the DM's: only record what they confirm.*\n`);
+    if (pic) {
+      const kept = await this.store.addRef(id, pic.name, pic.bytes);
+      doc.features = { ...doc.features!, trace: fitTrace({ ref: kept.name, w: pic.w, h: pic.h }, doc.meta.city!.widthM, doc.meta.city!.heightM) };
+      await this.store.save(doc);
+    }
     await this.openProject(id);
     return (await this.store.list()).find((p) => p.id === id)!;
   }

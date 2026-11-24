@@ -135,7 +135,8 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[], water?
     const sp = s.points as Pt[];
     let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity;
     for (const [x, y] of sp) { if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; if (y > b1) b1 = y; }
-    if (a1 < x0 || a0 > x1 || b1 < y0 || b0 > y1) continue;
+    const reach = Math.min(20, thickness + s.width + 6); // (how far short of the wall, or past it outside, a street heading for it may end and still get a gate)
+    if (a1 + reach < x0 || a0 - reach > x1 || b1 + reach < y0 || b0 - reach > y1) continue;
     for (let j = 0; j + 1 < sp.length; j++) {
       for (let i = 0; i + 1 < line.length; i++) {
         const c = crossing(line[i], line[i + 1], sp[j], sp[j + 1]);
@@ -145,6 +146,24 @@ export function wallPieces(w: MapCityWall, streets: readonly MapStreet[], water?
         // (a street crossing at a slant needs a wider opening, up to three times its width)
         const open = Math.min(3 * (s.width + 1), (s.width + 1) / Math.max(0.33, sin));
         raw.push({ at: cum[i] + c.t * (cum[i + 1] - cum[i]), open, streetId: s.id, gatehouse: kind !== "earth" && isMainStreet(s) });
+      }
+    }
+    // a street that ENDS at the wall, heading for it (stopped just inside or just outside: a road arriving at the town, an avenue drawn up to the wall), gets a gate
+    // where it would meet it. Only the last stretch carried on straight a little way counts, so a street running along the wall and ending near it gets none.
+    if (sp.length >= 2) {
+      for (const [end, prev] of [[sp[sp.length - 1], sp[sp.length - 2]], [sp[0], sp[1]]] as [Pt, Pt][]) {
+        const dx = end[0] - prev[0], dy = end[1] - prev[1], len = Math.hypot(dx, dy);
+        if (len < 1e-6) continue;
+        const ahead: Pt = [end[0] + (dx / len) * reach, end[1] + (dy / len) * reach];
+        let best: { at: number; t: number; sin: number } | null = null;
+        for (let i = 0; i + 1 < line.length; i++) {
+          const c = crossing(end, ahead, line[i], line[i + 1]);
+          if (!c || (best && c.t >= best.t)) continue;
+          const wx = line[i + 1][0] - line[i][0], wy = line[i + 1][1] - line[i][1];
+          best = { at: cum[i] + c.u * (cum[i + 1] - cum[i]), t: c.t, sin: Math.abs(wx * dy - wy * dx) / ((Math.hypot(wx, wy) * len) || 1) };
+        }
+        if (!best || best.sin < 0.5) continue; // (a glancing approach is a street along the wall, not into it)
+        raw.push({ at: best.at, open: Math.min(3 * (s.width + 1), (s.width + 1) / Math.max(0.33, best.sin)), streetId: s.id, gatehouse: kind !== "earth" && isMainStreet(s) });
       }
     }
   }

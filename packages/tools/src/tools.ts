@@ -55,7 +55,7 @@ export interface ToolContext {
   /** Optional: the roof pictures the open city's buildings use, decoded by asset id, for drawing it. */
   cityTiles?(): Promise<Record<string, { data: Uint8ClampedArray; size: number }>>;
   /** Optional: make a city map (sized in metres) and open it. */
-  createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number; land?: LandStart }): Promise<ProjectInfo>;
+  createCity?(o: { name: string; widthM: number; heightM: number; cellM?: number; land?: LandStart; picture?: string }): Promise<ProjectInfo>;
   /** Start a city from a spot on the open world map (cityWorld.ts); returns what it took from the world map, in words. */
   /** The city picture reader (the open city's trace picture): what it finds, in metres, not yet added. */
   readCityPicture?(o: { area?: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground?: [number, number][]; tolerance?: number; minAreaM2?: number; maxAreaM2?: number }): Promise<{ buildings: { points: [number, number][]; look: RoofStyle }[]; skipped: { small: number; large: number }; alreadyThere: number; colours: { roofs: [number, number, number][]; ground: [number, number, number][] } }>;
@@ -1842,6 +1842,22 @@ export const LOOK_ONLY_TOOLS = new Set([
 ]);
 const MAP_OPTION = { type: "string", description: "Look at another map instead of the open one (its id or name, see list_projects), without opening it: the open map and the DM's editor stay as they are" };
 
+/**
+ * The settlement tools that add or make things, where an empty value can only mean "not given": `name: ""`, `points: null` (a model writing out every field of a long
+ * list sends them; each cost a refused call in a real redraw of a city). Their schemas have no nullable field, and the update tools are left out on purpose (an empty
+ * name there removes the name).
+ */
+const EMPTY_IS_UNSET = new Set(["add_buildings", "add_streets", "add_city_walls", "add_city_districts", "add_city_labels", "add_trees", "shape_land", "line_streets", "route_street", "create_city", "create_city_here"]);
+
+/** An object's (and its nested objects') null and "" fields left out. */
+export function dropUnset(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(dropUnset);
+  if (!v || typeof v !== "object") return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (x !== null && x !== "") out[k] = dropUnset(x);
+  return out;
+}
+
 /** Validate input against the tool's schema and run it; errors become is_error results. */
 export async function runTool(ctx: ToolContext, name: string, input: unknown): Promise<ToolResult> {
   const tool = findTool(name);
@@ -1874,7 +1890,7 @@ export async function runTool(ctx: ToolContext, name: string, input: unknown): P
   if (battle === false && BATTLE_ONLY.has(name)) {
     return { ...text(`${name} is for battlemaps, and the open project is a world map. create_battlemap makes a battlemap; open_project switches to one.`), isError: true };
   }
-  const parsed = tool.schema.safeParse(input ?? {});
+  const parsed = tool.schema.safeParse(EMPTY_IS_UNSET.has(name) ? dropUnset(input ?? {}) : input ?? {});
   if (!parsed.success) {
     return { ...text(`Invalid input for ${name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`), isError: true };
   }

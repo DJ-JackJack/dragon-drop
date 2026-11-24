@@ -23,6 +23,20 @@ describe("city walls", () => {
     expect(p.length).toBe(800);
   });
 
+  it("has a gate where a street ends at the wall heading for it, inside or out, but not for one running along it or ending far off", () => {
+    const inside: MapStreet = { id: "in", points: [[200, 200], [200, 108]], width: 7, kind: "street" }; // (stops 8 m short of the top side, from inside)
+    const outside: MapStreet = { id: "out", points: [[400, 250], [312, 250]], width: 4, kind: "lane" }; // (a road arriving from the east, stopping 12 m out)
+    const along: MapStreet = { id: "along", points: [[122, 293], [278, 293]], width: 7, kind: "street" }; // (a ring road inside the bottom side: 7 m from it all along, ending 22 m from the sides)
+    const far: MapStreet = { id: "far", points: [[150, 200], [150, 160]], width: 7, kind: "street" }; // (60 m short: not the wall's)
+    const p = wallPieces(ring, [inside, outside, along, far]);
+    expect(p.gates.map((g) => g.streetId).sort()).toEqual(["in", "out"]);
+    const g1 = p.gates.find((g) => g.streetId === "in")!, g2 = p.gates.find((g) => g.streetId === "out")!;
+    expect([Math.round(g1.x), Math.round(g1.y)]).toEqual([200, 100]);
+    expect(g1.gatehouse).toBe(true);
+    expect([Math.round(g2.x), Math.round(g2.y)]).toEqual([300, 250]);
+    expect(g2.gatehouse).toBe(false);
+  });
+
   it("puts towers at the corners and about every 40 m on stone, never in a gate, and a pair at each gatehouse", () => {
     const p = wallPieces(ring, [street]);
     const plain = p.towers.filter((t) => !t.gate), gate = p.towers.filter((t) => t.gate);

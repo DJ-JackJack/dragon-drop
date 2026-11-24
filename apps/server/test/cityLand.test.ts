@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { citySpec, landGrid, renderCity } from "@mapmaker/core";
-import { encodeJpeg, runTool } from "@mapmaker/tools";
+import { encodeJpeg, encodePng, runTool } from "@mapmaker/tools";
 import { Hub } from "../src/hub.ts";
 import { ProjectStore } from "../src/store.ts";
 
@@ -36,6 +36,41 @@ describe("a city's land", () => {
     expect(hub.session.doc.features?.land ?? []).toEqual([]);
     await expect(hub.createCity({ name: "Odd", widthM: 300, heightM: 200, land: "volcano" })).rejects.toThrow(/start for the land/);
     expect(textOf(await tool(hub, "create_city", { name: "Odd", width_m: 300, height_m: 200, land: "volcano" }))).toMatch(/Invalid/);
+  });
+
+  it("can take the shape of the open map's reference picture, which comes along as the trace picture over the whole map", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "First", width_m: 300, height_m: 200 });
+    const plain = (w: number, h: number) => encodePng({ w, h, data: new Uint8ClampedArray(w * h * 4).fill(200) });
+    await hub.addReference(hub.activeId!, "plan.png", plain(400, 100));
+    await hub.addReference(hub.activeId!, "tall.png", plain(100, 400));
+    await ok(hub, "create_city", { name: "From Plan", width_m: 2000, height_m: 999, picture: "plan.png" });
+    expect([citySpec(hub.session.doc).widthM, citySpec(hub.session.doc).heightM]).toEqual([2000, 500]);
+    const t = hub.session.doc.features?.trace;
+    expect(t && { ref: t.ref, x: t.x, y: t.y, scale: t.scale }).toEqual({ ref: "plan.png", x: 0, y: 0, scale: 5 });
+    expect((await hub.store.listRefs(hub.activeId!)).map((r) => r.name)).toEqual(["plan.png"]);
+    // a tall picture keeps to 6000 m: the width gives way
+    await hub.openProject("first");
+    await ok(hub, "create_city", { name: "Tall", width_m: 3000, height_m: 200, picture: "tall.png" });
+    expect([citySpec(hub.session.doc).widthM, citySpec(hub.session.doc).heightM]).toEqual([1500, 6000]);
+    // a picture the open map hasn't got is refused, saying where to add it
+    expect(textOf(await tool(hub, "create_city", { name: "None", width_m: 300, height_m: 200, picture: "nowhere.png" }))).toMatch(/References panel/);
+  });
+
+  it("reads an empty name or a null outline as not given when adding (a model writing every field of a long list)", async () => {
+    const { hub } = fresh();
+    await ok(hub, "create_city", { name: "Blank Town", width_m: 300, height_m: 200 });
+    const s = await ok(hub, "add_streets", { streets: [{ points: [[10, 100], [290, 100]], kind: "street", name: "" }] });
+    expect(s.added).toBe(1);
+    const b = await ok(hub, "add_buildings", { buildings: [{ x: 150, y: 60, w: 8, h: 6, points: null, name: "" }] });
+    expect(b.added).toBe(1);
+    expect(hub.session.doc.features?.buildings?.[0].name).toBeUndefined();
+    // (an update still takes an empty name as "remove the name")
+    const id = hub.session.doc.features!.streets![0].id;
+    await ok(hub, "update_streets", { changes: [{ id, name: "Mill Lane" }] });
+    expect(hub.session.doc.features!.streets![0].name).toBe("Mill Lane");
+    await ok(hub, "update_streets", { changes: [{ id, name: "" }] });
+    expect(hub.session.doc.features!.streets![0].name).toBeUndefined();
   });
 
   it("is shaped with hills, valleys and slopes in one edit, read back with land_at, changed, undone and removed", async () => {
