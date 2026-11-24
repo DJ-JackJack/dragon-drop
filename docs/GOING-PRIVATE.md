@@ -55,14 +55,14 @@
    repository; it stops if one is left. Read them through, commit them there, and switch on private vulnerability reporting in that
    repository. Run it again whenever a guide changes.
 2. **Release one last public version, "the move", from the public repository.** In it:
-   - Settings → Updates on a GitHub copy says that Dragon Drop has moved, with a button to the new page, and no longer checks GitHub (so no
+   - Settings → Help and updates on a GitHub copy says that Dragon Drop has moved, with a button to the new page, and no longer checks GitHub (so no
      error message once the repository is private). The program keeps working as it is. **Ready: set `MOVED_TO` in `apps/desktop/main.cjs`
      to the itch page's address** (tried 2026-11-22 in a development run with `DRAGON_DROP_MOVED_TO`).
    - Settings → Help points at the new help place. **Ready: set `HELP_REPO` in `apps/editor/src/helpLinks.ts`** (or, for the itch community,
      put its addresses in `HELP_LINKS`). The issue forms' `config.yml` is moved by `pnpm help-repo`.
    - The questions and answers say where updates come from now.
    - `SECURITY.md` says where to report from now on.
-3. **Wait** until the person's own copy and the friends' copies show that version (Settings → Updates), and give friends their itch keys.
+3. **Wait** until the person's own copy and the friends' copies show that version (Settings → Help and updates), and give friends their itch keys.
 4. **Make `dragon-drop` private** (Settings → General → Danger zone → Change visibility). Then:
    - Releases still happen, as private GitHub releases: they are where the itch copy comes from (`docs/ITCH.md`). The workflow could push to
      itch.io by itself with butler (it needs an itch API key as a repository secret): worth doing then.

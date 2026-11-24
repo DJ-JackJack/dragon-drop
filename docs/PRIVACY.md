@@ -47,7 +47,7 @@ We don't use this information for advertising, we don't sell it, and we don't us
 Dragon Drop itself connects to the internet only for these things. Except where it says otherwise, they go to the company named, not to us.
 
 - **Update checks** (only the copy from the GitHub release page): Dragon Drop asks GitHub whether there is a newer version and downloads it
-  from there. GitHub sees your IP address and that a copy of Dragon Drop asked. You can turn this off in **Settings → Updates**. The copy
+  from there. GitHub sees your IP address and that a copy of Dragon Drop asked. You can turn this off in **Settings → Help and updates**. The copy
   from itch.io doesn't check: the itch app updates it, under itch.io's privacy policy.
 - **An AI assistant, if you use one.** This is the only way your map's content leaves your PC, and only while you use it.
   - **The in-window chat** sends your messages, the pictures you attach, and what Claude reads of your map (pictures of the map, lists of

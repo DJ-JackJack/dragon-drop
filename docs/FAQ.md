@@ -76,7 +76,7 @@ Rivers aren't drawn one by one: they come from the land and the rain, so they ca
 ## Updates and the rest
 
 **How do I update?**
-**Settings → Updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
+**Settings → Help and updates → Check now**, then **Restart to update**. A copy installed through itch.io is updated by the itch app instead.
 
 **Can the map look hand-drawn?**
 Yes: choose **Ink** under Style in the Map panel. The coast is inked with ripple lines, and mountains, hills and woods are drawn as small symbols from the terrain.

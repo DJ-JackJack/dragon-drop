@@ -31,7 +31,7 @@ The asset packs everywhere (floors, walls, doors, windows, paths, roofs, light s
 
 - [x] **The release of 0.1.13**: the person's hand test (rounds 1 and 2; round 3's two lines, the layer controls and closing the player screen, not tried before the release), release notes read by the person, `selling-prep` pushed to `main`, a green build, the tag `v0.1.13`, the notes on the Release (`RELEASING.md`). *(2026-11-24: https://github.com/DJ-JackJack/dragon-drop/releases/tag/v0.1.13)*
 - [ ] The person: update the installed Dragon Drop and check it reads 0.1.13; then try round 3's two lines there (the Object tool's **Layers…**, and **Esc** / **Close it** for the player screen).
-- [ ] **The playtest form** (`docs/playtest/Dragon Drop 0.1.13 Playtest.pdf`, made by `docs/playtest/make_playtest_form.py`: 15 features, each with exact keys and buttons, easy to find / did it work / useful, and comments) to the two playtesters; read their answers back when they return it.
+- [ ] **The playtest form** (`docs/playtest/Dragon Drop 0.1.13 Playtest.pdf`, made by `docs/playtest/make_playtest_form.py`: 15 features, each with exact keys and buttons, easy to find / did it work / useful, and comments) to the two playtesters, with the install steps for a new one (`docs/playtest/INSTALL.md`); read their answers back when they return it.
 
 ## Next release (0.1.14)
 
