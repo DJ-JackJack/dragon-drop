@@ -683,6 +683,9 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 .player-screen { position: fixed; inset: 0; background: #000; overflow: hidden; }
 .player-screen canvas { display: block; width: 100%; height: 100%; }
 .player-screen.idle { cursor: none; }
+/* how to get out, shown while the mouse moves over the player screen (a full-screen window has no frame to close it by) */
+.player-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.72); color: rgba(255, 255, 255, 0.85); font: 500 13px system-ui, sans-serif; pointer-events: none; transition: opacity 0.3s; white-space: nowrap; }
+.player-screen.idle .player-hint { opacity: 0; }
 .player-wait { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.35); font: 600 18px system-ui, sans-serif; letter-spacing: 0.04em; }
 
 /* the Realm tool's list (RealmBar.tsx) */
@@ -706,7 +709,10 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 .olayers .olayer-name { flex: 1; text-align: left; background: none; border: 1px solid transparent; padding: 3px 4px; }
 .olayers .olayer-name:hover { border-color: var(--line); }
 .olayers .olayer-new { color: var(--gold, #d4af37); font-size: 0.85em; }
-.olayers .olayer-lock { background: none; border: none; padding: 0 2px; opacity: 0.55; }
+.olayers .olayer-lock { background: none; border: none; padding: 0 2px; opacity: 0.8; }
+.olayers .olayer-help { font-size: 12px; margin: 0 0 6px; }
+.layers-pop { width: 300px; max-width: 70vw; }
+.layers-pop .olayers h3 { margin-top: 0; }
 .olayers .olayer-lock.on { opacity: 1; }
 .olayers .olayer-pad { width: 44px; flex: none; }
 .olayers .olayer-actions { display: flex; gap: 2px; flex: none; }

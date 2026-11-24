@@ -32,7 +32,7 @@ import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterU
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, prefabSpot } from "./PrefabBar.tsx";
 import { GenerateBox } from "./GenerateBox.tsx";
-import { drawFog, drawRevealOutlines, openPlayerScreen } from "./fogDraw.ts";
+import { closePlayerScreen, drawFog, drawRevealOutlines, openPlayerScreen } from "./fogDraw.ts";
 import { LayerSelect, ObjectLayers } from "./ObjectLayers.tsx";
 
 export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof" | "reveal";
@@ -2323,22 +2323,31 @@ function RevealToolBar({ ui, onUi, meta }: { ui: BattleUi; onUi: (p: Partial<Bat
       <FogSwitch spec={spec} />
       <button onClick={() => store.send({ t: "cmd", cmd: { op: "features", patch: { removeReveals: ["*"] } }, label: "Hide everything from the players" })} disabled={!reveals?.length} data-testid="reveal-reset">Hide everything</button>
       <button onClick={() => void openPlayerScreen()} title="A window for the TV or a second screen (double-click it for full screen)" data-testid="open-player-screen">Player screen ↗</button>
+      <button onClick={() => void closePlayerScreen()} title="Close the player screen's window" data-testid="close-player-screen">Close it</button>
     </>
   );
 }
 
 /** The Object tool's choice of the object layer new objects go into (the same choice as clicking a layer in the Map panel's Object layers). */
 function IntoLayer({ ui, onUi }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void }) {
-  const layers = useSyncExternalStore(store.subscribe, () => store.getState().features.layers) ?? [];
-  if (!layers.length) return null;
+  const features = useSyncExternalStore(store.subscribe, () => store.getState().features);
+  const layers = features.layers ?? [];
   const current = layers.some((l) => l.id === ui.activeLayer) ? ui.activeLayer! : "";
   return (
-    <label className="field" title="The object layer new objects go into. The Map panel's Object layers adds, hides, locks and orders them.">Into layer
-      <select value={current} onChange={(e) => onUi({ activeLayer: e.target.value || null })} data-testid="prop-into-layer">
-        {[...layers].reverse().map((l) => <option key={l.id} value={l.id}>{l.name}{l.hidden ? " (hidden)" : l.locked ? " (locked)" : ""}</option>)}
-        <option value="">Objects (the bottom layer)</option>
-      </select>
-    </label>
+    <>
+      {layers.length > 0 && (
+        <label className="field" title="The object layer new objects go into">Into layer
+          <select value={current} onChange={(e) => onUi({ activeLayer: e.target.value || null })} data-testid="prop-into-layer">
+            {[...layers].reverse().map((l) => <option key={l.id} value={l.id}>{l.name}{l.hidden ? " (hidden)" : l.locked ? " (locked)" : ""}</option>)}
+            <option value="">Objects (the bottom layer)</option>
+          </select>
+        </label>
+      )}
+      {/* (the same list as the Map panel's, here because the Object tool shows the Assets tab, where that list is out of sight) */}
+      <Popover label={<>Layers{layers.length ? ` (${layers.length + 1})` : ""}…</>} title="Object layers: add, hide, lock, order and remove them" testId="prop-layers-menu">
+        {() => <div className="layers-pop"><ObjectLayers features={features} ui={ui} onUi={onUi} /></div>}
+      </Popover>
+    </>
   );
 }
 
@@ -2423,6 +2432,7 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       <p className="muted">A window for a TV or second screen at the table: this level with its lights, without what is GM only. With the fog on it shows only what you reveal with the Reveal tool.</p>
       <div className="row">
         <button className="primary" onClick={() => void openPlayerScreen()} data-testid="player-screen-open">Open the player screen ↗</button>
+        <button onClick={() => void closePlayerScreen()} title="Close the player screen's window (on the player screen itself: Esc leaves full screen, Alt+F4 closes it)" data-testid="player-screen-close">Close it</button>
       </div>
       <div className="row">
         <button onClick={() => store.send({ t: "player_view", rect: viewRectNow() })} title="The player screen shows the part of the map you are looking at now" data-testid="player-view-mine">Show my view</button>

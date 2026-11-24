@@ -332,6 +332,13 @@ function openPlayerWindow() {
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false, devTools: !app.isPackaged },
   });
   playerWin.setMenuBarVisibility(false);
+  // a full-screen window has no frame to close it by (a DM was stuck with it on the second monitor): Esc leaves full screen, F11 goes back; Alt+F4 or the
+  // editor's Close the player screen closes it
+  playerWin.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || !playerWin) return;
+    if (input.key === "Escape" && playerWin.isFullScreen()) { e.preventDefault(); playerWin.setFullScreen(false); }
+    else if (input.key === "F11") { e.preventDefault(); playerWin.setFullScreen(!playerWin.isFullScreen()); }
+  });
   playerWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const keepLocal = (e, url) => { if (!url.startsWith(`${editorOrigin()}/`)) e.preventDefault(); };
   playerWin.webContents.on("will-navigate", keepLocal);
@@ -833,6 +840,13 @@ ipcMain.handle("dd:open-player-screen", (e) => {
   return openPlayerWindow();
 });
 
+ipcMain.handle("dd:close-player-screen", (e) => {
+  if (!fromEditor(e)) return { ok: false };
+  const was = !!playerWin && !playerWin.isDestroyed();
+  if (was) playerWin.close();
+  return { ok: true, closed: was };
+});
+
 ipcMain.handle("dd:open-backups", (e, id) => {
   if (!fromEditor(e) || typeof id !== "string" || !/^[a-z0-9-]{1,80}$/.test(id)) return { ok: false, opened: null };
   const dir = path.join(settings.projectsDir, id);
@@ -983,7 +997,10 @@ async function smokeTest() {
           pscreen = await playerWin.webContents.executeJavaScript(`({ req: typeof require, proc: typeof process, bridge: typeof window.dragonDrop, screen: !!document.querySelector('[data-testid="player-screen"]'), editor: !!document.querySelector('[data-testid="battle-canvas"], .toolrail') })`).catch(() => null);
         }
         if (!pscreen || !pscreen.screen || pscreen.editor || pscreen.req !== "undefined" || pscreen.proc !== "undefined" || pscreen.bridge !== "undefined") return fatal(`the player screen isn't the sandboxed player page (${JSON.stringify(pscreen)})`);
-        playerWin.close();
+        // and the editor can close it again (a full-screen window has no frame to close it by)
+        const closed = await win.webContents.executeJavaScript("window.dragonDrop.closePlayerScreen()").catch(() => null);
+        for (let k = 0; k < 20 && playerWin; k++) await new Promise((r) => setTimeout(r, 100));
+        if (!closed || !closed.closed || playerWin) return fatal("the editor couldn't close the player screen");
         // the server wants its access key: without it the API and the map tools are refused, with it they answer, and the window has its cookie
         const bare = await fetch(`http://127.0.0.1:${port}/api/health`).catch(() => null);
         if (!bare || bare.status !== 401) return fatal(`the server answered a request with no access key (${bare ? bare.status : "no answer"})`);

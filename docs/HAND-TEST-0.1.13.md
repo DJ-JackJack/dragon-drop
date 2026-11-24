@@ -17,6 +17,12 @@ Everything here passed the automatic tests and the browser test, and Claude trie
 
 Those lines are marked **Try again** below.
 
+**Round 3 (2026-11-24):** the second try worked for all but one line, and two things were new:
+
+- **The layer controls** (eye, lock, ▲ ▼ ✕) couldn't be found: they were only in the Map panel's Map tab, and the Object tool switches the panel to the Assets tab. The Object tool's bar now has **Layers…**, which opens the same list, with a line explaining each control.
+- **The player screen couldn't be closed** on the second monitor: a full-screen window has no frame. Now **Esc** leaves full screen, **F11** fills it again, the screen shows that when the mouse moves over it, and the editor has **Close it** (Map panel's Player screen section and the Reveal tool's bar). **Alt+F4** always closes it.
+- Your ideas for next, a settlement's land as good as a world map's and the player screen for world maps, are in `CHECKLIST.md`.
+
 ## Getting started
 
 - [x] It starts and opens First Map. Settings has four tabs: AI assistant, Maps and assets, **Access key** (the old Phone tab is gone), Help and updates. *(2026-11-24)*
@@ -57,15 +63,16 @@ Those lines are marked **Try again** below.
 - [x] Battlemap: **Make a dungeon** (small, medium, large; doors, torches), then a cave. Do they look like places you'd run? It asks before replacing what's there, and Undo works. *(2026-11-24)*
 - [x] Type the seed from the note and make it again: the same map. *Claude checked: seed 4242 made the same six rooms twice.*
 - [x] Settlement: make a hamlet, a village and a large village. On a settlement started from a world map (**Settlement here**), the village keeps out of the water and the woods. *(2026-11-24; you noted the land couldn't be shaped from the Map panel: see the next line)*
-- [ ] **Try again:** a settlement's **Land and climate** (Map panel): **Shape the land by hand (L)** opens the Land tool. **Or start the land as**: pick Rolling hills and **Make the land**; hills appear, with shading and contour lines. Make it again (it asks first, since it replaces them), then Undo. Make a **+ New map** → Settlement and choose **The land** (Hilltop, say): it starts with that land.
+- [x] *(2026-11-24: works; you noted a settlement's land shaping is much weaker than a world map's: next in `CHECKLIST.md`)* A settlement's **Land and climate** (Map panel): **Shape the land by hand (L)** opens the Land tool. **Or start the land as**: pick Rolling hills and **Make the land**; hills appear, with shading and contour lines. Make it again (it asks first, since it replaces them), then Undo. Make a **+ New map** → Settlement and choose **The land** (Hilltop, say): it starts with that land.
 
 ### Player screen (best with a TV or second monitor plugged in)
 
-- [ ] **Try again:** on a battlemap, click **▣ Player screen** in the bottom bar, at the bottom of the map (next to **Export**). On a second screen it opens full screen there; with one screen it's a window. (It's also in the Map panel's **Player screen** section, and in the Reveal tool's bar.)
-- [ ] Turn on **Fog** and the player screen goes black. With the **Reveal** tool (the eye in the tool rail; it has no key), click in a room: that room shows on the player screen with its lights. Then try **Area**, **Hide area**, **Hide everything**, and Undo a reveal. *Claude checked revealing from a spot and an area in a browser: the room showed with its torches, plus what can be seen through its open doorway; a closed door kept the next room dark.*
-- [ ] Nothing GM only, no room numbers and no secret-door marks appear on the player screen.
-- [ ] **Show my view** and **Whole map** (Map panel, Player screen section) change what the TV shows. Double-click the player screen for full screen; `G` shows or hides the grid.
-- [ ] Open a world map in the editor: the player screen just waits; it never shows the world map.
+- [x] *(2026-11-24)* On a battlemap, click **▣ Player screen** in the bottom bar, at the bottom of the map (next to **Export**). On a second screen it opens full screen there; with one screen it's a window. (It's also in the Map panel's **Player screen** section, and in the Reveal tool's bar.)
+- [ ] **Try again (round 3):** getting rid of it. Open the player screen on your second monitor (it fills that screen). Move the mouse over it: a line at its top says how to get out. Press **Esc**: it becomes an ordinary window you can drag or close; **F11** fills the screen again. Then close it from the editor: the Map panel's **Player screen** section (or the Reveal tool's bar) has **Close it**.
+- [x] *(2026-11-24)* Turn on **Fog** and the player screen goes black. With the **Reveal** tool (the eye in the tool rail; it has no key), click in a room: that room shows on the player screen with its lights. Then try **Area**, **Hide area**, **Hide everything**, and Undo a reveal. *Claude checked revealing from a spot and an area in a browser: the room showed with its torches, plus what can be seen through its open doorway; a closed door kept the next room dark.*
+- [x] *(2026-11-24)* Nothing GM only, no room numbers and no secret-door marks appear on the player screen.
+- [x] *(2026-11-24)* **Show my view** and **Whole map** (Map panel, Player screen section) change what the TV shows. Double-click the player screen for full screen; `G` shows or hides the grid.
+- [x] *(2026-11-24; you'd like it to show world maps too, for overland travel: in `CHECKLIST.md`)* Open a world map in the editor: the player screen just waits; it never shows the world map.
 
 ### Realms (`B` on world maps)
 
@@ -82,9 +89,9 @@ Those lines are marked **Try again** below.
 
 ### Links to your notes
 
-- [ ] **Try again, step by step.** On a **world map**, press `V` (the Select tool, the arrow near the top of the tool rail down the left) and click a **place's marker** (a castle, a town...; with no places yet, press `P` and click the map to add one). The Map panel on the right now shows that place: Name, Type, Notes, and under them **Your notes (a link)**. Paste a web address there (one of your wiki pages, a Google Doc, anything starting `https://`) and press **Enter**. An **Open** button appears under it; click it and the page opens in your web browser.
-- [ ] In the same box, **Choose a file…** opens a file picker: pick a Markdown, PDF or Word file. **Open** now opens it in its own program (Word for a .docx, and so on). If you use Obsidian, copy a note's link in Obsidian (right-click the note → **Copy Obsidian URL**) and paste that instead: **Open** opens Obsidian at that note.
-- [ ] A realm: press `B` (the Realm tool). At the left of the bar along the top is a button that reads **Choose a realm** (or the name of the realm you chose): open it, and each realm in its list has a **Link** button. Click it: the same **Your notes (a link)** box opens under the realm. Once a realm has a link, a **Notes ↗** button there opens it.
+- [x] *(2026-11-24)* On a **world map**, press `V` (the Select tool, the arrow near the top of the tool rail down the left) and click a **place's marker** (a castle, a town...; with no places yet, press `P` and click the map to add one). The Map panel on the right now shows that place: Name, Type, Notes, and under them **Your notes (a link)**. Paste a web address there (one of your wiki pages, a Google Doc, anything starting `https://`) and press **Enter**. An **Open** button appears under it; click it and the page opens in your web browser.
+- [x] *(2026-11-24)* In the same box, **Choose a file…** opens a file picker: pick a Markdown, PDF or Word file. **Open** now opens it in its own program (Word for a .docx, and so on). If you use Obsidian, copy a note's link in Obsidian (right-click the note → **Copy Obsidian URL**) and paste that instead: **Open** opens Obsidian at that note.
+- [x] *(2026-11-24)* A realm: press `B` (the Realm tool). At the left of the bar along the top is a button that reads **Choose a realm** (or the name of the realm you chose): open it, and each realm in its list has a **Link** button. Click it: the same **Your notes (a link)** box opens under the realm. Once a realm has a link, a **Notes ↗** button there opens it.
 
 ### Ink style
 
@@ -94,8 +101,8 @@ Those lines are marked **Try again** below.
 
 ### Object layers (battlemap Map panel)
 
-- [ ] **Try again:** in the battlemap's Map panel, **Object layers**: type a name in **New layer** and click **Add**. A note says new objects now go into it, and the Object tool's bar (press `P`) shows it under **Into layer**. Choose an object in the **Assets** tab and click the map: it appears, and the layer's count goes up. Switch **Into layer** back to **Objects (the bottom layer)** and place another.
-- [ ] Hide the layer (its eye): its objects disappear from the map, an exported picture and the player screen. Lock it: its objects can't be clicked. ▲ ▼ change which layer is drawn on top; ✕ removes the layer but keeps its objects (they go to the bottom layer).
+- [x] *(2026-11-24)* In the battlemap's Map panel, **Object layers**: type a name in **New layer** and click **Add**. A note says new objects now go into it, and the Object tool's bar (press `P`) shows it under **Into layer**. Choose an object in the **Assets** tab and click the map: it appears, and the layer's count goes up. Switch **Into layer** back to **Objects (the bottom layer)** and place another.
+- [ ] **Try again (round 3):** press `P` (the Object tool). In the bar along the top, click **Layers…** (right of **Into layer**): the list of layers opens under it. On your layer's row: the **eye** at the left hides it (its objects disappear from the map, an exported picture and the player screen) and shows it again; the **padlock** next to it locks it (its objects can't be clicked or moved); **▲ ▼** at the right draw it over or under the other layers; **✕** removes the layer but keeps its objects (they go to Objects, the bottom layer). The checklist page has a picture of it.
 
 ### Claude (needs Claude Code running in the app's terminal)
 
@@ -120,4 +127,4 @@ Those lines are marked **Try again** below.
 
 ### Foundry (needs a second login as a player)
 
-- [ ] Export a battlemap with roofs and two levels as a Foundry scene, then as a player: the roof fades over your token, a token above a ceiling, and what a hole does to a token (`FOUNDRY.md`).
+- [ ] *(2026-11-24: not possible yet)* Export a battlemap with roofs and two levels as a Foundry scene, then as a player: the roof fades over your token, a token above a ceiling, and what a hole does to a token (`FOUNDRY.md`).

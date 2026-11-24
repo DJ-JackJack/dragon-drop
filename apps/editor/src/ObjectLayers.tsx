@@ -70,6 +70,7 @@ export function ObjectLayers({ features, ui, onUi }: { features: Features; ui: B
   return (
     <div className="olayers" data-testid="object-layers">
       <h3>Object layers</h3>
+      <p className="muted olayer-help" data-testid="olayer-help">Click a layer's name to put new objects in it. On each layer: the eye shows or hides it, 🔓 locks it (its objects can't be clicked), ▲ ▼ draw it over or under the others, ✕ removes it (its objects move to Objects, the bottom layer).</p>
       {/* (top to bottom, as other map programs list them) */}
       {[...layers].map((l, i) => ({ l, i })).reverse().map(({ l, i }) => row(l, i))}
       {row(null, -1)}

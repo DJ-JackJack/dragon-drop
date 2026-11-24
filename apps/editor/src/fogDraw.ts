@@ -49,8 +49,20 @@ export function drawRevealOutlines(ctx: CanvasRenderingContext2D, reveals: MapRe
 }
 
 /** Open the player screen: a window of its own in the Windows app (on a second screen when there is one), else a browser tab. */
+type PlayerBridge = { openPlayerScreen?: () => Promise<unknown>; closePlayerScreen?: () => Promise<unknown> };
+const playerBridge = () => (window as unknown as { dragonDrop?: PlayerBridge }).dragonDrop;
+let playerTab: Window | null = null;
+
 export async function openPlayerScreen(): Promise<void> {
-  const dd = (window as unknown as { dragonDrop?: { openPlayerScreen?: () => Promise<unknown> } }).dragonDrop;
+  const dd = playerBridge();
   if (dd?.openPlayerScreen) { await dd.openPlayerScreen(); return; }
-  window.open("/?player=1", "dragon-drop-players");
+  playerTab = window.open("/?player=1", "dragon-drop-players");
+}
+
+/** Close the player screen (its window in the Windows app; in a browser, the tab this page opened). */
+export async function closePlayerScreen(): Promise<void> {
+  const dd = playerBridge();
+  if (dd?.closePlayerScreen) { await dd.closePlayerScreen(); return; }
+  playerTab?.close();
+  playerTab = null;
 }

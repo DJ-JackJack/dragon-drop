@@ -82,9 +82,13 @@ export function PlayerScreen() {
     <div ref={wrapRef} className={`player-screen${idle ? " idle" : ""}`} onDoubleClick={() => void toggleFull()} data-testid="player-screen">
       <canvas ref={canvasRef} data-testid="player-canvas" />
       {!spec && <div className="player-wait">{s.connected ? "Waiting for the DM to open a battlemap…" : "Connecting…"}</div>}
+      <div className="player-hint" data-testid="player-hint">{inApp ? "Esc: leave full screen · F11: full screen · Alt+F4: close · G: grid" : "Double-click: full screen · Esc: leave it · G: grid"}</div>
     </div>
   );
 }
+
+/** In the Windows app the player screen is a window of its own (full screen on a second display), with keys of its own (main.cjs); elsewhere a browser tab. */
+const inApp = typeof navigator !== "undefined" && /Electron\//.test(navigator.userAgent);
 
 async function toggleFull() {
   try {
