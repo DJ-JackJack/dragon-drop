@@ -34,7 +34,7 @@ export function prefabSpot(p: PrefabInfo, turn: number, at: { x: number; y: numb
 }
 
 export const PREFAB_HINT_PLACE = "Click to place the chosen prefab: its floor, walls, doors, objects and lights come with it, as one undo step. Q and E turn it a quarter, X mirrors it.";
-export const PREFAB_HINT_SAVE = "Drag a rectangle over a room, building or camp, then name it: everything wholly inside (floor, walls, doors, objects, lights, stairs, roofs) is saved to place again, on any battlemap.";
+export const PREFAB_HINT_SAVE = "Drag a rectangle over a room, building or camp, then name it: everything inside (floor, walls, doors, objects, lights, stairs, roofs; walls across its edge are cut there) is saved to place again, on any battlemap.";
 
 export function PrefabToolBar({ ui, onUi }: { ui: BattleUi; onUi: (p: Partial<BattleUi>) => void }) {
   const prefabs = useSyncExternalStore(store.subscribe, () => store.getState().prefabs);

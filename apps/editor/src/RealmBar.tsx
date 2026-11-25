@@ -9,10 +9,24 @@ import { store } from "./store.ts";
 import { Popover } from "./ToolBar.tsx";
 import { realmCtl, useRealmSettings } from "./realmUi.ts";
 import { NoteLink, openNoteLink } from "./NoteLink.tsx";
+import { ask } from "./dialogs.tsx";
 
-export const REALM_HINT = "Paint a realm onto the land: choose it above (or make a new one, under your own name for it), then drag. Land only keeps the sea out, so a realm stops at the coast; Round neighbours paints only land nobody has yet. Each stroke is one undo step.";
+export const REALM_HINT = "Paint a realm onto the land: choose it above (or make one with + New realm, under your own name for it), then drag. Land only keeps the sea out, so a realm stops at the coast; Round neighbours paints only land nobody has yet. Each stroke is one undo step.";
 
 const sendRealm = (r: MapRealm, label: string) => store.send({ t: "cmd", cmd: { op: "features", patch: { upsertRealms: [r] } }, label });
+
+/** A new realm under the DM's name for it (the next free number and colour), or why not; chosen to paint with. */
+function addRealm(realms: MapRealm[], name: string): string | null {
+  const clean = name.trim();
+  if (!clean) return "A realm needs a name.";
+  if (realms.some((r) => r.name.toLowerCase() === clean.toLowerCase())) return `There is already a realm called "${clean}".`;
+  const n = nextRealmNumber(realms);
+  if (n === null) return "A map can have at most 255 realms.";
+  const r: MapRealm = { id: newFeatureId("r"), n, name: clean, colour: REALM_COLOURS[realms.length % REALM_COLOURS.length] };
+  sendRealm(r, `Add realm ${clean}`);
+  realmCtl.set({ realm: r.id, erase: false });
+  return null;
+}
 
 export function RealmToolBar() {
   const st = useRealmSettings();
@@ -20,19 +34,29 @@ export function RealmToolBar() {
   const chosen = realms.find((r) => r.id === st.realm) ?? null;
   return (
     <>
-      <Popover label={chosen ? <><span className="swatch now" style={{ background: chosen.colour }} /> <b>{chosen.name}</b></> : "Choose a realm"} title="The realm to paint" testId="realm-menu">
+      <Popover label={chosen ? <><span className="swatch now" style={{ background: chosen.colour }} /> <b>{chosen.name}</b></> : realms.length ? "Choose a realm" : "No realms yet"} title="The realm to paint, and the list of realms (colour, name, rename, remove)" testId="realm-menu">
         {(close) => <RealmList realms={realms} chosen={st.realm} onChoose={(id) => { realmCtl.set({ realm: id, erase: false }); close(); }} />}
       </Popover>
+      <button
+        className={realms.length ? "" : "primary"} title="Make a new realm under your own name for it, and paint with it"
+        onClick={async () => { const name = await ask("Name of the new realm:", "", "Add realm"); if (name) { const why = addRealm(realms, name); if (why) window.alert(why); } }}
+        data-testid="realm-add"
+      >+ New realm</button>
       <div className="seg" role="group" aria-label="Paint or erase">
         <button className={st.erase ? "" : "on"} onClick={() => realmCtl.set({ erase: false })} data-testid="realm-paint">Paint</button>
-        <button className={st.erase ? "on" : ""} onClick={() => realmCtl.set({ erase: true })} title="Take land away from the chosen realm (or, with none chosen, from every realm)" data-testid="realm-erase">Erase</button>
+        <button className={st.erase ? "on" : ""} onClick={() => realmCtl.set({ erase: true })} title="Take land away from every realm under the brush (or, with Only ticked, from the chosen realm alone)" data-testid="realm-erase">Erase</button>
       </div>
+      {st.erase && chosen && (
+        <label className="check" title="Erase only this realm's land, leaving other realms under the brush as they are">
+          <input type="checkbox" checked={st.eraseOnly} onChange={(e) => realmCtl.set({ eraseOnly: e.target.checked })} data-testid="realm-erase-only" /> Only {chosen.name}
+        </label>
+      )}
       <label className="slider">
         <span>Brush <b>{Math.round(st.radius * 2)}</b> px across</span>
         <input type="range" min={4} max={300} value={st.radius} onChange={(e) => realmCtl.set({ radius: Number(e.target.value) })} data-testid="realm-brush" />
       </label>
       <label className="check"><input type="checkbox" checked={st.landOnly} onChange={(e) => realmCtl.set({ landOnly: e.target.checked })} /> Land only</label>
-      <label className="check" title="Paint only land that belongs to no realm yet: a stroke along a neighbour fills up to its border without taking its land"><input type="checkbox" checked={st.onlyEmpty} onChange={(e) => realmCtl.set({ onlyEmpty: e.target.checked })} /> Round neighbours</label>
+      {!st.erase && <label className="check" title="Paint only land that belongs to no realm yet: a stroke along a neighbour fills up to its border without taking its land"><input type="checkbox" checked={st.onlyEmpty} onChange={(e) => realmCtl.set({ onlyEmpty: e.target.checked })} /> Round neighbours</label>}
     </>
   );
 }
@@ -47,15 +71,19 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
   const meta = store.getState().meta, f = store.getState().features;
   const areas = meta ? realmAreas(realmGridOf({ meta, features: f }), meta.kmPerPx) : new Map();
   const add = () => {
-    const clean = name.trim();
-    if (!clean) return;
-    if (realms.some((r) => r.name.toLowerCase() === clean.toLowerCase())) { window.alert(`There is already a realm called "${clean}".`); return; }
-    const n = nextRealmNumber(realms);
-    if (n === null) { window.alert("A map can have at most 255 realms."); return; }
-    const r: MapRealm = { id: newFeatureId("r"), n, name: clean, colour: REALM_COLOURS[realms.length % REALM_COLOURS.length] };
-    sendRealm(r, `Add realm ${clean}`);
+    if (!name.trim()) return;
+    const why = addRealm(realms, name);
+    if (why) { window.alert(why); return; }
     setName("");
-    onChoose(r.id);
+  };
+  const rename = (r: MapRealm) => {
+    const clean = renaming?.name.trim();
+    if (!clean) return;
+    if (clean !== r.name) {
+      if (realms.some((o) => o.id !== r.id && o.name.toLowerCase() === clean.toLowerCase())) { window.alert(`There is already a realm called "${clean}".`); return; }
+      sendRealm({ ...r, name: clean }, `Rename ${r.name} to ${clean}`);
+    }
+    setRenaming(null);
   };
   const remove = (r: MapRealm) => {
     const st = store.getState(), g = realmGridOf({ meta: st.meta!, features: st.features });
@@ -69,14 +97,21 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
         <div className={`realm-row${r.id === chosen ? " on" : ""}`}>
           <input type="color" value={r.colour} title="Its colour" onChange={(e) => sendRealm({ ...r, colour: e.target.value }, `Colour of ${r.name}`)} />
           {renaming?.id === r.id ? (
-            <input value={renaming.name} autoFocus maxLength={80} onChange={(e) => setRenaming({ id: r.id, name: e.target.value })}
-              onKeyDown={(e) => { if (e.key === "Enter" && renaming.name.trim()) { sendRealm({ ...r, name: renaming.name.trim() }, `Rename ${r.name} to ${renaming.name.trim()}`); setRenaming(null); } if (e.key === "Escape") { e.stopPropagation(); setRenaming(null); } }} />
+            // (renaming: the name box and its own Save and Cancel, in place of the other buttons, so none is pushed off the list)
+            <>
+              <input className="realm-rename" value={renaming.name} autoFocus maxLength={80} onChange={(e) => setRenaming({ id: r.id, name: e.target.value })} data-testid="realm-rename"
+                onKeyDown={(e) => { if (e.key === "Enter") rename(r); if (e.key === "Escape") { e.stopPropagation(); setRenaming(null); } }} />
+              <span className="realm-actions">
+                <button className="primary" disabled={!renaming.name.trim()} onClick={() => rename(r)} data-testid="realm-rename-save">Save</button>
+                <button onClick={() => setRenaming(null)}>Cancel</button>
+              </span>
+            </>
           ) : (
             <button className="realm-pick" onClick={() => onChoose(r.id)} data-testid={`realm-${r.n}`}>
               <b>{r.name}</b> <span className="muted">{areas.get(r.n) ? `${Math.round(areas.get(r.n).km2).toLocaleString()} km²` : "not painted yet"}</span>
             </button>
           )}
-          {removing === r.id ? (
+          {renaming?.id === r.id ? null : removing === r.id ? (
             <span className="realm-actions"><button className="danger" onClick={() => { remove(r); setRemoving(null); }}>Remove</button><button onClick={() => setRemoving(null)}>Keep</button></span>
           ) : (
             <span className="realm-actions">

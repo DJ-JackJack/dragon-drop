@@ -186,6 +186,15 @@ export const BATTLE_HINTS: Partial<Record<BattleTool, string>> = {
 };
 
 const snap = (v: number, step = 0.5) => Math.round(v / step) * step;
+/**
+ * The squares a rectangle drag from (ax, ay) to (bx, by) covers: to the nearest grid lines, but for saving a prefab every square the drag touches (a drag
+ * from inside a room's corner square to the far one takes the walls on its edges too; the playtest lost a room's walls when the box stopped a square short).
+ */
+function dragSquares(prefab: boolean, ax: number, ay: number, bx: number, by: number) {
+  if (!prefab) return { x0: Math.min(snap(ax, 1), snap(bx, 1)), y0: Math.min(snap(ay, 1), snap(by, 1)), x1: Math.max(snap(ax, 1), snap(bx, 1)), y1: Math.max(snap(ay, 1), snap(by, 1)) };
+  const T = 0.15;
+  return { x0: Math.floor(Math.min(ax, bx) + T), y0: Math.floor(Math.min(ay, by) + T), x1: Math.ceil(Math.max(ax, bx) - T), y1: Math.ceil(Math.max(ay, by) - T) };
+}
 const isFloorTool = (t: BattleTool) => t === "brush" || t === "area" || t === "room";
 /** Tools that draw a rectangle, circle or free-form outline. */
 const isShapeTool = (t: BattleTool) => t === "area" || t === "room" || t === "zone" || t === "roof";
@@ -865,8 +874,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     // a rectangle being dragged
     const d = drag.current;
     if (d?.mode === "rect" && p) {
-      const a = { x: snap(d.ax, 1), y: snap(d.ay, 1) }, b = toSq(p.x, p.y), bx = snap(b.x, 1), by = snap(b.y, 1);
-      const x0 = Math.min(a.x, bx), y0 = Math.min(a.y, by), w = Math.abs(bx - a.x), h = Math.abs(by - a.y);
+      const b = toSq(p.x, p.y), q = dragSquares(o.tool === "prefab", d.ax, d.ay, b.x, b.y);
+      const x0 = q.x0, y0 = q.y0, w = q.x1 - q.x0, h = q.y1 - q.y0;
       ctx.save();
       ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
       ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
@@ -1373,9 +1382,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     }
     if (d?.mode === "rect" && p && spec) {
       const b = toSq(p.x, p.y);
-      const x0 = Math.max(0, Math.min(snap(d.ax, 1), snap(b.x, 1))), y0 = Math.max(0, Math.min(snap(d.ay, 1), snap(b.y, 1)));
-      const x1 = Math.min(spec.squaresX, Math.max(snap(d.ax, 1), snap(b.x, 1))), y1 = Math.min(spec.squaresY, Math.max(snap(d.ay, 1), snap(b.y, 1)));
-      const w = x1 - x0, h = y1 - y0, o = uiRef.current;
+      const o = uiRef.current, q = dragSquares(o.tool === "prefab", d.ax, d.ay, b.x, b.y);
+      const x0 = Math.max(0, q.x0), y0 = Math.max(0, q.y0), x1 = Math.min(spec.squaresX, q.x1), y1 = Math.min(spec.squaresY, q.y1);
+      const w = x1 - x0, h = y1 - y0;
       if (isConnectorTool(o.tool)) {
         if (w >= 1 && h >= 1) placeConnector(o.tool, x0, y0, w, h);
         else if (Math.hypot(p.x - d.sx, p.y - d.sy) < 4) {

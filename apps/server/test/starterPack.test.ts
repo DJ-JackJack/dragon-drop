@@ -1,4 +1,4 @@
-/** Dragon Drop's own Starter Pack: a few free floor textures, read as one more asset pack with or without the person's asset folder. */
+/** Dragon Drop's own Starter Pack: a few free floor textures and objects, read as one more asset pack with or without the person's asset folder. */
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,17 +14,22 @@ import { ProjectStore } from "../src/store.ts";
 const root = mkdtempSync(path.join(tmpdir(), "dd-starter-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const floors = readdirSync(path.join(STARTER_PACK_DIR, "Floors")).filter((f) => /\.jpe?g$/i.test(f)).sort();
+const objects = readdirSync(path.join(STARTER_PACK_DIR, "Objects")).filter((f) => /\.png$/i.test(f)).sort();
 
 describe("the Starter Pack", () => {
-  it("holds floors only, each listed with its source and licence in CREDITS.txt", () => {
+  it("holds floors and objects, each listed with its source and licence in CREDITS.txt", () => {
     expect(floors.length).toBeGreaterThanOrEqual(8);
-    expect(readdirSync(STARTER_PACK_DIR).sort()).toEqual(["CREDITS.txt", "Floors", "pack.json"]);
+    expect(objects.length).toBeGreaterThanOrEqual(8); // (the 0.1.13 playtest: with none, scattering, tints and object layers couldn't be tried)
+    expect(readdirSync(STARTER_PACK_DIR).sort()).toEqual(["CREDITS.txt", "Floors", "Objects", "pack.json"]);
     const credits = readFileSync(path.join(STARTER_PACK_DIR, "CREDITS.txt"), "utf8");
     expect(credits).toMatch(/CC0 1\.0/);
     for (const f of floors) expect(credits).toMatch(new RegExp(`Floors/${f.replace(".", "\\.")}\\s.*https://polyhaven\\.com/a/\\w+`));
     // (and nothing is credited that isn't there)
     const listed = [...credits.matchAll(/^\s+Floors\/(.+?\.jpg)/gm)].map((m) => m[1]).sort();
     expect(listed).toEqual(floors);
+    // the objects are Dragon Drop's own, drawn by a script in the repository
+    for (const f of objects) expect(credits).toMatch(new RegExp(`Objects/${f.replace(".", "\\.")}\\s+Dragon Drop \\(drawn by tools/starter-objects/draw_objects\\.py\\)`));
+    expect([...credits.matchAll(/^\s+Objects\/(.+?\.png)/gm)].map((m) => m[1]).sort()).toEqual(objects);
   });
 
   it("is read without an asset folder: floors that decode, repeat at 2 or 4 squares, and keep their ids", async () => {
@@ -35,7 +40,15 @@ describe("the Starter Pack", () => {
     const items = lib.list({ cat: "terrain", limit: 100 }).items;
     expect(items.map((i) => `${i.path.split("/").pop()}`).sort()).toEqual(floors);
     expect(items.every((i) => i.pack === "dragon-drop-starter-pack" && i.packName === "Dragon Drop Starter Pack")).toBe(true);
-    expect(lib.list({}).total).toBe(floors.length); // (CREDITS.txt and pack.json aren't pictures)
+    expect(lib.list({}).total).toBe(floors.length + objects.length); // (CREDITS.txt and pack.json aren't pictures)
+    // the objects are read as objects, see-through round their edges
+    const things = lib.list({ cat: "objects", limit: 100 }).items;
+    expect(things.map((i) => `${i.path.split("/").pop()}`).sort()).toEqual(objects);
+    for (const it of things) {
+      const img = await lib.decode(it.id);
+      expect(img, it.name).not.toBeNull();
+      expect(img!.data[3], it.name).toBe(0); // (the top-left corner is clear)
+    }
     for (const it of items) {
       const img = await lib.decode(it.id);
       expect(img, it.name).not.toBeNull();

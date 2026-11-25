@@ -24,9 +24,12 @@ function close() {
   emit();
 }
 
-/** Ask for a line of text. Resolves with the trimmed text, or null if cancelled or left empty. */
-export function ask(message: string, value = "", ok = "OK"): Promise<string | null> {
-  return new Promise((resolve) => show({ kind: "ask", message, value, ok, resolve: (v) => resolve(v?.trim() ? v.trim() : null) }));
+/**
+ * Ask for a line of text. Resolves with the trimmed text, or null if cancelled or left empty; with `emptyOk` an empty answer is "" (only Cancel is null), for
+ * a question that says it may be left empty.
+ */
+export function ask(message: string, value = "", ok = "OK", emptyOk = false): Promise<string | null> {
+  return new Promise((resolve) => show({ kind: "ask", message, value, ok, resolve: (v) => resolve(v?.trim() ? v.trim() : v !== null && emptyOk ? "" : null) }));
 }
 export function confirmBox(message: string, ok = "OK"): Promise<boolean> {
   return new Promise((resolve) => show({ kind: "confirm", message, ok, resolve }));

@@ -7,7 +7,7 @@
 import type { MapDoc } from "./doc.ts";
 import { type PaletteEntry, CUSTOM_MATERIAL_BASE, MAX_FLOOR_TEXTURES } from "./assets.ts";
 import { battleSpec, createBattleDoc, isBattle } from "./battle.ts";
-import type { Features, FeaturesPatch, MapProp } from "./features.ts";
+import type { Features, FeaturesPatch, MapProp, MapWall } from "./features.ts";
 import { type FeatureClip, pasteFeatures } from "./featureOps.ts";
 import type { Rect } from "./geom.ts";
 
@@ -107,6 +107,49 @@ function mapClip(c: FeatureClip, pt: (x: number, y: number) => [number, number],
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+/** The part of segment a-b inside the box (Liang-Barsky), with where along a-b it starts and ends (0 and 1: at a and b), or null. */
+function clipToBox(a: [number, number], b: [number, number], x0: number, y0: number, x1: number, y1: number): { p: [number, number]; q: [number, number]; t0: number; t1: number } | null {
+  let t0 = 0, t1 = 1;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  for (const [p, q] of [[-dx, a[0] - x0], [dx, x1 - a[0]], [-dy, a[1] - y0], [dy, y1 - a[1]]] as const) {
+    if (p === 0) { if (q < 0) return null; continue; }
+    const r = q / p;
+    if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  if (t1 - t0 < 1e-9) return null;
+  return { p: [a[0] + dx * t0, a[1] + dy * t0], q: [a[0] + dx * t1, a[1] + dy * t1], t0, t1 };
+}
+
+/**
+ * What of a wall a prefab of the area `r` keeps: the wall itself when it is wholly inside; a wall or invisible barrier that crosses the edge cut there, its
+ * pieces inside kept (the outline traced round a floor runs round all of it, so a room cut out of a bigger floor would otherwise lose every wall); a door,
+ * window or secret door only when it is wholly inside.
+ */
+function wallInside(w: MapWall, r: Rect): MapWall[] {
+  const x0 = r.x - EPS, y0 = r.y - EPS, x1 = r.x + r.w + EPS, y1 = r.y + r.h + EPS;
+  const ps = w.points;
+  if (ps.length && ps.every(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) return [clone(w)];
+  if ((w.kind !== "wall" && w.kind !== "invisible") || ps.length < 2) return [];
+  const segs = ps.length - 1 + (w.closed && ps.length > 2 ? 1 : 0);
+  const runs: [number, number][][] = [];
+  let open = false, fromFirst = false, toLast = false;
+  for (let i = 0; i < segs; i++) {
+    // (cut at the area's own edge, so the pieces end on its border)
+    const c = clipToBox(ps[i], ps[(i + 1) % ps.length], r.x, r.y, r.x + r.w, r.y + r.h);
+    if (!c) { open = false; continue; }
+    if (open && c.t0 === 0) runs[runs.length - 1].push(c.q);
+    else runs.push([c.p, c.q]);
+    if (i === 0 && c.t0 === 0) fromFirst = true;
+    if (i === segs - 1 && c.t1 === 1) toLast = true;
+    open = c.t1 === 1;
+  }
+  // a closed wall's last piece runs on into its first, through its first point
+  if (w.closed && runs.length > 1 && fromFirst && toLast) { const first = runs.shift()!; runs[runs.length - 1].push(...first.slice(1)); }
+  const length = (run: [number, number][]) => run.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - run[i - 1][0], p[1] - run[i - 1][1]) : 0), 0);
+  const { closed: _c, ...rest } = w;
+  return runs.filter((run) => length(run) > 0.05).map((run, i) => ({ ...clone(rest), id: i ? `${w.id}-${i + 1}` : w.id, points: run.map(([x, y]) => [round3(x), round3(y)] as [number, number]) }));
+}
+
 /** Whole squares, inside the map. */
 function squareRect(doc: MapDoc, r: Rect): Rect | null {
   const sp = battleSpec(doc);
@@ -116,8 +159,8 @@ function squareRect(doc: MapDoc, r: Rect): Rect | null {
 }
 
 /**
- * Save an area of a battlemap (in squares; widened to whole squares) as a prefab: the floor under it and everything wholly inside it (a wall whose points are all
- * inside, an object or light whose centre is). Says why not when there is nothing there or it is too big.
+ * Save an area of a battlemap (in squares; widened to whole squares) as a prefab: the floor under it and everything inside it (a wall's part inside, cut at
+ * the edge, but a door or window only when it is wholly inside; an object or light whose centre is). Says why not when there is nothing there or it is too big.
  */
 export function makePrefab(doc: MapDoc, area: Rect, name: string, savedAt = new Date().toISOString()): Prefab | { error: string } {
   if (!isBattle(doc)) return { error: "Prefabs are saved from battlemaps." };
@@ -141,7 +184,7 @@ export function makePrefab(doc: MapDoc, area: Rect, name: string, savedAt = new 
   const allIn = (ps: [number, number][]) => ps.length > 0 && ps.every(([x, y]) => inside(x, y));
   const picked: FeatureClip = {
     ...emptyClip(),
-    walls: clone((f.walls ?? []).filter((w) => allIn(w.points))).map(({ auto: _a, ...w }) => w),
+    walls: (f.walls ?? []).flatMap((w) => wallInside(w, r)).map(({ auto: _a, ...w }) => w),
     lights: clone((f.lights ?? []).filter((l) => inside(l.x, l.y))),
     props: clone((f.props ?? []).filter((p) => inside(p.x, p.y))),
     zones: clone((f.zones ?? []).filter((z) => allIn(z.points))),

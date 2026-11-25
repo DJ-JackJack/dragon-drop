@@ -15,13 +15,15 @@ export interface RealmSettings {
   landOnly: boolean;
   /** Paint only land that belongs to nobody yet (round a neighbour, not over it). */
   onlyEmpty: boolean;
+  /** Erasing: take land only from the chosen realm (otherwise from every realm under the brush). */
+  eraseOnly: boolean;
 }
 
 let state: RealmSettings = loadSettings();
 const listeners = new Set<() => void>();
 
 function loadSettings(): RealmSettings {
-  const base: RealmSettings = { realm: null, erase: false, radius: 30, landOnly: true, onlyEmpty: false };
+  const base: RealmSettings = { realm: null, erase: false, radius: 30, landOnly: true, onlyEmpty: false, eraseOnly: false };
   try {
     const s = JSON.parse(localStorage.getItem("dd.realm") ?? "{}") as Partial<RealmSettings>;
     return { ...base, ...(typeof s.radius === "number" && { radius: s.radius }), ...(typeof s.landOnly === "boolean" && { landOnly: s.landOnly }), ...(typeof s.onlyEmpty === "boolean" && { onlyEmpty: s.onlyEmpty }) };
@@ -45,7 +47,7 @@ export const realmCtl = {
     const meta = store.getState().meta, hf = store.heights;
     if (!meta || !hf) return "The map isn't loaded yet.";
     const f = store.getState().features, realm = (f.realms ?? []).find((r) => r.id === state.realm) ?? null;
-    if (!state.erase && !realm) return "Choose a realm in the bar above first, or make a new one.";
+    if (!state.erase && !realm) return "Choose a realm in the bar above first, or make a new one with + New realm.";
     const grid = realmGridOf({ meta, features: f }), cells = decodeRealmCells(grid);
     const preview = document.createElement("canvas");
     preview.width = grid.w; preview.height = grid.h;
@@ -65,7 +67,7 @@ export const realmCtl = {
     const meta = store.getState().meta!, hf = store.heights!, s = stroke, g = s.grid;
     const before = s.cells.slice();
     s.changed += paintRealmCells(s.cells, g, {
-      n: state.erase ? 0 : s.realm!.n, circle: { x: m.x, y: m.y, r: state.radius }, onlyEmpty: state.onlyEmpty, ...(state.erase && s.realm && { only: s.realm.n }),
+      n: state.erase ? 0 : s.realm!.n, circle: { x: m.x, y: m.y, r: state.radius }, onlyEmpty: state.onlyEmpty && !state.erase, ...(state.erase && state.eraseOnly && s.realm && { only: s.realm.n }),
       ...(state.landOnly && !state.erase && { landOnly: { heights: hf.data, w: hf.w, h: hf.h, seaLevel: meta.seaLevel } }),
     });
     // the preview: painted cells in the realm's colour, erased ones dark
@@ -84,7 +86,7 @@ export const realmCtl = {
     const s = stroke;
     stroke = null;
     if (!s || !s.changed) return;
-    const what = state.erase ? (s.realm ? `Erase realm ${s.realm.name}` : "Erase realms") : `Paint realm ${s.realm!.name}`;
+    const what = state.erase ? (s.realm && state.eraseOnly ? `Erase realm ${s.realm.name}` : "Erase realms") : `Paint realm ${s.realm!.name}`;
     store.send({ t: "cmd", cmd: { op: "features", patch: { setRealmCells: encodeRealmCells(s.grid, s.cells) } }, label: what });
   },
   get painting() { return !!stroke; },

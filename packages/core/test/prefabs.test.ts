@@ -39,6 +39,34 @@ describe("prefabs", () => {
     expect(makePrefab(world(), { x: 0, y: 0, w: 4, h: 4 }, " ")).toEqual({ error: expect.stringMatching(/needs a name/) });
   });
 
+  it("keeps the walls of a room cut out of a bigger floor: walls across the edge are cut there, doors kept only whole (the 0.1.13 playtest)", () => {
+    const d = world();
+    // the outline traced round all the floor (one closed wall, as Walls around the floor makes it), running past the area on the right and below
+    d.features!.walls = [
+      { id: "out", kind: "wall", closed: true, auto: true, points: [[2, 2], [10, 2], [10, 8], [2, 8]] },
+      { id: "d1", kind: "door", points: [[3, 2], [4, 2]] },
+      { id: "d2", kind: "door", points: [[5.5, 2], [6.5, 2]] }, // (across the area's edge: left out, not cut)
+      { id: "inner", kind: "wall", points: [[4, 4], [8, 4]] }, // (an open wall crossing the edge)
+    ];
+    const p = makePrefab(d, { x: 2, y: 2, w: 4, h: 4 }, "Corner room") as Prefab;
+    const byId = new Map(p.features.walls.map((w) => [w.id, w]));
+    // the outline's part inside: from the area's right edge along the top, down the left side, along the bottom... the bottom (y 8) is outside, so it stops at the left edge's end
+    expect(byId.get("out")).toMatchObject({ kind: "wall", points: [[0, 4], [0, 0], [4, 0]] });
+    expect(byId.get("out")!.closed).toBeUndefined();
+    expect(byId.get("out")!.auto).toBeUndefined();
+    expect(byId.get("d1")!.points).toEqual([[1, 0], [2, 0]]);
+    expect(byId.has("d2")).toBe(false);
+    expect(byId.get("inner")!.points).toEqual([[2, 2], [4, 2]]);
+    expect(describePrefab(p)).toMatch(/2 walls, 1 door/);
+    // a wall that leaves the area and comes back is two pieces with ids of their own
+    d.features!.walls = [{ id: "zig", kind: "wall", points: [[2.5, 3], [8, 3], [8, 5], [3, 5]] }];
+    const z = makePrefab(d, { x: 2, y: 2, w: 4, h: 4 }, "Zig") as Prefab;
+    expect(z.features.walls.map((w) => [w.id, w.points])).toEqual([["zig", [[0.5, 1], [4, 1]]], ["zig-2", [[4, 3], [1, 3]]]]);
+    // a closed wall wholly inside stays closed
+    d.features!.walls = [{ id: "ring", kind: "wall", closed: true, points: [[3, 3], [5, 3], [5, 5], [3, 5]] }];
+    expect((makePrefab(d, { x: 2, y: 2, w: 4, h: 4 }, "Ring") as Prefab).features.walls[0]).toMatchObject({ closed: true, points: [[1, 1], [3, 1], [3, 3], [1, 3]] });
+  });
+
   it("turns and mirrors: a corner goes where it should, objects turn with it", () => {
     expect(turnPoint(0, 0, 4, 3, 90, false)).toEqual([3, 0]); // top-left to top-right
     expect(turnPoint(4, 0, 4, 3, 90, false)).toEqual([3, 4]);

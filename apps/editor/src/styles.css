@@ -708,12 +708,14 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 
 /* the Realm tool's list (RealmBar.tsx) */
 .realm-list { width: 460px; max-width: 80vw; display: flex; flex-direction: column; gap: 4px; }
-.realm-row { display: flex; align-items: center; gap: 6px; border-radius: 6px; padding: 2px; }
+/* (the name on its own line and the buttons under it: in one line, Remove was pushed out of the list, the 0.1.13 playtest) */
+.realm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; border-radius: 6px; padding: 2px; }
 .realm-row.on { background: rgba(255, 224, 120, 0.12); }
 .realm-row input[type="color"] { width: 28px; height: 24px; padding: 0; border: none; background: none; flex: none; }
 .realm-pick { flex: 1; text-align: left; background: none; border: 1px solid transparent; padding: 4px; }
 .realm-pick:hover { border-color: var(--line); }
-.realm-actions { display: flex; gap: 4px; align-items: center; flex: none; }
+.realm-rename { flex: 1; min-width: 0; }
+.realm-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; flex: 1 1 100%; padding-left: 34px; }
 .realm-new { display: flex; gap: 6px; margin-top: 6px; }
 .realm-new input { flex: 1; }
 

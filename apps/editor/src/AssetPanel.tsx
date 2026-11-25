@@ -138,7 +138,7 @@ export function AssetPanel({ meta, ui, onUi, desktop, focus, onAskTags }: {
       </div>
       {status?.ownFolder === false && (
         <p className="muted assets-starter" data-testid="assets-starter">
-          These are the floors of the Starter Pack that comes with Dragon Drop (free to use).{" "}
+          These are the floors and objects of the Starter Pack that comes with Dragon Drop (free to use).{" "}
           {desktop ? <>For your own asset packs, choose their folder in <b>Settings</b> (Maps and assets).</> : <>For your own asset packs, set <code>MAPMAKER_ASSETS_DIR</code> in the <code>.env</code> file and restart.</>}
         </p>
       )}

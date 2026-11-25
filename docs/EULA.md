@@ -29,7 +29,8 @@ use it however you like, including commercially. Keep in mind that other people'
 
 - **Asset packs and pictures you add** are under their own licences. Check each pack's licence before you publish or sell a map made with it.
   Dragon Drop reads them where they are and never copies or uploads them. The floor textures of Dragon Drop's own **Starter Pack** are
-  photographs from Poly Haven released under CC0 1.0: you may use them in anything, including maps you sell, with no credit needed.
+  photographs from Poly Haven released under CC0 1.0, and its objects were drawn for Dragon Drop and released under CC0 1.0 too: you may use
+  them in anything, including maps you sell, with no credit needed.
 - **Names and settings** you take from published games or books stay their owners'.
 
 ## 4. AI assistants are other companies' services

@@ -51,7 +51,7 @@ export const PREFAB_TOOLS = [
   define({
     name: "save_prefab",
     description:
-      "Save a rectangle of the open battlemap (whole squares, the level being worked on) as a prefab to place again later, on this map or another: the floor in it and everything wholly inside it " +
+      "Save a rectangle of the open battlemap (whole squares, the level being worked on) as a prefab to place again later, on this map or another: the floor in it and everything inside it (walls crossing its edge cut there; doors and windows only when wholly inside) " +
       "(walls, doors, windows, objects, lights, shaded areas, stairs, roofs, paths; not the numbered notes). Only under a name the DM gave or agreed to. " +
       "A prefab of the same name is kept unless `replace` is true (the DM is asked first).",
     schema: z.object({

@@ -303,9 +303,9 @@ try {
   if ((await page.getByTestId("place-name-size").inputValue()) !== "1") fail("Usual size should put the place's name back to 1x");
   // a link to the DM's own notes: pasted and kept, with an Open button (not clicked here: it would open another program)
   await page.getByTestId("note-link-input").fill("https://example.com/wiki/Test_Harbour");
+  await page.getByTestId("note-link-open").getByText(/example\.com/).waitFor({ timeout: 5000 }); // (Open shows as soon as the typed link is good: the playtest found it only after switching tabs)
   await page.getByTestId("note-link-input").press("Enter");
   await page.getByTestId("history").getByText("Link Test Harbour to notes").waitFor({ timeout: 10000 });
-  await page.getByTestId("note-link-open").getByText(/example\.com/).waitFor({ timeout: 5000 });
   // and one of the new pictures: choose a lighthouse in the Place tool, place one, see it in the list
   await page.getByRole("button", { name: "Place", exact: true }).click();
   await page.getByTestId("place-kind-menu").click(); // (the kinds open from a button in the tool bar, and it closes when one is chosen)
@@ -579,9 +579,9 @@ try {
     await rows(/reef/).first().waitFor({ state: "detached", timeout: 10000 });
     // realms: the Realm tool adds a realm under the DM's name and paints it (land only off: the test map's land isn't known here), one undo step each
     await page.getByRole("button", { name: "Realm", exact: true }).click();
-    await page.getByTestId("realm-menu").click();
-    await page.getByTestId("realm-new-name").fill("Test Realm");
-    await page.getByTestId("realm-new").click();
+    // (the tool bar's + New realm, the playtest's first look for it; the list's own new-realm box stays)
+    await page.getByTestId("realm-add").click();
+    await answer("Test Realm");
     await page.getByTestId("history").getByText("Add realm Test Realm").first().waitFor({ timeout: 10000 });
     await page.getByLabel("Land only").uncheck();
     await page.mouse.move(sx(300), sy(300));
@@ -591,6 +591,21 @@ try {
     await page.getByTestId("history").getByText("Paint realm Test Realm").first().waitFor({ timeout: 10000 });
     await page.getByTestId("realm-menu").click();
     await page.getByTestId("realm-list").getByText(/km²/).waitFor({ timeout: 5000 });
+    // every row's buttons fit in the list (the playtest found Remove pushed out of it)
+    const listBox = await page.getByTestId("realm-list").boundingBox(), removeBox = await page.getByTestId("realm-list").getByRole("button", { name: "Remove" }).boundingBox();
+    if (!listBox || !removeBox || removeBox.x + removeBox.width > listBox.x + listBox.width + 1) fail("a realm's Remove button should fit inside the realm list");
+    // renaming shows its own Save and Cancel in place of the row's buttons
+    await page.getByTestId("realm-list").getByRole("button", { name: "Rename" }).click();
+    await page.getByTestId("realm-rename-save").waitFor({ timeout: 5000 });
+    if (await page.getByTestId("realm-list").getByRole("button", { name: "Remove" }).count()) fail("renaming a realm should show Save and Cancel instead of the other buttons");
+    await page.getByTestId("realm-list").getByRole("button", { name: "Cancel" }).click();
+    // a link typed into a realm's box is kept when the list closes without the box losing focus (the playtest lost it)
+    await page.getByTestId("realm-list").getByRole("button", { name: "Link" }).click();
+    await page.getByTestId("realm-list").getByTestId("note-link-input").fill("https://example.com/wiki/Test_Realm");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("history").getByText("Link Test Realm to notes").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("realm-menu").click();
+    await page.getByTestId("realm-list").getByRole("button", { name: /Notes/ }).waitFor({ timeout: 5000 });
     await page.screenshot({ path: path.join(shots, "e2e-3e-realm.png") });
     await page.keyboard.press("Escape");
     await page.getByLabel("Land only").check();
@@ -1627,6 +1642,13 @@ try {
     await page.screenshot({ path: path.join(shots, "e2e-5d-city-wall.png") });
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByTestId("city-summary").getByText(/1 · 2 gates · \d+ towers/).waitFor({ timeout: 5000 });
+    // a district clicked out with the District tool and left unnamed is still added (the 0.1.13 playtest: an empty name counted as Cancel)
+    await page.getByTestId("ctool-district").click();
+    for (const [x, y] of [[120, 120], [220, 120], [220, 220], [120, 120]]) await page.mouse.click(cx(x), cy(y));
+    await page.getByTestId("dialog-input").waitFor({ timeout: 5000 });
+    await page.getByTestId("dialog-input").press("Enter");
+    await page.getByTestId("history").getByText("Add district").first().waitFor({ timeout: 5000 });
+    await page.getByRole("button", { name: /Undo/ }).click();
     // the Generate box: a hamlet in place of the streets and buildings (it asks first), one undo step
     const cityCounts = async () => /Buildings\d+Streets\d+/.exec(await page.getByTestId("city-summary").textContent())?.[0];
     const citySummary = await cityCounts();

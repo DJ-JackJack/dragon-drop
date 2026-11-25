@@ -48,7 +48,7 @@ const notices = generateNotices({
   header: `Dragon Drop is copyright its authors. It includes the open-source software below, each under its own licence, reproduced as those licences ask.
 Electron (with Chromium and Node.js) is licensed in LICENSE.electron.txt and LICENSES.chromium.html in the program's folder.
 The Cinzel typeface is licensed under the SIL Open Font License 1.1 (see its entry below).
-The Starter Pack's floor textures are photographs from Poly Haven (https://polyhaven.com), released under CC0 1.0; starter\\Dragon Drop Starter Pack\\CREDITS.txt lists them.`,
+The Starter Pack's floor textures are photographs from Poly Haven (https://polyhaven.com), released under CC0 1.0, and its objects were drawn for Dragon Drop and are CC0 1.0 too; starter\\Dragon Drop Starter Pack\\CREDITS.txt lists them.`,
 });
 for (const n of notices.notes) console.warn("notice:", n);
 if (notices.problems.length) { for (const p of notices.problems) console.error("LICENCE PROBLEM:", p); process.exit(1); }

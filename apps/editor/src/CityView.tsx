@@ -1036,7 +1036,8 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     districtDraft.current = null;
     requestDraw();
     if (!pts || pts.length < 3 || !spec) return;
-    const name = await ask("Name of this district (or leave it empty):", "", "Add district");
+    // (left empty, it is added unnamed, as the question says: before 0.1.14 an empty answer counted as Cancel)
+    const name = await ask("Name of this district (or leave it empty):", "", "Add district", true);
     if (name === null) return;
     const c = cleanDistrict({ id: newFeatureId("r"), points: pts, ...(name.trim() && { name: name.trim() }) }, spec);
     if ("error" in c) return;

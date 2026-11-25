@@ -1,16 +1,20 @@
 Dragon Drop Starter Pack
 ========================
 
-A few floor textures that come with Dragon Drop, so there is something to paint battlemaps with
-before you add asset packs of your own.
+A few floor textures and objects that come with Dragon Drop, so there is something to paint and
+furnish battlemaps with before you add asset packs of your own.
 
-Every picture here is from Poly Haven (https://polyhaven.com) and is released under CC0 1.0
+Floors
+------
+Every picture in Floors/ is from Poly Haven (https://polyhaven.com) and is released under CC0 1.0
 (public domain dedication, https://creativecommons.org/publicdomain/zero/1.0/): free for any use,
 commercial included, with no credit required. Poly Haven's licence page: https://polyhaven.com/license
 We credit the artists anyway, with thanks.
 
 What was changed: the 1k colour picture of each texture was renamed, recompressed as JPEG, and six
 of them (marked *) were halved to 512 pixels so one repeat covers 2 squares, near their real size.
+Gravel was made darker and greyer, with more contrast, and Forest Floor's bare soil darker, so their
+small swatches in the pickers read as what they are.
 
   Floors/Grass.jpg               Grass Ground         Charlotte Baglioni                 https://polyhaven.com/a/grass_ground
   Floors/Dirt.jpg                Dirt                 Charlotte Baglioni                 https://polyhaven.com/a/dirt
@@ -22,3 +26,22 @@ of them (marked *) were halved to 512 pixels so one repeat covers 2 squares, nea
   Floors/Stone Floor Tiles.jpg * Rock Tile Floor      Charlotte Baglioni                 https://polyhaven.com/a/rock_tile_floor
   Floors/Gravel.jpg *            Gravel Floor 02      Jenelle van Heerden, Dimitrios Savva https://polyhaven.com/a/gravel_floor_02
   Floors/Forest Floor.jpg *      Forest Floor         eye-candy.xyz                      https://polyhaven.com/a/forest_floor
+
+Objects
+-------
+The pictures in Objects/ were drawn for Dragon Drop by a script (tools/starter-objects/draw_objects.py
+in Dragon Drop's source) and are also given to the public domain under CC0 1.0: free for any use,
+commercial included, with no credit required. 256 pixels are one grid square.
+
+  Objects/Barrel.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Bush 1.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Bush 2.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Bush 3.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Campfire.png         Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Chair.png            Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Crate.png            Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Rock 1.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Rock 2.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Rock 3.png           Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Round Table.png      Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
+  Objects/Tree.png             Dragon Drop (drawn by tools/starter-objects/draw_objects.py)
