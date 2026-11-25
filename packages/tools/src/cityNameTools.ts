@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { CITY_LABEL_KINDS, type MapDistrict, type MapLabel, citySpec, cityLabelKind, cleanDistrict, districtColour, isCity, newFeatureId, pointInPolygon, polygonArea, polygonCentroid } from "@mapmaker/core";
 import type { ToolContext, ToolDef, ToolResult } from "./tools.ts";
-import { define, fail, json, text } from "./toolKit.ts";
+import { NameSizeSchema, define, fail, json, text } from "./toolKit.ts";
 
 function needCity(ctx: ToolContext): ToolResult | null {
   return isCity(ctx.session().doc) ? null : fail("This tool is for city maps, and the open project isn't one. On a world map, add_label names things.");
@@ -127,8 +127,8 @@ CITY_NAME_TOOLS.push(
   }),
   define({
     name: "update_city_districts",
-    description: "Change districts by id (from list_city_districts): the outline, the name (only the DM's; empty removes it) or the colour. One edit.",
-    schema: z.object({ changes: z.array(z.object({ id: z.string(), points: z.array(Pt).min(3).max(400).optional(), name: z.string().max(80).optional(), colour: Colour.optional() })).min(1).max(50) }),
+    description: "Change districts by id (from list_city_districts): the outline, the name (only the DM's; empty removes it), how big the name is written (name_size) or the colour. One edit.",
+    schema: z.object({ changes: z.array(z.object({ id: z.string(), points: z.array(Pt).min(3).max(400).optional(), name: z.string().max(80).optional(), colour: Colour.optional(), name_size: NameSizeSchema.optional() })).min(1).max(50) }),
     async run(ctx, i) {
       const bad = needCity(ctx); if (bad) return bad;
       const sp = citySpec(ctx.session().doc), by = new Map((featuresOf(ctx).districts ?? []).map((d) => [d.id, d]));
@@ -137,7 +137,7 @@ CITY_NAME_TOOLS.push(
         const cur = by.get(ch.id);
         if (!cur) { skipped.push(`${ch.id}: no such district`); continue; }
         const { name: _n, ...rest } = cur, name = ch.name === undefined ? cur.name : ch.name || undefined;
-        const c = cleanDistrict({ ...rest, ...(ch.points && { points: ch.points }), ...(ch.colour && { colour: ch.colour }), ...(name && { name }) }, sp);
+        const c = cleanDistrict({ ...rest, ...(ch.points && { points: ch.points }), ...(ch.colour && { colour: ch.colour }), ...(name && { name }), ...(ch.name_size !== undefined && { nameSize: ch.name_size }) }, sp);
         if ("error" in c) skipped.push(c.error); else out.push(c);
       }
       if (!out.length) return fail(`Nothing changed. ${skipped.join("; ")}`);

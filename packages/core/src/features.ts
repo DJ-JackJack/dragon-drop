@@ -22,6 +22,8 @@ export interface Place {
   hideMarker?: boolean;
   /** Where the name goes relative to the marker (default "auto": the first free side). */
   namePos?: NamePos;
+  /** Its name's own size on the map, a multiplier of the usual size (NAME_SIZE_MIN..NAME_SIZE_MAX; missing: 1). */
+  nameSize?: number;
 }
 
 export type NamePos = "auto" | "right" | "left" | "above" | "below";
@@ -191,6 +193,8 @@ export interface MapRealm {
   colour: string;
   /** Don't write its name on the map. */
   hideName?: boolean;
+  /** Its name's own size on the map, a multiplier of the usual size (NAME_SIZE_MIN..NAME_SIZE_MAX; missing: 1). */
+  nameSize?: number;
   /** For the DM's eyes only: shown faintly in the editor, left out of pictures and exports for players (secrets.ts). */
   gmOnly?: boolean;
   notes?: string;
@@ -308,6 +312,8 @@ export interface MapBuilding {
   /** Its name is for the DM's eyes only: the building is drawn for players, its name isn't (secrets.ts). */
   gmOnly?: boolean;
   name?: string;
+  /** Its name's own size on the map, a multiplier of the usual size (NAME_SIZE_MIN..NAME_SIZE_MAX; missing: 1). */
+  nameSize?: number;
   /** The outline, closed, in metres: a rectangle's four corners or any polygon. */
   points: [number, number][];
   /** The roof look (default slate). */
@@ -338,6 +344,8 @@ export type StreetKind = (typeof STREET_KINDS)[number]["id"];
 export interface MapStreet {
   id: string;
   name?: string;
+  /** Its name's own size on the map, a multiplier of the usual size (NAME_SIZE_MIN..NAME_SIZE_MAX; missing: 1). */
+  nameSize?: number;
   points: [number, number][];
   /** Metres across. */
   width: number;
@@ -350,6 +358,8 @@ export interface MapStreet {
 export interface MapDistrict {
   id: string;
   name?: string;
+  /** Its name's own size on the map, a multiplier of the usual size (NAME_SIZE_MIN..NAME_SIZE_MAX; missing: 1). */
+  nameSize?: number;
   points: [number, number][];
   colour?: string;
 }
@@ -442,6 +452,8 @@ export interface WaterName {
   id: string;
   kind: "river" | "lake";
   name: string;
+  /** Its name's own size on the map, a multiplier of the usual size (NAME_SIZE_MIN..NAME_SIZE_MAX; missing: 1). */
+  nameSize?: number;
   x: number;
   y: number;
 }
@@ -835,6 +847,23 @@ export function simplifyPath(pts: [number, number][], eps: number): [number, num
     }
   }
   return pts.filter((_, i) => keep[i]);
+}
+
+/** How much bigger or smaller a single name may be drawn than usual (a label's `size`, a place's or another named thing's `nameSize`). */
+export const NAME_SIZE_MIN = 0.4;
+export const NAME_SIZE_MAX = 3;
+
+/** A name size from outside (a message or a tool), checked: a number in range, rounded to hundredths; undefined for 1, a bad value or none (so the field is left out). */
+export function cleanNameSize(n: unknown): number | undefined {
+  if (typeof n !== "number" || !Number.isFinite(n)) return undefined;
+  const v = Math.round(Math.min(NAME_SIZE_MAX, Math.max(NAME_SIZE_MIN, n)) * 100) / 100;
+  return v === 1 ? undefined : v;
+}
+
+/** `o` with its name size set to `n` (left out when it is 1). */
+export function withNameSize<T extends { nameSize?: number }>(o: T, n: number): T {
+  const { nameSize: _n, ...rest } = o, v = cleanNameSize(n);
+  return (v === undefined ? rest : { ...rest, nameSize: v }) as T;
 }
 
 export function labelText(l: MapLabel): string {

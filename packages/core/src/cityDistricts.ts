@@ -3,7 +3,7 @@
  * at its middle (the editor, the export and Claude's previews). A district is the DM's: its name is canon (only names they gave or confirmed).
  */
 import type { CitySpec } from "./city.ts";
-import type { MapDistrict } from "./features.ts";
+import { type MapDistrict, cleanNameSize } from "./features.ts";
 import { pointInPolygon } from "./geom.ts";
 import { polygonCentroid } from "./regions.ts";
 
@@ -58,6 +58,8 @@ export function cleanDistrict(raw: unknown, spec: CitySpec): MapDistrict | { err
   }
   const out: MapDistrict = { id: o.id, points };
   if (typeof o.name === "string" && o.name.trim()) out.name = o.name.trim().slice(0, 80);
+  const ns = cleanNameSize(o.nameSize);
+  if (out.name && ns !== undefined) out.nameSize = ns;
   if (typeof o.colour === "string" && /^#?[0-9a-f]{6}$/i.test(o.colour)) out.colour = `#${o.colour.replace("#", "").toLowerCase()}`;
   return out;
 }

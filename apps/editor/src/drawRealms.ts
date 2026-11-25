@@ -104,7 +104,7 @@ export function realmNameLabels(f: Features, mapWidth: number): MapLabel[] {
     const unit = LABEL_SIZE.region * (mapWidth / 1024) * Math.max(3, r.name.length) * 0.95;
     const across = Math.sqrt(L.counts.get(r.n) ?? 0) * L.grid.scale;
     const size = Math.max(0.6, Math.min(2.4, Math.min(0.6 * across, 4 * s.reach) / unit));
-    out.push({ id: `realm-${r.id}`, text: r.name, kind: "region", x: s.x, y: s.y, size, ...(r.gmOnly && { gmOnly: true }) });
+    out.push({ id: `realm-${r.id}`, text: r.name, kind: "region", x: s.x, y: s.y, size: size * (r.nameSize ?? 1), ...(r.gmOnly && { gmOnly: true }) });
   }
   return out;
 }

@@ -37,10 +37,10 @@ interface View { scale: number; ox: number; oy: number } // scale: screen px per
 const MIN_ZOOM = 0.02, MAX_ZOOM = 40;
 const GOLD = "rgba(255, 224, 120, 0.95)";
 
-interface Props { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }
+interface Props { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void; /** The Label size setting (1 when absent). */ labelScale?: number }
 
 /** Somewhere else to draw the city: a tile of a picture export, at its own scale, with only the map on it (no selection, tools, trace picture or scale bar). */
-export interface CityPaintTarget { ctx: CanvasRenderingContext2D; v: View; W: number; H: number; names: boolean; contours: boolean; /** Leave out GM-only names (secrets.ts). */ players?: boolean }
+export interface CityPaintTarget { ctx: CanvasRenderingContext2D; v: View; W: number; H: number; names: boolean; contours: boolean; /** Leave out GM-only names (secrets.ts). */ players?: boolean; /** The names' size setting (1 when absent). */ labelScale?: number }
 
 type Drag = {
   mode: "pan" | "trace" | "move" | "marquee" | "rect" | "brush" | "hill" | "slope" | "reader" | "battlebox";
@@ -80,7 +80,7 @@ function slopeOf(pts: Pt[], ridge: [number, number, number, number]): [number, n
   return [cx, cy, nx, ny, hw];
 }
 
-export function CityView({ meta, features, ui, onUi }: Props) {
+export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -118,6 +118,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   const metaRef = useRef(meta); metaRef.current = meta;
   const featRef = useRef(features); featRef.current = features;
   const uiRef = useRef(ui); uiRef.current = ui;
+  const labelScaleRef = useRef(labelScale); labelScaleRef.current = labelScale;
   const onUiRef = useRef(onUi); onUiRef.current = onUi;
   const [spaceDown, setSpaceDown] = useState(false);
   const spaceRef = useRef(false); spaceRef.current = spaceDown;
@@ -390,12 +391,12 @@ export function CityView({ meta, features, ui, onUi }: Props) {
       ? { ...f, labels: f.labels.map((l) => (mvSet!.has(l.id) ? { ...l, x: l.x + mv.dx, y: l.y + mv.dy } : l)), districts: (f.districts ?? []).map((d) => (mvSet!.has(d.id) ? { ...d, points: d.points.map(([x, y]) => [x + mv.dx, y + mv.dy] as Pt) } : d)) } : f;
     if (!screen) {
       // (a picture is sized as if it were the whole city fitted on the screen: names keep the size they have on the map as a whole)
-      if (target!.names) drawCityNames(ctx, target!.players ? playerView(f) : f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H }, null);
+      if (target!.names) drawCityNames(ctx, target!.players ? playerView(f) : f, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, W, H, labelScale: target!.labelScale }, null);
       return;
     }
     // another map being compared with this one, over it (compare.ts)
     compareCtl.draw(ctx, m.id, v, W, H);
-    labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H, faintGmOnly: true }, sel) : [];
+    labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H, labelScale: labelScaleRef.current, faintGmOnly: true }, sel) : [];
     if (o.tool === "measure") measureCtl.draw(ctx, v, cityLength);
 
     // what is selected
@@ -1055,7 +1056,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
   // the Objects list: bring a thing into view (metres)
   useEffect(() => focusBus.listen((b) => { const w = wrapRef.current; if (!w) return; viewRef.current = viewForBox(viewRef.current, b, w.clientWidth, w.clientHeight, 4, MIN_ZOOM); requestDraw(); }), [requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
-  useEffect(() => { requestDraw(); }, [features, ui, meta, requestDraw]);
+  useEffect(() => { requestDraw(); }, [features, ui, meta, labelScale, requestDraw]);
   useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; districtDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
   // the land or the climate changed: the ground's colours and shading with it
   const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}`;
@@ -1302,7 +1303,7 @@ export function CityView({ meta, features, ui, onUi }: Props) {
         onPointerLeave={() => { pointer.current = null; measureCtl.leave(); setHover(null); requestDraw(); }}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()}
       />
-      {exportOpen && meta?.city && <CityExportDialog meta={meta} names={ui.names} contours={ui.contours} prepare={prepareExport} paint={(t) => draw(t)} onClose={() => setExportOpen(false)} />}
+      {exportOpen && meta?.city && <CityExportDialog meta={meta} labelScale={labelScale} names={ui.names} contours={ui.contours} prepare={prepareExport} paint={(t) => draw(t)} onClose={() => setExportOpen(false)} />}
       {meta && <TraceBar trace={features.trace} meta={meta} />}
       {meta && <CompareBar meta={meta} />}
       {(!meta || loadedId !== meta.id) && <div className="mapview-empty">Loading map…</div>}

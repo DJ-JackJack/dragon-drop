@@ -79,6 +79,10 @@ code { background: #08080a; padding: 1px 4px; border-radius: 4px; font-size: 12.
 .slider span { display: block; }
 .slider b { color: var(--text); }
 .slider input { width: 100%; }
+/* a name's own size (NameSize.tsx): the slider, and "Usual size" beside it once it is changed */
+.name-size { display: flex; align-items: flex-end; gap: 8px; }
+.name-size .slider { flex: 1; min-width: 0; }
+.name-size button { margin-bottom: 6px; white-space: nowrap; }
 .row { display: flex; gap: 6px; margin-top: 8px; }
 .row.end { justify-content: flex-end; }
 .row button { flex: 1; }

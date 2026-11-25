@@ -202,7 +202,9 @@ export function resolveWaterNames(names: readonly WaterName[] | undefined, net: 
     if (n.kind === "lake") {
       const i = lakes.findIndex((l) => pointInPolygon(n.x, n.y, l.outline)), l = lakes[i];
       named.push({ id: n.id, kind: "lake", name: n.name, found: !!l, ...(l && { lake: i, areaKm2: l.areaKm2, outflow: l.outflow }) });
-      if (l) labels.push({ id: n.id, text: n.name, kind: "feature", x: l.x, y: l.y, ...(l.areaKm2 >= 2000 && { size: 1.25 }) }); // (a great lake's name a little bigger)
+      // (a great lake's name a little bigger, times the name's own size)
+      const size = (l?.areaKm2 ?? 0) >= 2000 ? 1.25 * (n.nameSize ?? 1) : n.nameSize;
+      if (l) labels.push({ id: n.id, text: n.name, kind: "feature", x: l.x, y: l.y, ...(size !== undefined && size !== 1 && { size }) });
       continue;
     }
     // a river: the one passing nearest the named spot (lakes don't count here: a river's name is never a lake's)
@@ -213,8 +215,8 @@ export function resolveWaterNames(names: readonly WaterName[] | undefined, net: 
     const end: RiverEnd = course.end === "river" ? "river" : course.end === "lake" ? "lake" : o.isSea?.(ex, ey) ? "sea" : "elsewhere";
     named.push({ id: n.id, kind: "river", name: n.name, found: true, head, lengthKm: Math.round(course.length * o.kmPerPx), end });
     if (course.joins !== undefined) joinsHead.set(n.id, course.joins);
-    // the label: the stretch of the course round the named spot, long enough for the name (about 7 px a letter at the feature size, on a 1024-px map)
-    const half = (n.name.length * 4.2 + 14) * k;
+    // the label: the stretch of the course round the named spot, long enough for the name (about 7 px a letter at the feature size, on a 1024-px map; more for a bigger name)
+    const half = (n.name.length * 4.2 * (n.nameSize ?? 1) + 14) * k;
     const pts = course.pts, at = nearestIndex(pts, hit.x, hit.y);
     let a = at, b = at, la = 0, lb = 0;
     while (a > 0 && la < half) { la += Math.hypot(pts[a * 2] - pts[a * 2 - 2], pts[a * 2 + 1] - pts[a * 2 - 1]); a--; }
@@ -224,7 +226,7 @@ export function resolveWaterNames(names: readonly WaterName[] | undefined, net: 
     // a gentle curve through the river's bends (the letters can't follow every small wiggle), every other point kept
     const path = smoothLine(raw, Math.max(3, Math.round(6 * k))).filter((_, i, all) => i % 2 === 0 || i === all.length - 1).map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10] as [number, number]);
     if (path.length >= 2 && path[path.length - 1][0] < path[0][0]) path.reverse(); // (read left to right, whichever way the water flows)
-    if (path.length >= 2) labels.push({ id: n.id, text: n.name, kind: "feature", x: hit.x, y: hit.y, path });
+    if (path.length >= 2) labels.push({ id: n.id, text: n.name, kind: "feature", x: hit.x, y: hit.y, path, ...(n.nameSize !== undefined && n.nameSize !== 1 && { size: n.nameSize }) });
   }
   // the river each one flows into, by name, when that one is named too
   for (const w of named) {

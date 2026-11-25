@@ -3,8 +3,9 @@ import { useState } from "react";
 import { type MapMeta, hasFurniture, hasGmOnly, planExport } from "@mapmaker/core";
 import { store } from "./store.ts";
 import { EXPORT_FACTORS, type ExportOptions, type ExportSource, downloadBlob, exportMap } from "./exportMap.ts";
+import { ExportLabelSize } from "./NameSize.tsx";
 
-export function ExportDialog({ meta, source, onClose }: { meta: MapMeta; source: () => ExportSource | null; onClose: () => void }) {
+export function ExportDialog({ meta, source, labelScale = 1, onClose }: { meta: MapMeta; source: () => ExportSource | null; labelScale?: number; onClose: () => void }) {
   const hasGrid = !!meta.grid && meta.grid.type !== "off";
   const hasExtras = hasFurniture(meta.furniture);
   const [factor, setFactor] = useState(2);
@@ -14,6 +15,7 @@ export function ExportDialog({ meta, source, onClose }: { meta: MapMeta; source:
   const [furniture, setFurniture] = useState(hasExtras);
   const secrets = hasGmOnly(store.state.features);
   const [players, setPlayers] = useState(true);
+  const [labels, setLabels] = useState(labelScale);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,7 +25,7 @@ export function ExportDialog({ meta, source, onClose }: { meta: MapMeta; source:
     setError(null);
     setBusy("Starting…");
     try {
-      const opts: ExportOptions = { factor, rivers, features, grid: grid && hasGrid, furniture: furniture && hasExtras, players: secrets && players };
+      const opts: ExportOptions = { factor, rivers, features, grid: grid && hasGrid, furniture: furniture && hasExtras, players: secrets && players, labelScale: labels };
       const { blob, filename } = await exportMap(src, opts, setBusy);
       downloadBlob(blob, filename);
       onClose();
@@ -57,6 +59,7 @@ export function ExportDialog({ meta, source, onClose }: { meta: MapMeta; source:
           <legend>Include</legend>
           {(meta.style ?? "painted") !== "painted" && <label className="check"><input type="checkbox" checked={rivers} onChange={(e) => setRivers(e.target.checked)} /> Rivers</label>}
           <label className="check"><input type="checkbox" checked={features} onChange={(e) => setFeatures(e.target.checked)} /> Places, labels, roads and borders</label>
+          {features && <ExportLabelSize value={labels} setting={labelScale} onChange={setLabels} />}
           {secrets && features && <label className="check" title="Places, labels, roads and borders you marked GM only are left out"><input type="checkbox" checked={players} onChange={(e) => setPlayers(e.target.checked)} data-testid="export-players" /> For players: leave out what is GM only</label>}
           <label className="check"><input type="checkbox" checked={grid && hasGrid} disabled={!hasGrid} onChange={(e) => setGrid(e.target.checked)} /> Grid {!hasGrid && <span className="muted">(none set)</span>}</label>
           <label className="check"><input type="checkbox" checked={furniture && hasExtras} disabled={!hasExtras} onChange={(e) => setFurniture(e.target.checked)} /> Title, scale bar and compass {!hasExtras && <span className="muted">(none set)</span>}</label>

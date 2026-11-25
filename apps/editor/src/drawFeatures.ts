@@ -256,7 +256,8 @@ function overlapArea(a: Box, b: Box) {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
-interface PlaceLayout { p: Place; x: number; y: number; px: number; r: number; markerBox: Box }
+/** `px` sizes the marker, `namePx` the name (px times the place's own name size). */
+interface PlaceLayout { p: Place; x: number; y: number; px: number; namePx: number; r: number; markerBox: Box }
 
 function layoutPlace(p: Place, v: FeatureView): PlaceLayout {
   const px = Math.max(9, PLACE_SIZE[p.type] * (v.mapWidth / 1024) * textScale(v));
@@ -264,12 +265,12 @@ function layoutPlace(p: Place, v: FeatureView): PlaceLayout {
   const pic = placeKind(p.type).picture;
   const r = pic ? Math.max(6, px * 0.5) : Math.max(3, px * 0.34);
   const x = v.ox + p.x * v.scale, y = v.oy + p.y * v.scale;
-  return { p, x, y, px, r, markerBox: { x0: x - r - 1, y0: y - r - 1, x1: x + r + 1, y1: y + r + 1 } };
+  return { p, x, y, px, namePx: px * (p.nameSize ?? 1), r, markerBox: { x0: x - r - 1, y0: y - r - 1, x1: x + r + 1, y1: y + r + 1 } };
 }
 
 /** Where the name's text box goes for a slot: [anchor x, anchor y, align, box]. */
 function slotBox(L: PlaceLayout, slot: Slot, w: number): { tx: number; ty: number; align: CanvasTextAlign; box: Box } {
-  const { x, y, px, r } = L;
+  const { x, y, namePx: px, r } = L;
   const gap = L.p.hideMarker ? r * 1.1 : r * 1.6;
   const h = px * 0.62;
   const dy = r * 0.4 + px * 0.45;
@@ -288,7 +289,7 @@ function slotBox(L: PlaceLayout, slot: Slot, w: number): { tx: number; ty: numbe
 }
 
 function drawPlaceName(ctx: CanvasRenderingContext2D, L: PlaceLayout, occupied: Box[]): Box {
-  const { p, px } = L;
+  const { p, namePx: px } = L;
   ctx.save();
   ctx.font = `${p.type === "capital" || p.type === "city" ? 700 : 600} ${px}px Cinzel, Georgia, serif`;
   const w = ctx.measureText(p.name).width;

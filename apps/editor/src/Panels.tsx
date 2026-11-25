@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { NoteLink } from "./NoteLink.tsx";
 import { GmOnlyBox } from "./GmOnly.tsx";
-import { placeKind,
+import { placeKind, withNameSize,
   GROUND_INFO, MI_PER_KM, WIND_NAMES, type ClimateParams, type ClimateRegion, DEFAULT_CLIMATE, type Corner, type Features, type MapFurniture, type MapGrid, type MapLine, describeFurniture, lineLengthKm, clampGridSize, describeGrid, gridCellPx, niceGridSize, type LabelKind, type MapLabel, type MapMeta, type NamePos, type Place, type PlaceType,
 } from "@mapmaker/core";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
+import { NameSizeSlider } from "./NameSize.tsx";
 import { type AppState, store } from "./store.ts";
 import { forAssistant } from "./assistantName.ts";
 import { SourceEditor, WaterEditor, deleteWaterThing } from "./WaterPanel.tsx";
@@ -75,6 +76,7 @@ function PlaceEditor({ p }: { p: Place }) {
       <label className="field">Notes<textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (p.notes ?? "") && sendPlace({ ...p, notes })} /></label>
       <NoteLink link={p.link} what={p.name} onChange={(link) => { const { link: _l, ...rest } = p; sendPlace(link ? { ...p, link } : rest, link ? `Link ${p.name} to notes` : `Unlink ${p.name}`); }} />
       <label className="check"><input type="checkbox" checked={!p.hideName} onChange={(e) => sendPlace({ ...p, hideName: !e.target.checked })} /> Show name on map</label>
+      {!p.hideName && <NameSizeSlider value={p.nameSize} onCommit={(v) => sendPlace(withNameSize(p, v), `Name size of ${p.name}`)} testid="place-name-size" />}
       <label className="check"><input type="checkbox" checked={!p.hideMarker} onChange={(e) => sendPlace({ ...p, hideMarker: !e.target.checked })} /> Show marker (turn off for a peak the map already shows)</label>
       <GmOnlyBox on={!!p.gmOnly} what="this place" onChange={(on) => { const { gmOnly: _g, ...rest } = p; sendPlace(on ? { ...p, gmOnly: true } : rest, on ? `Make ${p.name} GM only` : `Show ${p.name} to players`); }} />
       <label className="field">Name position

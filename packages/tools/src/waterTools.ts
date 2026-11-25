@@ -6,9 +6,10 @@ import { z } from "zod";
 import {
   type LakeShape, type MapLabel, type NamedWater, type RiverNet, type WaterName, HeightField, WATER_NAME_REACH, cropScale, drawRivers, newFeatureId, pointInPolygon, renderFull,
   riverList, waterAt, namedWaterAt,
+  cleanNameSize,
 } from "@mapmaker/core";
 import type { ToolContext } from "./tools.ts";
-import { define, fail, json } from "./toolKit.ts";
+import { NameSizeSchema, define, fail, json } from "./toolKit.ts";
 import { encodeJpeg, toBase64 } from "./images.ts";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -103,12 +104,14 @@ export const WATER_TOOLS = [
       "Name a river or a lake, or rename one. Only a name the DM gave or confirmed (names are canon). The rivers are worked out from the land and the rain, so a river's name is pinned to a spot on it " +
       "and follows that river when the land changes; the name is drawn along the river (or in the lake's middle) on the map and in exports. " +
       "To name: x, y in map px on the river (within 6 px) or inside the lake; list_waters gives a point on each of the biggest unnamed rivers and lakes, and get_selection the DM's selected point. " +
-      "Below a junction the bigger river keeps its name, so a tributary's name ends where it joins. To rename: water (the name or id) and the new name; with x, y as well it moves to that spot.",
+      "Below a junction the bigger river keeps its name, so a tributary's name ends where it joins. To rename: water (the name or id) and the new name; with x, y as well it moves to that spot. " +
+      "name_size makes the name bigger or smaller on the map (to change only that: water and its present name).",
     schema: z.object({
       name: z.string().min(1).max(80).describe("The river's or lake's name, as the DM gave it"),
       x: z.number().optional(), y: z.number().optional(),
       kind: z.enum(["river", "lake"]).optional().describe("Which you mean when the point is in a lake that a river also runs through (default: the lake)"),
       water: z.string().optional().describe("Rename this one (its id or present name) instead of naming a new one"),
+      name_size: NameSizeSchema.optional(),
     }),
     async run(ctx, i) {
       const w = await waterNow(ctx);
@@ -126,7 +129,8 @@ export const WATER_TOOLS = [
       } else if (existing) {
         spot = { ...existing, name: i.name.trim() };
       } else return fail("Say where: x and y on the river or in the lake (or water, to rename one).");
-      const label = existing ? (existing.name !== spot.name ? `Rename the ${spot.kind} ${existing.name} to ${spot.name}` : `Move the name of the ${spot.kind} ${spot.name}`) : `Name the ${spot.kind} ${spot.name}`;
+      if (i.name_size !== undefined) { const v = cleanNameSize(i.name_size); if (v === undefined) delete spot.nameSize; else spot.nameSize = v; }
+      const label = existing && existing.name === spot.name && existing.x === spot.x && existing.y === spot.y && i.name_size !== undefined ? `Name size of the ${spot.kind} ${spot.name}` : existing ? (existing.name !== spot.name ? `Rename the ${spot.kind} ${existing.name} to ${spot.name}` : `Move the name of the ${spot.kind} ${spot.name}`) : `Name the ${spot.kind} ${spot.name}`;
       const res = ctx.execute({ op: "features", patch: { upsertWaterNames: [spot] }, label });
       const now = ctx.water?.()?.named.find((x) => x.id === spot.id);
       return json({ change: res.seq, [existing ? "renamed" : "named"]: spot, ...factsOf(now) });

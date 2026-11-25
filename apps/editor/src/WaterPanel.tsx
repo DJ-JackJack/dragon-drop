@@ -3,7 +3,8 @@
  * with the River tool, and the inspector's editors for a named river or lake and for a river source.
  */
 import { useEffect, useState } from "react";
-import { type Features, type MapMeta, type RiverSize, type RiverSource, type Selection, type WaterName, newFeatureId } from "@mapmaker/core";
+import { type Features, type MapMeta, type RiverSize, type RiverSource, type Selection, type WaterName, newFeatureId, withNameSize } from "@mapmaker/core";
+import { NameSizeSlider } from "./NameSize.tsx";
 import { confirmBox } from "./dialogs.tsx";
 import { type AppState, store } from "./store.ts";
 import { type WaterPick, describeWater } from "./waterUi.ts";
@@ -137,6 +138,7 @@ export function WaterEditor({ w, water }: { w: WaterName; water: AppState["water
   return (
     <>
       <label className="field">Name<input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== w.name && sendName({ ...w, name: name.trim() }, `Rename the ${w.kind} ${w.name} to ${name.trim()}`)} data-testid="water-rename" /></label>
+      <NameSizeSlider value={w.nameSize} onCommit={(v) => sendName(withNameSize(w, v), `Name size of the ${w.kind} ${w.name}`)} testid="water-name-size" />
       <p className="muted" data-testid="water-inspector-facts">
         {!n ? "Working out the rivers…" : !n.found ? `No ${w.kind} is at its spot now (the land or the rain changed). Name it again with the River tool, or remove the name.` : describeWater({ ...n, end: n.end === "elsewhere" ? "edge" : n.end })}
       </p>

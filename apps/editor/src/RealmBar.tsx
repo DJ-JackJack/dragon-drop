@@ -3,7 +3,8 @@
  * "round neighbours"; the list renames, recolours and removes realms, and says how big each is.
  */
 import { useState, useSyncExternalStore } from "react";
-import { type MapRealm, REALM_COLOURS, newFeatureId, nextRealmNumber, realmAreas, realmGridOf } from "@mapmaker/core";
+import { type MapRealm, REALM_COLOURS, newFeatureId, nextRealmNumber, realmAreas, realmGridOf, withNameSize } from "@mapmaker/core";
+import { NameSizeSlider } from "./NameSize.tsx";
 import { store } from "./store.ts";
 import { Popover } from "./ToolBar.tsx";
 import { realmCtl, useRealmSettings } from "./realmUi.ts";
@@ -42,6 +43,7 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
+  const [sizing, setSizing] = useState<string | null>(null);
   const meta = store.getState().meta, f = store.getState().features;
   const areas = meta ? realmAreas(realmGridOf({ meta, features: f }), meta.kmPerPx) : new Map();
   const add = () => {
@@ -81,12 +83,14 @@ function RealmList({ realms, chosen, onChoose }: { realms: MapRealm[]; chosen: s
               <label className="check" title="For your eyes only: left out of exports for players"><input type="checkbox" checked={!!r.gmOnly} onChange={(e) => { const { gmOnly: _g, ...rest } = r; sendRealm(e.target.checked ? { ...r, gmOnly: true } : rest, e.target.checked ? `Make ${r.name} GM only` : `Show ${r.name} to players`); }} /> GM</label>
               <label className="check" title="Write its name on the map"><input type="checkbox" checked={!r.hideName} onChange={(e) => { const { hideName: _h, ...rest } = r; sendRealm(e.target.checked ? rest : { ...r, hideName: true }, e.target.checked ? `Show the name ${r.name}` : `Hide the name ${r.name}`); }} /> Name</label>
               {r.link && <button onClick={() => void openNoteLink(r.link!)} title={`Open your notes: ${r.link}`}>Notes ↗</button>}
+              {!r.hideName && <button onClick={() => setSizing(sizing === r.id ? null : r.id)} aria-expanded={sizing === r.id} title="How big its name is written on the map" data-testid={`realm-size-${r.n}`}>Size</button>}
               <button onClick={() => setLinking(linking === r.id ? null : r.id)} title="Link it to your own notes (a web page or a file)">Link</button>
               <button onClick={() => setRenaming({ id: r.id, name: r.name })}>Rename</button>
               <button onClick={() => setRemoving(r.id)}>Remove</button>
             </span>
           )}
         </div>
+        {sizing === r.id && !r.hideName && <NameSizeSlider value={r.nameSize} onCommit={(v) => sendRealm(withNameSize(r, v), `Name size of ${r.name}`)} testid="realm-name-size" />}
         {linking === r.id && <NoteLink link={r.link} what={r.name} onChange={(link) => { const { link: _l, ...rest } = r; sendRealm(link ? { ...r, link } : rest, link ? `Link ${r.name} to notes` : `Unlink ${r.name}`); }} />}
         </div>
       ))}

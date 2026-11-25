@@ -81,6 +81,9 @@ Rivers aren't drawn one by one: they come from the land and the rain, so they ca
 **Can the map look hand-drawn?**
 Yes: choose **Ink** under Style in the Map panel. The coast is inked with ripple lines, and mountains, hills and woods are drawn as small symbols from the terrain.
 
+**Can I make one name bigger or smaller?**
+Yes. Select it with the Select tool: a label has a **Size**, and a place, a named river or lake, or a settlement's named street, building or district has a **Name size** (drag it, or **Usual size** to put it back). A realm's is its **Size** button in the realm list. **Label size** in the Map panel makes every name bigger or smaller at once, and the **Export** dialog starts at the same Label size, so the picture's names look as they do on screen.
+
 **My notes are in another program. Can a place open them?**
 Yes: in the place's panel, **Your notes** takes a web address, an Obsidian or OneNote link, or a file or folder on your PC, and **Open** opens it in its own program.
 

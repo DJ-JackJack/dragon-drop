@@ -75,6 +75,21 @@ describe("which river is which (water model stage 3)", () => {
     expect(waterAt(rivers, [lake], 150, 250, 3)).toBeNull();
   });
 
+  it("draws a name at its own size: a bigger name, and a longer stretch of river to hold it", () => {
+    const lake: LakeShape = { x: 200, y: 50, areaKm2: 3000, outflow: "river", outline: [[190, 40], [210, 40], [210, 60], [190, 60]] };
+    const plain = resolveWaterNames([{ id: "w-a", kind: "river", name: "Alder", x: 30, y: 51 }], net, [lake], { mapWidth: 1024, kmPerPx: 2 });
+    const big = resolveWaterNames([
+      { id: "w-a", kind: "river", name: "Alder", x: 30, y: 51, nameSize: 2 },
+      { id: "w-l", kind: "lake", name: "Still Water", x: 205, y: 45, nameSize: 2 },
+    ], net, [lake], { mapWidth: 1024, kmPerPx: 2 });
+    const len = (p: [number, number][]) => p.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - p[i][0], q[1] - p[i][1]), 0);
+    const a0 = plain.labels.find((l) => l.id === "w-a")!, a = big.labels.find((l) => l.id === "w-a")!;
+    expect(a0.size).toBeUndefined();
+    expect(a.size).toBe(2);
+    expect(len(a.path!)).toBeGreaterThan(len(a0.path!));
+    expect(big.labels.find((l) => l.id === "w-l")!.size).toBe(2.5); // (a great lake's 1.25, times its own 2)
+  });
+
   it("keeps a name on its river on a generated map, and tells the sea from the edge", () => {
     const d = createDoc({ id: "n", name: "N", width: 256, height: 256, kmPerPx: 3 });
     generateTerrain(d, { template: "island", seed: 21, landFraction: 0.45, mountains: 0.7 });

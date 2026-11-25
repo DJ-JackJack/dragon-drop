@@ -4,8 +4,9 @@ import { useState, useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
-  cityWallPieces, wallPieces, wallSettings, cityRoute, LAND_STARTS, type LandStart, newSeed, startLand,
+  cityWallPieces, wallPieces, wallSettings, cityRoute, LAND_STARTS, type LandStart, newSeed, startLand, withNameSize,
 } from "@mapmaker/core";
+import { LABEL_SIZE_MIN, LABEL_SIZE_MAX, NameSizeSlider } from "./NameSize.tsx";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
@@ -192,7 +193,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
 }
 
 /** The city in numbers, for the Map panel (a city can have thousands of buildings, so they are counted here, never listed), and its land and climate. */
-export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {
+export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSize }: { meta: MapMeta | null; features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void; labelSize?: number; onLabelSize?: (n: number) => void }) {
   const c = meta?.city;
   if (!c) return null;
   const row = (k: string, v: string) => <div className="kv" key={k}><span>{k}</span><b>{v}</b></div>;
@@ -236,6 +237,7 @@ export function CitySummary({ meta, features, ui, onUi }: { meta: MapMeta | null
         <h3>Layers</h3>
         <label className="check eye"><input type="checkbox" checked={ui.contours} onChange={(e) => onUi({ contours: e.target.checked })} data-testid="city-contours" /> Contour lines</label>
         <label className="check eye"><input type="checkbox" checked={ui.names} onChange={(e) => onUi({ names: e.target.checked })} data-testid="city-names" /> Names and labels</label>
+        {onLabelSize && <label className="check" title="How big every name is drawn, on screen and in exports (each name can also have its own size: select it)."><span>Label size</span> <input type="range" data-testid="label-size" min={LABEL_SIZE_MIN} max={LABEL_SIZE_MAX} step={0.1} value={labelSize} onChange={(e) => onLabelSize(Number(e.target.value))} style={{ width: "100%" }} /></label>}
       </section>
     </>
   );
@@ -357,6 +359,7 @@ function BuildingEditor({ b, roofSource, onClear, onRemove }: { b: MapBuilding; 
         <input key={b.id + (b.name ?? "")} defaultValue={b.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (b.name ?? "")) { const { name: _n, ...rest } = b; sendCityFeatures({ upsertBuildings: [v ? { ...rest, name: v } : rest] }, v ? `Name building ${v}` : "Clear building name"); } }} data-testid="city-name" />
       </label>
       {b.name && <GmOnlyBox on={!!b.gmOnly} what="this building's name" onChange={(on) => set({ gmOnly: on || undefined }, on ? `Make ${b.name} GM only` : `Show ${b.name} to players`)} />}
+      {b.name && <NameSizeSlider value={b.nameSize} onCommit={(v) => sendCityFeatures({ upsertBuildings: [withNameSize(b, v)] }, `Name size of ${b.name}`)} testid="city-name-size" />}
       <label className="field">What it is
         <select value={b.kind ?? "other"} onChange={(e) => set({ kind: e.target.value as BuildingKind }, `Kind: ${e.target.value}`)} data-testid="city-edit-kind">
           {BUILDING_KINDS.map((k) => <option key={k} value={k}>{KIND_NAMES[k]}</option>)}
@@ -410,6 +413,7 @@ function StreetEditor({ s, onClear, onRemove }: { s: MapStreet; onClear: () => v
       <label className="field">Name (only a name you chose)
         <input key={s.id + (s.name ?? "")} defaultValue={s.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.name ?? "")) { const { name: _n, ...rest } = s; sendCityFeatures({ upsertStreets: [v ? { ...rest, name: v } : rest] }, v ? `Name street ${v}` : "Clear street name"); } }} data-testid="city-name" />
       </label>
+      {s.name && <NameSizeSlider value={s.nameSize} onCommit={(v) => sendCityFeatures({ upsertStreets: [withNameSize(s, v)] }, `Name size of ${s.name}`)} testid="city-name-size" />}
       <label className="field">Kind
         <select value={s.kind ?? ""} onChange={(e) => { const k = STREET_KINDS.find((x) => x.id === e.target.value); if (k) set({ kind: k.id, width: k.width }, `Street kind: ${k.name}`); }} data-testid="city-street-edit-kind">
           {!s.kind && <option value="">(custom)</option>}
@@ -439,6 +443,7 @@ function DistrictEditor({ d, features, onClear, onRemove }: { d: MapDistrict; fe
       <label className="field">Name (only a name you chose)
         <input key={d.id + (d.name ?? "")} defaultValue={d.name ?? ""} maxLength={80} data-testid="city-name" onBlur={(e) => { const v = e.target.value.trim(); if (v !== (d.name ?? "")) { const { name: _n, ...rest } = d; sendCityFeatures({ upsertDistricts: [v ? { ...rest, name: v } : rest] }, v ? `Name district ${v}` : "Clear district name"); } }} />
       </label>
+      {d.name && <NameSizeSlider value={d.nameSize} onCommit={(v) => sendCityFeatures({ upsertDistricts: [withNameSize(d, v)] }, `Name size of ${d.name}`)} testid="city-name-size" />}
       <label className="field">Colour
         <span className="row">
           <input type="color" value={districtColour(d)} onChange={(e) => sendCityFeatures({ upsertDistricts: [{ ...d, colour: e.target.value }] }, "District colour")} data-testid="city-district-colour" />

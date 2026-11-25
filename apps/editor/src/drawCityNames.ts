@@ -31,7 +31,7 @@ const meets = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b
 /** Draw the names; returns the labels' hit boxes (streets and buildings are clicked as themselves). */
 export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: CityNameView, selected?: ReadonlySet<string> | null): Hit[] {
   // the labels and districts' names first, so a street's or building's name never lands on one (it is left out where it would)
-  const districtNames: MapLabel[] = (f.districts ?? []).filter((d) => d.name).map((d) => { const [x, y] = districtCentre(d.points); return { id: d.id, text: d.name!, kind: "region", x, y }; });
+  const districtNames: MapLabel[] = (f.districts ?? []).filter((d) => d.name).map((d) => { const [x, y] = districtCentre(d.points); return { id: d.id, text: d.name!, kind: "region", x, y, ...(d.nameSize && { size: d.nameSize }) }; });
   const hits = drawFeatures(ctx, { places: [], labels: [...districtNames, ...(f.labels ?? [])], lines: [] }, { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: v.widthM, fitScale: v.fitScale, labelScale: v.labelScale, markers: false, faintGmOnly: v.faintGmOnly }, selected ?? null);
   const taken: Box[] = hits.map(({ x0, y0, x1, y1 }) => ({ x0, y0, x1, y1 }));
   ctx.save();
@@ -43,7 +43,7 @@ export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: Cit
     if (Math.max(x1 - x0, y1 - y0) * v.scale < 18) continue;
     const [cx0, cy0] = polygonCentroid(b.points as Pt[]), cx = v.ox + cx0 * v.scale, cy = v.oy + cy0 * v.scale;
     if (cx < -200 || cy < -20 || cx > v.W + 200 || cy > v.H + 20) continue;
-    const px = Math.max(10, Math.min(15, 3 * v.scale));
+    const px = Math.max(10, Math.min(15, 3 * v.scale)) * (b.nameSize ?? 1) * (v.labelScale ?? 1);
     ctx.font = `700 ${px}px Cinzel, Georgia, serif`;
     const w = ctx.measureText(b.name).width, box = { x0: cx - w / 2 - 2, y0: cy - px * 0.7, x1: cx + w / 2 + 2, y1: cy + px * 0.7 };
     if (taken.some((t) => meets(t, box))) continue;
@@ -61,7 +61,8 @@ export function drawCityNames(ctx: CanvasRenderingContext2D, f: Features, v: Cit
 
 /** A street's name along it: in the middle of the part in view, letter by letter along the line, read left to right; skipped when it doesn't fit. */
 function streetName(ctx: CanvasRenderingContext2D, s: MapStreet, v: CityNameView, taken: Box[]) {
-  const px = Math.min(30, s.width * 0.62 * v.scale);
+  // (as tall as about two thirds of the street, at most 30 px, times the name's own size and the Label size setting)
+  const k = (s.nameSize ?? 1) * (v.labelScale ?? 1), px = Math.min(30 * k, s.width * 0.62 * v.scale * k);
   if (px < 8 || !s.name) return;
   let pts: Pt[] = s.points.map(([x, y]) => [v.ox + x * v.scale, v.oy + y * v.scale]);
   const cumOf = (p: Pt[]) => { const c = [0]; for (let i = 1; i < p.length; i++) c.push(c[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1])); return c; };

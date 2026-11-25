@@ -21,6 +21,8 @@ export interface ExportOptions {
   furniture: boolean;
   /** A picture for players: GM-only places, labels and roads are left out (secrets.ts). */
   players?: boolean;
+  /** The Label size setting: names and markers bigger or smaller, as on screen (1 when absent). */
+  labelScale?: number;
 }
 
 export const EXPORT_FACTORS = [1, 2, 4, 8];
@@ -46,7 +48,7 @@ function renderRegion(ctx: CanvasRenderingContext2D, src: ExportSource, o: Expor
   }
   const view = { scale: k, ox: -x, oy: -y, mapWidth: meta.width, mapHeight: meta.height, kmPerPx: meta.kmPerPx };
   if (o.grid) drawMapGrid(ctx, meta.grid, view, w, h);
-  if (o.features) drawFeatures(ctx, o.players ? playerView(src.features) : src.features, { scale: k, ox: -x, oy: -y, mapWidth: meta.width }, null);
+  if (o.features) drawFeatures(ctx, o.players ? playerView(src.features) : src.features, { scale: k, ox: -x, oy: -y, mapWidth: meta.width, labelScale: o.labelScale }, null);
   if (o.furniture) {
     ctx.save();
     ctx.translate(-x, -y);

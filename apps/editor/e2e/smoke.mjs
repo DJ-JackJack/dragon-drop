@@ -294,6 +294,13 @@ try {
   await page.getByTestId("gm-only").click();
   await page.getByTestId("history").getByText("Make Test Harbour GM only").waitFor({ timeout: 10000 });
   if (!(await page.getByTestId("gm-only").isChecked())) fail("the place should show as GM only once marked");
+  // its name's own size: the slider sends it when let go (one undo step), and "Usual size" puts it back
+  await page.getByTestId("place-name-size").fill("2");
+  await page.getByTestId("place-name-size").blur();
+  await page.getByTestId("history").getByText("Name size of Test Harbour").first().waitFor({ timeout: 10000 });
+  await page.getByTestId("place-name-size-reset").click();
+  await page.getByTestId("history").getByText("Name size of Test Harbour").nth(1).waitFor({ timeout: 10000 });
+  if ((await page.getByTestId("place-name-size").inputValue()) !== "1") fail("Usual size should put the place's name back to 1x");
   // a link to the DM's own notes: pasted and kept, with an Open button (not clicked here: it would open another program)
   await page.getByTestId("note-link-input").fill("https://example.com/wiki/Test_Harbour");
   await page.getByTestId("note-link-input").press("Enter");
@@ -387,9 +394,12 @@ try {
   await page.getByTestId("history").getByText(/title, scale bar, compass/).first().waitFor({ timeout: 10000 });
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(shots, "e2e-3e-extras.png") });
+  // the export follows the Label size setting (it used to draw every name at 1x whatever the setting)
+  await page.getByTestId("label-size").fill("1.6");
   await page.getByTestId("export-button").click();
   await page.getByTestId("export-dialog").getByText(/4096 × 4096 px/).waitFor({ timeout: 5000 });
   if (!(await page.getByTestId("export-players").isChecked())) fail("the export should be for players by default when something is GM only"); // (the first map is 1024 px: its 4× size; tiling is covered by the exportPlan unit tests)
+  if ((await page.getByTestId("export-label-size").inputValue()) !== "1.6") fail("the export's Label size should start at the Label size setting");
   await page.getByTestId("export-size-1").check();
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("export-go").click()]);
   if (!/\(1x\)\.png$/.test(download.suggestedFilename())) fail(`unexpected export name ${download.suggestedFilename()}`);
@@ -399,6 +409,20 @@ try {
   if (png.subarray(1, 4).toString() !== "PNG" || png.readUInt32BE(16) !== 1024 || png.readUInt32BE(20) !== 1024) fail("the exported PNG isn't 1024 x 1024");
   if (statSync(dpath).size < 200000) fail("the exported PNG looks empty");
   await page.getByTestId("export-dialog").waitFor({ state: "detached", timeout: 10000 });
+  {
+    // the same export with the names at 0.6x: far less ink (names and markers are the only near-black on the map)
+    const { PNG } = createRequire(path.join(root, "packages/tools/package.json"))("pngjs");
+    const ink = (buf) => { const d = PNG.sync.read(buf).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 40 && d[i + 1] < 40 && d[i + 2] < 50) n++; return n; };
+    await page.getByTestId("export-button").click();
+    await page.getByTestId("export-size-1").check();
+    await page.getByTestId("export-label-size").fill("0.6");
+    const [small] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), page.getByTestId("export-go").click()]);
+    const big = ink(png), little = ink(readFileSync(await small.path()));
+    // (the title, scale bar and compass are drawn the same in both, so the names make the difference)
+    if (!(big - little > 300)) fail(`names at Label size 1.6 should take much more ink in the export than at 0.6 (${big} against ${little} dark pixels)`);
+    await page.getByTestId("export-dialog").waitFor({ state: "detached", timeout: 10000 });
+    await page.getByTestId("label-size").fill("1");
+  }
   // climate panel opens and shows its sliders
   await page.locator("details.climate").filter({ hasText: "Top edge latitude" }).locator("summary").click();
   await page.getByText(/^Snowline \d+ m/).waitFor();
@@ -416,6 +440,7 @@ try {
   await page.locator(".pending .thumb button").first().click(); // (taken off again: the steps below attach the sketch)
   if ((await page.locator(".pending .thumb").count()) !== 0) throw new Error("the WebP thumbnail did not go away");
   await page.locator('.composer input[type="file"]').setInputFiles(path.join(tmp, "e2e-sketch.png")); // (kept in the project's references: the sketch step below uses it)
+  await page.locator(".pending .thumb").first().waitFor({ timeout: 10000 }); // (read in the background: sent before it is ready, the message would go without it)
   await page.getByTestId("chat-input").fill("Add a small island in the inner sea");
   await page.keyboard.press("Enter");
   await page.getByText("Want hills on it, or a name?").waitFor({ timeout: 20000 });
@@ -1122,7 +1147,8 @@ try {
     await page.getByTestId("level-add-above").click();
     await waitOn("level-2");
     await page.getByTestId("battle-summary").getByText(/0 doors/).waitFor({ timeout: 10000 });
-    await page.waitForTimeout(1200); // (the faint picture of the level below is fetched from the server)
+    // (the faint picture of the level below is fetched from the server: give a busy PC up to 15 s)
+    for (let t = 0; t < 30 && (await painted()) < 12; t++) await page.waitForTimeout(500);
     if ((await painted()) < 12) fail("the upper level's canvas looks blank (the level below should show through it)");
     await page.screenshot({ path: path.join(shots, "e2e-4e-levels.png") });
     await page.keyboard.press("PageDown");

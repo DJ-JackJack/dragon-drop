@@ -13,6 +13,7 @@ import {
   type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
   type LakeShape, type NamedWater, type RiverNet, type LinkedMap, COPYABLE, copyFeaturesFrom, copyHeightsFrom, heightsFromState, mapTransform,
   MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, battleRoute, battleSpec, cityRoute, describeRoute, surveyRoute, travelEstimates,
+  cleanNameSize,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -27,7 +28,7 @@ import { REALM_TOOLS, REALM_TOOL_NAMES } from "./realmTools.ts";
 import { MAP_TOOLS } from "./mapTools.ts";
 import { type PictureWork, encodeJpeg, inlinePictures, toBase64 } from "./images.ts";
 import { refusal, riskOf } from "./risky.ts";
-import { define, fail, json, text } from "./toolKit.ts";
+import { NameSizeSchema, define, fail, json, text } from "./toolKit.ts";
 
 export interface ToolContext {
   /** Reading pictures off the server's main thread (missing: read here). */
@@ -1085,11 +1086,12 @@ export const TOOLS = [
       notes: z.string().max(1000).optional(),
       link: z.string().max(2000).optional().describe("The DM's own notes on it, only a link the DM gave: a web address, an Obsidian or OneNote link, or a file or folder path on their PC; an empty text removes it"),
       hide_marker: z.boolean().optional(),
+      name_size: NameSizeSchema.optional(),
     }),
     async run(ctx, i) {
       if (i.link && linkProblem(i.link)) return { ...text(linkProblem(i.link)!), isError: true };
       const place: Place = { id: newFeatureId("p"), name: i.name, type: i.type, x: i.x, y: i.y, notes: i.notes, ...(i.link && { link: i.link.trim() }),
-        ...(i.hide_marker && { hideMarker: true }) };
+        ...(i.hide_marker && { hideMarker: true }), ...(cleanNameSize(i.name_size) !== undefined && { nameSize: cleanNameSize(i.name_size) }) };
       const r = ctx.execute({ op: "features", patch: { upsertPlaces: [place] }, label: `Add place ${i.name}` });
       return json({ change: r.seq, place });
     },
@@ -1097,7 +1099,7 @@ export const TOOLS = [
 
   define({
     name: "update_place",
-    description: "Move, rename, retype or annotate a place (find it by id or name).",
+    description: "Move, rename, retype or annotate a place (find it by id or name), or make its name bigger or smaller (name_size).",
     schema: z.object({
       place: z.string().describe("Place id or current name"),
       name: z.string().min(1).max(80).optional(),
@@ -1108,6 +1110,7 @@ export const TOOLS = [
       hide_name: z.boolean().optional(),
       hide_marker: z.boolean().optional(),
       name_pos: z.enum(["auto", "right", "left", "above", "below"]).optional().describe("Side of the marker for the name (default auto: the first free side)"),
+      name_size: NameSizeSchema.optional(),
     }),
     async run(ctx, i) {
       const p = findPlace(featuresOf(ctx), i.place);
@@ -1117,6 +1120,7 @@ export const TOOLS = [
         ...(i.notes !== undefined && { notes: i.notes }), ...(i.hide_name !== undefined && { hideName: i.hide_name }),
         ...(i.hide_marker !== undefined && { hideMarker: i.hide_marker }),
         ...(i.name_pos !== undefined && { namePos: i.name_pos }) };
+      if (i.name_size !== undefined) { const v = cleanNameSize(i.name_size); if (v === undefined) delete next.nameSize; else next.nameSize = v; }
       if (i.link !== undefined) {
         if (!i.link.trim()) delete next.link;
         else if (linkProblem(i.link)) return { ...text(linkProblem(i.link)!), isError: true };

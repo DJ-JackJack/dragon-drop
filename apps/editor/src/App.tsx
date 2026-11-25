@@ -323,7 +323,7 @@ export function App() {
           <ToolRail groups={TOOL_GROUPS} active={tool} onPick={(id) => setTool(id as Tool)} names={railNames} onNames={toggleRailNames} />
         )}
         {isCity ? (
-          <CityView meta={s.meta} features={s.features} ui={cui} onUi={onCui} />
+          <CityView meta={s.meta} features={s.features} ui={cui} onUi={onCui} labelScale={labelSize} />
         ) : isBattle ? (
           <BattleView meta={s.meta} features={s.features} levels={s.levels} ui={bui} onUi={onBui} />
         ) : (
@@ -355,7 +355,7 @@ export function App() {
           {isCity && s.meta && (
             <>
               <CityInspector features={s.features} ui={cui} onUi={onCui} />
-              <CitySummary meta={s.meta} features={s.features} ui={cui} onUi={onCui} />
+              <CitySummary meta={s.meta} features={s.features} ui={cui} onUi={onCui} labelSize={labelSize} onLabelSize={setLabelSize} />
             </>
           )}
           {isBattle && s.meta && (
@@ -393,7 +393,7 @@ export function App() {
               <label className="check eye"><input type="checkbox" checked={hillshade} onChange={(e) => setHillshade(e.target.checked)} /> Relief shading</label>
             )}
             <label className="check" title="When zoomed in, blend the terrain's pixels softly instead of drawing hard blocks"><input type="checkbox" data-testid="smooth-zoom" checked={smooth} onChange={(e) => setSmooth(e.target.checked)} /> Smooth zoom</label>
-            <label className="check" title="How big place names, labels and markers are drawn. They already grow only a little when you zoom in."><span>Label size</span> <input type="range" data-testid="label-size" min={0.4} max={1.6} step={0.1} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} style={{ width: "100%" }} /></label>
+            <label className="check" title="How big place names, labels and markers are drawn, on screen and in exports. They already grow only a little when you zoom in. Each name can also have its own size: select it."><span>Label size</span> <input type="range" data-testid="label-size" min={0.4} max={1.6} step={0.1} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} style={{ width: "100%" }} /></label>
             <label className="check eye"><input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Coordinate numbers (G)</label>
             {s.meta && <GridPanel meta={s.meta} />}
             {s.meta && <ExtrasPanel meta={s.meta} />}

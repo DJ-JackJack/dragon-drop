@@ -5,9 +5,10 @@
 import { z } from "zod";
 import {
   type MapRealm, REALM_COLOURS, linkProblem, decodeRealmCells, encodeRealmCells, isRealmColour, isWorld, newFeatureId, nextRealmNumber, paintRealmCells, realmAreas, realmGridOf, shapeContains,
+  cleanNameSize,
 } from "@mapmaker/core";
 import type { ToolContext } from "./tools.ts";
-import { define, fail, json } from "./toolKit.ts";
+import { NameSizeSchema, define, fail, json } from "./toolKit.ts";
 
 type Pt = [number, number];
 const pt = z.tuple([z.number(), z.number()]);
@@ -105,11 +106,11 @@ export const REALM_TOOLS = [
 
   define({
     name: "update_realm",
-    description: "Change a realm: its name (only to one the DM gave; the DM is asked first), colour, whether its name is written on the map, GM only, notes.",
+    description: "Change a realm: its name (only to one the DM gave; the DM is asked first), colour, whether its name is written on the map and how big (name_size), GM only, notes.",
     schema: z.object({
       realm: z.string().min(1).describe("Its name or id"),
       name: z.string().min(1).max(80).optional(), colour: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-      hide_name: z.boolean().optional(), gm_only: z.boolean().optional(), notes: z.string().max(2000).optional(),
+      hide_name: z.boolean().optional(), gm_only: z.boolean().optional(), notes: z.string().max(2000).optional(), name_size: NameSizeSchema.optional(),
       link: z.string().max(2000).optional().describe("The DM's own notes on it (only a link the DM gave): a web address, an Obsidian or OneNote link, or a file path; an empty text removes it"),
     }),
     async run(ctx, i) {
@@ -119,6 +120,7 @@ export const REALM_TOOLS = [
       const next: MapRealm = { ...r, ...(i.name && { name: i.name.trim() }), ...(i.colour && isRealmColour(i.colour) && { colour: i.colour }), ...(i.notes !== undefined && { notes: i.notes }) };
       if (i.hide_name !== undefined) { if (i.hide_name) next.hideName = true; else delete next.hideName; }
       if (i.gm_only !== undefined) { if (i.gm_only) next.gmOnly = true; else delete next.gmOnly; }
+      if (i.name_size !== undefined) { const v = cleanNameSize(i.name_size); if (v === undefined) delete next.nameSize; else next.nameSize = v; }
       if (i.link !== undefined) {
         if (!i.link.trim()) delete next.link;
         else if (linkProblem(i.link)) return fail(linkProblem(i.link)!);

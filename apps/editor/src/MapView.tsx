@@ -1209,7 +1209,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       {status && meta && loadedId === meta.id && <div className="mapview-busy">{status}</div>}
       {exportOpen && meta && (
         <ExportDialog
-          meta={meta} onClose={() => setExportOpen(false)}
+          meta={meta} onClose={() => setExportOpen(false)} labelScale={labelScale}
           source={() => (offRef.current ? { off: offRef.current, meta, features: withWaterLabels(featuresRef.current, waterRef.current), rivers: riverChunks.current } : null)}
         />
       )}

@@ -5,7 +5,7 @@
  * water...), and the buildings and streets live with the other features. A building is drawn as a roof (battleRoof.ts), which is what a building looks like from above.
  */
 import { HeightField, type MapDoc } from "./doc.ts";
-import { type LabelKind, type MapBuilding, type MapRoof, type MapStreet, type RoofStyle, ROOF_STYLES, STREET_KINDS, emptyFeatures } from "./features.ts";
+import { type LabelKind, type MapBuilding, type MapRoof, type MapStreet, type RoofStyle, ROOF_STYLES, STREET_KINDS, cleanNameSize, emptyFeatures } from "./features.ts";
 import { ROOF_BASE, roofColour } from "./battleRoof.ts";
 import { parseAssetId } from "./assets.ts";
 import { DEFAULT_ROOF_TILE_M } from "./roofAssets.ts";
@@ -199,6 +199,9 @@ export function cleanBuilding(b: unknown, spec: CitySpec): MapBuilding | { error
   if (area > (spec.widthM * spec.heightM) / 4) return { error: `building ${o.id} covers more than a quarter of the city` };
   const out: MapBuilding = { id: o.id, points };
   if (typeof o.name === "string" && o.name.trim()) out.name = o.name.trim().slice(0, 80);
+  const ns = cleanNameSize(o.nameSize);
+  if (out.name && ns !== undefined) out.nameSize = ns;
+  if (o.gmOnly === true) out.gmOnly = true;
   if (typeof o.roof === "string" && (ROOF_STYLES as readonly string[]).includes(o.roof)) out.roof = o.roof as RoofStyle;
   if (typeof o.colour === "string" && roofColour(o.colour)) out.colour = `#${o.colour.replace("#", "").toLowerCase()}`;
   if (o.flat === true) out.flat = true;
@@ -227,6 +230,8 @@ export function cleanStreet(s: unknown, spec: CitySpec): MapStreet | { error: st
   if (kind) out.kind = kind;
   if (o.bridge === "stone" || o.bridge === "wood" || o.bridge === "none") out.bridge = o.bridge;
   if (typeof o.name === "string" && o.name.trim()) out.name = o.name.trim().slice(0, 80);
+  const ns = cleanNameSize(o.nameSize);
+  if (out.name && ns !== undefined) out.nameSize = ns;
   return out;
 }
 

@@ -7,13 +7,14 @@ import {
   BUILDING_KINDS, MATERIALS, type MapBuilding, type MapStreet, type Rect, type RoofChoice, type Shape, ROOF_STYLES, STREET_KINDS, chooseRoof, citySpec, cityGroundMaterial, cleanBuilding, cleanStreet,
   cityBattleBoxAt, drawCityNames, drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
   LAND_START_IDS, LAND_STARTS,
+  cleanNameSize,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
 import { landSummary } from "./cityLandTools.ts";
 import { describeWall } from "./cityWallTools.ts";
 import type { ToolContext, ToolResult } from "./tools.ts";
-import { define, fail, json, text } from "./toolKit.ts";
+import { NameSizeSchema, define, fail, json, text } from "./toolKit.ts";
 
 const Pt = z.tuple([z.number(), z.number()]);
 const Roof = z.enum(ROOF_STYLES as unknown as [string, ...string[]]);
@@ -454,7 +455,7 @@ export const CITY_TOOLS = [
   define({
     name: "update_buildings",
     description:
-      "Change buildings by id (from add_buildings or list_buildings, up to 500): the same roof, colour, flat, kind or floors for all of them (colour \"\" goes back to the roof look's own). name only when changing one building. " +
+      "Change buildings by id (from add_buildings or list_buildings, up to 500): the same roof, colour, flat, kind or floors for all of them (colour \"\" goes back to the roof look's own). name only when changing one building; name_size makes named buildings' names bigger or smaller. " +
       "Changing the roof look gives a building that has a roof picture a new picture that fits the new look (or draws the look when the packs have none); roof_asset: auto picks pictures for these buildings, none draws their look, or an asset id sets one. " +
       "A colour draws the roof in that colour (it replaces a picture) unless roof_asset says otherwise. To move or reshape a building, remove it and add it again.",
     schema: z.object({
@@ -462,6 +463,7 @@ export const CITY_TOOLS = [
       roof: Roof.optional(), colour: z.union([Colour, z.literal("")]).optional(), flat: z.boolean().optional(),
       kind: Kind.optional(), floors: z.number().int().min(1).max(30).optional(),
       name: z.string().max(80).optional().describe("One building only; an empty string removes the name"),
+      name_size: NameSizeSchema.optional(),
       roof_asset: z.string().optional().describe("auto, none, or a roof texture's asset id (from find_roof_assets)"),
       roof_match: z.string().max(60).optional().describe("With auto: words the roof pictures' names should have"),
     }),
@@ -492,6 +494,7 @@ export const CITY_TOOLS = [
         if (i.kind) n.kind = i.kind as MapBuilding["kind"];
         if (i.floors) n.floors = i.floors;
         if (i.name !== undefined) { if (i.name.trim()) n.name = i.name.trim(); else delete n.name; }
+        if (i.name_size !== undefined) { const v = cleanNameSize(i.name_size); if (v === undefined || !n.name) delete n.nameSize; else n.nameSize = v; }
         out.push(n);
       }
       if (!out.length) return fail(`No such building: ${missing.slice(0, 5).join(", ")}. list_buildings finds ids.`);
@@ -560,11 +563,11 @@ export const CITY_TOOLS = [
 
   define({
     name: "update_streets",
-    description: "Change streets by id (from list_streets): name, kind (sets the width that goes with it unless width is given), width, or bridge (what it becomes where it crosses water). One edit.",
+    description: "Change streets by id (from list_streets): name, how big the name is written (name_size), kind (sets the width that goes with it unless width is given), width, or bridge (what it becomes where it crosses water). One edit.",
     schema: z.object({
       changes: z.array(z.object({
         id: z.string(), name: z.string().max(80).optional().describe("Only a name the DM gave; empty removes it"), kind: z.enum(STREET_KINDS.map((k) => k.id) as [string, ...string[]]).optional(),
-        width: z.number().min(0.5).max(60).optional(), bridge: Bridge,
+        width: z.number().min(0.5).max(60).optional(), bridge: Bridge, name_size: NameSizeSchema.optional(),
       })).min(1).max(200),
     }),
     async run(ctx, i) {
@@ -576,7 +579,7 @@ export const CITY_TOOLS = [
         if (!cur) { skipped.push(`${ch.id}: no such street`); continue; }
         const { bridge: _b, name: _n, ...rest } = cur;
         const bridge = ch.bridge === undefined ? cur.bridge : ch.bridge === "auto" ? undefined : ch.bridge, name = ch.name === undefined ? cur.name : ch.name || undefined;
-        const c = cleanStreet({ ...rest, ...(ch.kind && { kind: ch.kind, width: streetWidthFor(ch.kind) }), ...(ch.width !== undefined && { width: ch.width }), ...(bridge && { bridge }), ...(name && { name }) }, sp);
+        const c = cleanStreet({ ...rest, ...(ch.kind && { kind: ch.kind, width: streetWidthFor(ch.kind) }), ...(ch.width !== undefined && { width: ch.width }), ...(bridge && { bridge }), ...(name && { name }), ...(ch.name_size !== undefined && { nameSize: ch.name_size }) }, sp);
         if ("error" in c) skipped.push(c.error); else out.push(c);
       }
       if (!out.length) return fail(`Nothing changed. ${skipped.join("; ")}`);
