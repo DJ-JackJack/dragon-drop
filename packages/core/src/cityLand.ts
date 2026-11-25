@@ -255,8 +255,34 @@ type RGB = [number, number, number];
 const mix = (a: readonly number[], b: readonly number[], t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t].map((v) => Math.round(v)) as RGB;
 const SNOW: RGB = [232, 238, 244];
 
-/** The ground materials' colours in this climate (indexed by material id): grass and forest floor greener when wet, golden when dry, sandy in a desert, grey-green and then white when cold. */
-export function cityGroundColours(c: CityClimate): RGB[] {
+/** The materials a settlement's ground can have a colour of its own for: every one but the void (by id and name). */
+export const GROUND_COLOUR_MATERIALS: readonly { id: number; name: string }[] = MATERIALS.map((m, id) => ({ id, name: m.name })).filter((m) => m.id > 0);
+
+/** A ground material's id by its name ("grass", "deep water"; any case), or undefined. */
+export function groundMaterialId(name: string): number | undefined {
+  const n = name.trim().toLowerCase();
+  return GROUND_COLOUR_MATERIALS.find((m) => m.name === n)?.id;
+}
+
+const OWN_HEX = /^#?([0-9a-fA-F]{6})$/;
+
+/** A settlement's own ground colours from outside (a message or a tool), checked and tidied ("#rrggbb", known materials); an error names the first bad one. */
+export function cleanGroundColours(raw: unknown): Record<string, string> | { error: string } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { error: "ground colours are a material's name to a colour" };
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const id = groundMaterialId(k);
+    if (id === undefined) return { error: `there is no ground "${k}" (the grounds are ${GROUND_COLOUR_MATERIALS.map((m) => m.name).join(", ")})` };
+    const m = typeof v === "string" ? OWN_HEX.exec(v.trim()) : null;
+    if (!m) return { error: `the colour of ${k} must be "#rrggbb"` };
+    out[MATERIALS[id].name] = `#${m[1].toLowerCase()}`;
+  }
+  return out;
+}
+
+/** The ground materials' colours in this climate (indexed by material id): grass and forest floor greener when wet, golden when dry, sandy in a desert, grey-green and then white when cold.
+ *  `own` (a settlement's `CitySpec.ground`) replaces the colour of each material it names, whatever the climate. */
+export function cityGroundColours(c: CityClimate, own?: Record<string, string>): RGB[] {
   const out = MATERIALS.map((m) => [...m.colour] as RGB);
   const T = c.temperature, M = c.moisture, snow = snowCover(c);
   const dry = clamp((0.5 - M) / 0.3, 0, 1), desert = clamp((0.16 - M) / 0.1, 0, 1), lush = clamp((M - 0.7) / 0.2, 0, 1) * clamp((T - 0.55) / 0.2, 0, 1), cold = clamp((0.32 - T) / 0.15, 0, 1);
@@ -271,6 +297,10 @@ export function cityGroundColours(c: CityClimate): RGB[] {
   out[15] = mix(vegetation(MATERIALS[15].colour), MATERIALS[15].colour, 0.35); // forest floor (the trees shelter it a little)
   for (const id of [4, 14]) out[id] = mix(mix(out[id], [160, 132, 96], dry * 0.7), SNOW, snow * 0.6); // dirt and mud: dusty when dry
   for (const id of [1, 2, 12, 13]) out[id] = mix(out[id], SNOW, snow * 0.45); // stone: snow in the cracks
+  for (const [name, hex] of Object.entries(own ?? {})) {
+    const id = groundMaterialId(name), m = OWN_HEX.exec(hex);
+    if (id !== undefined && m) out[id] = [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+  }
   return out;
 }
 

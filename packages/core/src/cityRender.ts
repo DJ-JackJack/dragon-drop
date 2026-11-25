@@ -92,7 +92,7 @@ function touches(points: [number, number][], x0: number, y0: number, x1: number,
 const SNOW: [number, number, number] = [236, 241, 247];
 
 function paintGround(doc: MapDoc, spec: CitySpec, img: LookImage, OX: number, OY: number, px: number, land: LandGrid | null) {
-  const cols = cityGroundColours(cityClimate(spec)), grass = cols[5] ?? MATERIALS[5].colour;
+  const cols = cityGroundColours(cityClimate(spec), spec.ground), grass = cols[5] ?? MATERIALS[5].colour;
   const { w: cw, h: ch, data } = doc.height, cell = spec.cellM;
   const shade = land ? landShade(land) : null;
   const colour = (cx: number, cy: number): [number, number, number] => {

@@ -17,6 +17,7 @@ import {
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
   type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand, fitTrace, imageSize, IMAGE_HEAD_BYTES,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
+  groundHex, groundMaterialId, groundSamplePoints, type sampleGroundColours, MATERIALS,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -582,6 +583,25 @@ export class Hub {
     const data = doc.height.data;
     for (const { material, runs } of res.runs) for (let i = 0; i < runs.length; i += 2) for (let k = 0; k < runs[i + 1]; k++) if (Math.round(data[runs[i] + k]) === material) already++;
     return { runs: res.runs, cells: res.cells, alreadyThere: already };
+  }
+
+  /**
+   * Colour the open settlement's ground from its trace picture (core cityGround.ts): each kind of ground painted on the map takes the picture's middle colour
+   * under cells of it that nothing stands on, as one edit of the settlement's settings (undone in one step). `only` limits it to some grounds (by name).
+   */
+  async cityGroundFromPicture(author: "user" | "claude" = "user", only?: string[]): Promise<{ colours: Record<string, string>; samples: Record<string, number> }> {
+    const { op, doc, t, bytes, toPic, key } = await this.tracedCity();
+    const want = only?.length ? new Set(only.map((n) => groundMaterialId(n)).filter((id): id is number => id !== undefined)) : null;
+    const groups = groundSamplePoints(doc).filter((g) => !want || want.has(g.material)).map((g) => ({ material: g.material, points: g.points.map((p) => toPic(p)) }));
+    if (!groups.length) throw new Error("There is no open ground to measure: paint the ground first (or the picture's area has buildings, streets or woods everywhere).");
+    const res = await this.compute.readPictureAs(key, new Uint8Array(bytes), { what: "ground", opts: { groups } }) as ReturnType<typeof sampleGroundColours>;
+    if (!res.length) throw new Error(`Too little of the ground lies under the trace picture "${t.ref}" to measure its colours: line the picture up over the map first.`);
+    const colours: Record<string, string> = {}, samples: Record<string, number> = {};
+    for (const r of res) { const name = MATERIALS[r.material].name; colours[name] = groundHex(r.rgb); samples[name] = r.n; }
+    if (this.open !== op) throw new Error("Another map was opened meanwhile.");
+    const sp = citySpec(op.session.doc);
+    op.session.execute({ op: "set_meta", patch: { city: { ...sp, ground: { ...(sp.ground ?? {}), ...colours } } }, label: `Ground colours from the picture (${Object.keys(colours).join(", ")})` }, author);
+    return { colours, samples };
   }
 
   /** Set ground cells of the open city map as one edit (runs along the rows by material). Returns how many changed. */
@@ -1584,6 +1604,13 @@ export class Hub {
         case "paint_cells":
           this.paintCityCells(msg.runs, String(msg.label).slice(0, 80) || "Paint ground");
           return;
+        case "ground_from_picture": {
+          try {
+            const r = await this.cityGroundFromPicture("user");
+            this.send(ws, { t: "ground_sampled", colours: r.colours, samples: r.samples });
+          } catch (e) { this.send(ws, { t: "ground_sampled", error: (e as Error).message }); }
+          return;
+        }
         case "delete_project": {
           const r = await this.deleteProject(msg.id);
           this.broadcast({ t: "map_deleted", name: r.name, folder: r.folder });
@@ -1880,6 +1907,7 @@ export class Hub {
       readCityStreets: (o) => self.readCityStreets(o),
       readCityWater: (o) => self.readCityWater(o),
       paintCityCells: (runs, label) => self.paintCityCells(runs, label, "claude"),
+      cityGroundFromPicture: (only) => self.cityGroundFromPicture("claude", only),
       createBattleFromCity: async (o) => {
         const info = await self.createBattleFromCity(o);
         self.projectsCache = await self.store.list();
@@ -2032,7 +2060,7 @@ export class Hub {
       setSelection: refuse,
       saveCheckpoint: undefined, restoreCheckpoint: undefined, carveValleys: undefined, drawRiver: undefined, createRegional: undefined, levels: undefined, exportBattle: undefined,
       drainLake: undefined, checkpointHeights: undefined, duplicateMap: undefined,
-      readCityPicture: undefined, readCityStreets: undefined, readCityWater: undefined, paintCityCells: undefined, createBattleHere: undefined, createCityHere: undefined, createBattleFromCity: undefined,
+      readCityPicture: undefined, readCityStreets: undefined, readCityWater: undefined, paintCityCells: undefined, cityGroundFromPicture: undefined, createBattleHere: undefined, createCityHere: undefined, createBattleFromCity: undefined,
     };
   }
 

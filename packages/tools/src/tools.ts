@@ -69,6 +69,8 @@ export interface ToolContext {
   readCityStreets?(o: { area?: [number, number][]; samples: [number, number][]; others?: [number, number][]; tolerance?: number }): Promise<{ streets: { points: [number, number][]; width: number; kind: StreetKind }[]; alreadyThere: number }>;
   readCityWater?(o: { area?: [number, number][]; samples: { x: number; y: number; material: number }[]; others?: [number, number][]; tolerance?: number }): Promise<{ runs: { material: number; runs: number[] }[]; cells: number; alreadyThere: number }>;
   paintCityCells?(runs: { material: number; runs: number[] }[], label: string): number;
+  /** Colour the settlement's ground from its trace picture, as one edit (Hub.cityGroundFromPicture): each ground's new colour and how many places it was measured at. */
+  cityGroundFromPicture?(only?: string[]): Promise<{ colours: Record<string, string>; samples: Record<string, number> }>;
   /** A battlemap of a box (metres) of the open city map, opened. */
   createBattleFromCity?(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number; packPictures?: boolean }): Promise<ProjectInfo & { description: string; packPictures?: string[] }>;
   /**

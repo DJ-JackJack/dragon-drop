@@ -94,7 +94,7 @@ export interface EditTarget { projectId?: string; level?: string }
 export const EDIT_MESSAGES = new Set([
   "cmd", "txn_begin", "txn_end", "undo", "redo",
   "checkpoint_save", "checkpoint_restore", "carve_valleys", "draw_river", "route_line", "paint_cells", "sketch_import", "selection",
-  "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as",
+  "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as", "ground_from_picture",
   "create_city_here", "create_battle_here", "create_battle_from_city", "create_regional", "regional_refresh", "duplicate_project", "chat_send",
   "prefab_save", "prefab_place", "generate",
 ]);
@@ -110,6 +110,8 @@ export type ClientMsg =
   | { t: "read_picture_as"; what: "streets" | "water"; area: [number, number][]; samples: { x: number; y: number; material?: number }[]; ground: [number, number][]; tolerance: number }
   /** Set ground cells of the open city map, as one edit: runs along the rows ([first cell, how many] in turn) by material (what the water reader found). */
   | { t: "paint_cells"; runs: { material: number; runs: number[] }[]; label: string }
+  /** Colour the open settlement's ground from its trace picture (cityGround.ts), as one edit; the answer is `ground_sampled`, to this editor. */
+  | { t: "ground_from_picture" }
   /** Delete a map: its folder is moved into the maps folder's "Deleted maps" folder (never erased), and another map is opened if it was the open one. Only the DM does this (no tool of Claude's). */
   | { t: "delete_project"; id: string }
   | { t: "create_project"; name: string; width: number; height: number; kmPerPx: number; template: string; seed: number; lakes?: "none" | "few" | "some" | "many" }
@@ -263,6 +265,8 @@ export type ServerMsg =
   | { t: "claude_state"; state: ClaudeState }
   /** The selection changed (by the DM in an editor, or by Claude highlighting an area). */
   | { t: "selection"; selection: Selection | null; lock: boolean }
+  /** What `ground_from_picture` set: each ground's new colour and how many places it was measured at, or why it couldn't. */
+  | { t: "ground_sampled"; colours?: Record<string, string>; samples?: Record<string, number>; error?: string }
   | { t: "error"; message: string };
 
 export interface FrameHeader {

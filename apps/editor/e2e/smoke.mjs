@@ -1537,6 +1537,16 @@ try {
     await page.getByTestId("references").getByTestId("ref-card").first().waitFor({ timeout: 15000 });
     await page.getByTestId("references").getByTestId("ref-card").first().getByTestId("ref-trace").click();
     await page.getByTestId("trace-bar").waitFor({ timeout: 10000 });
+    // the ground in the trace picture's colours (one edit, one Undo), and a colour by hand, then the climate's colours again
+    await page.getByTestId("city-ground-colours").locator("summary").click();
+    await page.getByTestId("city-ground-from-picture").click();
+    await page.getByTestId("history").getByText(/^Ground colours from the picture/).first().waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByTestId("history").getByText(/^Undo: Ground colours from the picture/).first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-ground-grass").fill("#b4d0a0");
+    await page.getByTestId("history").getByText("Ground colour: grass").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-ground-reset").click();
+    await page.getByTestId("history").getByText("Ground colours as the climate makes them").first().waitFor({ timeout: 5000 });
     await page.getByTestId("trace-stop").click();
     await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
     // the picture reader: a town picture laid over the whole city (2 m a pixel), one red roof and one grey one clicked, the grass and the street clicked as ground,

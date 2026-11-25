@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   CITY_CLIMATES, type MapLandform, type MapTrees, STEEP_PERCENT, TREE_GROUPS, TREE_SPECIES, citySpec, cityClimate, cleanClimate, cleanLandform, cleanTrees, climatePreset,
-  climateTrees, isCity, landAt, landGrid, newFeatureId, pointsBounds, snowCover,
+  climateTrees, isCity, landAt, landGrid, newFeatureId, pointsBounds, snowCover, cleanGroundColours, GROUND_COLOUR_MATERIALS, groundMaterialId,
 } from "@mapmaker/core";
 import type { ToolContext, ToolResult } from "./tools.ts";
 import { define, fail, json } from "./toolKit.ts";
@@ -26,6 +26,7 @@ export function landSummary(ctx: ToolContext) {
     elevation_m: base,
     climate: { ...(preset ? { preset } : {}), temperature: climate.temperature, moisture: climate.moisture, ...(snowCover(climate) > 0 && { snow: `${Math.round(snowCover(climate) * 100)}% of open ground` }), trees_grow: climateTrees(climate).map(([s, w]) => `${s} ${Math.round(w * 100)}%`).join(", ") },
     landforms: (featuresOf(ctx).land ?? []).length, tree_groups: (featuresOf(ctx).trees ?? []).length,
+    ...(sp.ground && Object.keys(sp.ground).length && { own_ground_colours: sp.ground }),
   };
   if (g) {
     let steep = 0, n = 0;
@@ -170,6 +171,45 @@ export const CITY_LAND_TOOLS = [
       const city = { ...sp, climate, ...(i.elevation !== undefined && { elevation: Math.round(i.elevation) }) };
       const r = ctx.execute({ op: "set_meta", patch: { city } }, `Climate: ${CITY_CLIMATES.find((c) => c.id === climatePreset(climate))?.name ?? "own"}`);
       return json({ change: r.seq, land: landSummary(ctx) });
+    },
+  }),
+
+  define({
+    name: "set_ground_colours",
+    description:
+      "Give the settlement's ground its own colours instead of the ones its climate makes: by kind of ground (" + GROUND_COLOUR_MATERIALS.map((m) => m.name).join(", ") + "). " +
+      "from_picture: true takes each painted kind's colour from the trace picture (measured under open ground of that kind: not under buildings, streets, walls or woods), " +
+      "which is what a redraw of a found map wants once the ground is painted (only: just these kinds). colours sets them by hand (\"#rrggbb\"); reset gives the named kinds (or \"all\") back to the climate. One edit.",
+    schema: z.object({
+      from_picture: z.boolean().optional(),
+      only: z.array(z.string()).optional().describe("With from_picture: only these kinds of ground"),
+      colours: z.record(z.string(), z.string()).optional().describe("A kind of ground to \"#rrggbb\""),
+      reset: z.union([z.literal("all"), z.array(z.string())]).optional(),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      if (i.from_picture) {
+        if (!ctx.cityGroundFromPicture) return fail("Taking colours from the picture isn't available here.");
+        const unknown = (i.only ?? []).filter((n) => groundMaterialId(n) === undefined);
+        if (unknown.length) return fail(`There is no ground ${unknown.map((n) => `"${n}"`).join(", ")}.`);
+        try {
+          const r = await ctx.cityGroundFromPicture(i.only);
+          return json({ coloured_from_picture: r.colours, measured_at: r.samples, note: "render_city to look; Undo takes it back." });
+        } catch (e) { return fail((e as Error).message); }
+      }
+      const sp = citySpec(ctx.session().doc);
+      let ground: Record<string, string> = { ...(sp.ground ?? {}) };
+      if (i.reset === "all") ground = {};
+      else for (const n of i.reset ?? []) { const id = groundMaterialId(n); if (id === undefined) return fail(`There is no ground "${n}".`); delete ground[GROUND_COLOUR_MATERIALS.find((m) => m.id === id)!.name]; }
+      if (i.colours) {
+        const c = cleanGroundColours(i.colours);
+        if ("error" in c) return fail(`Not set: ${c.error}.`);
+        ground = { ...ground, ...c };
+      }
+      if (!i.colours && i.reset === undefined) return fail("Say what to do: from_picture, colours or reset.");
+      const { ground: _g, ...rest } = sp;
+      const r = ctx.execute({ op: "set_meta", patch: { city: Object.keys(ground).length ? { ...rest, ground } : rest } }, Object.keys(ground).length ? "Ground colours" : "Ground colours as the climate makes them");
+      return json({ change: r.seq, own_ground_colours: ground });
     },
   }),
 

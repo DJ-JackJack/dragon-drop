@@ -219,7 +219,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     if (x1 > x0 && y1 > y0) {
       const d = imgRef.current!.data;
       // the ground's colours in the city's climate, shaded by the land (light from the top left)
-      const cols = cityGroundColours(cityClimate(m.city)), land = landGrid({ meta: m, features: featRef.current });
+      const cols = cityGroundColours(cityClimate(m.city), m.city.ground), land = landGrid({ meta: m, features: featRef.current });
       const shade = land && land.w === W && land.h === H ? landShade(land) : null;
       for (let y = y0; y < y1; y++) {
         for (let x = x0; x < x1; x++) {
@@ -1059,7 +1059,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   useEffect(() => { requestDraw(); }, [features, ui, meta, labelScale, requestDraw]);
   useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; districtDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
   // the land or the climate changed: the ground's colours and shading with it
-  const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}`;
+  const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}|${JSON.stringify(meta?.city?.ground ?? null)}`;
   useEffect(() => { if (metaRef.current?.city && store.heights && offRef.current) paintGround(null); }, [groundKey, paintGround]);
 
   useEffect(() => {

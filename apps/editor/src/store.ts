@@ -46,6 +46,8 @@ export interface AppState {
   /** Pictures being added as references, or just added (a note at the bottom of the window). `at` changes each time. */
   /** A short note at the bottom of the window ("Added ... to References", "... was deleted"); it goes away by itself after `ms` (4 s when not given). */
   pictureNote: { text: string; busy: boolean; at: number; ms?: number } | null;
+  /** A settlement's ground colours are being taken from its trace picture (`ground_from_picture`). */
+  groundBusy: boolean;
   /** World maps: the named rivers and lakes as the water is now (labels to draw, each name's river or lake) and every lake's shore (the River tool). Null until the rivers are worked out. */
   water: { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[] } | null;
   /** Valleys are being carved (the Carve valleys button waits). */
@@ -71,7 +73,7 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, water: null, carving: false, asks: [],
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, water: null, carving: false, asks: [],
   prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null, playerRect: null,
 };
 
@@ -172,6 +174,8 @@ class Store {
 
   /** A short note at the bottom of the window (it goes by itself). */
   note(text: string, ms = 5000) { this.set({ pictureNote: { text, busy: false, at: Date.now(), ms } }); }
+  /** Colour the open settlement's ground from its trace picture (the answer is `ground_sampled`). */
+  groundFromPicture() { this.set({ groundBusy: true }); this.send({ t: "ground_from_picture" }); }
 
   /** The DM chose another name instead of replacing a prefab. */
   clearPrefabAsk() { this.set({ prefabAsk: null }); }
@@ -369,6 +373,11 @@ class Store {
       case "picture_read":
         for (const l of this.readListeners) l(m);
         break;
+      case "ground_sampled": {
+        const names = Object.keys(m.colours ?? {});
+        this.set({ groundBusy: false, ...(m.error ? { error: m.error } : { pictureNote: { text: `Coloured the ${names.join(", ")} from the trace picture. Undo takes it back.`, busy: false, at: Date.now(), ms: 7000 } }) });
+        break;
+      }
       case "water":
         if (m.projectId === this.state.meta?.id) this.set({ water: { labels: m.labels, named: m.named, lakes: m.lakes ?? this.state.water?.lakes ?? [] } });
         break;

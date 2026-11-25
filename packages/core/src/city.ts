@@ -24,6 +24,11 @@ export interface CitySpec {
   climate?: CityClimate;
   /** Metres above the sea of the city's ground before its landforms (shown and used for the climate; 0 when unknown). */
   elevation?: number;
+  /**
+   * The settlement's own ground colours: a material's name ("grass", "sand", "deep water") to "#rrggbb", in place of the colour its climate gives it
+   * (cityLand.ts `cityGroundColours`); set by hand in the Map panel or taken from the trace picture (cityGround.ts). Missing: the climate's colours.
+   */
+  ground?: Record<string, string>;
 }
 
 /** The same scales as a world map's climate regions: temperature 0 frozen, 0.25 cold, 0.5 temperate, 0.75 warm, 1 hot; moisture 0 desert to 1 rainforest. */

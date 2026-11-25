@@ -9,11 +9,12 @@ import {
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
   type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator, inkSymbols, renderInk,
 } from "@mapmaker/core";
-import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity } from "@mapmaker/core";
+import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity, sampleGroundColours } from "@mapmaker/core";
 
-/** What the picture reader is asked for: buildings, streets or water (core cityReader.ts). */
-export type ReadJob = { what: "buildings"; opts: ReaderOptions } | { what: "streets"; opts: StreetReadOptions } | { what: "water"; opts: WaterReadOptions };
-export type ReadAnswer = ReturnType<typeof readBuildings> | ReturnType<typeof readStreets> | ReturnType<typeof readWater>;
+/** What the picture reader is asked for: buildings, streets or water (core cityReader.ts), or the colour of the ground at points (cityGround.ts). */
+export type ReadJob = { what: "buildings"; opts: ReaderOptions } | { what: "streets"; opts: StreetReadOptions } | { what: "water"; opts: WaterReadOptions }
+  | { what: "ground"; opts: { groups: { material: number; points: [number, number][] }[] } };
+export type ReadAnswer = ReturnType<typeof readBuildings> | ReturnType<typeof readStreets> | ReturnType<typeof readWater> | ReturnType<typeof sampleGroundColours>;
 import { type PreparedReference, decodeImage, encodePngRgba, prepareReference } from "@mapmaker/tools";
 import { NoiseStore } from "./noiseStore.ts";
 
@@ -166,7 +167,7 @@ export class JobRunner {
       }
       if (job.op === "read") return readBuildings(this.pic.img, job.opts);
       const j = job.job;
-      return j.what === "streets" ? readStreets(this.pic.img, j.opts) : j.what === "water" ? readWater(this.pic.img, j.opts) : readBuildings(this.pic.img, j.opts);
+      return j.what === "streets" ? readStreets(this.pic.img, j.opts) : j.what === "water" ? readWater(this.pic.img, j.opts) : j.what === "ground" ? sampleGroundColours(this.pic.img, j.opts.groups) : readBuildings(this.pic.img, j.opts);
     }
     if (job.op === "warm") {
       this.fullNoise(job.W, job.H, job.seed);
