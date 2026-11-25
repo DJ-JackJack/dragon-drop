@@ -60,6 +60,8 @@ export interface BattleUi {
   propScatter: boolean;
   /** New objects cast a soft drop shadow. */
   propShadow: boolean;
+  /** New objects are GM only (a trap, a hidden chest): left out of the players' pictures. */
+  propGmOnly: boolean;
   /** The object layer new objects go into (objectLayers.ts); null: the bottom one. */
   activeLayer: string | null;
   scatter: ScatterSettings;
@@ -102,7 +104,7 @@ export function newWallStyle(o: Pick<BattleUi, "wallLook" | "wallAsset">): WallS
 
 export const defaultBattleUi: BattleUi = {
   tool: "pan", material: 1, brush: 1.5, showGrid: true, showLights: true, showNotes: true, selected: null, multi: [],
-  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, propShadow: false, activeLayer: null, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
+  asset: null, propScale: 1, propRotation: 0, propLayer: "above", propFlip: false, propScatter: false, propShadow: false, propGmOnly: false, activeLayer: null, scatter: DEFAULT_SCATTER, roomShape: "rect", connectorTo: "up", roofStyle: "slate", roofView: "faint",
   wallLook: "stone", wallAsset: null, doorPicture: null, windowPicture: null, pathLook: "dirt", pathAsset: null, pathWidth: 1, roofAsset: null, lightGlow: null,
   prefabMode: "place", prefab: null, prefabTurn: 0, prefabMirror: false, prefabDraft: null, revealMode: "spot",
 };
@@ -209,6 +211,8 @@ interface View { scale: number; ox: number; oy: number } // scale: screen px per
 
 /** Object placement snaps to a quarter square. */
 const snapProp = (v: number, free: boolean) => (free ? v : Math.round(v / 0.25) * 0.25);
+/** The ruler's point: the middle of the square under the pointer, or the exact spot with Shift (points clicked by eye came out a little short: 69 ft for 14 squares). */
+const rulerPoint = (q: { x: number; y: number }, free: boolean) => (free ? q : { x: Math.floor(q.x) + 0.5, y: Math.floor(q.y) + 0.5 });
 const send = (cmd: Parameters<typeof store.send>[0] & { t: "cmd" }) => store.send(cmd);
 const sendFeatures = (patch: import("@mapmaker/core").FeaturesPatch, label: string) => send({ t: "cmd", cmd: { op: "features", patch }, label });
 const toCells = (n: number, spec: BattleSpec) => n * spec.sub;
@@ -734,6 +738,8 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       } else { ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.setLineDash([4, 4]); ctx.strokeRect(-v.scale / 2, -v.scale / 2, v.scale, v.scale); }
       if (isSel(pr.id) && spr) { ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect((-spr.w * k) / 2, (-spr.h * k) / 2, spr.w * k, spr.h * k); }
       ctx.restore();
+      // a GM-only object is faint, and tagged, so it can't be mistaken for one the players see (the 0.1.13 playtest found the fading alone easy to miss)
+      if (pr.gmOnly) gmTag(ctx, v.ox + pr.x * v.scale + (spr ? Math.max(spr.w, spr.h) * k * 0.35 : v.scale * 0.35), v.oy + pr.y * v.scale - (spr ? Math.max(spr.w, spr.h) * k * 0.35 : v.scale * 0.35));
     };
     for (const pr of props) if ((pr.layer ?? "above") === "below") drawProp(pr, pr.gmOnly ? 0.45 : 1);
     const wl = wallRef.current;
@@ -1167,7 +1173,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     }
     if (e.button !== 0) return;
     const spec = m.battle;
-    if (o.tool === "measure") { measureCtl.down(q, p); requestDraw(); return; }
+    if (o.tool === "measure") { measureCtl.down(rulerPoint(q, e.shiftKey), p); requestDraw(); return; }
     if (o.tool === "brush") {
       send({ t: "txn_begin", label: `Paint ${materialLabel(m, o.material)}` } as never);
       paintStroke([[q.x, q.y]]);
@@ -1275,9 +1281,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       const prop: MapProp = {
         id: newFeatureId("o"), asset: o.asset, x: snapProp(q.x, e.altKey || e.shiftKey), y: snapProp(q.y, e.altKey || e.shiftKey),
         ...(o.propRotation && { rotation: o.propRotation }), ...(o.propScale !== 1 && { scale: o.propScale }), ...(o.propFlip && { flip: true }), ...(o.propLayer === "below" && { layer: "below" as const }),
-        ...(o.propShadow && { shadow: true }), ...(intoLayer && { layerId: intoLayer.id }),
+        ...(o.propShadow && { shadow: true }), ...(o.propGmOnly && { gmOnly: true }), ...(intoLayer && { layerId: intoLayer.id }),
       };
-      sendFeatures({ upsertProps: [prop] }, "Add object");
+      sendFeatures({ upsertProps: [prop] }, o.propGmOnly ? "Add GM-only object" : "Add object");
       return;
     }
     if (o.tool === "select") {
@@ -1315,7 +1321,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
-    if (uiRef.current.tool === "measure" && !d) { measureCtl.move(q); requestDraw(); }
+    if (uiRef.current.tool === "measure" && !d) { measureCtl.move(rulerPoint(q, e.shiftKey)); requestDraw(); }
     if (d?.mode === "scatter") { scatterStroke.current?.at(q.x, q.y); requestDraw(); return; }
     if (d?.mode === "pan") {
       viewRef.current = { ...viewRef.current, ox: d.ox + p.x - d.sx, oy: d.oy + p.y - d.sy };
@@ -1496,11 +1502,24 @@ function drawWallMarks(ctx: CanvasRenderingContext2D, walls: MapWall[], v: View,
   ctx.restore();
 }
 
+/** A small "GM" tag at (x, y) on screen: on GM-only objects and lights, which the players never see. */
+function gmTag(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.save();
+  ctx.font = "700 10px system-ui, sans-serif";
+  const w = ctx.measureText("GM").width + 8, h = 14;
+  ctx.fillStyle = "rgba(20, 18, 28, 0.9)"; ctx.strokeStyle = "rgba(255, 224, 120, 0.95)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 3); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#ffe078"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("GM", x, y + 0.5);
+  ctx.restore();
+}
+
 function drawLights(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: MapWall[] | undefined, v: View, glowFor?: (l: MapLight) => HTMLCanvasElement | null) {
   ctx.save();
   for (const l of lights) {
     const [r, g, b] = hexToRgb(l.colour ?? "#ffd68c"), cx = v.ox + l.x * v.scale, cy = v.oy + l.y * v.scale, R = l.radius * v.scale;
-    const a = 0.42 * (l.intensity ?? 1);
+    // (a GM-only light is drawn faint, and tagged below)
+    const a = 0.42 * (l.intensity ?? 1) * (l.gmOnly ? 0.45 : 1);
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
     grad.addColorStop(0, `rgba(${r},${g},${b},${a})`);
     grad.addColorStop(Math.min(0.95, (l.bright ?? l.radius / 2) / l.radius), `rgba(${r},${g},${b},${a * 0.55})`);
@@ -1516,9 +1535,10 @@ function drawLights(ctx: CanvasRenderingContext2D, lights: MapLight[], walls: Ma
       ctx.clip();
     }
     const glow = glowFor?.(l);
-    if (glow) { ctx.globalAlpha = Math.min(1, 0.45 * (l.intensity ?? 1)); ctx.drawImage(glow, cx - R, cy - R, 2 * R, 2 * R); } // (its own shape, tinted)
+    if (glow) { ctx.globalAlpha = Math.min(1, 0.45 * (l.intensity ?? 1) * (l.gmOnly ? 0.45 : 1)); ctx.drawImage(glow, cx - R, cy - R, 2 * R, 2 * R); } // (its own shape, tinted)
     else { ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
+    if (l.gmOnly) gmTag(ctx, cx + 12, cy - 12);
   }
   ctx.restore();
 }
@@ -1678,7 +1698,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
   const picked = ui.material >= CUSTOM_MATERIAL_BASE ? meta?.battle?.palette?.find((e) => e.id === ui.material) : undefined;
   const swatchStyle = picked ? { backgroundImage: `url(${assetUrl(picked.asset, 64)})` } : { background: `rgb(${(MATERIALS[ui.material]?.colour ?? [60, 60, 60]).join(",")})` };
   return (
-    <ToolBar hint={ui.tool === "measure" ? MEASURE_HINT : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : ui.tool === "prefab" ? (ui.prefabMode === "save" ? PREFAB_HINT_SAVE : PREFAB_HINT_PLACE) : ui.tool === "reveal" ? REVEAL_HINTS[ui.revealMode] : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
+    <ToolBar hint={ui.tool === "measure" ? `${MEASURE_HINT} Points go to the middle of a square; hold Shift for the exact spot.` : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : ui.tool === "prefab" ? (ui.prefabMode === "save" ? PREFAB_HINT_SAVE : PREFAB_HINT_PLACE) : ui.tool === "reveal" ? REVEAL_HINTS[ui.revealMode] : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "measure" && (
         <span className="measure-result" data-testid="measure-result">
           {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5)}</b>}
@@ -1755,6 +1775,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
           </div>
           <span className="muted">{ui.asset ? `${ui.propScatter ? "Strewing" : "Placing"}: ${assetLabel(parseAssetId(ui.asset)?.path ?? ui.asset)}` : "No object chosen yet: open the Assets tab and click one."}</span>
           <label className="check" title="New objects cast a soft drop shadow (each object's panel can change it)"><input type="checkbox" checked={ui.propShadow} onChange={(e) => onUi({ propShadow: e.target.checked })} data-testid="prop-new-shadow" /> Shadow</label>
+          {!ui.propScatter && <label className="check" title="New objects are for your eyes only (a trap, a hidden chest): faint with a GM tag here, left out of the player screen and of exports for players (each object's panel can change it)"><input type="checkbox" checked={ui.propGmOnly} onChange={(e) => onUi({ propGmOnly: e.target.checked })} data-testid="prop-new-gm" /> GM only</label>}
           {ui.propScatter && (
             <>
               <label className="slider"><span>Brush <b>{ui.scatter.radius}</b> sq</span>
@@ -2164,8 +2185,8 @@ function ConnectorEditor({ c, levels, onClear }: { c: MapConnector; levels: Leve
       <label className="field">Name
         <input value={name} maxLength={60} placeholder="optional" onChange={(e) => setName(e.target.value)} onBlur={() => { const n = name.trim(); if (n !== (c.name ?? "")) set({ name: n || undefined }); }} data-testid="connector-name" />
       </label>
-      <div className="row">
-        <label className="field">Wide<input type="number" min={1} value={c.w} onChange={(e) => size("w", e.target.value)} /></label>
+      <div className="row pair">
+        <label className="field">Wide<input type="number" min={1} value={c.w} onChange={(e) => size("w", e.target.value)} data-testid="connector-w" /></label>
         <label className="field">Long<input type="number" min={1} value={c.h} onChange={(e) => size("h", e.target.value)} /></label>
       </div>
       <div className="row">
@@ -2462,7 +2483,9 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
         <>
           <h3>Where it's from</h3>
           <p className="muted" data-testid="battle-origin">Made from <b>{meta.origin.name}</b> {meta.origin.unit === "m" ? <>around ({meta.origin.x}, {meta.origin.y}) m</> : <>at map px ({meta.origin.x}, {meta.origin.y})</>}.</p>
-          <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta.origin!.id })} title={meta.origin.unit === "m" ? "Open the settlement map this scene came from" : "Open the world map this scene came from"}>↑ Back to {meta.origin.name}</button></div>
+          {store.getState().projects.some((p) => p.id === meta.origin!.id)
+            ? <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta.origin!.id })} title={meta.origin.unit === "m" ? "Open the settlement map this scene came from" : "Open the world map this scene came from"}>↑ Back to {meta.origin.name}</button></div>
+            : <p className="muted" data-testid="origin-gone">{meta.origin.name} was deleted (its folder is under Deleted maps in your maps folder).</p>}
         </>
       )}
       <h3>This map</h3>

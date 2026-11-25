@@ -98,6 +98,10 @@ code { background: #08080a; padding: 1px 4px; border-radius: 4px; font-size: 12.
 .name-size .slider { flex: 1; min-width: 0; }
 .name-size button { margin-bottom: 6px; white-space: nowrap; }
 .row { display: flex; gap: 6px; margin-top: 8px; }
+/* two fields side by side, half the width each (number boxes in one row pushed the Stairs panel wider than its column: the 0.1.13 playtest) */
+.row.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row.pair > .field { min-width: 0; margin: 0; }
+.row.pair input { width: 100%; min-width: 0; box-sizing: border-box; }
 .row.end { justify-content: flex-end; }
 .row button { flex: 1; }
 .row.end button { flex: none; }
@@ -153,6 +157,9 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .history { overflow-y: auto; flex: 1; min-height: 0; }
 .hist { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 12.5px; border-bottom: 1px solid #1e1c17; }
 .hist.undo .what, .hist.redo .what { color: var(--muted); font-style: italic; }
+/* a map's changes from before it was last closed: listed, but no longer undoable */
+.hist.earlier { opacity: 0.55; }
+.hist-earlier-note { font-size: 11.5px; margin: 10px 0 4px; }
 .who { font-size: 10.5px; padding: 0 5px; border-radius: 4px; flex: none; }
 .who.user { background: #5a4716; color: #ffe9a8; }
 .who.claude { background: #34343c; }
@@ -696,6 +703,8 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 
 /* the Map panel's Generate box (GenerateBox.tsx) */
 .gen-box .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+/* a "this replaces ..." question: its words on a line of their own, the buttons under them (in one row they were squeezed in the Map panel) */
+.ask-replace p { margin: 4px 0 6px; }
 
 /* the player screen (PlayerScreen.tsx): the map and nothing else */
 .player-screen { position: fixed; inset: 0; background: #000; overflow: hidden; }

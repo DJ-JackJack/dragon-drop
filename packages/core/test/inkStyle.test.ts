@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { HeightField, type MapDoc, buildClimateNoise, computeDerived, inkStep, inkSymbols, renderInk } from "../src/index.ts";
+import { HeightField, type MapDoc, buildClimateNoise, computeDerived, inkLineScale, inkStep, inkSymbols, renderInk } from "../src/index.ts";
 
-/** An island: a round mountain in a sea, 256 px, 2 km a px. */
-function island(): MapDoc {
-  const W = 256, H = 256, h = new Float32Array(W * H);
+/** An island: a round mountain in a sea, 256 px (or on a map W wide), 2 km a px. */
+function island(W = 256): MapDoc {
+  const H = 256, h = new Float32Array(W * H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const d = Math.hypot(x - 128, y - 128);
     h[y * W + x] = 2600 * Math.max(0, 1 - d / 80) ** 1.3 - 200;
@@ -43,5 +43,21 @@ describe("the ink style", () => {
     const tiled = new Uint8ClampedArray(256 * 256 * 4);
     for (const [x, y] of [[0, 0], [128, 0], [0, 128], [128, 128]]) renderInk(doc, d, { x, y, w: 128, h: 128 }, tiled, sy);
     expect(tiled).toEqual(whole);
+  });
+
+  it("draws a bigger map's coast wider, so it still reads when the whole map is shown at once (the 0.1.13 playtest: nearly blank at Fit)", () => {
+    expect(inkLineScale(256, 256)).toBe(1);
+    expect(inkLineScale(2048, 1024)).toBeCloseTo(2.28, 2);
+    // the same island on a 2048 px wide map: its coast's strong ink (not the paler ripples) is about twice as wide along a row across it
+    const coastInk = (W: number) => {
+      const doc = island(W), d = computeDerived(doc, buildClimateNoise(W, 256, 5), 0), img = new Uint8ClampedArray(W * 256 * 4);
+      renderInk(doc, d, { x: 128, y: 120, w: 128, h: 16 }, img, []);
+      let n = 0;
+      for (let x = 128; x < 256; x++) { const o = (128 * W + x) * 4; if (img[o] + img[o + 1] + img[o + 2] < 330) n++; }
+      return n;
+    };
+    const small = coastInk(256), big = coastInk(2048);
+    expect(small).toBeGreaterThan(0);
+    expect(big).toBeGreaterThanOrEqual(2 * small);
   });
 });

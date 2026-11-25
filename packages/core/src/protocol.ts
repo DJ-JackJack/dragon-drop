@@ -202,6 +202,8 @@ export type ServerMsg =
       meta: MapMeta;
       projects: ProjectInfo[];
       changes: ChangeEntry[];
+      /** This map's (level's) changes from before it was last closed, since the app started: listed in History, but they can't be undone any more. */
+      earlier?: ChangeEntry[];
       seq: number;
       canUndo: boolean;
       canRedo: boolean;

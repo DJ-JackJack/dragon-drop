@@ -22,6 +22,12 @@ type RGB = [number, number, number];
 /** How much of a ripple line at sea distance `at` a pixel at (smoothed) distance `s` is: 1 on it, nothing three quarters of a pixel off. */
 const ring = (s: number, at: number) => Math.max(0, 1 - Math.abs(s - at) / 0.75);
 
+/**
+ * How many map px the coast's line, the ripples and the rivers are scaled by: 1 up to a 900 px map, more on bigger ones, so the lines still read when the
+ * whole map is shown at once (at Fit, a 2048 map is drawn at about a third of its size, and a one-pixel line all but vanished: the 0.1.13 playtest).
+ */
+export const inkLineScale = (W: number, H: number) => Math.max(1, Math.max(W, H) / 900);
+
 /** A number 0..1 from a cell and a seed (the same every time). */
 function hash(x: number, y: number, seed: number): number {
   let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(seed | 0, 1442695041)) | 0;
@@ -65,6 +71,7 @@ export function renderInk(doc: MapDoc, d: Derived, rect: Rect, out: Uint8Clamped
   const hf = doc.height, W = hf.w, H = hf.h, h = hf.data, sea = doc.meta.seaLevel, seed = doc.meta.seed ?? 1;
   const x1 = rect.x + rect.w, y1 = rect.y + rect.h;
   const land = (i: number) => h[i] > sea && !d.lakes[i];
+  const k = inkLineScale(W, H), reach = Math.ceil(2 * k);
   for (let y = rect.y; y < y1; y++) for (let x = rect.x; x < x1; x++) {
     const i = y * W + x, o = i * 4;
     let c: RGB;
@@ -78,20 +85,21 @@ export function renderInk(doc: MapDoc, d: Derived, rect: Rect, out: Uint8Clamped
     let r = c[0] + stain + shade, g = c[1] + stain + shade, b = c[2] + stain * 0.8 + shade;
     // the coast: an ink line where the height crosses the sea, smooth (its distance from the slope of the ground); ripples out to sea
     let ink = 0;
-    const nearCoast = !d.lakes[i] && (h[i] > sea ? d.landDist[i] <= 2 : d.seaDist[i] <= 2);
+    const nearCoast = !d.lakes[i] && (h[i] > sea ? d.landDist[i] <= reach : d.seaDist[i] <= reach);
     if (nearCoast && x > 0 && y > 0 && x < W - 1 && y < H - 1) {
       const gx = (h[i + 1] - h[i - 1]) / 2, gy = (h[i + W] - h[i - W]) / 2, g = Math.hypot(gx, gy);
-      if (g > 1e-3) ink = Math.max(0, Math.min(1, 1.05 - Math.abs((h[i] - sea) / g))) * 0.95;
-      else if (land(i) && d.landDist[i] <= 1) ink = 0.92;
+      if (g > 1e-3) ink = Math.max(0, Math.min(1, 0.55 + 0.5 * k - Math.abs((h[i] - sea) / g))) * 0.95;
+      else if (land(i) && d.landDist[i] <= k) ink = 0.92;
     }
     if (ink) { /* (the coast) */ }
     else if (!d.lakes[i] && h[i] <= sea) {
       // (the distance is in whole pixels: its mean round the pixel makes the lines soft-edged instead of stepped)
       const sd = d.seaDist[i];
-      if (sd >= 2 && sd <= 11 && x > 0 && y > 0 && x < W - 1 && y < H - 1) {
+      if (sd >= 2 && sd <= 11 * k + 1 && x > 0 && y > 0 && x < W - 1 && y < H - 1) {
         let sum = 0;
         for (let dy = -W; dy <= W; dy += W) sum += d.seaDist[i + dy - 1] + d.seaDist[i + dy] + d.seaDist[i + dy + 1];
-        const s = sum / 9;
+        // (on a bigger map the ripples are further out and wider, in step with the coast's line)
+        const s = sum / 9 / k;
         ink = Math.max(0.42 * ring(s, 3), 0.28 * ring(s, 6), 0.16 * ring(s, 10));
       }
     } else if (d.lakes[i] && x > 0 && y > 0 && x < W - 1 && y < H - 1 && (land(i - 1) || land(i + 1) || land(i - W) || land(i + W))) ink = 0.85;
@@ -99,12 +107,14 @@ export function renderInk(doc: MapDoc, d: Derived, rect: Rect, out: Uint8Clamped
     out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
   }
   if (opts.rivers !== false) {
+    const rm = 3 + 2 * k; // (how far a river's stroke reaches past its line)
     for (const rv of d.rivers) {
       const p = rv.pts;
-      for (let k = 2; k < p.length; k += 2) {
-        const ax = p[k - 2], ay = p[k - 1], bx = p[k], by = p[k + 1];
-        if (Math.max(ax, bx) < rect.x - 3 || Math.min(ax, bx) > x1 + 3 || Math.max(ay, by) < rect.y - 3 || Math.min(ay, by) > y1 + 3) continue;
-        const wdt = Math.max(0.9, Math.min(4, (rv.widths[(k >> 1) - 1] ?? 1) * 0.75));
+      for (let j = 2; j < p.length; j += 2) {
+        const ax = p[j - 2], ay = p[j - 1], bx = p[j], by = p[j + 1];
+        if (Math.max(ax, bx) < rect.x - rm || Math.min(ax, bx) > x1 + rm || Math.max(ay, by) < rect.y - rm || Math.min(ay, by) > y1 + rm) continue;
+        // (rivers grow less than the coast: at full size they would be heavy)
+        const wdt = Math.max(0.9, Math.min(4, (rv.widths[(j >> 1) - 1] ?? 1) * 0.75)) * Math.sqrt(k);
         strokeSegment(out, W, rect, ax, ay, bx, by, wdt, RIVER_INK, 0.9);
       }
     }

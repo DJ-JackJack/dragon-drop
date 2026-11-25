@@ -415,11 +415,13 @@ export function App() {
           {(childMaps.length > 0 || s.meta?.parent) && (
             <section data-testid="regional">
               <h3>Regional maps</h3>
-              {s.meta?.parent && (
+              {s.meta?.parent && (s.projects.some((p) => p.id === s.meta!.parent!.id) ? (
                 <button className="place-row" onClick={() => store.send({ t: "open_project", id: s.meta!.parent!.id })} title="Open the map this one was made from">
                   <span>⬑ {s.meta.parent.name}</span><span className="muted">parent</span>
                 </button>
-              )}
+              ) : (
+                <p className="muted" data-testid="parent-gone">Made from {s.meta.parent.name}, which was deleted (its folder is under Deleted maps in your maps folder).</p>
+              ))}
               {childMaps.map((c) => (
                 <button key={c.id} className="place-row" onClick={() => store.send({ t: "open_project", id: c.id })} title="Open this regional map">
                   <span>{c.name} ↗</span><span className="muted">{c.parent!.factor}× detail</span>
@@ -499,13 +501,24 @@ export function App() {
           <section className="grow">
             <h3>History</h3>
             <div className="history" data-testid="history">
-              {s.changes.length === 0 && <p className="muted">No changes yet.</p>}
+              {s.changes.length === 0 && s.earlierChanges.length === 0 && <p className="muted">No changes yet.</p>}
               {[...s.changes].reverse().map((c) => (
                 <div key={`${c.seq}-${c.kind}-${c.time}`} className={`hist ${c.kind}`}>
                   <span className={`who ${c.author}`}>{c.author === "user" ? "You" : c.author === "claude" ? capital(forAssistant("Claude")) : "System"}</span>
                   <span className="what">{c.label}</span>
                 </div>
               ))}
+              {s.earlierChanges.length > 0 && (
+                <>
+                  <p className="muted hist-earlier-note" data-testid="history-earlier">Before you last switched to another map (these can't be undone now; a checkpoint or a backup can bring an earlier state back):</p>
+                  {[...s.earlierChanges].reverse().map((c, i) => (
+                    <div key={`e${i}-${c.seq}-${c.time}`} className={`hist ${c.kind} earlier`}>
+                      <span className={`who ${c.author}`}>{c.author === "user" ? "You" : c.author === "claude" ? capital(forAssistant("Claude")) : "System"}</span>
+                      <span className="what">{c.label}</span>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </section>
                 </div>

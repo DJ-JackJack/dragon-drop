@@ -880,7 +880,30 @@ ipcMain.handle("dd:claude-install", (e, opts) => (fromEditor(e) ? startInstall({
 ipcMain.handle("dd:claude-check", async (e) => (fromEditor(e) ? await claudeCheck() : { installed: false, path: null, version: null }));
 ipcMain.handle("dd:term-attach", (e) => (fromEditor(e) ? { alive: termAlive, buffer: termBuf, command: settings.terminalCommand || "" } : { alive: false, buffer: "", command: "" }));
 ipcMain.handle("dd:term-status", (e) => (fromEditor(e) ? termStatus() : { alive: false, quietMs: 0, looksBusy: true }));
-ipcMain.on("dd:term-write", (e, data) => { if (fromEditor(e) && term && termAlive && typeof data === "string") term.write(data); });
+ipcMain.on("dd:term-write", (e, data) => {
+  if (!(fromEditor(e) && term && termAlive && typeof data === "string")) return;
+  term.write(data);
+  if (data === "\x1b") watchInterrupt();
+});
+
+/**
+ * The DM pressed Esc in the terminal. If Claude was working, it stops, but Claude Code sends no Stop hook for an interrupt, so the status would stay
+ * "working" (the 0.1.13 playtest). Once the screen no longer looks busy (no "esc to interrupt", no question) and has been quiet a moment, report it
+ * (core assist.ts: "Interrupted" makes a busy Claude idle, and changes nothing otherwise). Given up after 30 s.
+ */
+let interruptWatch = null;
+function watchInterrupt() {
+  if (interruptWatch) clearInterval(interruptWatch);
+  const since = Date.now();
+  interruptWatch = setInterval(() => {
+    const st = termStatus();
+    const done = () => { clearInterval(interruptWatch); interruptWatch = null; };
+    if (!st.alive || Date.now() - since > 30_000) return done();
+    if (st.looksBusy || st.quietMs < 2000) return;
+    done();
+    void fetch(`http://127.0.0.1:${port}${HOOK_PATH}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${settings.accessToken}` }, body: JSON.stringify({ hook_event_name: "Interrupted" }) }).catch(() => {});
+  }, 500);
+}
 ipcMain.on("dd:term-resize", (e, cols, rows) => { if (fromEditor(e) && term && termAlive) { try { term.resize(Math.max(2, cols | 0), Math.max(2, rows | 0)); } catch { /* the program just ended */ } } });
 ipcMain.handle("dd:term-kill", (e) => { if (fromEditor(e)) killTerminal(); });
 ipcMain.handle("dd:update-state", (e) => (fromEditor(e) ? updateState : null));

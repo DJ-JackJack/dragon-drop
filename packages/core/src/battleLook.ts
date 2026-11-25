@@ -18,9 +18,11 @@ export interface LookImage {
 
 /** Walls are this many squares thick. */
 export const WALL_THICKNESS = 0.2;
+/** Doors are this many squares thick: a little more than a wall, so they stand out from it. */
+export const DOOR_THICKNESS = 0.24;
 
 const STONE: [number, number, number] = [126, 120, 112];
-const WOOD: [number, number, number] = [158, 106, 58];
+const WOOD: [number, number, number] = [138, 88, 46];
 const WOOD_OPEN: [number, number, number] = [178, 130, 78];
 const GLASS: [number, number, number] = [160, 206, 230];
 const LIGHT_DIR = [-Math.SQRT1_2, -Math.SQRT1_2] as const;
@@ -379,8 +381,9 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
     });
   }
 
-  // ---- doors
-  const thick = Math.max(2.4, 0.13 * px), ht = thick / 2;
+  // ---- doors: a slab a little thicker than the walls, with a dark outline, so a door stands out from its wall (at 0.13 squares, in lighter wood, the
+  // 0.1.13 playtest found them thin orange lines, easy to miss)
+  const thick = Math.max(3.4, DOOR_THICKNESS * px), ht = thick / 2;
   for (const p of doors) {
     const open = !!p.wall.open;
     let ox = p.ax, oy = p.ay, dx = p.ux, dy = p.uy;
@@ -403,7 +406,7 @@ export function renderWallLayer(spec: BattleSpec, walls: MapWall[] | undefined, 
       // the long edge that faces the light is bright
       const side = Math.abs(c) > ht - 1.6 ? Math.sign(c) : 0;
       const lit = 1 + 0.3 * side * (-dy * LIGHT_DIR[0] + dx * LIGHT_DIR[1]);
-      const f = grain * groove * lit * (0.5 + 0.5 * smooth(-0.2, 1.3, ins));
+      const f = grain * groove * lit * (0.3 + 0.7 * smooth(0.2, Math.max(1.6, thick * 0.16), ins));
       return [base[0] * f, base[1] * f, base[2] * f, clamp(ins + 0.5, 0, 1)];
     });
     if (!open) {

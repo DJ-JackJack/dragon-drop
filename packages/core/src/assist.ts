@@ -26,6 +26,10 @@ export function claudeStateAfter(state: ClaudeState, ev: HookEvent): ClaudeState
       return "busy";
     case "SessionEnd":
       return "unknown";
+    // (not one of Claude Code's own hooks: the desktop app reports it after the DM pressed Esc and the screen stopped looking busy, because an
+    // interrupted Claude sends no Stop, and the status stayed "working": the 0.1.13 playtest)
+    case "Interrupted":
+      return state === "busy" || state === "blocked" ? "idle" : state;
     case "Notification": {
       const type = ev.notification_type ?? "", msg = ev.message ?? "";
       if (type === "permission_prompt" || type === "elicitation_dialog" || /permission|approve/i.test(msg)) return "blocked";

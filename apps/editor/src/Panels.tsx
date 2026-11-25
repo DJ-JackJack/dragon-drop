@@ -385,12 +385,13 @@ export function ClimatePanel({ meta }: { meta: MapMeta }) {
     store.send({ t: "cmd", cmd: { op: "set_meta", patch: { climate: { ...(meta.climate ?? {}), ...patch } }, label: "Change climate" } });
   const deg = (v: number) => `${Math.round(Math.abs(v) * 90)}°${v < 0 ? "S" : "N"}`;
   if (meta.parent) {
-    // a regional map takes its climate from the map it was made from
+    // a regional map takes its climate from the map it was made from (a copy kept with it: once that map is deleted, the copy can't be updated)
+    const there = store.getState().projects.some((p) => p.id === meta.parent!.id);
     return (
       <details className="climate">
         <summary><h3>Climate</h3></summary>
-        <p className="muted">Temperature and moisture come from {meta.parent.name}, refined by this map's finer terrain. Climate regions drawn here still apply on top.</p>
-        <button onClick={() => store.send({ t: "regional_refresh" })} title="Use this after changing the parent map's climate or climate regions">Update from {meta.parent.name}</button>
+        <p className="muted">Temperature and moisture come from {meta.parent.name}{there ? "" : " as it was before it was deleted"}, refined by this map's finer terrain. Climate regions drawn here still apply on top.</p>
+        {there && <button onClick={() => store.send({ t: "regional_refresh" })} title="Use this after changing the parent map's climate or climate regions">Update from {meta.parent.name}</button>}
         <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => `${Math.round(v)} m`} onCommit={(v) => set({ snowlineM: v })} />
         <Slider label="Rivers" value={c.riverDensity} min={0} max={1} step={0.01} fmt={(v) => (v < 0.34 ? "few" : v < 0.67 ? "some" : "many")} onCommit={(v) => set({ riverDensity: v })} />
         <label className="check" title="A river needs real rain, not just a share of the map's water: dry land has few rivers, however small the map (new maps and detail maps start with this on)"><input type="checkbox" checked={!!c.riversFollowRain} onChange={(e) => set({ riversFollowRain: e.target.checked })} data-testid="rivers-follow-rain" /> Dry land has few rivers</label>

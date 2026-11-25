@@ -12,7 +12,6 @@ import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, s
 import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { store } from "./store.ts";
-import { forAssistant } from "./assistantName.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 import { RoofPicturePicker, roofPictureName } from "./RoofPicturePicker.tsx";
@@ -214,7 +213,9 @@ export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSi
         {meta!.origin && (
           <>
             <p className="muted" data-testid="city-origin">Started from <b>{meta!.origin.name}</b> at map px ({meta!.origin.x}, {meta!.origin.y}).</p>
-            <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta!.origin!.id })} title="Open the world map this settlement was started from" data-testid="city-back">↑ Back to {meta!.origin.name}</button></div>
+            {store.getState().projects.some((p) => p.id === meta!.origin!.id)
+              ? <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta!.origin!.id })} title="Open the world map this settlement was started from" data-testid="city-back">↑ Back to {meta!.origin.name}</button></div>
+              : <p className="muted" data-testid="origin-gone">{meta!.origin.name} was deleted (its folder is under Deleted maps in your maps folder).</p>}
           </>
         )}
       </section>
@@ -226,7 +227,7 @@ export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSi
         <label className="field">Climate
           <select value={preset ?? "own"} onChange={(e) => { const p = CITY_CLIMATES.find((x) => x.id === e.target.value); if (p) setCity({ climate: { temperature: p.temperature, moisture: p.moisture } }, `Climate: ${p.name}`); }} data-testid="city-climate">
             {CITY_CLIMATES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            {!preset && <option value="own">{forAssistant("Its own (set by Claude)")}</option>}
+            {!preset && <option value="own">{meta?.origin ? "Its own (from the world map)" : "Its own (not one of these)"}</option>}
           </select>
         </label>
         <p className="muted">{CITY_CLIMATES.find((p) => p.id === preset)?.hint ?? `Temperature ${climate.temperature}, moisture ${climate.moisture} (0 to 1).`}</p>
@@ -269,10 +270,12 @@ function LandStartBox({ spec, land, onUi }: { spec: NonNullable<MapMeta["city"]>
       </label>
       <p className="muted">{chosen.hint}{style !== "flat" && " A new one each time you click."}</p>
       {asking ? (
-        <div className="row">
-          <span className="muted">This replaces the {land.length === 1 ? "one hill, valley or slope" : `${land.length} hills, valleys and slopes`} here. Undo takes it back.</span>
-          <button className="danger" onClick={make} data-testid="city-land-confirm">Replace</button>
-          <button onClick={() => setAsking(false)}>Cancel</button>
+        <div className="ask-replace">
+          <p className="muted">This replaces the {land.length === 1 ? "one hill, valley or slope" : `${land.length} hills, valleys and slopes`} here. Undo takes it back.</p>
+          <div className="row">
+            <button className="danger" onClick={make} data-testid="city-land-confirm">Replace</button>
+            <button onClick={() => setAsking(false)}>Cancel</button>
+          </div>
         </div>
       ) : (
         <div className="row"><button className="primary" onClick={() => (land.length ? setAsking(true) : make())} disabled={style === "flat" && !land.length} data-testid="city-land-make">{style === "flat" ? "Make it flat" : "Make the land"}</button></div>

@@ -16,6 +16,8 @@ export interface AppState {
   meta: MapMeta | null;
   projects: ProjectInfo[];
   changes: ChangeEntry[];
+  /** The open map's changes from before it was last closed (this run): History lists them, but they can't be undone. */
+  earlierChanges: ChangeEntry[];
   seq: number;
   canUndo: boolean;
   canRedo: boolean;
@@ -73,7 +75,7 @@ function loadLockPref(): boolean {
 }
 
 const initial: AppState = {
-  connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
+  connected: false, meta: null, projects: [], changes: [], earlierChanges: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
   selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, traceCompare: { busy: false, result: null, metric: "roofs", shown: false, at: 0 }, water: null, carving: false, asks: [],
@@ -350,7 +352,7 @@ class Store {
           storedAt: 0, changedAt: 0, saveFailed: false,
           // (a measurement against the trace picture belongs to the map it was made on)
           ...(m.meta.id !== this.state.meta?.id && { traceCompare: { busy: false, result: null, metric: this.state.traceCompare.metric, shown: false, at: 0 } }),
-          meta: m.meta, projects: m.projects, changes: m.changes, seq: m.seq, canUndo: m.canUndo, canRedo: m.canRedo,
+          meta: m.meta, projects: m.projects, changes: m.changes, earlierChanges: m.earlier ?? [], seq: m.seq, canUndo: m.canUndo, canRedo: m.canRedo,
           refs: m.refs, chat: m.chat, chatSettings: m.chatSettings, chatBusy: m.chatBusy, usage: m.usage,
           apiKeyConfigured: m.apiKeyConfigured, features: m.features, levels: m.levels ?? null, selection: null, selectionLock: false, water: null, carving: false,
         });

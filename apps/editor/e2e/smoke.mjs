@@ -1057,6 +1057,17 @@ try {
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByTestId("battle-summary").getByText(/ 0 objects/).waitFor({ timeout: 10000 });
     await page.getByTestId("prop-mode-one").click();
+    // the ruler goes from square middle to square middle: points clicked off the middle, at different heights, still measure whole squares, 5 ft each
+    // (the 0.1.13 playtest read 69 ft for 14 squares)
+    await page.getByTestId("btool-measure").click();
+    await click(2.3, 3.6);
+    { const p = sq(16.2, 3.4); await page.mouse.dblclick(p.x, p.y); }
+    await page.getByTestId("measure-result").getByText(/^\d+ ft \(\d+ squares\)/).waitFor({ timeout: 5000 });
+    {
+      const m = /^(\d+) ft \((\d+) squares\)/.exec(await page.getByTestId("measure-result").innerText());
+      if (!m || Number(m[1]) !== 5 * Number(m[2])) fail(`the battlemap ruler should measure whole squares at 5 ft each (got ${m?.[0]})`);
+    }
+    await page.keyboard.press("Escape");
     // prefabs: save the wooden room by name, place it again turned a quarter (one undo step), and undo it
     const wallPieces = async () => Number(/(\d+) wall pieces?/.exec(await page.getByTestId("battle-summary").textContent())?.[1] ?? -1);
     await page.getByTestId("btool-prefab").click();
@@ -1176,6 +1187,11 @@ try {
     await page.getByTestId("battle-inspector").getByRole("heading", { name: "Stairs" }).waitFor({ timeout: 5000 });
     await page.getByTestId("connector-target").getByText(/Leads up to Upper floor/).waitFor({ timeout: 5000 });
     await page.getByTestId("battle-summary").getByText(/1 stair, ladder or hole/).waitFor({ timeout: 5000 });
+    // its size boxes fit in the panel (the 0.1.13 playtest found the Stairs panel overflowing)
+    {
+      const panel = await page.getByTestId("battle-inspector").boundingBox(), wide = await page.getByTestId("connector-w").boundingBox();
+      if (!panel || !wide || wide.x + wide.width > panel.x + panel.width + 1) fail("the Stairs panel's size boxes should fit inside it");
+    }
     await page.getByTestId("connector-lead").selectOption("down");
     await page.getByTestId("connector-target").getByText(/no level below/).waitFor({ timeout: 5000 });
     await page.getByTestId("connector-lead").selectOption("up");

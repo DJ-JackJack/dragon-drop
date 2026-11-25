@@ -14,6 +14,14 @@ describe("what Claude Code's hooks tell us", () => {
     expect(claudeStateAfter(s, { hook_event_name: "SessionEnd" })).toBe("unknown");
   });
 
+  it("is idle again after an interrupt, which Claude Code sends no Stop for (the desktop app reports it: the 0.1.13 playtest)", () => {
+    expect(claudeStateAfter("busy", { hook_event_name: "Interrupted" })).toBe("idle");
+    expect(claudeStateAfter("blocked", { hook_event_name: "Interrupted" })).toBe("idle");
+    // (an Esc while nothing was running changes nothing: a Claude that hasn't reported yet stays unknown)
+    expect(claudeStateAfter("unknown", { hook_event_name: "Interrupted" })).toBe("unknown");
+    expect(claudeStateAfter("idle", { hook_event_name: "Interrupted" })).toBe("idle");
+  });
+
   it("is blocked at a permission question, and only a Stop clears it (an idle reminder must not)", () => {
     let s = claudeStateAfter("busy", { hook_event_name: "Notification", message: "Claude needs your permission to use Bash" });
     expect(s).toBe("blocked");

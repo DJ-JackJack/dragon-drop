@@ -59,10 +59,12 @@ export function GenerateBox({ kind, hasContent }: { kind: "battle" | "city"; has
         <input value={seed} inputMode="numeric" placeholder={last?.what === what && last.seed ? String(last.seed) : "new"} onChange={(e) => setSeed(e.target.value.replace(/[^0-9]/g, ""))} data-testid="gen-seed" />
       </label>
       {asking ? (
-        <div className="row">
-          <span className="muted">This replaces {replaces}. Undo takes it back.</span>
-          <button className="danger" onClick={go} data-testid="gen-confirm">Replace</button>
-          <button onClick={() => setAsking(false)}>Cancel</button>
+        <div className="ask-replace">
+          <p className="muted">This replaces {replaces}. Undo takes it back.</p>
+          <div className="row">
+            <button className="danger" onClick={go} data-testid="gen-confirm">Replace</button>
+            <button onClick={() => setAsking(false)}>Cancel</button>
+          </div>
         </div>
       ) : (
         <div className="row">

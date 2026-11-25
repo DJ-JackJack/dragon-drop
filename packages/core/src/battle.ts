@@ -632,7 +632,7 @@ export function ambientField(spec: BattleSpec, zones: MapAmbientZone[] | undefin
  */
 export function drawBattleLights(
   img: { w: number; h: number; data: Uint8ClampedArray }, spec: BattleSpec, lights: MapLight[] | undefined, walls: MapWall[] | undefined, zones?: MapAmbientZone[],
-  glows?: WallPictureSource,
+  glows?: WallPictureSource, marks = true,
 ) {
   const px = spec.pxPerSquare, amb = ambientOf(spec);
   const dimmed = amb < 0.999 || (zones ?? []).some((z) => z.points.length >= 3 && z.ambient < 0.999);
@@ -702,7 +702,8 @@ export function drawBattleLights(
       }
     }
   }
-  for (const l of lights ?? []) stamp(img, l.x * px, l.y * px, Math.max(2, px * 0.09), [255, 250, 220]);
+  // a small dot where each light is: the DM's mark (previews show where the lights are), never on the players' picture (the 0.1.13 playtest saw them there)
+  if (marks) for (const l of lights ?? []) stamp(img, l.x * px, l.y * px, Math.max(2, px * 0.09), [255, 250, 220]);
 }
 
 /** Walls, doors and windows (and, unless `lights` is false, light) onto an image of the whole battlemap (image px). */
@@ -827,7 +828,7 @@ export function renderBattle(
   if (opts.overlay !== false) {
     compositeOver(img, renderWallLayer(spec, doc.features?.walls, { floorAt: floorAtFn(doc), connectors: doc.features?.connectors, pictureFor: opts.wallPictures, dmMarks: opts.dmMarks }));
     drawBattleProps(img, spec, props, opts.sprites, "above");
-    if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones, opts.wallPictures);
+    if (opts.lights !== false) drawBattleLights(img, spec, doc.features?.lights, doc.features?.walls, doc.features?.zones, opts.wallPictures, opts.dmMarks !== false);
     if (opts.notes) drawBattleNotes(img, spec, doc.features?.notes);
   } else {
     drawBattleProps(img, spec, props, opts.sprites, "above");

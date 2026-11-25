@@ -88,6 +88,7 @@ class Form:
             fontName="Helvetica", fontSize=10, borderStyle="solid", borderWidth=0.8,
             borderColor=LINE, fillColor=FIELD, textColor=INK, forceBorder=True,
             fieldFlags="multiline" if multiline else "",
+            maxlen=0,  # (no limit: the library's default of 100 characters cut answers short in the 0.1.13 playtest)
         )
         self.fields += 1
 
@@ -223,7 +224,7 @@ FEATURES = [
      "press <b>P</b>; the Map panel shows the <b>Assets</b> tab: click a tree or a rock there. In the bar along the top click <b>Scatter</b>, then drag across the map. One Undo takes the whole stroke back. <b>Only on floor</b> keeps them off the empty void.",
      "Did it look natural? Did anything overlap or land somewhere it shouldn't?"),
     ("gm_only", "GM-only secrets", "",
-     "select a place (world map), an object or a light (battlemap) or a building (settlement) with the Select tool (<b>V</b>), and tick <b>GM only</b> in its panel on the right: it shows faintly to you. Then <b>Export</b> (bottom bar): <b>For players</b> leaves it out; <b>My own copy</b> keeps it.",
+     "select a place (world map), an object or a light (battlemap) or a building (settlement) with the Select tool (<b>V</b>), and tick <b>GM only</b> in its panel on the right (on a battlemap, the Object tool's bar also has <b>GM only</b> for new objects): it shows faintly to you, with a small GM tag on battlemaps. Then <b>Export</b> (bottom bar): world maps and settlements have a <b>For players: leave out what is GM only</b> tick box (on by default); battlemaps leave them out unless you tick <b>My own copy</b>. The player screen never shows them.",
      "Did any secret show up anywhere players would see it? This one matters most."),
     ("prefabs", "Prefabs", "key: C on battlemaps",
      "press <b>C</b>. In the bar along the top choose <b>Save</b>, drag over a room and give it a name. Then choose <b>Place</b>, pick it by its picture and click the map; <b>Q</b> and <b>E</b> turn it, <b>X</b> mirrors it. Try placing it on another battlemap.",

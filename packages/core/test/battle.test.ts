@@ -131,6 +131,17 @@ describe("rendering", () => {
     drawBattleOverlay(img, { ...d.meta.battle!, pxPerSquare: 2 }, undefined);
     expect(img.data.every((v) => v === 0)).toBe(true);
   });
+
+  it("marks where each light is in the DM's pictures, never in the players' (the 0.1.13 playtest saw dots on the player screen)", () => {
+    const d = room();
+    d.features!.lights!.push({ id: "g1", x: 10, y: 7.5, radius: 5, colour: "#ff0000" });
+    const dm = renderBattle(d), players = renderBattle(d, { dmMarks: false });
+    const o = (525 * 1400 + 700) * 4; // (the light's spot: 10 x 70 px, 7.5 x 70 px)
+    // the DM's mark is a near-white dot; the players' picture has only the red glow there
+    expect(Math.min(dm.data[o], dm.data[o + 1], dm.data[o + 2])).toBeGreaterThan(210);
+    expect(players.data[o + 2]).toBeLessThan(dm.data[o + 2] - 40);
+    expect(players.data[o]).toBeGreaterThan(players.data[o + 2]);
+  });
 });
 
 describe("exports", () => {

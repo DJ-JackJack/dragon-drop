@@ -6,7 +6,7 @@ import path from "node:path";
 import type { WebSocket } from "ws";
 import {
   type Author, type ChatEvent, type ClientMsg, type Derived, type MapDoc, type MapSession as MapSessionT, type RGBAImage, type Rect,
-  type ClaudeState, type EditTarget, EDIT_MESSAGES, pointInPolygon, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
+  type ChangeEntry, type ClaudeState, type EditTarget, EDIT_MESSAGES, pointInPolygon, type HookEvent, type RiverPath, type ServerMsg, HeightField, MapSession, claudeStateAfter, climateOf, resolveRiverSources, cropScale, drawRivers, encodeFrame, packDerived, planRegional,
   PROP_PX_PER_SQUARE, battleFloorFromWorld, battleImageSize, battleRoofRects, battleSizeError, battleSpec, createBattleDoc, createZip, describeSample, sampleWorld, isBattle, newFeatureId, regionalFeatures, paintLakes, renderFull, routeWaypoints,
   type BattleExportFormat, battleKey, foundryConnectorProblems, sampleBaseClimate, sketchToHeights, toFoundryLevelsScene, toUniversalVtt, type FoundryLevelDoc,
   type Selection, type ViewInfo, cleanSelection, cleanView, defaultFeather, selectionFeatureExists, selectionShape,
@@ -70,6 +70,9 @@ interface LevelRuntime {
   dirty: boolean;
 }
 
+/** How many of a closed map's changes are kept for its History (per level). */
+const EARLIER_KEEP = 100;
+
 interface OpenProject {
   id: string;
   /** The session of the level being worked on (the editor, Claude's tools, selection and undo all act on it). */
@@ -124,6 +127,8 @@ export class Hub {
   private selection: Selection | null = null;
   private selectionLock = false;
   private view: ViewInfo | null = null;
+  /** Each map's changes this run, kept when it closes ("<map id>/<level id>"), so its History still lists them when it opens again (the 0.1.13 playtest found History emptied by switching maps); they can't be undone then. */
+  private earlier = new Map<string, ChangeEntry[]>();
 
   get selectionState() {
     return { selection: this.selection, lock: this.selectionLock, view: this.view };
@@ -400,6 +405,11 @@ export class Hub {
         for (const rt of old.runtime) if (rt.session.inTransaction) rt.session.commit();
         for (let i = 0; old.dirty && i < 5; i++) await this.flush();
         if (old.dirty) throw new Error(`The latest changes to "${old.session.doc.meta.name}" couldn't be saved just now, so it was kept open (nothing was lost). Try again in a moment.`);
+        // its History is kept for when it is opened again (the undo steps go with the map: History says so)
+        for (const rt of old.runtime) {
+          const now = rt.session.recent(EARLIER_KEEP);
+          if (now.length) this.earlier.set(`${old.id}/${rt.id}`, [...(this.earlier.get(`${old.id}/${rt.id}`) ?? []), ...now].slice(-EARLIER_KEEP));
+        }
       }
       this.open = op;
       this.selection = null; this.selectionLock = false; this.view = null; // a selection belongs to the map it was made on
@@ -1562,8 +1572,9 @@ export class Hub {
       return;
     }
     const { id, session, agent } = this.open;
+    const level = this.open.runtime.find((r) => r.session === session)?.id ?? "", earlier = this.earlier.get(`${id}/${level}`);
     this.send(ws, {
-      t: "project", meta: session.doc.meta, projects, changes: session.recent(100), seq: session.seq,
+      t: "project", meta: session.doc.meta, projects, changes: session.recent(100), seq: session.seq, ...(earlier?.length && { earlier }),
       canUndo: session.canUndo, canRedo: session.canRedo, refs: await this.store.listRefs(id),
       chat: agent.state.items.slice(-300), chatSettings: agent.state.settings, chatBusy: agent.busy,
       usage: agent.state.usage, apiKeyConfigured: this.modelCall !== null,

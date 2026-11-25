@@ -94,19 +94,19 @@ Yes. In the Map panel's **Ground colours and textures** (under Land and climate)
 Yes: in the place's panel, **Your notes** takes a web address, an Obsidian or OneNote link, or a file or folder on your PC, and **Open** opens it in its own program.
 
 **Can I colour in kingdoms and provinces?**
-Yes: the world map's **Realm** tool (`B`) paints realms onto the land, each in its own colour with its name in the middle. They stop at the coast and meet their neighbours exactly.
+Yes: the world map's **Realm** tool (`B`) paints realms onto the land, each in its own colour with its name in the middle. **+ New realm** in the tool's bar starts one under your name for it. They stop at the coast and meet their neighbours exactly.
 
 **Can I show the map to my players on a TV?**
-Yes: the battlemap's **Player screen** (in the Map panel) opens a second window for the TV, without anything GM only. With the fog on it shows only what you reveal with the **Reveal** tool: click a room and the players see it.
+Yes: the battlemap's **Player screen** (a button in the bar under the map, and a section of the Map panel) opens a second window for the TV, without anything GM only and without the marks only you should see. With the fog on it shows only what you reveal with the **Reveal** tool: click a room and the players see it.
 
 **Can it make a dungeon or a village for me?**
 Yes, without Claude too: the Map panel's **Generate** box makes a dungeon or cave on a battlemap and a village on a settlement map, in one click, to edit as you like. The same seed makes the same map again.
 
 **Can I reuse a room I already built?**
-Yes. On a battlemap, the **Prefab** tool (`C`) saves a rectangle of it by name (floor, walls, doors, objects, lights) and places it again on any battlemap, turned or mirrored.
+Yes. On a battlemap, the **Prefab** tool (`C`) saves a rectangle of it by name (floor, walls, doors, objects, lights; a wall that runs on past the rectangle is cut at its edge) and places it again on any battlemap, turned or mirrored.
 
 **Can I keep things secret from my players?**
-Yes. Tick **GM only** on a place, label, road, object, light or a building's name: it shows faintly for you, and exports for players leave it out (you can still export your own copy with everything).
+Yes. Tick **GM only** on a place, label, road, object, light or a building's name: it shows faintly for you (with a small **GM** tag on battlemaps), and exports for players and the player screen leave it out (you can still export your own copy with everything).
 
 **Can I see the map on my phone?**
 No. Dragon Drop only answers your own PC, so nothing on your network or the internet can reach your maps. You can still talk to Claude from your phone with Claude Code's Remote Control (the setup guide, section 6); the map itself changes in the Dragon Drop window on your PC.
