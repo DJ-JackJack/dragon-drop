@@ -10,9 +10,9 @@ import {
   type WallPieces, cleanCityWall, cleanDistrict, districtColour, distToWall, hexToRgb, portcullisBars, wallPieces,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
-  viewKeyAction, groundCellColours, groundLooks, groundTextures, gradientShade, textureDetail, type MapDoc,
+  viewKeyAction, groundCellColours, groundLooks, groundTextures, gradientShade, textureDetail, type MapDoc, squareScore,
 } from "@mapmaker/core";
-import { type CityUi, DEFAULT_HOUSE, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
+import { type CityUi, DEFAULT_HOUSE, cityViewBox, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { loadRoofPools, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
@@ -151,6 +151,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   const traceMode = useSyncExternalStore(traceCtl.subscribe, () => traceCtl.state.mode);
   // the picture reader's marks redraw the view as they change
   const reading = useSyncExternalStore(readerCtl.subscribe, () => readerCtl.state.on);
+  const compareView = useSyncExternalStore(store.subscribe, () => store.getState().traceCompare);
   useEffect(() => readerCtl.subscribe(requestDraw), [requestDraw]);
 
   const infoOf = (b: MapBuilding) => {
@@ -205,7 +206,6 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     return null;
   };
 
-  // ------------------------------------------------------------ the ground
   /** A ground texture of the packs, once it has loaded (null while it loads or if it can't be had: the kind is then drawn in its colours; the view is redrawn when it arrives). */
   const groundPicture = (asset: string) => {
     const hit = groundImgs.current.get(asset);
@@ -282,6 +282,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     }
   }
 
+  // ------------------------------------------------------------ the ground
   const paintGround = useCallback((r: Rect | null) => {
     const m = metaRef.current, hf = store.heights;
     if (!m?.city || !hf) return;
@@ -312,7 +313,6 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       }
       off.getContext("2d")!.putImageData(imgRef.current!, 0, 0, x0, y0, x1 - x0, y1 - y0);
     }
-    if (fittedFor.current !== m.id) fit();
     // each kind covered with a pack texture: a mask of its cells (one pixel a cell), the shape the texture is drawn in, and its gradient as a grey shade
     // (against the kind's own colour) laid over the texture by soft light, kept in one picture for all the kinds
     const looks = groundLooks(m.city), textured = looks.map((l, id) => (l.texture ? id : -1)).filter((id) => id > 0);
@@ -342,6 +342,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       masks.set(id, c);
     }
     groundMasks.current = masks;
+    if (fittedFor.current !== m.id) fit();
     setLoadedId(m.id);
     requestDraw();
   }, [requestDraw]);
@@ -409,8 +410,8 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     ctx.beginPath(); ctx.rect(v.ox, v.oy, MW, MH); ctx.clip();
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(off, v.ox, v.oy, off.width * spec.cellM * v.scale, off.height * spec.cellM * v.scale);
-    ctx.restore();
     drawGroundTextures(ctx, v, W, H, spec.cellM, spec);
+    ctx.restore();
     if (screen) { ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1); }
     if (target ? target.contours : o.contours) drawContours(ctx, v, W, H);
     if (screen) traceCtl.draw(ctx, f.trace, m.id, v); // (over the ground, under the streets and buildings: you see through to what you are redrawing)
@@ -418,6 +419,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     const mv = screen ? moving.current : null, mvSet = mv ? new Set(mv.ids) : null;
     const dx = (id: string) => (mvSet?.has(id) ? mv!.dx : 0), dy = (id: string) => (mvSet?.has(id) ? mv!.dy : 0);
     const vx0 = -v.ox / v.scale - 5, vy0 = -v.oy / v.scale - 5, vx1 = (W - v.ox) / v.scale + 5, vy1 = (H - v.oy) / v.scale + 5;
+    if (screen) cityViewBox.current = { x0: Math.max(0, -v.ox / v.scale), y0: Math.max(0, -v.oy / v.scale), x1: Math.min(spec.widthM, (W - v.ox) / v.scale), y1: Math.min(spec.heightM, (H - v.oy) / v.scale) };
     const sel = new Set(screen ? o.selected : []);
     const px = (x: number) => v.ox + x * v.scale, py = (y: number) => v.oy + y * v.scale;
 
@@ -511,6 +513,22 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     compareCtl.draw(ctx, m.id, v, W, H);
     labelHits.current = o.names ? drawCityNames(ctx, moved, { scale: v.scale, ox: v.ox, oy: v.oy, widthM: spec.widthM, fitScale: Math.min(W / spec.widthM, H / spec.heightM) * 0.95, W, H, labelScale: labelScaleRef.current, faintGmOnly: true }, sel) : [];
     if (o.tool === "measure") measureCtl.draw(ctx, v, cityLength);
+    // How close? (the trace bar): each square tinted from red (far off) to green (close) on the chosen measure
+    const cmp = store.getState().traceCompare;
+    if (cmp.shown && cmp.result && f.trace) {
+      ctx.save();
+      for (const q of cmp.result.squares) {
+        const sc = squareScore(q, cmp.metric);
+        if (sc === null) continue;
+        const x0 = v.ox + q.x * v.scale, y0 = v.oy + q.y * v.scale, w = q.size * v.scale;
+        if (x0 > W || y0 > H || x0 + w < 0 || y0 + w < 0) continue;
+        ctx.fillStyle = `rgba(${Math.round(220 * (1 - sc))},${Math.round(200 * sc)},40,0.32)`;
+        ctx.fillRect(x0, y0, w, w);
+        ctx.strokeStyle = "rgba(20,20,20,0.35)"; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, w - 1);
+        if (w >= 70) { ctx.fillStyle = "#fff"; ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(`${Math.round(sc * 100)}%`, x0 + 4, y0 + 4); }
+      }
+      ctx.restore();
+    }
 
     // what is selected
     ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = GOLD; ctx.lineJoin = "round";
@@ -1169,7 +1187,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   // the Objects list: bring a thing into view (metres)
   useEffect(() => focusBus.listen((b) => { const w = wrapRef.current; if (!w) return; viewRef.current = viewForBox(viewRef.current, b, w.clientWidth, w.clientHeight, 4, MIN_ZOOM); requestDraw(); }), [requestDraw]);
   useEffect(() => { if (meta && store.heights && fittedFor.current !== meta.id) paintGround(null); }, [meta, paintGround]);
-  useEffect(() => { requestDraw(); }, [features, ui, meta, labelScale, requestDraw]);
+  useEffect(() => { requestDraw(); }, [features, ui, meta, labelScale, compareView, requestDraw]);
   useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; districtDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
   // the land or the climate changed: the ground's colours and shading with it
   const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}|${JSON.stringify(meta?.city?.ground ?? null)}|${JSON.stringify(meta?.city?.groundLook ?? null)}`;

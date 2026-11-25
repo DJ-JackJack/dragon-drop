@@ -7,6 +7,9 @@ export type CityTool = "pan" | "select" | "measure" | "building" | "outline" | "
 /** What the Land tool makes: a hill (a click, or a drag for its size), a ridge or valley (points along it), a plateau or hollow (an outline), a slope (a drag from low to high). */
 export type LandMode = "hill" | "ridge" | "valley" | "plateau" | "hollow" | "slope";
 
+/** The part of the settlement on screen, in metres (kept by CityView as it draws; the trace bar's How close? can measure just that). */
+export const cityViewBox: { current: { x0: number; y0: number; x1: number; y1: number } | null } = { current: null };
+
 export interface CityUi {
   tool: CityTool;
   /** Ids of the selected buildings and streets. */

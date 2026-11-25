@@ -7,6 +7,7 @@ import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, type PrefabInfo, type GenerateRequest, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
   PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize, EDIT_MESSAGES, IMAGE_HEAD_BYTES, imageSize,
+  type CompareResult,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
 
@@ -48,6 +49,8 @@ export interface AppState {
   pictureNote: { text: string; busy: boolean; at: number; ms?: number } | null;
   /** A settlement's ground colours are being taken from its trace picture (`ground_from_picture`). */
   groundBusy: boolean;
+  /** How close the settlement is to its trace picture (`compare_trace`, the trace bar's How close?): the answer, which measure the squares are tinted by, and whether they are shown. */
+  traceCompare: { busy: boolean; result: CompareResult | null; error?: string; metric: "roofs" | "streets" | "water"; shown: boolean; at: number };
   /** World maps: the named rivers and lakes as the water is now (labels to draw, each name's river or lake) and every lake's shore (the River tool). Null until the rivers are worked out. */
   water: { labels: MapLabel[]; named: NamedWater[]; lakes: LakeShape[] } | null;
   /** Valleys are being carved (the Carve valleys button waits). */
@@ -73,7 +76,7 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, water: null, carving: false, asks: [],
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, traceCompare: { busy: false, result: null, metric: "roofs", shown: false, at: 0 }, water: null, carving: false, asks: [],
   prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null, playerRect: null,
 };
 
@@ -176,6 +179,9 @@ class Store {
   note(text: string, ms = 5000) { this.set({ pictureNote: { text, busy: false, at: Date.now(), ms } }); }
   /** Colour the open settlement's ground from its trace picture (the answer is `ground_sampled`). */
   groundFromPicture() { this.set({ groundBusy: true }); this.send({ t: "ground_from_picture" }); }
+  /** Measure the settlement against its trace picture (the answer is `trace_compared`), and what the overlay shows. */
+  compareTrace(area?: [number, number][]) { this.set({ traceCompare: { ...this.state.traceCompare, busy: true, error: undefined } }); this.send({ t: "compare_trace", ...(area && { area }) }); }
+  setTraceCompare(p: Partial<AppState["traceCompare"]>) { this.set({ traceCompare: { ...this.state.traceCompare, ...p } }); }
 
   /** The DM chose another name instead of replacing a prefab. */
   clearPrefabAsk() { this.set({ prefabAsk: null }); }
@@ -342,6 +348,8 @@ class Store {
         this.pendingDerived = null;
         this.set({
           storedAt: 0, changedAt: 0, saveFailed: false,
+          // (a measurement against the trace picture belongs to the map it was made on)
+          ...(m.meta.id !== this.state.meta?.id && { traceCompare: { busy: false, result: null, metric: this.state.traceCompare.metric, shown: false, at: 0 } }),
           meta: m.meta, projects: m.projects, changes: m.changes, seq: m.seq, canUndo: m.canUndo, canRedo: m.canRedo,
           refs: m.refs, chat: m.chat, chatSettings: m.chatSettings, chatBusy: m.chatBusy, usage: m.usage,
           apiKeyConfigured: m.apiKeyConfigured, features: m.features, levels: m.levels ?? null, selection: null, selectionLock: false, water: null, carving: false,
@@ -372,6 +380,9 @@ class Store {
         break;
       case "picture_read":
         for (const l of this.readListeners) l(m);
+        break;
+      case "trace_compared":
+        this.set({ traceCompare: { ...this.state.traceCompare, busy: false, ...(m.result ? { result: m.result, error: undefined, shown: true, at: Date.now() } : { error: m.error ?? "It couldn't be measured." }) } });
         break;
       case "ground_sampled": {
         const names = Object.keys(m.colours ?? {});

@@ -8,6 +8,7 @@ import {
   cityBattleBoxAt, drawCityNames, drawGrid, fittingRoofAssets, isCity, materialByName, newFeatureId, pointsBounds, polygonArea, polygonCentroid, rectPolygon, renderCity, roofTileMetres, streetBridges, streetWidthFor,
   LAND_START_IDS, LAND_STARTS,
   cleanNameSize,
+  squareScore,
 } from "@mapmaker/core";
 import { encodeJpeg, toBase64 } from "./images.ts";
 import { traceOverlay } from "./traceTools.ts";
@@ -356,6 +357,62 @@ export const CITY_TOOLS = [
       const note = `City ${sp.widthM} x ${sp.heightM} m, ${i.region ? `region x${Math.round(r.region.x)} y${Math.round(r.region.y)} ${Math.round(r.region.w)}x${Math.round(r.region.h)} m` : "whole city"}; image ${r.img.w}x${r.img.h}` +
         (step ? `, grid every ${step} m (numbers are metres)` : "") + traced + `. ${featuresOf(ctx).buildings?.length ?? 0} buildings. Change #${ctx.session().seq}.`;
       return { content: [{ type: "text", text: note }, { type: "image", mediaType: "image/jpeg", data: toBase64(jpg) }], display };
+    },
+  }),
+
+  define({
+    name: "compare_to_trace",
+    description:
+      "How close the settlement is to the picture it is redrawn from (its trace picture), measured, not judged by eye: what roofs, streets, ground, water and trees look like is learnt " +
+      "from where the map has them, every pixel of the picture is classed by those colours, and the picture is compared with the map square by square (square_m, default 250): " +
+      "how much of the picture's roof area the buildings cover and how much of the buildings lies on a roof, separate roofs in the picture against buildings on the map, " +
+      "the same for streets and water, the streets' widths against the picture's (map over picture: 1 is right, under 1 too narrow), and tree groups standing on roofs. " +
+      "It answers with the totals, the squares that are furthest off, and the picture tinted square by square (heat: roofs, streets or water; red far off, green close). " +
+      "Use it after every step of a redraw, and before saying how close the redraw is: report its numbers. area (a polygon in metres, e.g. the town inside its walls) " +
+      "keeps it to the part that is drawn alike: outside a town, a picture's parchment or fields can look like a roof colour. It changes nothing.",
+    schema: z.object({
+      area: z.array(Pt).min(3).max(400).optional().describe("Only this part of the map (metres)"),
+      square_m: z.number().min(20).max(2000).optional(),
+      heat: z.enum(["roofs", "streets", "water"]).optional().describe("Which measure the picture is tinted by (default roofs)"),
+    }),
+    async run(ctx, i) {
+      const bad = needCity(ctx); if (bad) return bad;
+      if (!ctx.compareTrace) return fail("Comparing with the trace picture isn't available here.");
+      let res;
+      try { res = await ctx.compareTrace({ ...(i.area && { area: i.area as [number, number][] }), ...(i.square_m && { square: i.square_m }), heat: i.heat ?? "roofs", heatMax: 1200 }); }
+      catch (e) { return fail((e as Error).message); }
+      const r = res.result, T = r.totals, pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : null);
+      const share = (c: { picture: number; map: number; both: number }) => ({ picture_covered_pct: pct(c.both, c.picture), map_on_it_pct: pct(c.both, c.map) });
+      const m2 = (n: number) => Math.round(n * r.metresPerSample * r.metresPerSample);
+      // the squares furthest off: roofs the map misses or has where the picture has none, and roof counts far apart
+      // (squareScore leaves out squares with too little roof to judge, and squares the map has mostly as water with no buildings)
+      const worst = r.squares.map((q) => ({ q, score: squareScore(q, "roofs") })).filter((x): x is { q: typeof x.q; score: number } => x.score !== null)
+        .sort((a, b) => a.score - b.score).slice(0, 8)
+        .map(({ q }) => ({ at_m: [q.x, q.y], size_m: q.size, roofs: share(q.roofs), separate_roofs: q.roofCount.picture, buildings: q.roofCount.map, streets: share(q.streets) }));
+      const counts = r.squares.filter((q) => q.roofCount.picture >= 8).map((q) => ({ at_m: [q.x, q.y], separate_roofs: q.roofCount.picture, buildings: q.roofCount.map, ratio: Math.round((q.roofCount.map / q.roofCount.picture) * 100) / 100 }))
+        .sort((a, b) => Math.abs(1 - a.ratio) - Math.abs(1 - b.ratio)).reverse().slice(0, 6);
+      const out = {
+        metres_per_sample: r.metresPerSample,
+        learnt: r.classes.map((c) => ({ name: c.name, colour: `#${c.rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`, from: c.learntFrom })),
+        roofs: { ...share(T.roofs), picture_roof_m2: m2(T.roofs.picture), separate_roofs_in_picture: T.roofCount.picture, buildings_on_map: T.roofCount.map },
+        streets: { ...share(T.streets), ...(T.streetWidth && { width_map_over_picture: { median: T.streetWidth.median, quartiles: [T.streetWidth.p25, T.streetWidth.p75], samples: T.streetWidth.samples } }) },
+        water: share(T.water),
+        trees_on_roofs: { of_groups: T.treesOnRoofs.groups, on_roofs: T.treesOnRoofs.onRoofs, ...(T.treesOnRoofs.ids.length && { ids: T.treesOnRoofs.ids.slice(0, 20) }) },
+        furthest_off_squares: worst,
+        roof_counts_furthest_off: counts,
+        notes: [
+          "picture_covered_pct: how much of what the picture shows the map has there; map_on_it_pct: how much of what the map has the picture shows there.",
+          "A redraw is close when both are 90 or more for roofs, the separate roofs and buildings agree within about 15% square by square, streets are covered 85% or more at a width ratio near 1, and no tree group stands on a roof.",
+        ],
+      };
+      const content: ToolResult["content"] = [{ type: "text", text: JSON.stringify(out, null, 1) }];
+      let display;
+      if (res.heat) {
+        const jpg = encodeJpeg(res.heat);
+        content.push({ type: "image", mediaType: "image/jpeg", data: toBase64(jpg) });
+        display = ctx.savePreview ? [await ctx.savePreview(jpg)] : undefined;
+      }
+      return { content, ...(display && { display }) };
     },
   }),
 

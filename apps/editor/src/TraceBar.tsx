@@ -3,7 +3,9 @@
  * ways to line it up (Move, Pin 2 points, on a battlemap Match grid, Fit), Lock and Stop tracing. trace.ts does the work. On a city map
  * it also starts the picture reader (Read buildings…, reader.ts), whose steps and buttons are shown here while it is on.
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { store } from "./store.ts";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { cityViewBox } from "./cityUi.ts";
 import { type MapMeta, ROOF_STYLES, ROOF_STYLE_NAMES, type RoofStyle, type TracePicture } from "@mapmaker/core";
 import { MAX_ROOFS, type ReaderWhat, readerCtl } from "./reader.ts";
 import { traceCtl, traceStep } from "./trace.ts";
@@ -91,6 +93,46 @@ function ReaderRows() {
   );
 }
 
+/**
+ * How close the settlement is to the picture (core cityCompare.ts through the hub): a button to measure, the totals, which measure the map's squares are
+ * tinted by (red far off, green close), and showing or hiding them. Measured again on demand, since a redraw changes all the time.
+ */
+function CompareRow() {
+  const c = useSyncExternalStore(store.subscribe, () => store.getState().traceCompare);
+  const districts = useSyncExternalStore(store.subscribe, () => store.getState().features.districts) ?? [];
+  const [where, setWhere] = useState("all");
+  const r = c.result, T = r?.totals, pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)}%` : "–");
+  // what to measure: all of it, what is on screen (zoom to the town: outside one, a picture's parchment can look like thatch), or a named district
+  const areaOf = (): [number, number][] | undefined => {
+    if (where === "screen") { const b = cityViewBox.current; return b ? [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]] : undefined; }
+    const d = districts.find((x) => x.id === where);
+    return d ? (d.points.map(([x, y]) => [x, y]) as [number, number][]) : undefined;
+  };
+  return (
+    <div className="trace-row compare-row" data-testid="compare-row">
+      <select value={where} onChange={(e) => setWhere(e.target.value)} title="Where to measure: zoom to the town and measure what's on screen, so the country round it isn't counted" data-testid="compare-where">
+        <option value="all">Whole map</option>
+        <option value="screen">What's on screen</option>
+        {districts.filter((d) => d.name).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>
+      <button onClick={() => store.compareTrace(areaOf())} disabled={c.busy} title="Measure the settlement against the picture, square by square: roofs, streets and water" data-testid="compare-trace">{c.busy ? "Measuring…" : r ? "Measure again" : "How close?"}</button>
+      {c.error && <span className="error-text">{c.error}</span>}
+      {T && (
+        <>
+          <span className="compare-totals" data-testid="compare-totals" title="Covered: how much of what the picture shows the map has. On: how much of what the map has the picture shows there.">
+            Roofs {pct(T.roofs.both, T.roofs.picture)} covered, {pct(T.roofs.both, T.roofs.map)} on roofs · {T.roofCount.picture} roofs / {T.roofCount.map} buildings ·
+            Streets {pct(T.streets.both, T.streets.picture)}{T.streetWidth ? ` (width ×${T.streetWidth.median})` : ""}{T.treesOnRoofs.onRoofs ? ` · ${T.treesOnRoofs.onRoofs} tree groups on roofs` : ""}
+          </span>
+          <select value={c.metric} onChange={(e) => store.setTraceCompare({ metric: e.target.value as "roofs" | "streets" | "water", shown: true })} title="Which measure the squares are tinted by" data-testid="compare-metric">
+            <option value="roofs">Roofs</option><option value="streets">Streets</option><option value="water">Water</option>
+          </select>
+          <button onClick={() => store.setTraceCompare({ shown: !c.shown })} data-testid="compare-shown">{c.shown ? "Hide squares" : "Show squares"}</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function TraceBar({ trace, meta, level }: { trace: TracePicture | undefined; meta: MapMeta; level?: string }) {
   const s = useSyncExternalStore(traceCtl.subscribe, traceCtl.getState);
   const reading = useSyncExternalStore(readerCtl.subscribe, () => readerCtl.state.on);
@@ -130,6 +172,7 @@ export function TraceBar({ trace, meta, level }: { trace: TracePicture | undefin
         )}
       </div>
       {reading && <ReaderRows />}
+      {city && !reading && !s.mode && <CompareRow />}
       {s.mode && !reading && (
         <div className="trace-row trace-help" data-testid="trace-help">
           <span>{traceStep(s)}</span>

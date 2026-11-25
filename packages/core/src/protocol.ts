@@ -5,6 +5,7 @@
 import type { ClaudeState } from "./assist.ts";
 import type { RiverSize, RoofStyle, StreetKind } from "./features.ts";
 import type { MapMeta } from "./doc.ts";
+import type { CompareResult } from "./cityCompare.ts";
 import type { Rect } from "./geom.ts";
 import type { ChangeEntry, Command } from "./session.ts";
 import type { RiverPath } from "./hydrology.ts";
@@ -94,7 +95,7 @@ export interface EditTarget { projectId?: string; level?: string }
 export const EDIT_MESSAGES = new Set([
   "cmd", "txn_begin", "txn_end", "undo", "redo",
   "checkpoint_save", "checkpoint_restore", "carve_valleys", "draw_river", "route_line", "paint_cells", "sketch_import", "selection",
-  "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as", "ground_from_picture",
+  "level_set", "level_add", "level_update", "level_remove", "ref_rename", "ref_remove", "read_picture", "read_picture_as", "ground_from_picture", "compare_trace",
   "create_city_here", "create_battle_here", "create_battle_from_city", "create_regional", "regional_refresh", "duplicate_project", "chat_send",
   "prefab_save", "prefab_place", "generate",
 ]);
@@ -112,6 +113,8 @@ export type ClientMsg =
   | { t: "paint_cells"; runs: { material: number; runs: number[] }[]; label: string }
   /** Colour the open settlement's ground from its trace picture (cityGround.ts), as one edit; the answer is `ground_sampled`, to this editor. */
   | { t: "ground_from_picture" }
+  /** How close the open settlement is to its trace picture (cityCompare.ts): the answer is `trace_compared`, to this editor. */
+  | { t: "compare_trace"; square?: number; area?: [number, number][] }
   /** Delete a map: its folder is moved into the maps folder's "Deleted maps" folder (never erased), and another map is opened if it was the open one. Only the DM does this (no tool of Claude's). */
   | { t: "delete_project"; id: string }
   | { t: "create_project"; name: string; width: number; height: number; kmPerPx: number; template: string; seed: number; lakes?: "none" | "few" | "some" | "many" }
@@ -267,6 +270,8 @@ export type ServerMsg =
   | { t: "selection"; selection: Selection | null; lock: boolean }
   /** What `ground_from_picture` set: each ground's new colour and how many places it was measured at, or why it couldn't. */
   | { t: "ground_sampled"; colours?: Record<string, string>; samples?: Record<string, number>; error?: string }
+  /** The settlement against its trace picture, square by square (`compare_trace`), or why it couldn't be. */
+  | { t: "trace_compared"; result?: CompareResult; error?: string }
   | { t: "error"; message: string };
 
 export interface FrameHeader {

@@ -21,6 +21,7 @@ import {
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
+import type { CompareAnswer } from "./compute.ts";
 import { type MapCompute, WorkerCompute } from "./compute.ts";
 import type { AssetLibrary } from "./assets.ts";
 import { dressBattleWithPacks } from "./battlePack.ts";
@@ -606,6 +607,18 @@ export class Hub {
     return { colours, samples };
   }
 
+  /**
+   * How close the open settlement is to its trace picture (core cityCompare.ts, on the compute thread, sharing the decoded picture with the readers):
+   * roofs, streets and water square by square, and the picture tinted by a measure when `heat` is asked for.
+   */
+  async compareCityTrace(o: { area?: [number, number][]; square?: number; heat?: "roofs" | "streets" | "water"; heatMax?: number } = {}) {
+    const { doc, bytes, key } = await this.tracedCity();
+    return await this.compute.readPictureAs(key, new Uint8Array(bytes), { what: "compare", opts: {
+      W: doc.height.w, H: doc.height.h, heights: doc.height.data.slice(), meta: structuredClone(doc.meta), features: structuredClone(doc.features ?? { places: [], labels: [] }),
+      compare: { ...(o.area && { area: o.area }), ...(o.square && { square: o.square }) }, ...(o.heat && { heat: o.heat, heatMax: o.heatMax }),
+    } }) as CompareAnswer;
+  }
+
   /** Set ground cells of the open city map as one edit (runs along the rows by material). Returns how many changed. */
   paintCityCells(runs: { material: number; runs: number[] }[], label: string, author: "user" | "claude" = "user"): number {
     const op = this.open;
@@ -656,6 +669,11 @@ export class Hub {
       const t = await lib.tile(a, undefined, true);
       if (t) out[a] = t;
     }
+    // the ground's pack textures (cityGroundLook.ts), under keys of their own: a picture can be a roof and a ground
+    if (doc.meta.city) for (const a of groundTextures(doc.meta.city)) {
+      const t = await lib.tile(a);
+      if (t) out[`ground:${a}`] = t;
+    }
     return out;
   }
 
@@ -669,11 +687,6 @@ export class Hub {
     // (walls, doors and windows, and paths: pictures laid along a line, prepared alike)
     const wallAssets = [...new Set([...(doc.features?.walls ?? []).flatMap((w) => [w.asset, w.portal]), ...(doc.features?.paths ?? []).map((p) => p.asset), ...(doc.features?.lights ?? []).map((l) => l.glow)].filter((a): a is string => !!a))];
     if (!lib || (!palette.length && !props.length && !pictured.length && !wallAssets.length)) return { opts: {}, missing: palette.length + props.length + pictured.length + wallAssets.length };
-    // the ground's pack textures (cityGroundLook.ts), under keys of their own: a picture can be a roof and a ground
-    if (doc.meta.city) for (const a of groundTextures(doc.meta.city)) {
-      const t = await lib.tile(a);
-      if (t) out[`ground:${a}`] = t;
-    }
     let missing = 0;
     // walls drawn with a picture from an asset pack (a long strip or a square texture, kept in its own shape)
     const wallPictures: Record<string, import("@mapmaker/core").SpriteData> = {};
@@ -1611,6 +1624,15 @@ export class Hub {
         case "paint_cells":
           this.paintCityCells(msg.runs, String(msg.label).slice(0, 80) || "Paint ground");
           return;
+        case "compare_trace": {
+          try {
+            // (an area from the editor: what is on screen, or a district; at most 400 points, every one two numbers)
+            const area = Array.isArray(msg.area) && msg.area.length >= 3 && msg.area.length <= 400 && msg.area.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v))) ? msg.area : undefined;
+            const r = await this.compareCityTrace({ ...(typeof msg.square === "number" && msg.square >= 20 && msg.square <= 2000 && { square: msg.square }), ...(area && { area }) });
+            this.send(ws, { t: "trace_compared", result: r.result });
+          } catch (e) { this.send(ws, { t: "trace_compared", error: (e as Error).message }); }
+          return;
+        }
         case "ground_from_picture": {
           try {
             const r = await this.cityGroundFromPicture("user");
@@ -1915,6 +1937,7 @@ export class Hub {
       readCityWater: (o) => self.readCityWater(o),
       paintCityCells: (runs, label) => self.paintCityCells(runs, label, "claude"),
       cityGroundFromPicture: (only) => self.cityGroundFromPicture("claude", only),
+      compareTrace: (o) => self.compareCityTrace(o),
       createBattleFromCity: async (o) => {
         const info = await self.createBattleFromCity(o);
         self.projectsCache = await self.store.list();
@@ -2067,7 +2090,7 @@ export class Hub {
       setSelection: refuse,
       saveCheckpoint: undefined, restoreCheckpoint: undefined, carveValleys: undefined, drawRiver: undefined, createRegional: undefined, levels: undefined, exportBattle: undefined,
       drainLake: undefined, checkpointHeights: undefined, duplicateMap: undefined,
-      readCityPicture: undefined, readCityStreets: undefined, readCityWater: undefined, paintCityCells: undefined, cityGroundFromPicture: undefined, createBattleHere: undefined, createCityHere: undefined, createBattleFromCity: undefined,
+      readCityPicture: undefined, readCityStreets: undefined, readCityWater: undefined, paintCityCells: undefined, cityGroundFromPicture: undefined, compareTrace: undefined, createBattleHere: undefined, createCityHere: undefined, createBattleFromCity: undefined,
     };
   }
 

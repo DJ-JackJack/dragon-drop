@@ -1558,6 +1558,13 @@ try {
     await page.getByTestId("history").getByText("Ground look: grass as it usually is").first().waitFor({ timeout: 5000 });
     await page.getByTestId("city-ground-reset").click();
     await page.getByTestId("history").getByText("Ground as the climate makes it").first().waitFor({ timeout: 5000 });
+    // How close? measures the settlement against the picture (on the compute thread) and tints its squares; the streets measure, then hidden
+    await page.getByTestId("compare-trace").click();
+    await page.getByTestId("compare-totals").waitFor({ timeout: 20000 });
+    if (!/Roofs .* covered/.test(await page.getByTestId("compare-totals").innerText())) fail("How close? should give the roofs' measure");
+    await page.getByTestId("compare-metric").selectOption("streets");
+    await page.screenshot({ path: path.join(shots, "e2e-5d-city-how-close.png") });
+    await page.getByTestId("compare-shown").click();
     await page.getByTestId("trace-stop").click();
     await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
     // the picture reader: a town picture laid over the whole city (2 m a pixel), one red roof and one grey one clicked, the grass and the street clicked as ground,

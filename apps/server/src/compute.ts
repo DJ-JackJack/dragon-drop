@@ -9,12 +9,15 @@ import {
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
   type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator, inkSymbols, renderInk,
 } from "@mapmaker/core";
-import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity, sampleGroundColours } from "@mapmaker/core";
+import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity, sampleGroundColours, type CompareOptions, type CompareResult, compareHeatMap, compareToTrace } from "@mapmaker/core";
 
 /** What the picture reader is asked for: buildings, streets or water (core cityReader.ts), or the colour of the ground at points (cityGround.ts). */
 export type ReadJob = { what: "buildings"; opts: ReaderOptions } | { what: "streets"; opts: StreetReadOptions } | { what: "water"; opts: WaterReadOptions }
-  | { what: "ground"; opts: { groups: { material: number; points: [number, number][] }[] } };
-export type ReadAnswer = ReturnType<typeof readBuildings> | ReturnType<typeof readStreets> | ReturnType<typeof readWater> | ReturnType<typeof sampleGroundColours>;
+  | { what: "ground"; opts: { groups: { material: number; points: [number, number][] }[] } }
+  | { what: "compare"; opts: { W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features; compare: CompareOptions; heat?: "roofs" | "streets" | "water"; heatMax?: number } };
+/** The settlement against its trace picture (core cityCompare.ts), and the picture tinted by a measure when asked. */
+export type CompareAnswer = { result: CompareResult; heat?: RGBAImage };
+export type ReadAnswer = ReturnType<typeof readBuildings> | ReturnType<typeof readStreets> | ReturnType<typeof readWater> | ReturnType<typeof sampleGroundColours> | CompareAnswer;
 import { type PreparedReference, decodeImage, encodePngRgba, prepareReference } from "@mapmaker/tools";
 import { NoiseStore } from "./noiseStore.ts";
 
@@ -167,6 +170,11 @@ export class JobRunner {
       }
       if (job.op === "read") return readBuildings(this.pic.img, job.opts);
       const j = job.job;
+      if (j.what === "compare") {
+        const doc = { meta: j.opts.meta, height: new HeightField(j.opts.W, j.opts.H, j.opts.heights), features: j.opts.features };
+        const result = compareToTrace(doc, this.pic.img, j.opts.compare);
+        return { result, ...(j.opts.heat && { heat: compareHeatMap(doc, this.pic.img, result, j.opts.heat, j.opts.heatMax ?? 1200) }) };
+      }
       return j.what === "streets" ? readStreets(this.pic.img, j.opts) : j.what === "water" ? readWater(this.pic.img, j.opts) : j.what === "ground" ? sampleGroundColours(this.pic.img, j.opts.groups) : readBuildings(this.pic.img, j.opts);
     }
     if (job.op === "warm") {

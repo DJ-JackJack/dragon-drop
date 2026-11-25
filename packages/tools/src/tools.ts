@@ -71,6 +71,8 @@ export interface ToolContext {
   paintCityCells?(runs: { material: number; runs: number[] }[], label: string): number;
   /** Colour the settlement's ground from its trace picture, as one edit (Hub.cityGroundFromPicture): each ground's new colour and how many places it was measured at. */
   cityGroundFromPicture?(only?: string[]): Promise<{ colours: Record<string, string>; samples: Record<string, number> }>;
+  /** The settlement against its trace picture (Hub.compareCityTrace): square by square, and the picture tinted by a measure when `heat` is asked for. */
+  compareTrace?(o: { area?: [number, number][]; square?: number; heat?: "roofs" | "streets" | "water"; heatMax?: number }): Promise<{ result: import("@mapmaker/core").CompareResult; heat?: { w: number; h: number; data: Uint8ClampedArray } }>;
   /** A battlemap of a box (metres) of the open city map, opened. */
   createBattleFromCity?(o: { name: string; rect: { x: number; y: number; w: number; h: number }; feetPerSquare?: number; packPictures?: boolean }): Promise<ProjectInfo & { description: string; packPictures?: string[] }>;
   /**
