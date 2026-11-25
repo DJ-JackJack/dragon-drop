@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { citySpec, renderCity } from "@mapmaker/core";
+import { citySpec, renderCity, tileAverage } from "@mapmaker/core";
 import { encodePng, runTool } from "@mapmaker/tools";
+import { AssetLibrary } from "../src/assets.ts";
+import { STARTER_PACK_DIR } from "../src/config.ts";
 import { Hub } from "../src/hub.ts";
 import { ProjectStore } from "../src/store.ts";
 
@@ -35,6 +37,8 @@ describe("a settlement's ground in its picture's colours", () => {
     const g = citySpec(hub.session.doc).ground!;
     expect(near(g.grass, [180, 208, 160])).toBe(true);
     expect(near(g.sand, [140, 110, 70])).toBe(true);
+    // (and each kind's light and dark shades for its gradient: a picture of one flat colour has them the same)
+    expect(citySpec(hub.session.doc).groundLook?.sand).toMatchObject({ light: g.sand, dark: g.sand });
     // the picture of the map is drawn in them (the ground shaded a little, so roughly)
     const pic = renderCity(hub.session.doc, { maxSize: 200 }).img, at = (x: number, y: number) => { const o = (y * pic.w + x) * 4; return [pic.data[o], pic.data[o + 1], pic.data[o + 2]]; };
     expect(near(g.grass, at(10, 90), 25)).toBe(true);
@@ -57,5 +61,33 @@ describe("a settlement's ground in its picture's colours", () => {
     expect(textOf(await tool(hub, "set_ground_colours", { from_picture: true }))).toMatch(/Lay the picture over the city first/);
     await ok(hub, "set_ground_colours", { reset: "all" });
     expect(citySpec(hub.session.doc).ground).toBeUndefined();
+  });
+
+  it("covers a kind with a ground texture of the packs, drawn in the map's pictures, and sets its gradient", async () => {
+    const hub = fresh();
+    hub.assets = new AssetLibrary(null, path.join(root, `cache${Date.now()}`), STARTER_PACK_DIR);
+    await hub.assets.scan();
+    await ok(hub, "create_city", { name: "Textured", width_m: 300, height_m: 200 });
+    const id = "dragon-drop-starter-pack:Floors/Grass.jpg";
+    const before = renderCity(hub.session.doc, { maxSize: 300, contours: false }).img;
+    await ok(hub, "set_ground_colours", { looks: { grass: { texture: id, tile: 4, pattern: "edges", strength: 0.8, size: 30 } } });
+    expect(citySpec(hub.session.doc).groundLook?.grass).toEqual({ texture: id, tile: 4, pattern: "edges", strength: 0.8, size: 30 });
+    const tiles = await hub.cityRoofTiles(hub.session.doc);
+    expect(tiles[`ground:${id}`]).toBeTruthy();
+    const after = renderCity(hub.session.doc, { maxSize: 300, contours: false, tileFor: (a) => tiles[a] ?? null }).img;
+    const mean = (img: { data: Uint8ClampedArray }) => { let r = 0, g = 0, b = 0; const n = img.data.length / 4; for (let i = 0; i < img.data.length; i += 4) { r += img.data[i]; g += img.data[i + 1]; b += img.data[i + 2]; } return [r / n, g / n, b / n]; };
+    const avg = tileAverage(tiles[`ground:${id}`]), m = mean(after);
+    expect(m.every((v, k) => Math.abs(v - avg[k]) < 18)).toBe(true); // (the picture's ground is the texture's, seen from far off)
+    expect(mean(before).some((v, k) => Math.abs(v - m[k]) > 4)).toBe(true);
+    // an id that isn't one of the packs' pictures is refused; "" takes the texture off and keeps the rest
+    expect(textOf(await tool(hub, "set_ground_colours", { looks: { grass: { texture: "dragon-drop-starter-pack:Floors/Moss.jpg" } } }))).toMatch(/No asset has the id/);
+    await ok(hub, "set_ground_colours", { looks: { grass: { texture: "" } } });
+    expect(citySpec(hub.session.doc).groundLook?.grass).toEqual({ pattern: "edges", strength: 0.8, size: 30 });
+    await ok(hub, "set_ground_colours", { reset: ["grass"] });
+    expect(citySpec(hub.session.doc).groundLook).toBeUndefined();
+    // a texture given no size starts at its own: the Starter Pack's 1024 px dirt is drawn 4 squares (6 m) across on a battlemap
+    await ok(hub, "set_ground_colours", { looks: { dirt: { texture: "dragon-drop-starter-pack:Floors/Dirt.jpg" } } });
+    expect(citySpec(hub.session.doc).groundLook?.dirt).toEqual({ texture: "dragon-drop-starter-pack:Floors/Dirt.jpg", tile: 6 });
+    await hub.close();
   });
 });

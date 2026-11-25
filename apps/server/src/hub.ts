@@ -17,7 +17,7 @@ import {
   citySizeError, cityFromWorld, citySizeForPlace, createCityDoc, distToPolyline, type readStreets, type readWater, type StreetKind, defaultCellM, isCity, isWorld, renderCity, battleFromCity, cityBattleSquares, MAX_BATTLE_PX, type RoofPools, groupRoofAssets, CitySpace, citySpec, tracePoint, traceToPicture, type RoofStyle,
   type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand, fitTrace, imageSize, IMAGE_HEAD_BYTES,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
-  groundHex, groundMaterialId, groundSamplePoints, type sampleGroundColours, MATERIALS,
+  groundHex, groundMaterialId, groundSamplePoints, type sampleGroundColours, MATERIALS, groundTextures,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -596,11 +596,13 @@ export class Hub {
     if (!groups.length) throw new Error("There is no open ground to measure: paint the ground first (or the picture's area has buildings, streets or woods everywhere).");
     const res = await this.compute.readPictureAs(key, new Uint8Array(bytes), { what: "ground", opts: { groups } }) as ReturnType<typeof sampleGroundColours>;
     if (!res.length) throw new Error(`Too little of the ground lies under the trace picture "${t.ref}" to measure its colours: line the picture up over the map first.`);
-    const colours: Record<string, string> = {}, samples: Record<string, number> = {};
-    for (const r of res) { const name = MATERIALS[r.material].name; colours[name] = groundHex(r.rgb); samples[name] = r.n; }
+    const colours: Record<string, string> = {}, samples: Record<string, number> = {}, shades: Record<string, { light: string; dark: string }> = {};
+    for (const r of res) { const name = MATERIALS[r.material].name; colours[name] = groundHex(r.rgb); samples[name] = r.n; shades[name] = { light: groundHex(r.light), dark: groundHex(r.dark) }; }
     if (this.open !== op) throw new Error("Another map was opened meanwhile.");
-    const sp = citySpec(op.session.doc);
-    op.session.execute({ op: "set_meta", patch: { city: { ...sp, ground: { ...(sp.ground ?? {}), ...colours } } }, label: `Ground colours from the picture (${Object.keys(colours).join(", ")})` }, author);
+    const sp = citySpec(op.session.doc), look = { ...(sp.groundLook ?? {}) };
+    // (the picture's own light and dark shades of each kind become its gradient's ends; its pattern, strength and texture stay)
+    for (const [name, s] of Object.entries(shades)) look[name] = { ...(look[name] ?? {}), ...s };
+    op.session.execute({ op: "set_meta", patch: { city: { ...sp, ground: { ...(sp.ground ?? {}), ...colours }, groundLook: look } }, label: `Ground colours from the picture (${Object.keys(colours).join(", ")})` }, author);
     return { colours, samples };
   }
 
@@ -667,6 +669,11 @@ export class Hub {
     // (walls, doors and windows, and paths: pictures laid along a line, prepared alike)
     const wallAssets = [...new Set([...(doc.features?.walls ?? []).flatMap((w) => [w.asset, w.portal]), ...(doc.features?.paths ?? []).map((p) => p.asset), ...(doc.features?.lights ?? []).map((l) => l.glow)].filter((a): a is string => !!a))];
     if (!lib || (!palette.length && !props.length && !pictured.length && !wallAssets.length)) return { opts: {}, missing: palette.length + props.length + pictured.length + wallAssets.length };
+    // the ground's pack textures (cityGroundLook.ts), under keys of their own: a picture can be a roof and a ground
+    if (doc.meta.city) for (const a of groundTextures(doc.meta.city)) {
+      const t = await lib.tile(a);
+      if (t) out[`ground:${a}`] = t;
+    }
     let missing = 0;
     // walls drawn with a picture from an asset pack (a long strip or a square texture, kept in its own shape)
     const wallPictures: Record<string, import("@mapmaker/core").SpriteData> = {};

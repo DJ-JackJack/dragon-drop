@@ -4,9 +4,10 @@ import { useState, useSyncExternalStore } from "react";
 import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
-  cityWallPieces, wallPieces, wallSettings, cityRoute, LAND_STARTS, type LandStart, newSeed, startLand, withNameSize, cityGroundColours, groundHex,
+  cityWallPieces, wallPieces, wallSettings, cityRoute, LAND_STARTS, type LandStart, newSeed, startLand, withNameSize,
 } from "@mapmaker/core";
 import { LABEL_SIZE_MIN, LABEL_SIZE_MAX, NameSizeSlider } from "./NameSize.tsx";
+import { GroundPanel } from "./GroundPanel.tsx";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
@@ -234,7 +235,7 @@ export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSi
             onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v !== (c.elevation ?? 0)) setCity({ elevation: Math.max(-500, Math.min(9000, v)) }, `Height above the sea: ${v} m`); }} />
         </label>
         <LandStartBox spec={c} land={features.land ?? []} onUi={onUi} />
-        <GroundColours spec={c} hasTrace={!!features.trace} />
+        <GroundPanel spec={c} hasTrace={!!features.trace} />
         <h3>Layers</h3>
         <label className="check eye"><input type="checkbox" checked={ui.contours} onChange={(e) => onUi({ contours: e.target.checked })} data-testid="city-contours" /> Contour lines</label>
         <label className="check eye"><input type="checkbox" checked={ui.names} onChange={(e) => onUi({ names: e.target.checked })} data-testid="city-names" /> Names and labels</label>
@@ -281,50 +282,6 @@ function LandStartBox({ spec, land, onUi }: { spec: NonNullable<MapMeta["city"]>
 }
 
 const hexOf = (c: [number, number, number]) => `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-
-/**
- * The settlement's ground colours: each kind of ground painted on the map (most first), its colour (the climate's, or the map's own), set by hand or taken from
- * the trace picture all at once (the hub measures the picture under open ground of each kind: cityGround.ts). Shut until opened, since it counts the ground cells.
- */
-function GroundColours({ spec, hasTrace }: { spec: NonNullable<MapMeta["city"]>; hasTrace: boolean }) {
-  const [open, setOpen] = useState(false);
-  const busy = useSyncExternalStore(store.subscribe, () => store.getState().groundBusy);
-  const own = spec.ground ?? {}, ownCount = Object.keys(own).length;
-  const setGround = (ground: Record<string, string> | null, label: string) => {
-    const { ground: _g, ...rest } = spec;
-    store.send({ t: "cmd", cmd: { op: "set_meta", patch: { city: ground && Object.keys(ground).length ? { ...rest, ground } : rest } }, label });
-  };
-  let rows: { id: number; name: string; share: number; hex: string; own: boolean }[] = [];
-  if (open && store.heights) {
-    const counts = new Map<number, number>(), d = store.heights.data;
-    for (let i = 0; i < d.length; i++) { const m = Math.round(d[i]); if (m > 0) counts.set(m, (counts.get(m) ?? 0) + 1); }
-    const cols = cityGroundColours(cityClimate(spec), own);
-    rows = [...counts].filter(([id]) => MATERIALS[id]).sort((a, b) => b[1] - a[1])
-      .map(([id, n]) => ({ id, name: MATERIALS[id].name, share: (100 * n) / d.length, hex: groundHex(cols[id]), own: !!own[MATERIALS[id].name] }));
-  }
-  return (
-    <details className="ground-colours" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)} data-testid="city-ground-colours">
-      <summary>Ground colours{ownCount > 0 && <span className="muted"> · {ownCount} of the map's own</span>}</summary>
-      {rows.map((r) => (
-        <div className="kv ground-row" key={r.id}>
-          <span className="row">
-            <input type="color" value={r.hex} onChange={(e) => setGround({ ...own, [r.name]: e.target.value }, `Ground colour: ${r.name}`)} data-testid={`city-ground-${r.name.replace(/ /g, "-")}`} title={`The colour of ${r.name} on this map`} />
-            <span>{r.name[0].toUpperCase() + r.name.slice(1)} <span className="muted">{r.share >= 1 ? Math.round(r.share) : r.share.toFixed(1)}%</span></span>
-          </span>
-          {r.own && <button onClick={() => { const { [r.name]: _x, ...rest } = own; setGround(rest, `Ground colour: ${r.name} as the climate makes it`); }} title="Back to the colour the climate gives it">Reset</button>}
-        </div>
-      ))}
-      <div className="row">
-        <button onClick={() => store.groundFromPicture()} disabled={!hasTrace || busy}
-          title={hasTrace ? "Measure the trace picture under open ground of each kind (not under buildings, streets or woods) and use its colours" : "Lay a reference picture over the map first (References: Trace over map)"} data-testid="city-ground-from-picture">
-          {busy ? "Measuring the picture…" : "Take them from the trace picture"}
-        </button>
-        {ownCount > 0 && <button onClick={() => setGround(null, "Ground colours as the climate makes them")} data-testid="city-ground-reset">Climate's colours</button>}
-      </div>
-      <p className="muted">{hasTrace ? "Redrawing a found map? Paint the ground first (grass, sand, water...), then take each kind's colour from the picture." : "The climate colours the ground; give a kind its own colour here."}</p>
-    </details>
-  );
-}
 
 /** What is selected: one building or street to edit, or a group to change together. */
 export function CityInspector({ features, ui, onUi }: { features: Features; ui: CityUi; onUi: (p: Partial<CityUi>) => void }) {

@@ -10,6 +10,7 @@ import { type RoofTileSource, paintRoofsInto } from "./battleRoof.ts";
 import { type CitySpec, buildingToRoof, citySpec } from "./city.ts";
 import { type LandGrid, cityClimate, cityGroundColours, contourLines, landGrid, landShade, snowCover, treeColour, treeCrowns } from "./cityLand.ts";
 import { pointInPolygon } from "./geom.ts";
+import { gradientShade, groundCellColours, groundLooks, groundTexel, softLight } from "./cityGroundLook.ts";
 import { BRIDGE_COLOURS, type BridgeSpan, cityBridges, deckDistance } from "./cityBridges.ts";
 import { WALL_COLOURS, type WallPieces, cityWallPieces, portcullisBars } from "./cityWalls.ts";
 import { districtCentre, districtColour } from "./cityDistricts.ts";
@@ -64,7 +65,7 @@ export function renderCity(doc: MapDoc, o: CityRenderOptions = {}): CityRender {
   const W = Math.max(1, Math.round(rw * px)), H = Math.max(1, Math.round(rh * px));
   const img: LookImage = { w: W, h: H, data: new Uint8ClampedArray(W * H * 4) };
   const land = landGrid(doc);
-  paintGround(doc, spec, img, OX, OY, px, land);
+  paintGround(doc, spec, img, OX, OY, px, land, o.tileFor);
   if (land && o.contours !== false) paintContours(land, img, OX, OY, px);
   paintDistricts(doc, img, OX, OY, px, false);
   paintStreets(doc, img, OX, OY, px);
@@ -91,12 +92,20 @@ function touches(points: [number, number][], x0: number, y0: number, x1: number,
 
 const SNOW: [number, number, number] = [236, 241, 247];
 
-function paintGround(doc: MapDoc, spec: CitySpec, img: LookImage, OX: number, OY: number, px: number, land: LandGrid | null) {
-  const cols = cityGroundColours(cityClimate(spec), spec.ground), grass = cols[5] ?? MATERIALS[5].colour;
+function paintGround(doc: MapDoc, spec: CitySpec, img: LookImage, OX: number, OY: number, px: number, land: LandGrid | null, tileFor?: RoofTileSource) {
   const { w: cw, h: ch, data } = doc.height, cell = spec.cellM;
+  // each cell's colour with its kind's gradient (cityGroundLook.ts), for the cells this picture covers and one more round it
+  const cx0 = Math.max(0, Math.floor(OX / px / cell) - 1), cy0 = Math.max(0, Math.floor(OY / px / cell) - 1);
+  const g = groundCellColours(doc, { x: cx0, y: cy0, w: Math.ceil(img.w / px / cell) + 3, h: Math.ceil(img.h / px / cell) + 3 });
+  // a kind covered with a pack texture: its pixels, from the tile the hub decoded (keyed "ground:<asset>"), when there is one
+  const looks = groundLooks(spec), tex = looks.map((l) => (l.texture && tileFor ? tileFor(`ground:${l.texture}`) : null));
   const shade = land ? landShade(land) : null;
-  const colour = (cx: number, cy: number): [number, number, number] => {
-    const i = Math.max(0, Math.min(ch - 1, cy)) * cw + Math.max(0, Math.min(cw - 1, cx)), c = cols[Math.round(data[i])] ?? grass;
+  const colour = (cx: number, cy: number, mx: number, my: number): [number, number, number] => {
+    const X = Math.max(0, Math.min(cw - 1, cx)), Y = Math.max(0, Math.min(ch - 1, cy)), i = Y * cw + X, m = Math.round(data[i]), t = tex[m];
+    const gx = Math.max(0, Math.min(g.w - 1, X - g.x)), gy = Math.max(0, Math.min(g.h - 1, Y - g.y)), o = (gy * g.w + gx) * 3;
+    let c: [number, number, number] = [g.rgb[o], g.rgb[o + 1], g.rgb[o + 2]];
+    // (a texture keeps its kind's gradient: laid over it by soft light)
+    if (t) c = softLight(groundTexel(t, looks[m].tile, mx, my, px), gradientShade(c, looks[m].colour));
     if (!shade) return c;
     const k = shade[i];
     return [c[0] * k, c[1] * k, c[2] * k];
@@ -107,7 +116,7 @@ function paintGround(doc: MapDoc, spec: CitySpec, img: LookImage, OX: number, OY
     for (let x = 0; x < img.w; x++) {
       const mx = (OX + x + 0.5) / px, u = mx / cell - 0.5, x0 = Math.floor(u), fx = u - x0;
       // the four nearest cells blended, so the edge between two grounds is soft rather than blocky
-      const a = colour(x0, y0), b = colour(x0 + 1, y0), c = colour(x0, y0 + 1), e = colour(x0 + 1, y0 + 1);
+      const a = colour(x0, y0, mx, my), b = colour(x0 + 1, y0, mx, my), c = colour(x0, y0 + 1, mx, my), e = colour(x0 + 1, y0 + 1, mx, my);
       const n = 0.96 + 0.08 * vnoise(mx / 3, my / 3); // (a little mottling, on the scale of a few metres)
       const o = (y * img.w + x) * 4;
       for (let k = 0; k < 3; k++) d[o + k] = clamp(((a[k] * (1 - fx) + b[k] * fx) * (1 - fy) + (c[k] * (1 - fx) + e[k] * fx) * fy) * n, 0, 255);

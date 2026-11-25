@@ -36,10 +36,11 @@ export function groundSamplePoints(doc: MapDoc, per = 3000): { material: number;
 
 /**
  * The colour of each kind of ground in a picture: the middle value of each channel over its points (picture px; each the average of the 3 x 3 pixels round it),
- * leaving out the darkest quarter (the drawing's lines, shadows and small things on the ground). Kinds with fewer than `min` points in the picture are left out.
+ * leaving out the darkest quarter (the drawing's lines, shadows and small things on the ground); and its light and dark shades (the middle of the lightest
+ * and of the darkest quarter of what is left), for the kind's gradient. Kinds with fewer than `min` points in the picture are left out.
  */
-export function sampleGroundColours(img: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }, groups: { material: number; points: Pt[] }[], min = 25): { material: number; rgb: [number, number, number]; n: number }[] {
-  const out: { material: number; rgb: [number, number, number]; n: number }[] = [];
+export function sampleGroundColours(img: { w: number; h: number; data: Uint8Array | Uint8ClampedArray }, groups: { material: number; points: Pt[] }[], min = 25): { material: number; rgb: [number, number, number]; light: [number, number, number]; dark: [number, number, number]; n: number }[] {
+  const out: { material: number; rgb: [number, number, number]; light: [number, number, number]; dark: [number, number, number]; n: number }[] = [];
   for (const g of groups) {
     const px: [number, number, number][] = [];
     for (const [fx, fy] of g.points) {
@@ -51,9 +52,10 @@ export function sampleGroundColours(img: { w: number; h: number; data: Uint8Arra
     }
     if (px.length < min) continue;
     px.sort((a, b) => 0.3 * a[0] + 0.59 * a[1] + 0.11 * a[2] - (0.3 * b[0] + 0.59 * b[1] + 0.11 * b[2]));
-    const kept = px.slice(Math.floor(px.length / 4));
-    const med = (ch: number) => { const v = kept.map((p) => p[ch]).sort((a, b) => a - b); return Math.round(v[v.length >> 1]); };
-    out.push({ material: g.material, rgb: [med(0), med(1), med(2)], n: px.length });
+    const kept = px.slice(Math.floor(px.length / 4)), q = Math.max(1, Math.floor(kept.length / 4));
+    const med = (set: [number, number, number][], ch: number) => { const v = set.map((p) => p[ch]).sort((a, b) => a - b); return Math.round(v[v.length >> 1]); };
+    const of = (set: [number, number, number][]): [number, number, number] => [med(set, 0), med(set, 1), med(set, 2)];
+    out.push({ material: g.material, rgb: of(kept), light: of(kept.slice(kept.length - q)), dark: of(kept.slice(0, q)), n: px.length });
   }
   return out;
 }

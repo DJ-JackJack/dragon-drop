@@ -10,7 +10,7 @@ import {
   type WallPieces, cleanCityWall, cleanDistrict, districtColour, distToWall, hexToRgb, portcullisBars, wallPieces,
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
-  viewKeyAction,
+  viewKeyAction, groundCellColours, groundLooks, groundTextures, gradientShade, textureDetail, type MapDoc,
 } from "@mapmaker/core";
 import { type CityUi, DEFAULT_HOUSE, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { assetUrl } from "./assetsApi.ts";
@@ -118,6 +118,11 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   const metaRef = useRef(meta); metaRef.current = meta;
   const featRef = useRef(features); featRef.current = features;
   const uiRef = useRef(ui); uiRef.current = ui;
+  /** The ground textures' pictures (by asset id) and each textured kind's mask of cells (by material id). */
+  const groundImgs = useRef(new Map<string, { img: HTMLImageElement; w: number; mips: HTMLCanvasElement[]; avg: string } | "loading" | "failed">());
+  const groundMasks = useRef(new Map<number, HTMLCanvasElement>());
+  const groundLayer = useRef<HTMLCanvasElement | null>(null);
+  const shadeRef = useRef<HTMLCanvasElement | null>(null);
   const labelScaleRef = useRef(labelScale); labelScaleRef.current = labelScale;
   const onUiRef = useRef(onUi); onUiRef.current = onUi;
   const [spaceDown, setSpaceDown] = useState(false);
@@ -201,6 +206,82 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   };
 
   // ------------------------------------------------------------ the ground
+  /** A ground texture of the packs, once it has loaded (null while it loads or if it can't be had: the kind is then drawn in its colours; the view is redrawn when it arrives). */
+  const groundPicture = (asset: string) => {
+    const hit = groundImgs.current.get(asset);
+    if (hit && hit !== "loading" && hit !== "failed") return hit;
+    if (!hit) {
+      groundImgs.current.set(asset, "loading");
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = c.height = 4;
+          const cx = c.getContext("2d")!;
+          cx.drawImage(img, 0, 0, 4, 4);
+          const d = cx.getImageData(0, 0, 4, 4).data;
+          let r = 0, g = 0, b = 0;
+          for (let i = 0; i < 64; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+          // halved copies, down to 8 px: a pattern is made from the one nearest the tile's size on screen (the canvas has no mipmaps of its own, so a big picture drawn small breaks into a grid)
+          const mips: HTMLCanvasElement[] = [];
+          for (let s = Math.min(512, img.naturalWidth); s >= 8; s = Math.floor(s / 2)) {
+            const mc = document.createElement("canvas");
+            mc.width = mc.height = s;
+            const mx = mc.getContext("2d")!;
+            mx.imageSmoothingEnabled = true; mx.imageSmoothingQuality = "high";
+            mx.drawImage(mips.length ? mips[mips.length - 1] : img, 0, 0, s, s);
+            mips.push(mc);
+          }
+          groundImgs.current.set(asset, { img, w: img.naturalWidth, mips, avg: `rgb(${Math.round(r / 16)},${Math.round(g / 16)},${Math.round(b / 16)})` });
+        } catch { groundImgs.current.set(asset, "failed"); }
+        requestDraw();
+      };
+      img.onerror = () => groundImgs.current.set(asset, "failed");
+      img.src = assetUrl(asset, 512);
+    }
+    return null;
+  };
+
+  /** The pack textures over their kinds of ground: each kind's mask scaled up smoothly (soft edges), the texture tiled inside it every so many metres, or its average colour once a tile is smaller than a few pixels (no shimmer). */
+  function drawGroundTextures(ctx: CanvasRenderingContext2D, v: View, W: number, H: number, cellM: number, spec: NonNullable<MapMeta["city"]>) {
+    if (!groundMasks.current.size) return;
+    const looks = groundLooks(spec);
+    const layer = (groundLayer.current ??= document.createElement("canvas"));
+    if (layer.width !== W || layer.height !== H) { layer.width = W; layer.height = H; }
+    const lc = layer.getContext("2d")!;
+    for (const [id, mask] of groundMasks.current) {
+      const l = looks[id], pic = l?.texture ? groundPicture(l.texture) : null;
+      if (!pic) continue;
+      lc.globalCompositeOperation = "copy";
+      lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = "high";
+      lc.drawImage(mask, v.ox, v.oy, mask.width * cellM * v.scale, mask.height * cellM * v.scale);
+      lc.globalCompositeOperation = "source-in";
+      // its average colour, and its own detail over that as far as the zoom shows it (textureDetail: as the server's pictures)
+      const tilePx = l.tile * v.scale, detail = textureDetail(tilePx);
+      lc.fillStyle = pic.avg;
+      lc.fillRect(0, 0, W, H);
+      if (detail > 0) {
+        let src = pic.mips[0] ?? pic.img;
+        for (const c of pic.mips) if (c.width >= tilePx) src = c;
+        const p = lc.createPattern(src, "repeat")!, k = tilePx / src.width;
+        p.setTransform(new DOMMatrix([k, 0, 0, k, v.ox, v.oy]));
+        lc.globalCompositeOperation = "source-atop";
+        lc.globalAlpha = detail;
+        lc.fillStyle = p;
+        lc.fillRect(0, 0, W, H);
+        lc.globalAlpha = 1;
+      }
+      // the kind's gradient over its texture (soft light, as the server's pictures), then cut to the kind's cells again
+      if (shadeRef.current) {
+        lc.globalCompositeOperation = "soft-light";
+        lc.drawImage(shadeRef.current, v.ox, v.oy, shadeRef.current.width * cellM * v.scale, shadeRef.current.height * cellM * v.scale);
+        lc.globalCompositeOperation = "destination-in";
+        lc.drawImage(mask, v.ox, v.oy, mask.width * cellM * v.scale, mask.height * cellM * v.scale);
+      }
+      ctx.drawImage(layer, 0, 0);
+    }
+  }
+
   const paintGround = useCallback((r: Rect | null) => {
     const m = metaRef.current, hf = store.heights;
     if (!m?.city || !hf) return;
@@ -218,20 +299,49 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     groundVer.current++; bridgeCache.current.clear(); // (the water may have moved: the bridges are worked out again)
     if (x1 > x0 && y1 > y0) {
       const d = imgRef.current!.data;
-      // the ground's colours in the city's climate, shaded by the land (light from the top left)
-      const cols = cityGroundColours(cityClimate(m.city), m.city.ground), land = landGrid({ meta: m, features: featRef.current });
+      // the ground's colours (the climate's or the map's own) with each kind's gradient (core cityGroundLook.ts), shaded by the land (light from the top left)
+      const doc = { meta: m, height: hf, features: featRef.current } as unknown as MapDoc, land = landGrid({ meta: m, features: featRef.current });
+      const g = groundCellColours(doc, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
       const shade = land && land.w === W && land.h === H ? landShade(land) : null;
       for (let y = y0; y < y1; y++) {
         for (let x = x0; x < x1; x++) {
-          const c = cols[Math.round(hf.data[y * W + x])] ?? cols[5] ?? MATERIALS[5].colour;
           const k = (0.96 + 0.08 * (((Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0) % 256) / 255) * (shade ? shade[y * W + x] : 1); // (a little mottling)
-          const o = (y * W + x) * 4;
-          d[o] = c[0] * k; d[o + 1] = c[1] * k; d[o + 2] = c[2] * k; d[o + 3] = 255;
+          const o = (y * W + x) * 4, q = ((y - y0) * g.w + (x - x0)) * 3;
+          d[o] = g.rgb[q] * k; d[o + 1] = g.rgb[q + 1] * k; d[o + 2] = g.rgb[q + 2] * k; d[o + 3] = 255;
         }
       }
       off.getContext("2d")!.putImageData(imgRef.current!, 0, 0, x0, y0, x1 - x0, y1 - y0);
     }
     if (fittedFor.current !== m.id) fit();
+    // each kind covered with a pack texture: a mask of its cells (one pixel a cell), the shape the texture is drawn in, and its gradient as a grey shade
+    // (against the kind's own colour) laid over the texture by soft light, kept in one picture for all the kinds
+    const looks = groundLooks(m.city), textured = looks.map((l, id) => (l.texture ? id : -1)).filter((id) => id > 0);
+    if (textured.length) {
+      if (!shadeRef.current || shadeRef.current.width !== W || shadeRef.current.height !== H) { shadeRef.current = document.createElement("canvas"); shadeRef.current.width = W; shadeRef.current.height = H; r = null; }
+      const sx0 = r ? Math.max(0, r.x - 1) : 0, sy0 = r ? Math.max(0, r.y - 1) : 0, sx1 = r ? Math.min(W, r.x + r.w + 1) : W, sy1 = r ? Math.min(H, r.y + r.h + 1) : H;
+      if (sx1 > sx0 && sy1 > sy0) {
+        const doc = { meta: m, height: hf, features: featRef.current } as unknown as MapDoc, g = groundCellColours(doc, { x: sx0, y: sy0, w: sx1 - sx0, h: sy1 - sy0 });
+        const sd = new ImageData(g.w, g.h);
+        for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+          const id = Math.round(hf.data[(y + g.y) * W + x + g.x]), q = (y * g.w + x) * 3, o = (y * g.w + x) * 4;
+          const sh = looks[id]?.texture ? gradientShade([g.rgb[q], g.rgb[q + 1], g.rgb[q + 2]], looks[id].colour) : [128, 128, 128];
+          sd.data[o] = sh[0]; sd.data[o + 1] = sh[1]; sd.data[o + 2] = sh[2]; sd.data[o + 3] = 255;
+        }
+        shadeRef.current.getContext("2d")!.putImageData(sd, g.x, g.y);
+      }
+    }
+    const masks = new Map<number, HTMLCanvasElement>();
+    for (const id of textured) {
+      let n = 0;
+      const md = new ImageData(W, H), dd = md.data;
+      for (let i = 0; i < W * H; i++) if (Math.round(hf.data[i]) === id) { dd[i * 4 + 3] = 255; n++; }
+      if (!n) continue;
+      const c = groundMasks.current.get(id) ?? document.createElement("canvas");
+      c.width = W; c.height = H;
+      c.getContext("2d")!.putImageData(md, 0, 0);
+      masks.set(id, c);
+    }
+    groundMasks.current = masks;
     setLoadedId(m.id);
     requestDraw();
   }, [requestDraw]);
@@ -241,7 +351,9 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     const assets = new Set((featRef.current.buildings ?? []).flatMap((b) => (b.asset ? [b.asset] : [])));
     for (const a of assets) roofPicture(a);
     const t0 = performance.now();
-    while ([...assets].some((a) => roofImgs.current.get(a) === "loading") && performance.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 100));
+    const grounds = metaRef.current?.city ? groundTextures(metaRef.current.city) : [];
+    for (const a of grounds) groundPicture(a);
+    while (([...assets].some((a) => roofImgs.current.get(a) === "loading") || grounds.some((a) => groundImgs.current.get(a) === "loading")) && performance.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 100));
     await loadLabelFonts();
   }
 
@@ -298,6 +410,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(off, v.ox, v.oy, off.width * spec.cellM * v.scale, off.height * spec.cellM * v.scale);
     ctx.restore();
+    drawGroundTextures(ctx, v, W, H, spec.cellM, spec);
     if (screen) { ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.strokeRect(v.ox - 0.5, v.oy - 0.5, MW + 1, MH + 1); }
     if (target ? target.contours : o.contours) drawContours(ctx, v, W, H);
     if (screen) traceCtl.draw(ctx, f.trace, m.id, v); // (over the ground, under the streets and buildings: you see through to what you are redrawing)
@@ -1059,7 +1172,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   useEffect(() => { requestDraw(); }, [features, ui, meta, labelScale, requestDraw]);
   useEffect(() => { outline.current = null; streetDraft.current = null; landDraft.current = null; treeDraft.current = null; wallDraft.current = null; districtDraft.current = null; requestDraw(); }, [ui.tool, ui.landMode, ui.treeKind, requestDraw]);
   // the land or the climate changed: the ground's colours and shading with it
-  const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}|${JSON.stringify(meta?.city?.ground ?? null)}`;
+  const groundKey = `${JSON.stringify(features.land ?? [])}|${JSON.stringify(meta?.city?.climate ?? null)}|${JSON.stringify(meta?.city?.ground ?? null)}|${JSON.stringify(meta?.city?.groundLook ?? null)}`;
   useEffect(() => { if (metaRef.current?.city && store.heights && offRef.current) paintGround(null); }, [groundKey, paintGround]);
 
   useEffect(() => {

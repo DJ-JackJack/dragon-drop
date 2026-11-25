@@ -140,6 +140,7 @@ describe("drawing a city", () => {
     for (let y = 0; y < 400; y++) for (let x = 300; x < 600; x++) d.height.data[y * 600 + x] = 8; // deep water on the right half
     d.features!.streets = [{ id: "s1", points: [[0, 100], [300, 100]], width: 10 }];
     d.features!.buildings = [{ id: "b1", points: rectPolygon(150, 250, 40, 20), roof: "tile", colour: "#aa3322" }];
+    d.meta.city = { ...d.meta.city!, groundLook: { grass: { pattern: "flat" }, "deep water": { pattern: "flat" } } }; // (one colour each, so a spot's colour says which ground is there)
     const { img, px, region } = renderCity(d, { maxSize: 600 });
     expect(px).toBeCloseTo(1);
     expect(region).toEqual({ x: 0, y: 0, w: 600, h: 400 });

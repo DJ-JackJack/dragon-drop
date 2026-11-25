@@ -1545,8 +1545,19 @@ try {
     await page.getByTestId("history").getByText(/^Undo: Ground colours from the picture/).first().waitFor({ timeout: 5000 });
     await page.getByTestId("city-ground-grass").fill("#b4d0a0");
     await page.getByTestId("history").getByText("Ground colour: grass").first().waitFor({ timeout: 5000 });
+    // a kind's look: its gradient's pattern, then a ground texture of the packs (the test pack has two), then its usual look again
+    await page.getByTestId("city-ground-look-grass").click();
+    await page.getByTestId("ground-pattern").selectOption("edges");
+    await page.getByTestId("history").getByText("Ground look: grass from the edges").first().waitFor({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="ground-tex"]').length === 2, null, { timeout: 10000 });
+    await page.getByTestId("ground-tex").first().click();
+    await page.getByTestId("history").getByText(/^Ground look: grass with the texture/).first().waitFor({ timeout: 5000 });
+    await page.getByTestId("ground-tile").waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(shots, "e2e-5c-city-ground-look.png") });
+    await page.getByTestId("ground-look-reset").click();
+    await page.getByTestId("history").getByText("Ground look: grass as it usually is").first().waitFor({ timeout: 5000 });
     await page.getByTestId("city-ground-reset").click();
-    await page.getByTestId("history").getByText("Ground colours as the climate makes them").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("history").getByText("Ground as the climate makes it").first().waitFor({ timeout: 5000 });
     await page.getByTestId("trace-stop").click();
     await page.getByTestId("trace-bar").waitFor({ state: "detached", timeout: 10000 });
     // the picture reader: a town picture laid over the whole city (2 m a pixel), one red roof and one grey one clicked, the grass and the street clicked as ground,

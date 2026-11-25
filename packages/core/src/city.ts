@@ -5,6 +5,7 @@
  * water...), and the buildings and streets live with the other features. A building is drawn as a roof (battleRoof.ts), which is what a building looks like from above.
  */
 import { HeightField, type MapDoc } from "./doc.ts";
+import type { GroundLook } from "./cityGroundLook.ts";
 import { type LabelKind, type MapBuilding, type MapRoof, type MapStreet, type RoofStyle, ROOF_STYLES, STREET_KINDS, cleanNameSize, emptyFeatures } from "./features.ts";
 import { ROOF_BASE, roofColour } from "./battleRoof.ts";
 import { parseAssetId } from "./assets.ts";
@@ -29,6 +30,8 @@ export interface CitySpec {
    * (cityLand.ts `cityGroundColours`); set by hand in the Map panel or taken from the trace picture (cityGround.ts). Missing: the climate's colours.
    */
   ground?: Record<string, string>;
+  /** How each kind of ground looks beyond its colour (cityGroundLook.ts): a gradient between a light and a dark shade following a pattern, and a pack texture. Missing: each kind's own gentle gradient. */
+  groundLook?: Record<string, GroundLook>;
 }
 
 /** The same scales as a world map's climate regions: temperature 0 frozen, 0.25 cold, 0.5 temperate, 0.75 warm, 1 hot; moisture 0 desert to 1 rainforest. */

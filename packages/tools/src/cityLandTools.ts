@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   CITY_CLIMATES, type MapLandform, type MapTrees, STEEP_PERCENT, TREE_GROUPS, TREE_SPECIES, citySpec, cityClimate, cleanClimate, cleanLandform, cleanTrees, climatePreset,
-  climateTrees, isCity, landAt, landGrid, newFeatureId, pointsBounds, snowCover, cleanGroundColours, GROUND_COLOUR_MATERIALS, groundMaterialId,
+  climateTrees, isCity, landAt, landGrid, newFeatureId, pointsBounds, snowCover, cleanGroundColours, GROUND_COLOUR_MATERIALS, groundMaterialId, cleanGroundLook, GROUND_PATTERNS, type GroundLook, groundTileMetres,
 } from "@mapmaker/core";
 import type { ToolContext, ToolResult } from "./tools.ts";
 import { define, fail, json } from "./toolKit.ts";
@@ -27,6 +27,7 @@ export function landSummary(ctx: ToolContext) {
     climate: { ...(preset ? { preset } : {}), temperature: climate.temperature, moisture: climate.moisture, ...(snowCover(climate) > 0 && { snow: `${Math.round(snowCover(climate) * 100)}% of open ground` }), trees_grow: climateTrees(climate).map(([s, w]) => `${s} ${Math.round(w * 100)}%`).join(", ") },
     landforms: (featuresOf(ctx).land ?? []).length, tree_groups: (featuresOf(ctx).trees ?? []).length,
     ...(sp.ground && Object.keys(sp.ground).length && { own_ground_colours: sp.ground }),
+    ...(sp.groundLook && Object.keys(sp.groundLook).length && { ground_looks: sp.groundLook }),
   };
   if (g) {
     let steep = 0, n = 0;
@@ -179,11 +180,18 @@ export const CITY_LAND_TOOLS = [
     description:
       "Give the settlement's ground its own colours instead of the ones its climate makes: by kind of ground (" + GROUND_COLOUR_MATERIALS.map((m) => m.name).join(", ") + "). " +
       "from_picture: true takes each painted kind's colour from the trace picture (measured under open ground of that kind: not under buildings, streets, walls or woods), " +
-      "which is what a redraw of a found map wants once the ground is painted (only: just these kinds). colours sets them by hand (\"#rrggbb\"); reset gives the named kinds (or \"all\") back to the climate. One edit.",
+      "which is what a redraw of a found map wants once the ground is painted (only: just these kinds); it also takes each kind's light and dark shades for its gradient. colours sets them by hand (\"#rrggbb\"). " +
+      "looks sets how each kind varies: light and dark (its gradient's ends), pattern (" + GROUND_PATTERNS.map((p) => `${p.id}: ${p.hint.toLowerCase()}`).join("; ") + "), strength 0 to 1, size in metres (patches, or how far in from the edge), " +
+      "and texture: a ground texture of the asset packs (an id from search_assets with category terrain) covering that kind, every tile metres (default: its own size, the squares it is drawn at on a battlemap); texture \"\" takes it off. Every kind has a gentle gradient of its own until set. " +
+      "reset gives the named kinds (or \"all\") their climate colour and usual look back. Use a texture or a colour only as the DM asks or as the picture being redrawn shows. One edit.",
     schema: z.object({
       from_picture: z.boolean().optional(),
       only: z.array(z.string()).optional().describe("With from_picture: only these kinds of ground"),
       colours: z.record(z.string(), z.string()).optional().describe("A kind of ground to \"#rrggbb\""),
+      looks: z.record(z.string(), z.object({
+        light: z.string().optional(), dark: z.string().optional(), pattern: z.enum(GROUND_PATTERNS.map((p) => p.id) as unknown as [string, ...string[]]).optional(),
+        strength: z.number().min(0).max(1).optional(), size: z.number().min(2).max(400).optional(), texture: z.string().optional(), tile: z.number().min(0.25).max(60).optional(),
+      })).optional().describe("A kind of ground to how it varies and what covers it"),
       reset: z.union([z.literal("all"), z.array(z.string())]).optional(),
     }),
     async run(ctx, i) {
@@ -198,18 +206,34 @@ export const CITY_LAND_TOOLS = [
         } catch (e) { return fail((e as Error).message); }
       }
       const sp = citySpec(ctx.session().doc);
-      let ground: Record<string, string> = { ...(sp.ground ?? {}) };
-      if (i.reset === "all") ground = {};
-      else for (const n of i.reset ?? []) { const id = groundMaterialId(n); if (id === undefined) return fail(`There is no ground "${n}".`); delete ground[GROUND_COLOUR_MATERIALS.find((m) => m.id === id)!.name]; }
+      let ground: Record<string, string> = { ...(sp.ground ?? {}) }, looks: Record<string, GroundLook> = { ...(sp.groundLook ?? {}) };
+      if (i.reset === "all") { ground = {}; looks = {}; }
+      else for (const n of i.reset ?? []) { const id = groundMaterialId(n); if (id === undefined) return fail(`There is no ground "${n}".`); const name = GROUND_COLOUR_MATERIALS.find((m) => m.id === id)!.name; delete ground[name]; delete looks[name]; }
       if (i.colours) {
         const c = cleanGroundColours(i.colours);
         if ("error" in c) return fail(`Not set: ${c.error}.`);
         ground = { ...ground, ...c };
       }
-      if (!i.colours && i.reset === undefined) return fail("Say what to do: from_picture, colours or reset.");
-      const { ground: _g, ...rest } = sp;
-      const r = ctx.execute({ op: "set_meta", patch: { city: Object.keys(ground).length ? { ...rest, ground } : rest } }, Object.keys(ground).length ? "Ground colours" : "Ground colours as the climate makes them");
-      return json({ change: r.seq, own_ground_colours: ground });
+      if (i.looks) {
+        // (texture "" takes a texture off; anything else must be one of the packs' pictures)
+        const off = Object.entries(i.looks).filter(([, l]) => l.texture === "").map(([k]) => k);
+        const c = cleanGroundLook(i.looks);
+        if ("error" in c) return fail(`Not set: ${c.error}.`);
+        for (const [name, l] of Object.entries(c)) {
+          if (l.texture && ctx.assets) {
+            const info = await ctx.assets.info(l.texture);
+            if (!info) return fail(`No asset has the id "${l.texture}". search_assets with category terrain finds ground textures.`);
+            if (l.tile === undefined) l.tile = groundTileMetres(info.w); // (a texture starts at its own size: the squares it is drawn at on a battlemap)
+          }
+          looks[name] = { ...(looks[name] ?? {}), ...l };
+        }
+        for (const k of off) { const id = groundMaterialId(k); if (id === undefined) continue; const name = GROUND_COLOUR_MATERIALS.find((m) => m.id === id)!.name; if (looks[name]) { const { texture: _t, tile: _l, ...rest } = looks[name]; if (Object.keys(rest).length) looks[name] = rest; else delete looks[name]; } }
+      }
+      if (!i.colours && !i.looks && i.reset === undefined) return fail("Say what to do: from_picture, colours, looks or reset.");
+      const { ground: _g, groundLook: _l, ...rest } = sp;
+      const city = { ...rest, ...(Object.keys(ground).length && { ground }), ...(Object.keys(looks).length && { groundLook: looks }) };
+      const r = ctx.execute({ op: "set_meta", patch: { city } }, Object.keys(ground).length || Object.keys(looks).length ? "Ground colours and looks" : "Ground as the climate makes it");
+      return json({ change: r.seq, own_ground_colours: ground, ground_looks: looks });
     },
   }),
 
