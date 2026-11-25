@@ -5,7 +5,7 @@ The common questions, with short answers. If yours isn't here, [ask it here](htt
 ## Installing
 
 **Windows says "Windows protected your PC" when I run the installer.**
-The installer isn't signed with a code-signing certificate yet, so Windows doesn't recognise it. Click **More info**, then **Run anyway**. Only do this for an installer you downloaded from Dragon Drop's own release page.
+The installer isn't signed with a code-signing certificate yet, so Windows doesn't recognise it. Click **More info**, then **Run anyway**. Only do this for an installer you downloaded from Dragon Drop's own release page. To be sure it's the real one, compare its SHA-256 hash with the release's `SHA256SUMS.txt` (from 0.1.14): in PowerShell, `Get-FileHash .\Dragon-Drop-Setup-<version>.exe`.
 
 **My antivirus flagged or removed a file.**
 The unsigned installer, and the small terminal program Dragon Drop uses to run your AI assistant (`OpenConsole.exe`), are sometimes flagged by mistake. If you downloaded Dragon Drop from its own release page, restore the file from your antivirus's quarantine and mark it as allowed. If you aren't sure where your copy came from, download it again from the release page instead.
@@ -36,6 +36,9 @@ Close Dragon Drop and open it again. To check the install, open a new PowerShell
 
 **Claude's sign-in says my plan doesn't include Claude Code.**
 The free claude.ai plan doesn't include it. Upgrade the plan, or use the chat in the window with an API key.
+
+**The terminal says `'codex' is not recognized as an internal or external command`.**
+Codex (or Gemini CLI, OpenCode...) isn't installed on this PC yet: Dragon Drop installs only Claude Code by itself. Install the assistant from its maker (for Codex, OpenAI's installer: see the setup guide, section 6b), then close and reopen Dragon Drop so its terminal finds it.
 
 **Codex (or Muse Code) asks whether to trust a folder.**
 Say yes. It is Dragon Drop's own workspace folder (Documents\Dragon Drop\Claude), and the assistant reads the map tools' settings from it only once it trusts it.
@@ -83,6 +86,9 @@ Yes: choose **Ink** under Style in the Map panel. The coast is inked with ripple
 
 **Can I make one name bigger or smaller?**
 Yes. Select it with the Select tool: a label has a **Size**, and a place, a named river or lake, or a settlement's named street, building or district has a **Name size** (drag it, or **Usual size** to put it back). A realm's is its **Size** button in the realm list. **Label size** in the Map panel makes every name bigger or smaller at once, and the **Export** dialog starts at the same Label size, so the picture's names look as they do on screen.
+
+**Can a settlement's ground look less flat, or use my own textures?**
+Yes. In the Map panel's **Ground colours and textures** (under Land and climate), each kind of ground has **Look…**: a gradient between a lighter and a darker shade (in patches, from its edges, or with the height of the land), how strong and how big, and a **texture** from your asset packs, tiled as big as you set. Every kind already has a gentle gradient of its own; Undo takes back any change.
 
 **My notes are in another program. Can a place open them?**
 Yes: in the place's panel, **Your notes** takes a web address, an Obsidian or OneNote link, or a file or folder on your PC, and **Open** opens it in its own program.

@@ -12,7 +12,7 @@ Both open the same editor and use the same map files.
 ## 0. Install the app (the installer)
 
 1. Download **`Dragon-Drop-Setup-….exe`**. It comes from the project's latest release: <https://github.com/DJ-JackJack/dragon-drop/releases/latest>. Under **Assets**, click the `.exe` and run it.
-2. **Windows will warn you** ("Windows protected your PC", "unknown publisher"). That is because the installer isn't signed with a paid certificate yet. Click **More info**, then **Run anyway**.
+2. **Windows will warn you** ("Windows protected your PC", "unknown publisher"). That is because the installer isn't signed with a paid certificate yet. Click **More info**, then **Run anyway**. Download it only from Dragon Drop's own release page; from 0.1.14 the release also lists the installer's SHA-256 hash (`SHA256SUMS.txt`), and in PowerShell `Get-FileHash .\Dragon-Drop-Setup-<version>.exe` shows your download's, which should be the same.
 3. It installs in a few seconds, with no questions, and starts Dragon Drop. You'll find **Dragon Drop** on your desktop and in the Start menu.
 4. **First start: "Where are your maps?"** If you used the earlier version (from a `dragon-drop` or old `AI-Mapmaker-Build` folder), it finds your maps and offers **Use my existing maps**. Choose that and nothing is lost: it uses the same files. (If it didn't find them, choose the folder yourself: it is the `projects` folder inside that checkout. Your asset library has its own setting (**Settings → Maps and assets**, see below).) Choosing **Start fresh** keeps new maps in `Documents\Dragon Drop\projects` and begins with a small generated first map to try things on (the installer carries no one's campaign world).
 5. **Optional, an API key for the in-app chat:** Claude Code (below) needs no key. For the **API chat** tab, click **Settings** (top right) → **AI assistant** → paste your Anthropic API key → **Save key**. It's stored on your PC only, encrypted with your Windows login.
@@ -191,11 +191,19 @@ Claude Code can use the same map tools through the `.mcp.json` file in this fold
 
 The terminal on the right runs Claude Code by default. In **Settings → AI assistant** you can pick another command-line assistant, or type any start command. For the assistants Dragon Drop knows, it connects the map tools for you: there is nothing to copy and paste. You still sign into the assistant yourself the first time it starts (its own sign-in, and its own cost).
 
+**Install it first.** Dragon Drop installs Claude Code for you; any other assistant you install yourself, from its maker, **then close and reopen Dragon Drop** so its terminal finds the new program. If the terminal says `'codex' is not recognized as an internal or external command` (or `gemini`, `opencode`...), the assistant isn't installed yet, or Dragon Drop was open while it was installed. Codex: open PowerShell and run OpenAI's own installer (from [github.com/openai/codex](https://github.com/openai/codex)):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
+```
+
+(or `npm install -g @openai/codex` if you have Node.js). The first time it starts, choose **Sign in with ChatGPT**.
+
 | Assistant | What Dragon Drop sets up | Anything else |
 |---|---|---|
 | **Claude Code** (the default) | Hands it the map tools when it starts | You sign in once, as before |
 | **Claude Code via Ollama** | `.mcp.json` in your Claude workspace folder | |
-| **Codex** | `.codex/config.toml` | Codex asks once whether to trust the folder: say yes, or it ignores the map tools |
+| **Codex** | `.codex/config.toml` | Install it first (above). Codex asks once whether to trust the folder: say yes, or it ignores the map tools |
 | **Gemini CLI** | `.gemini/settings.json` | It asks once to trust the folder. It also needs your own API key |
 | **OpenCode** | `opencode.json` | |
 | **Muse Code** (Meta) | `.mcp.json`, the same file as Claude Code's | Muse asks once whether to trust the folder: say yes, or it ignores the map tools. Install it from Meta first |
