@@ -25,6 +25,26 @@ changing it starts the reputation again.
 it. If you are elsewhere, either set up a company first (then Artifact Signing), or buy an individual certificate with cloud signing
 (SSL.com's eSigner is the best documented for automated builds) and ask for the signing script to be written then.
 
+## Other routes (a playtester's notes, 2026-11-25)
+
+The notes agree with the table above (Artifact Signing first, an OV certificate otherwise, no EV, and a warning that lasts until the
+reputation builds), and add three things:
+
+- **Sign as early as you can.** An unsigned build starts from nothing with every release; a signed one carries its reputation to the next.
+- **The Microsoft Store, as an MSIX package**, is the one route with no warning at all: Microsoft signs the package, and the notes say the
+  developer account is free (not checked here). It is more work: the app would be built as MSIX, the Store updates it itself (so Dragon
+  Drop's own updater stays off there), and the terminal, the Claude Code install button and the Documents workspace all need trying inside
+  MSIX's container. Sending today's `.exe` installer to the Store still needs a certificate of your own. A later addition beside itch.io,
+  not instead of signing.
+- **SignPath Foundation** signs for free, but only qualifying open-source projects; Dragon Drop has no licence file and is to be sold, so it
+  doesn't fit. And never a self-signed certificate.
+
+## Until it's signed
+
+Testers and buyers are told to expect the warning (`SETUP-WINDOWS.md`, `FAQ.md`) and to download only from the release page. From 0.1.14
+every release also lists `SHA256SUMS.txt`, the installer's SHA-256 hash, written by the workflow's publish job; put the hash in the release
+notes too. Checking a download, in PowerShell: `Get-FileHash .\Dragon-Drop-Setup-<version>.exe` and compare its Hash with the release's.
+
 ## Setting up Artifact Signing (the person, once)
 
 1. An Azure account with a **pay-as-you-go** subscription.

@@ -25,7 +25,7 @@ gh release edit v0.1.10 --repo DJ-JackJack/dragon-drop --notes-file <notes.md>
 
 ## After the tag
 
-- The Release lists three files (`Dragon-Drop-Setup-<version>.exe`, its `.blockmap`, `latest.yml`) and is not a draft or a pre-release. `latest.yml` names the same version and the installer's size and hash: `gh release download v0.1.10 --repo DJ-JackJack/dragon-drop --pattern latest.yml --output -`.
+- The Release lists four files (`Dragon-Drop-Setup-<version>.exe`, its `.blockmap`, `latest.yml`, `SHA256SUMS.txt`) and is not a draft or a pre-release; put the hash from `SHA256SUMS.txt` at the end of the release notes. `latest.yml` names the same version and the installer's size and hash: `gh release download v0.1.10 --repo DJ-JackJack/dragon-drop --pattern latest.yml --output -`.
 - Open the installed Dragon Drop, Settings, check for updates: it offers the new version, downloads it and restarts into it.
 - Copies older than 0.1.8 look at the old repository's name, which is now a public signpost (see `docs/SELLING.md`): it only needs a new release if a version older than 0.1.8 would otherwise be stuck, which it is not (0.1.9 already points at `dragon-drop`). Don't push anything to it.
 - The itch.io copy (`docs/ITCH.md`) is separate and is the person's to upload.

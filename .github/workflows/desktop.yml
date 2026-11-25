@@ -189,12 +189,18 @@ jobs:
         with:
           name: Dragon-Drop-release-files
           path: release
+      - name: Write the installer's SHA-256 hash (a download can be checked against it)
+        run: |
+          cd release
+          sha256sum Dragon-Drop-Setup-*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             release/Dragon-Drop-Setup-*.exe
             release/Dragon-Drop-Setup-*.exe.blockmap
             release/latest.yml
+            release/SHA256SUMS.txt
           generate_release_notes: true
 
   older-windows:
