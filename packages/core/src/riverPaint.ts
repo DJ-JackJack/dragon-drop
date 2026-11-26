@@ -12,6 +12,40 @@ import { type Rect, clipRect, expandRect } from "./geom.ts";
 import type { RiverPath } from "./hydrology.ts";
 import { smoothstep } from "./noise.ts";
 
+/**
+ * River water, in the lakes' lighter colour family (the lakes read better than the rivers did, which were dark and greyish like the forests: a map
+ * session's notes, 2026-11-25): a small stream and a big river. Lighter than every dark ground, so a river can still be followed in greyscale.
+ */
+export const WATER_SMALL: [number, number, number] = [112, 158, 204];
+export const WATER_BIG: [number, number, number] = [84, 130, 194];
+/** The shallow sea a river's mouth blends into (the painter's coastal shallows). */
+const MOUTH: [number, number, number] = [146, 176, 198];
+
+/**
+ * The narrow shoreline round a river or a lake (the person, 2026-11-25: "a small shoreline around each one that is painted with the biome in mind but not
+ * exactly like the main biome paint"): taken from the ground but calm and set apart from it, pale on dark ground (forest, marsh, jungle: a grassy or muddy
+ * bank), darker on light ground; wet dark rock on snow, damp dark sand in the desert. Written into `out`.
+ */
+export function shoreTone(col: number[], p: { sw: number; dw: number; jw: number; rw: number }, out: number[]): number[] {
+  const L = 0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2];
+  // a calm version of the ground: half its own colour, half a plain bank colour, then lifted or lowered away from both the ground and the water
+  let r = col[0] * 0.45 + 150 * 0.55, g = col[1] * 0.45 + 150 * 0.55, b = col[2] * 0.45 + 116 * 0.55;
+  const pale = 1 - smoothstep(95, 135, L); // dark ground gets a pale bank
+  r += (196 - r) * 0.55 * pale; g += (190 - g) * 0.55 * pale; b += (150 - b) * 0.55 * pale;
+  const dk = 1 - pale; // light ground gets a dark, wet one
+  r += (88 - r) * 0.5 * dk; g += (84 - g) * 0.5 * dk; b += (74 - b) * 0.5 * dk;
+  const mud = 0.6 * p.jw;
+  r += (170 - r) * mud; g += (150 - g) * mud; b += (108 - b) * mud;
+  const sand = 0.75 * p.dw;
+  r += (146 - r) * sand; g += (118 - g) * sand; b += (84 - b) * sand;
+  const rock = 0.6 * Math.max(p.rw * 0.6, p.sw);
+  r += (92 - r) * rock; g += (96 - g) * rock; b += (104 - b) * rock;
+  out[0] = r; out[1] = g; out[2] = b;
+  return out;
+}
+/** How wide the shoreline is (map px) beside a river of `size` 0..1. */
+export const shoreWidth = (size: number) => 0.9 + 0.6 * size;
+
 /** Farthest (map px) that banks and valley reach from the water's edge. */
 export const RIVER_REACH = 18;
 /** The `edge` value where there is no river. */
@@ -31,12 +65,16 @@ export interface RiverRaster {
 }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const SHORE = [0, 0, 0];
 const sizeOf = (w: number) => clamp01((w - 0.45) / 1.35);
 /** Half the painted width (map px): small streams are about two pixels, the biggest rivers about four, and steep reaches are narrower. */
 const halfWidth = (size: number, drop: number) => 0.5 * (1.8 + 2.4 * size) * (1.12 - 0.3 * smoothstep(0.45, 1.6, drop));
 
-/** Distance, edge, size and drop for every pixel within reach of a river, in and around `tile`. Null when no river comes near. */
-export function rasterRivers(rivers: RiverPath[], hf: HeightField, kmPerPx: number, tile: Rect): RiverRaster | null {
+/**
+ * Distance, edge, size and drop for every pixel within reach of a river, in and around `tile`. Null when no river comes near. Heights below `sea` count
+ * as the sea's (a river reaching the sea doesn't "fall" down the seabed: that made white water at river mouths).
+ */
+export function rasterRivers(rivers: RiverPath[], hf: HeightField, kmPerPx: number, tile: Rect, sea = -Infinity): RiverRaster | null {
   const r = clipRect(expandRect(tile, 2), hf.w, hf.h);
   if (!r || !rivers.length) return null;
   // a river matters if some part of it is within reach of the tile
@@ -54,13 +92,14 @@ export function rasterRivers(rivers: RiverPath[], hf: HeightField, kmPerPx: numb
     // height and distance along the river at each point, then how steeply it drops over a few px either side of each point
     const z = new Float32Array(n), s = new Float32Array(n), dr = new Float32Array(n);
     for (let k = 0; k < n; k++) {
-      z[k] = hf.sample(p[2 * k], p[2 * k + 1]);
+      z[k] = Math.max(sea, hf.sample(p[2 * k], p[2 * k + 1]));
       if (k) s[k] = s[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]);
     }
+    // (over 6 px either side: a carved channel's small steps don't read as falls)
     let a = 0, b = 0;
     for (let k = 0; k < n; k++) {
-      while (s[k] - s[a] > 3) a++;
-      while (b < n - 1 && s[b] - s[k] < 3) b++;
+      while (s[k] - s[a] > 6) a++;
+      while (b < n - 1 && s[b] - s[k] < 6) b++;
       const run = (s[b] - s[a]) * kmPerPx;
       dr[k] = run > 1e-6 ? Math.max(0, (z[a] - z[b]) / run) : 0;
     }
@@ -108,7 +147,8 @@ export function valleyProfile(re: number, size: number): number {
  */
 export function valleyDepth(re: number, size: number, rugged: number): number {
   const p = valleyProfile(re, size);
-  return p === 0 ? 0 : (0.03 + 0.1 * rugged) * (0.7 + 0.9 * size) * p * p;
+  // (gentle beside small rivers: the dark side of a deep valley next to a thin river read as part of the water, or as a dry groove)
+  return p === 0 ? 0 : (0.03 + 0.1 * rugged) * (0.35 + 1.1 * size) * p * p;
 }
 
 // ------------------------------------------------------------------------------------------------- water and banks
@@ -146,7 +186,8 @@ export interface RiverPixel {
 export function paintRiverPixel(col: number[], p: RiverPixel) {
   const { re, size } = p;
   const hi = smoothstep(0.18, 0.42, p.e);
-  const brisk = smoothstep(0.45, 1.6, p.drop), rapid = smoothstep(1.2, 3.2, p.drop), fall = smoothstep(4, 9, p.drop);
+  // (white water only where it really drops: rapids from about 2 m a km, falls from about 8)
+  const brisk = smoothstep(0.45, 1.6, p.drop), rapid = smoothstep(2, 4.5, p.drop), fall = smoothstep(8, 16, p.drop);
   const flat = (1 - brisk) * (1 - smoothstep(0.03, 0.14, p.e));
   const est = 1 - smoothstep(2, 10, p.ld);
   const reach = Math.min(RIVER_REACH, (2.5 + 3.5 * size) * (1 + 1.1 * flat) * (1 + 0.8 * est));
@@ -166,30 +207,37 @@ export function paintRiverPixel(col: number[], p: RiverPixel) {
   toward(bank * (0.55 * rapid + 0.5 * hi + 0.25 * brisk) * (1 - 0.6 * p.jw) * (1 - p.sw) * 0.7, 134, 126, 114);
   toward(0.22 * growth * bank * flat * (1 - p.jw) * (1 - p.dw), 96, 114, 64);
   toward(0.25 * growth * bank * est, 178, 164, 124);
-  toward(0.55 * fall * bank, 228, 235, 238); // spray round a fall
+  toward(0.25 * fall * (1 - smoothstep(0, 2, re)), 228, 235, 238); // a little spray right beside a fall
+
+  // the shoreline: a narrow band of calm ground set apart from both the ground and the water (shoreTone), so the river stands out on any ground
+  const sw = shoreWidth(size);
+  if (re > -0.5 && re < sw + 0.5) {
+    const k = (re < sw - 0.5 ? 1 : 1 - (re - (sw - 0.5))) * 0.6;
+    shoreTone([R, G, B], p, SHORE);
+    R += (SHORE[0] * lit - R) * k; G += (SHORE[1] * lit - G) * k; B += (SHORE[2] * lit - B) * k;
+  }
 
   const cov = clamp01(0.5 - re);
   if (cov <= 0) { col[0] = R; col[1] = G; col[2] = B; return; }
-  // water: pale and clear when small, deep blue when big, milky pale blue in the highlands, brackish where it meets the sea
-  let wr = 104 + (48 - 104) * size, wg = 142 + (82 - 142) * size, wb = 164 + (126 - 164) * size;
+  // water: the lakes' colour family, a little deeper blue when big, milky pale blue in the highlands, the shallow sea's colour where it meets the sea
+  let wr = WATER_SMALL[0] + (WATER_BIG[0] - WATER_SMALL[0]) * size, wg = WATER_SMALL[1] + (WATER_BIG[1] - WATER_SMALL[1]) * size, wb = WATER_SMALL[2] + (WATER_BIG[2] - WATER_SMALL[2]) * size;
   const calm = 1 - brisk;
-  const dark = 1 - 0.14 * calm * size;
-  wr *= dark; wg *= dark; wb *= dark;
   const gl = 0.5 * hi * (1 - 0.5 * calm);
   wr += (156 - wr) * gl; wg += (196 - wg) * gl; wb += (210 - wb) * gl;
-  wr += (124 - wr) * 0.5 * est; wg += (168 - wg) * 0.5 * est; wb += (196 - wb) * 0.5 * est;
-  // shallow slow water shows the bed
-  const bed = 0.3 * (1 - size) * calm * (1 - est);
+  wr += (MOUTH[0] - wr) * 0.85 * est; wg += (MOUTH[1] - wg) * 0.85 * est; wb += (MOUTH[2] - wb) * 0.85 * est;
+  // a hint of the bed in a shallow slow stream, and of what is round it (small: dark ground pulled the water dark and greyish)
+  const bed = 0.08 * (1 - size) * calm * (1 - est);
   wr += (R * 0.62 - wr) * bed; wg += (G * 0.62 - wg) * bed; wb += (B * 0.62 - wb) * bed;
-  // it picks up the colour of what is round it
-  const refl = 0.2 + 0.15 * (1 - size);
+  const refl = 0.05 + 0.04 * (1 - size);
   wr += (R * 0.8 - wr) * refl; wg += (G * 0.8 - wg) * refl; wb += (B * 0.8 - wb) * refl;
   // the same light as the ground, streaks along the flow and ripples that grow with the speed, white water on rapids and falls
-  const lum = 0.8 + 0.22 * Math.min(1.3, p.f);
-  const streak = Math.sin(p.along * (1.1 + 1.2 * brisk) + p.fine * 1.5) * (0.03 + 0.08 * brisk);
-  const rip = lum * (1 + streak + p.fine * (0.03 + 0.08 * brisk));
+  // (water is flat and level: only a little of the ground's light)
+  const lum = 0.9 + 0.1 * Math.min(1.3, p.f);
+  const streak = Math.sin(p.along * (1.1 + 1.2 * brisk) + p.fine * 1.5) * (0.02 + 0.06 * brisk);
+  const rip = lum * (1 + streak + p.fine * (0.02 + 0.06 * brisk));
   wr *= rip; wg *= rip; wb *= rip;
-  const foam = clamp01(rapid * 0.75 * smoothstep(-0.4, 0.45, p.fine + 0.1) + fall * 0.9);
+  // white water as small flecks on rapids and falls, never blotches
+  const foam = clamp01((rapid * 0.6 + fall * 0.8) * smoothstep(0.15, 0.55, p.fine + 0.25 * Math.sin(p.along * 2.3)));
   wr += (234 * lit - wr) * foam; wg += (240 * lit - wg) * foam; wb += (242 * lit - wb) * foam;
   // under the canopy narrow rivers vanish in places
   const cover = (0.5 * p.jw + 0.3 * p.veg * (1 - p.jw)) * (1 - 0.7 * size) * smoothstep(-0.3, 0.5, p.crown) * (1 - 0.8 * foam);

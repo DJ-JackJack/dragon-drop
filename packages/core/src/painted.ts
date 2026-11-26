@@ -18,7 +18,7 @@ import { type NoiseCache, styleScale } from "./noisecache.ts";
 import { smoothstep } from "./noise.ts";
 import type { RGBAImage } from "./render.ts";
 import { type BiomePixel, type Site, biomeWeights, emptyBiomeWeights, lakeShoreDistance, paintBiomes, paintGlacier } from "./biomeLook.ts";
-import { type RiverPixel, RIVER_REACH, paintRiverPixel, rasterRivers, valleyDepth, valleyProfile } from "./riverPaint.ts";
+import { type RiverPixel, RIVER_REACH, paintRiverPixel, rasterRivers, shoreTone, valleyDepth, valleyProfile } from "./riverPaint.ts";
 import { LAVA_REACH, lavaOf, rasterLava } from "./lava.ts";
 
 // temperature (rows: cold -> hot) x moisture (cols: dry -> wet)
@@ -177,7 +177,7 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
   const [wx, wy] = c.wind === "none" ? [1, 0.5] : WIND_TRAVEL[c.wind];
   const wl = Math.hypot(wx, wy), dux = wx / wl, duy = wy / wl, duneLen = Math.max(5, 10 * k);
   // rivers: how far each pixel is from the water, how big and how steep the river there is (painted into the map, and cut into its shading)
-  const RR = opts.rivers === false || !d.rivers?.length ? null : rasterRivers(d.rivers, doc.height, doc.meta.kmPerPx, r);
+  const RR = opts.rivers === false || !d.rivers?.length ? null : rasterRivers(d.rivers, doc.height, doc.meta.kmPerPx, r, sea);
   const rrW = RR ? RR.r.w : 0;
   // lava flows on volcanic ground (worked out like rivers, from the heights and the volcanic plane; the same for every tile)
   const LV = d.volcanic ? rasterLava(lavaOf(d, doc.height, sea, d.volcanic, doc.meta.kmPerPx), doc.height, r) : null;
@@ -191,7 +191,7 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
   const SHORE_REACH = 8;
   const LS = d.lakes ? lakeShoreDistance(d.lakes, W, H, r, SHORE_REACH) : null; // how far each pixel is from a lake
   const lsW = LS ? LS.r.w : 0;
-  const gcol = [0, 0, 0];
+  const gcol = [0, 0, 0], scol = [0, 0, 0];
 
   for (let y = r.y; y < r.y + r.h; y++) {
     const ty = y - T.y;
@@ -346,6 +346,11 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
         if (d.lakes[gi]) {
           const edge = (x > 0 && !d.lakes[gi - 1]) || (x < W - 1 && !d.lakes[gi + 1]) || (y > 0 && !d.lakes[gi - W]) || (y < H - 1 && !d.lakes[gi + W]);
           if (edge) { R = 74; G = 92; B = 118; } else { R = 110; G = 140; B = 176; }
+        } else if (site.shore <= 1.5) {
+          // the lake's shoreline on the land side: calm ground set apart from the ground and the water (shoreTone), as along the rivers
+          shoreTone([R, G, B], { sw, dw, jw, rw }, scol);
+          const k = site.shore <= 0.75 ? 0.6 : 0.35;
+          R += (scol[0] * f - R) * k; G += (scol[1] * f - G) * k; B += (scol[2] * f - B) * k;
         }
         // the river itself (not over a lake): water and banks that take their light and colour from the ground
         if (nearRiver && RR && !d.lakes[gi]) {

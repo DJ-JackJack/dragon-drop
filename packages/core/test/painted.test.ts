@@ -56,9 +56,11 @@ describe("painted relief", () => {
     }
     expect(zDiff).toBeLessThanOrEqual(1);
     expect(changed).toBeGreaterThan(100); // zoom really changes the shading
-    // land is greenish/brown, sea is blue
+    // land is greenish/brown (on average round a spot: a river runs through it, now a clear blue), sea is blue
     const px = (x: number, y: number) => [full[(y * 256 + x) * 4], full[(y * 256 + x) * 4 + 1], full[(y * 256 + x) * 4 + 2]];
-    expect(px(150, 140)[1]).toBeGreaterThan(px(150, 140)[2]);
+    const block = [0, 0, 0];
+    for (let y = 130; y < 150; y++) for (let x = 140; x < 160; x++) { const p = px(x, y); block[0] += p[0]; block[1] += p[1]; block[2] += p[2]; }
+    expect(block[1]).toBeGreaterThan(block[2]);
     expect(px(5, 5)[2]).toBeGreaterThan(px(5, 5)[0]);
     drawRivers({ w: 256, h: 256, data: full }, { x: 0, y: 0, w: 256, h: 256 }, 1, der.rivers);
   });

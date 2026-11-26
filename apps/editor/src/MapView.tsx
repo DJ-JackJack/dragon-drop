@@ -421,6 +421,23 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       }
       ctx.restore();
     }
+    // The painted style paints its rivers at the map's own size, so zoomed out (a whole big map on screen) a stream is a hairline or less: there the rivers are
+    // drawn over it too, in the painted water's colour, never thinner than about a pixel, streams thinner than rivers thinner than major ones, fading in below
+    // 100% zoom (a map session's notes, 2026-11-25: "Streams are hairlines at whole-map zoom").
+    const fadeIn = 1 - Math.min(1, Math.max(0, (v.scale - 0.55) / 0.45));
+    if (optsRef.current.showRivers && riverChunks.current.length && (metaRef.current?.style ?? "painted") === "painted" && fadeIn > 0) {
+      ctx.save();
+      ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.ox, dpr * v.oy);
+      ctx.strokeStyle = `rgba(112, 158, 204, ${(0.9 * fadeIn).toFixed(3)})`;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (const c of riverChunks.current) {
+        const minPx = 0.9 + 0.7 * Math.min(1, Math.max(0, (c.w - 0.45) / 1.35));
+        ctx.lineWidth = Math.max(c.w * 0.9, minPx / v.scale);
+        ctx.stroke(c.path);
+      }
+      ctx.restore();
+    }
     // the trace picture: over the ground, under the grid and the map's own marks
     traceCtl.draw(ctx, featuresRef.current.trace, m.id, v);
     if (optsRef.current.showGrid) drawGridOverlay(ctx, m, v, W, H);

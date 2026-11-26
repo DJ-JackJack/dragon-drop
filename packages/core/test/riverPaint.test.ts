@@ -112,11 +112,32 @@ describe("rivers painted into the map", () => {
     expect(Array.from(off)).toEqual(Array.from(none));
   });
 
-  it("shows how steeply the river drops: calm dark water on the flat, white water where it falls", () => {
+  it("shows how steeply the river drops: calm water on the flat, flecks of white water where it falls (never blotches: a map session's notes)", () => {
     const flat = paint(scene(0.05)), steep = paint(scene(8));
-    let f = 0, st = 0, n = 0;
-    for (let x = 40; x < 90; x++) { f += lum(flat, x, 64); st += lum(steep, x, 64); n++; }
-    expect(st / n).toBeGreaterThan(f / n + 25);
+    let fw = 0, sw = 0, n = 0;
+    for (let x = 40; x < 90; x++) { if (lum(flat, x, 64) > 200) fw++; if (lum(steep, x, 64) > 200) sw++; n++; }
+    expect(fw).toBe(0);
+    expect(sw).toBeGreaterThan(2);
+    expect(sw).toBeLessThan(n * 0.6); // (flecks, not the whole river white)
+  });
+
+  it("paints rivers lighter than the dark ground they run through, with a shoreline set apart from it, and no white water where a river meets the sea", () => {
+    const s = scene(0.05), img = paint(s), bare = paint(s, false);
+    // the water is lighter than the ground beside it (so it can be followed in greyscale too) and blue
+    let water = 0, ground = 0, n = 0;
+    for (let x = 40; x < 90; x++) { water += lum(img, x, 64); ground += lum(bare, x, 64); n++; }
+    expect(water / n).toBeGreaterThan(ground / n);
+    const o = (64 * W + 60) * 4;
+    expect(img[o + 2]).toBeGreaterThan(img[o]);
+    // a river that drops into the sea: its heights below the sea count as the sea's, so no fall (and no foam) at the mouth
+    const d = createDoc({ id: "m", name: "M", width: 64, height: 64, kmPerPx: 0.5 });
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) d.height.data[y * 64 + x] = x < 40 ? (40 - x) * 0.3 : -800;
+    const pts: number[] = [], widths: number[] = [];
+    for (let x = 4; x <= 44; x += 0.5) { pts.push(x, 32); widths.push(1.2); }
+    const rr = rasterRivers([{ pts, widths }], d.height, 0.5, { x: 30, y: 28, w: 12, h: 8 }, d.meta.seaLevel)!;
+    expect(Math.max(...rr.drop)).toBeLessThan(2);
+    const steepToSea = rasterRivers([{ pts, widths }], d.height, 0.5, { x: 30, y: 28, w: 12, h: 8 })!;
+    expect(Math.max(...steepToSea.drop)).toBeGreaterThan(20); // (without the sea level it looked like a waterfall)
   });
 
   it("is the same picture whole or in slices from a whole-map prep, tile by tile", () => {
