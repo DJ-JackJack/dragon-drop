@@ -72,6 +72,8 @@ interface LevelRuntime {
 
 /** How many of a closed map's changes are kept for its History (per level). */
 const EARLIER_KEEP = 100;
+/** "Allow all" never lasts longer than this, even if the assistant never says it finished (assistants without Claude Code's hooks don't). */
+const ALLOW_ALL_MAX_MS = 15 * 60_000;
 
 interface OpenProject {
   id: string;
@@ -159,6 +161,8 @@ export class Hub {
 
   /** A Claude Code hook fired (SessionStart, UserPromptSubmit, Stop, Notification, SessionEnd). */
   claudeHook(ev: HookEvent) {
+    // Claude Code finished the request (or was stopped, or started another): an Allow all given during it ends
+    if (this.allowAll?.via === "mcp" && ["Stop", "SessionEnd", "Interrupted", "UserPromptSubmit"].includes(ev.hook_event_name ?? "")) this.endAllowAll();
     const next = claudeStateAfter(this.claude, ev);
     if (next === this.claude) return;
     this.claude = next;
@@ -412,6 +416,7 @@ export class Hub {
         }
       }
       this.open = op;
+      this.endAllowAll(); // (an Allow all was given about the map that was open)
       this.selection = null; this.selectionLock = false; this.view = null; // a selection belongs to the map it was made on
       this.broadcast({ t: "selection", selection: null, lock: false });
       await this.store.writeLastOpen(id).catch(() => {});
@@ -1507,6 +1512,7 @@ export class Hub {
     await this.opening.catch(() => {});
     await this.sendProject(ws);
     this.send(ws, { t: "claude_state", state: this.claude });
+    if (this.allowAll) this.send(ws, { t: "allow_all", on: true, via: this.allowAll.via, until: this.allowAll.until });
     this.send(ws, { t: "selection", selection: this.selection, lock: this.selectionLock });
     // what happened at start (a map skipped), told once, to the first editor that connects
     if (this.startupNotes.length) for (const message of this.startupNotes.splice(0)) this.send(ws, { t: "error", message });
@@ -1531,21 +1537,51 @@ export class Hub {
 
   /** Questions to the DM waiting for an answer (`askDm`), by id. */
   private asks = new Map<string, { msg: Extract<ServerMsg, { t: "confirm" }>; settle: (a: "allowed" | "refused" | "timeout") => void }>();
+  /**
+   * The DM's "Allow all" (the person, 2026-11-25: one request can need several answers): risky changes from that assistant that Undo can take back are
+   * allowed without asking, each one said in a note, until it finishes the request (the chat's turn ends; Claude Code's Stop, an interrupt, a new prompt,
+   * the end of its session), another map opens, the DM stops it, or ALLOW_ALL_MAX_MS pass. What Undo can't take back is always asked.
+   */
+  private allowAll: { via: "chat" | "mcp"; until: number; timer: ReturnType<typeof setTimeout> } | null = null;
+
+  private startAllowAll(via: "chat" | "mcp") {
+    this.endAllowAll(false);
+    const until = Date.now() + ALLOW_ALL_MAX_MS;
+    const timer = setTimeout(() => this.endAllowAll(), ALLOW_ALL_MAX_MS);
+    timer.unref?.();
+    this.allowAll = { via, until, timer };
+    this.broadcast({ t: "allow_all", on: true, via, until });
+    // the questions already waiting from that assistant are answered too (those Undo can take back)
+    for (const a of [...this.asks.values()]) if (a.msg.via === via && a.msg.undoable) a.settle("allowed");
+  }
+
+  /** Allow all ends: the assistant asks again (`tell`: say so to the editors). */
+  endAllowAll(tell = true) {
+    if (!this.allowAll) return;
+    clearTimeout(this.allowAll.timer);
+    this.allowAll = null;
+    if (tell) this.broadcast({ t: "allow_all", on: false });
+  }
 
   /**
    * Ask the DM before a risky action (tools risky.ts): every editor shows the question and the first answer counts. "nobody" when no editor is open to
    * answer, "timeout" when none came in time. Without `askBeforeRisky` everything is allowed.
    */
-  askDm(via: "chat" | "mcp", tool: string, text: string): Promise<"allowed" | "refused" | "timeout" | "nobody"> {
+  askDm(via: "chat" | "mcp", tool: string, text: string, o: { note?: string; undoable?: boolean } = {}): Promise<"allowed" | "refused" | "timeout" | "nobody"> {
     if (!this.opts.askBeforeRisky) return Promise.resolve("allowed");
-    if (![...this.clients].some((c) => c.readyState === c.OPEN)) return Promise.resolve("nobody");
-    const waitMs = this.opts.askWaitMs ?? 120_000;
-    const id = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     // which map (and level) it is about: the DM may be looking at another, and a copy of a map has the same names in it
     const op = this.open;
     const level = op && op.runtime.length > 1 ? op.levels.levels.find((l) => l.id === op.levels.active)?.name : undefined;
     const map = op ? `${op.session.doc.meta.name}${level ? `, ${level}` : ""}` : undefined;
-    const msg = { t: "confirm" as const, id, via, tool, text, waitMs, ...(map && { map }) };
+    // the DM chose Allow all for this assistant's request: what Undo can take back goes ahead, and the editors say so
+    if (this.allowAll && this.allowAll.via === via && o.undoable && Date.now() < this.allowAll.until) {
+      this.broadcast({ t: "confirm_auto", via, text, ...(map && { map }) });
+      return Promise.resolve("allowed");
+    }
+    if (![...this.clients].some((c) => c.readyState === c.OPEN)) return Promise.resolve("nobody");
+    const waitMs = this.opts.askWaitMs ?? 120_000;
+    const id = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const msg = { t: "confirm" as const, id, via, tool, text, waitMs, ...(map && { map }), ...(o.note && { note: o.note }), undoable: !!o.undoable };
     return new Promise((resolve) => {
       const settle = (a: "allowed" | "refused" | "timeout") => {
         if (!this.asks.delete(id)) return;
@@ -1608,8 +1644,16 @@ export class Hub {
           this.send(ws, { t: "player_view", rect: this.playerRect });
           for (const a of this.asks.values()) this.send(ws, a.msg); // a question still open shows on a page opened since
           return;
-        case "confirm_answer":
-          this.asks.get(msg.id)?.settle(msg.allow ? "allowed" : "refused");
+        case "confirm_answer": {
+          const a = this.asks.get(msg.id);
+          if (!a) return;
+          // "Allow all": this one, the others waiting from that assistant, and what it asks until it finishes the request (only what Undo can take back)
+          if (msg.allow && msg.all && a.msg.undoable) this.startAllowAll(a.msg.via);
+          a.settle(msg.allow ? "allowed" : "refused");
+          return;
+        }
+        case "allow_all_stop":
+          this.endAllowAll();
           return;
         case "open_project":
           return this.openProject(msg.id);
@@ -1901,7 +1945,7 @@ export class Hub {
         if (via === "mcp") self.open?.agent.note(`Claude Code: ${r.label}`);
         return { seq: r.seq, label: r.label };
       },
-      confirm: (o) => self.askDm(via, o.tool, o.text),
+      confirm: (o) => self.askDm(via, o.tool, o.text, o),
       undo: () => self.session.undo(author),
       redo: () => self.session.redo(author),
       listProjects: () => self.projectsCache,
@@ -2163,7 +2207,11 @@ export class Hub {
     const self = this;
     return {
       toolContext: () => self.toolContext("chat"),
-      emit: (ev: ChatEvent) => { if (self.open?.id === id) self.broadcast({ t: "chat", ev }); },
+      emit: (ev: ChatEvent) => {
+        // the chat's turn ended: an Allow all given during it ends too
+        if (ev.type === "busy" && !ev.busy && self.allowAll?.via === "chat") self.endAllowAll();
+        if (self.open?.id === id) self.broadcast({ t: "chat", ev });
+      },
       persist: (state: ChatState) => self.store.writeJson(id, "chat.json", state),
       userChangesSince: (seq: number) => {
         const s = self.open?.id === id ? self.open.session : null;

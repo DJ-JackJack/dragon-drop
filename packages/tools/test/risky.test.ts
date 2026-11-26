@@ -1,7 +1,7 @@
 // What the AI asks the DM about before doing it (risky.ts), and that runTool waits for the answer.
 import { describe, expect, it } from "vitest";
 import { MapSession, createDoc } from "@mapmaker/core";
-import { type ToolContext, MANY_AT_ONCE, RISKY_TOOLS, TOOLS, riskOf, runTool } from "../src/index.ts";
+import { type ToolContext, MANY_AT_ONCE, RISKY_TOOLS, RISK_NOTE_TOOLS, TOOLS, riskNote, riskOf, runTool } from "../src/index.ts";
 
 function context(answer: "allowed" | "refused" | "timeout" | "nobody" | null) {
   const doc = createDoc({ id: "w", name: "W", width: 64, height: 64, kmPerPx: 2 });
@@ -26,6 +26,18 @@ describe("what asks the DM first", () => {
   it("names only real tools", () => {
     const names = new Set(TOOLS.map((t) => t.name));
     for (const n of RISKY_TOOLS) expect(names.has(n), n).toBe(true);
+  });
+
+  it("says in a few plain words what Allow does, for every risky tool, and which can't be undone (those are never allowed all at once)", () => {
+    expect(new Set(RISK_NOTE_TOOLS)).toEqual(RISKY_TOOLS);
+    for (const n of RISKY_TOOLS) {
+      const { note } = riskNote(n);
+      expect(note.length, n).toBeLessThan(160);
+      expect(note, n).toMatch(/Undo/);
+    }
+    expect(riskNote("update_brief").undoable).toBe(false);
+    expect(riskNote("save_prefab").undoable).toBe(false);
+    expect(riskNote("remove_place")).toEqual({ note: "It is taken off the map. Undo brings it back.", undoable: true });
   });
 
   it("says what would happen in plain words, and lets ordinary calls through", async () => {

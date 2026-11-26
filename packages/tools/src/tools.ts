@@ -27,7 +27,7 @@ import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
 import { REALM_TOOLS, REALM_TOOL_NAMES } from "./realmTools.ts";
 import { MAP_TOOLS } from "./mapTools.ts";
 import { type PictureWork, encodeJpeg, inlinePictures, toBase64 } from "./images.ts";
-import { refusal, riskOf } from "./risky.ts";
+import { refusal, riskNote, riskOf } from "./risky.ts";
 import { NameSizeSchema, define, fail, json, text } from "./toolKit.ts";
 
 export interface ToolContext {
@@ -138,7 +138,7 @@ export interface ToolContext {
    * Optional: ask the DM before a risky action (risky.ts): they answer in the editor. Without it (tests, contexts that only look) nothing is asked.
    * "nobody": no editor is open to answer.
    */
-  confirm?(o: { tool: string; text: string }): Promise<"allowed" | "refused" | "timeout" | "nobody">;
+  confirm?(o: { tool: string; text: string; note?: string; undoable?: boolean }): Promise<"allowed" | "refused" | "timeout" | "nobody">;
   /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. `level`: a battlemap's level (id or name) instead of its first. */
   peek?(map: string, level?: string): Promise<ToolContext>;
   /** Optional: how every map is linked to the others (core mapLinks.ts). */
@@ -1908,7 +1908,7 @@ export async function runTool(ctx: ToolContext, name: string, input: unknown): P
     if (what) {
       // (the map and level asked about: another call may open another while the DM decides, and a copy of a map has the same names in it)
       const project = ctx.projectId(), session = ctx.session();
-      const answer = await ctx.confirm({ tool: name, text: what });
+      const answer = await ctx.confirm({ tool: name, text: what, ...riskNote(name) });
       if (answer !== "allowed") return { ...text(refusal(answer, what)), isError: true };
       if (ctx.projectId() !== project || ctx.session() !== session) {
         return { ...text(`While the DM was deciding, another map or level was opened, so this wasn't done: ${what}. Open the one it was meant for and ask again.`), isError: true };

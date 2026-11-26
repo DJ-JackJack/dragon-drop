@@ -37,18 +37,19 @@ afterAll(async () => {
 const textOf = (r: unknown) => ((r as { content: { text?: string }[] }).content[0]?.text ?? "");
 const places = () => hub.session.doc.features?.places.map((p) => p.name) ?? [];
 
-/** An editor that answers every question with `allow`, or never (null). */
-function page(allow: boolean | null): Promise<{ ws: WebSocket; asked: ServerMsg[]; done: ServerMsg[] }> {
+/** An editor that answers every question with `allow`, or never (null); with `all`, its yes is Allow all (when the question offers it). */
+function page(allow: boolean | null, all = false): Promise<{ ws: WebSocket; asked: ServerMsg[]; done: ServerMsg[]; other: ServerMsg[] }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-    const asked: ServerMsg[] = [], done: ServerMsg[] = [];
+    const asked: ServerMsg[] = [], done: ServerMsg[] = [], other: ServerMsg[] = [];
     ws.on("message", (data, bin) => {
       if (bin) return;
       const m = JSON.parse(data.toString()) as ServerMsg;
-      if (m.t === "confirm") { asked.push(m); if (allow !== null) ws.send(JSON.stringify({ t: "confirm_answer", id: m.id, allow })); }
+      if (m.t === "confirm") { asked.push(m); if (allow !== null) ws.send(JSON.stringify({ t: "confirm_answer", id: m.id, allow, ...(all && allow && m.undoable && { all: true }) })); }
       if (m.t === "confirm_done") done.push(m);
+      if (m.t === "allow_all" || m.t === "confirm_auto") other.push(m);
     });
-    ws.on("open", () => { ws.send(JSON.stringify({ t: "hello" })); resolve({ ws, asked, done }); });
+    ws.on("open", () => { ws.send(JSON.stringify({ t: "hello" })); resolve({ ws, asked, done, other }); });
     ws.on("error", reject);
   });
 }
@@ -91,6 +92,33 @@ describe("asking the DM before a risky action", () => {
     for (let i = 0; i < 40 && !silent.done.length; i++) await new Promise((r2) => setTimeout(r2, 25));
     expect(silent.done[0]).toMatchObject({ answer: "timeout" });
     silent.ws.close();
+  });
+
+  it("says what Allow does; Allow all lets the rest of the request through without asking, but never what Undo can't take back, and ends with the request", async () => {
+    for (const name of ["Fen", "Moor", "Holt"]) expect((await client.callTool({ name: "add_place", arguments: { name, type: "village", x: 60, y: 60 } })).isError).toBe(false);
+    const dm = await page(true, true);
+    expect((await client.callTool({ name: "remove_place", arguments: { place: "Fen" } })).isError).toBe(false);
+    expect(dm.asked).toHaveLength(1);
+    expect(dm.asked[0]).toMatchObject({ text: 'Remove the place "Fen"', note: "It is taken off the map. Undo brings it back.", undoable: true });
+    // the next one in the same request goes ahead without a question, and the page is told what it was
+    expect((await client.callTool({ name: "remove_place", arguments: { place: "Moor" } })).isError).toBe(false);
+    expect(dm.asked).toHaveLength(1);
+    expect(places()).not.toContain("Moor");
+    for (let i = 0; i < 40 && !dm.other.some((m) => m.t === "confirm_auto"); i++) await new Promise((r2) => setTimeout(r2, 25));
+    expect(dm.other).toEqual(expect.arrayContaining([expect.objectContaining({ t: "allow_all", on: true, via: "mcp" }), expect.objectContaining({ t: "confirm_auto", text: 'Remove the place "Moor"' })]));
+    // rewriting the brief can't be undone: it is still asked (this page says yes, but not Allow all)
+    await client.callTool({ name: "update_brief", arguments: { mode: "replace", text: "x".repeat(300) } });
+    await client.callTool({ name: "update_brief", arguments: { mode: "replace", text: "y".repeat(300) } });
+    expect(dm.asked.filter((m) => m.t === "confirm" && m.tool === "update_brief")).toHaveLength(1);
+    expect(dm.asked.at(-1)).toMatchObject({ undoable: false });
+    // Claude Code finished the request: the next one asks again
+    hub.claudeHook({ hook_event_name: "Stop" });
+    expect(dm.other.at(-1) ?? null).not.toBeNull();
+    const before = dm.asked.length;
+    expect((await client.callTool({ name: "remove_place", arguments: { place: "Holt" } })).isError).toBe(false);
+    expect(dm.asked.length).toBe(before + 1);
+    hub.endAllowAll();
+    dm.ws.close();
   });
 
   it("a page opened while a question waits is shown it", async () => {

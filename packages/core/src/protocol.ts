@@ -103,7 +103,9 @@ export const EDIT_MESSAGES = new Set([
 export type ClientMsg =
   | { t: "hello" }
   /** The DM's answer to a `confirm` question (from an editor). */
-  | { t: "confirm_answer"; id: string; allow: boolean }
+  | { t: "confirm_answer"; id: string; allow: boolean; all?: boolean }
+  /** Stop allowing all: the assistant asks again before each risky change. */
+  | { t: "allow_all_stop" }
   | { t: "open_project"; id: string }
   /** The city picture reader: read buildings out of the city's trace picture (all in metres; the answer is `picture_read`, to this editor only; nothing is added until it accepts). */
   | { t: "read_picture"; area: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground: [number, number][]; tolerance: number }
@@ -263,7 +265,14 @@ export type ServerMsg =
   /** A river was drawn (the answer to `draw_river`): its new source, how long it is, how it ends, the deepest cut through high ground (m), and whether the line was turned round. */
   | { t: "river_drawn"; source: string; lengthKm: number; end: "sea" | "land" | "edge"; deepestM: number; reversed: boolean }
   /** The AI assistant wants to do something risky (tools risky.ts) and waits for the DM's OK: shown in every editor until answered (`confirm_done`). via: the API chat or an assistant through the map tools. `map`: the name of the map (and level) it is about, which may not be the one on screen. */
-  | { t: "confirm"; id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; map?: string }
+  | { t: "confirm"; id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; map?: string; note?: string; undoable?: boolean }
+  /**
+   * "Allow all" (the DM's answer to a question): risky changes Undo can take back are allowed without asking until that assistant finishes the request,
+   * another map opens, or `until` (ms since 1970). `on: false` when it ends.
+   */
+  | { t: "allow_all"; on: boolean; via?: "chat" | "mcp"; until?: number }
+  /** A risky change that Allow all let through without asking (shown as a note). */
+  | { t: "confirm_auto"; via: "chat" | "mcp"; text: string; map?: string }
   /** That question is settled (answered here or elsewhere, or no answer in time). */
   | { t: "confirm_done"; id: string; answer: "allowed" | "refused" | "timeout" | "nobody" }
   /** What Claude Code last said (through its hooks): lets Assist mode wait until it is idle. */

@@ -1920,6 +1920,18 @@ try {
     const done = await allowed;
     if (done.isError) fail(`with the DM's OK the place wasn't removed: ${JSON.stringify(done.content)}`);
     await page.getByTestId("ask-box").waitFor({ state: "detached", timeout: 5000 });
+    // the question says what Allow does; Allow all lets the next one through without asking, says so, and Ask me again ends it
+    for (const name of ["E2E Fenby", "E2E Moorby"]) if ((await mcp("add_place", { name, type: "village", x: 44, y: 44 })).isError) fail(`add_place ${name}`);
+    const first = mcp("remove_place", { place: "E2E Fenby" });
+    await page.getByTestId("ask-note").getByText(/Undo brings it back/).waitFor({ timeout: 10000 });
+    await page.getByTestId("ask-allow-all").click();
+    if ((await first).isError) fail("Allow all didn't allow the question it answered");
+    await page.getByTestId("allow-all-bar").waitFor({ timeout: 5000 });
+    const second = await mcp("remove_place", { place: "E2E Moorby" });
+    if (second.isError) fail(`with Allow all on the next removal should go ahead without asking: ${JSON.stringify(second.content)}`);
+    if (await page.getByTestId("ask-box").count()) fail("Allow all should not ask again in the same request");
+    await page.getByTestId("allow-all-stop").click();
+    await page.getByTestId("allow-all-bar").waitFor({ state: "detached", timeout: 5000 });
   }
 
   if (errors.length) fail(`page errors: ${errors.join("; ")}`);

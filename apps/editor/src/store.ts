@@ -58,7 +58,9 @@ export interface AppState {
   /** Valleys are being carved (the Carve valleys button waits). */
   carving: boolean;
   /** The AI assistant's questions waiting for the DM's OK (tools risky.ts), oldest first, with when each arrived (AskBox.tsx). */
-  asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number; map?: string }[];
+  asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number; map?: string; note?: string; undoable?: boolean }[];
+  /** "Allow all" is on: that assistant's risky changes that Undo can take back go ahead without asking until it finishes the request (or `until`). */
+  allowAll: { via: "chat" | "mcp"; until: number } | null;
   /** The DM's prefabs (core prefabs.ts; null until asked for), the files that couldn't be read, a save waiting for "replace?", and the one saved last. */
   prefabs: PrefabInfo[] | null;
   prefabsSkipped: string[];
@@ -78,7 +80,7 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], earlierChanges: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, traceCompare: { busy: false, result: null, metric: "roofs", shown: false, at: 0 }, water: null, carving: false, asks: [],
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, traceCompare: { busy: false, result: null, metric: "roofs", shown: false, at: 0 }, water: null, carving: false, asks: [], allowAll: null,
   prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null, playerRect: null,
 };
 
@@ -208,7 +210,7 @@ class Store {
       this.set({ connected: true, error: null });
     };
     ws.onclose = () => {
-      this.set({ connected: false, asks: [] }); // (questions still open are sent again on reconnecting)
+      this.set({ connected: false, asks: [], allowAll: null }); // (questions still open, and Allow all, are sent again on reconnecting)
       const wait = Math.min(5000, 500 * 2 ** this.retry++);
       setTimeout(() => this.connect(), wait);
     };
@@ -260,10 +262,15 @@ class Store {
     this.send({ t: "level_remove", id });
   }
 
-  /** The DM's answer to one of the AI assistant's questions. */
-  answerAsk(id: string, allow: boolean) {
-    this.send({ t: "confirm_answer", id, allow });
+  /** The DM's answer to one of the AI assistant's questions (`all`: Allow all, for the rest of that assistant's request). */
+  answerAsk(id: string, allow: boolean, all = false) {
+    this.send({ t: "confirm_answer", id, allow, ...(all && { all: true }) });
     this.set({ asks: this.state.asks.filter((a) => a.id !== id) });
+  }
+  /** Stop allowing all: the assistant asks again before each risky change. */
+  stopAllowAll() {
+    this.send({ t: "allow_all_stop" });
+    this.set({ allowAll: null });
   }
 
   dismissError() {
@@ -431,7 +438,14 @@ class Store {
         this.set({ pictureNote: { text: `"${m.name}" is a copy of "${m.from}", now open: change it, and compare it with the original from the Map panel. The original is left as it was.`, busy: false, at: Date.now(), ms: 9000 } });
         break;
       case "confirm":
-        if (!this.state.asks.some((a) => a.id === m.id)) this.set({ asks: [...this.state.asks, { id: m.id, via: m.via, tool: m.tool, text: m.text, waitMs: m.waitMs, at: Date.now(), ...(m.map && { map: m.map }) }] });
+        if (!this.state.asks.some((a) => a.id === m.id)) this.set({ asks: [...this.state.asks, { id: m.id, via: m.via, tool: m.tool, text: m.text, waitMs: m.waitMs, at: Date.now(), ...(m.map && { map: m.map }), ...(m.note && { note: m.note }), undoable: !!m.undoable }] });
+        break;
+      case "allow_all":
+        this.set({ allowAll: m.on && m.via ? { via: m.via, until: m.until ?? Date.now() + 15 * 60_000 } : null });
+        break;
+      case "confirm_auto":
+        // (Allow all let it through: say what it was, as History will)
+        this.note(`Allowed without asking (Allow all): ${m.text}.`, 7000);
         break;
       case "confirm_done":
         this.set({ asks: this.state.asks.filter((a) => a.id !== m.id) });

@@ -263,6 +263,13 @@ button.small { font-size: 11.5px; padding: 3px 8px; white-space: nowrap; }
 .button-link { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; color: inherit; text-decoration: none; font-size: 13px; }
 .button-link:hover { border-color: var(--accent, #d4af37); }
 .ask-what { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+/* what Allow does, in a few words (gold-edged; red-edged when Undo can't take it back) */
+.ask-note { margin: 8px 0 4px; padding: 6px 8px; border-left: 3px solid var(--accent, #d4af37); background: rgba(212, 175, 55, 0.08); font-size: 13px; }
+.ask-note.final { border-left-color: var(--error, #e0786a); background: rgba(224, 120, 106, 0.1); }
+.ask-all-note { font-size: 11.5px; margin: 6px 0 0; }
+/* while Allow all is on: a bar at the top of the map, with Ask me again */
+.allow-all-bar { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; gap: 10px; align-items: center; max-width: min(640px, calc(100vw - 32px)); box-sizing: border-box;
+  padding: 6px 10px; background: #2a2412; border: 1px solid var(--accent, #d4af37); border-radius: 8px; font-size: 12.5px; }
 .modal label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #4a2323; border: 1px solid var(--error); padding: 8px 14px; border-radius: 8px; cursor: pointer; z-index: 20; }
 

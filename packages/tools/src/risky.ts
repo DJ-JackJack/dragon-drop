@@ -155,6 +155,39 @@ export async function riskOf(ctx: ToolContext, name: string, input: unknown): Pr
   return null;
 }
 
+/**
+ * What Allow does, in a few plain words, and whether Undo takes it back: shown under the question. Only what Undo can take back may be allowed for the rest
+ * of a request ("Allow all": the hub's askDm); the rest is always asked on its own. Every tool in RISKY_TOOLS has one (a test keeps them in step).
+ */
+export function riskNote(name: string): { note: string; undoable: boolean } {
+  const n = RISK_NOTES[name];
+  return n ?? { note: "Undo takes it back.", undoable: true };
+}
+
+const REMOVED = { note: "It is taken off the map. Undo brings it back.", undoable: true };
+const RENAMED = { note: "Only the name changes. Undo puts the old name back.", undoable: true };
+const RISK_NOTES: Record<string, { note: string; undoable: boolean }> = {
+  generate_terrain: { note: "All the land is made again from scratch; places, labels and roads stay where they are. Undo brings the old land back.", undoable: true },
+  import_sketch: { note: "All the land is made again from the sketch; places, labels and roads stay where they are. A checkpoint is saved first, and Undo brings the old land back.", undoable: true },
+  set_sea_level: { note: "Low land floods, or new land comes up out of the sea, all round the map. Undo puts the sea back.", undoable: true },
+  restore_checkpoint: { note: "Everything changed since that checkpoint is put back as it was then. Undo brings the map back as it is now.", undoable: true },
+  copy_from_map: { note: "What is on this map there is replaced by the other map's. Undo puts it back.", undoable: true },
+  carve_valleys: { note: "The land is cut down into valleys along the rivers. A checkpoint is saved first, and Undo puts the land back.", undoable: true },
+  update_brief: { note: "Your brief (this map's canon) is replaced by the new text. Undo can't bring the old text back.", undoable: false },
+  drain_lake: { note: "The lake is drained: its rim is cut or its bed filled. Undo puts it back.", undoable: true },
+  save_prefab: { note: "The saved prefab is overwritten with this area. Undo can't bring the old one back.", undoable: false },
+  generate_dungeon: { note: "What is on this level now is replaced. Undo puts it back.", undoable: true },
+  generate_village: { note: "The streets and buildings here now are replaced. Undo puts them back.", undoable: true },
+  remove_realm: { note: "The realm and its painted land are taken off the map. Undo brings them back.", undoable: true },
+  update_realm: RENAMED, update_place: RENAMED, update_label: RENAMED, update_climate_region: RENAMED, name_water: RENAMED, update_city_labels: RENAMED, update_city_districts: RENAMED,
+  remove_place: REMOVED, remove_label: REMOVED, remove_climate_region: REMOVED, remove_river_source: REMOVED, remove_line: REMOVED, remove_water_name: REMOVED,
+  remove_city_labels: REMOVED, remove_city_districts: REMOVED, remove_buildings: REMOVED, remove_streets: REMOVED, remove_city_walls: REMOVED,
+  remove_props: REMOVED, remove_walls: REMOVED, remove_lights: REMOVED, remove_light_zones: REMOVED, remove_notes: REMOVED, remove_land: REMOVED, remove_trees: REMOVED,
+  remove_connectors: REMOVED, remove_roofs: REMOVED, remove_paths: REMOVED,
+};
+/** (for the test: every risky tool has its own note) */
+export const RISK_NOTE_TOOLS = Object.keys(RISK_NOTES);
+
 /** What the tool answers when the DM didn't allow it (or wasn't there to answer). */
 export function refusal(answer: "refused" | "timeout" | "nobody", what: string): string {
   if (answer === "refused") return `The DM said no to this: ${what}. Don't try it another way: ask them what they want instead.`;

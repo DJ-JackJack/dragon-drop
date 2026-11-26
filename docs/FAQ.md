@@ -45,6 +45,7 @@ Say yes. It is Dragon Drop's own workspace folder (Documents\Dragon Drop\Claude)
 
 **The assistant asks me to Allow or Don't allow something.**
 Some actions wait for your OK before they happen: replacing a map's land, moving the sea level, putting the whole map back from a checkpoint, carving every river, rewriting the brief, removing a named place, label, region, river or lake name, and removing many things at once. Answer in the box in the Dragon Drop window. With no answer within two minutes, nothing is done.
+The box says what it wants to do and, under **If you allow it**, what happens and whether Undo can take it back. When one request needs several answers, **Allow all** answers this one and lets the assistant make the rest of that request's changes that Undo can take back without asking (a note says each one, and a bar at the top has **Ask me again**). It ends when the assistant finishes the request, when you open another map, or after 15 minutes. Changes Undo can't take back, such as rewriting a map's whole brief, are always asked one by one.
 
 **Claude Code in my own terminal lost the map tools.**
 If you connected Claude Code yourself with the command in **Settings → AI assistant** (not through Dragon Drop's own terminal panel), it stops working after **Make a new access key**. Run `claude mcp remove --scope user mapmaker` in PowerShell, then copy the command from Settings again and run it. The terminal panel inside Dragon Drop needs nothing: it is set up again each time it starts.
