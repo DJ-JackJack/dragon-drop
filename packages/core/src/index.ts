@@ -23,6 +23,7 @@ export * from "./regional.ts";
 export * from "./routing.ts";
 export * from "./grid.ts";
 export * from "./furniture.ts";
+export * from "./units.ts";
 export * from "./exportPlan.ts";
 export * from "./zip.ts";
 export * from "./sketch.ts";

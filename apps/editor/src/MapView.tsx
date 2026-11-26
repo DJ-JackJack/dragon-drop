@@ -3,6 +3,7 @@ import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
   type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
   type RiverSize, type RiverSource,
+  distUnit, fmtHeight, fromKm,
 } from "@mapmaker/core";
 import { type FeatureClip, type ViewKeyAction, ARROW_DIRECTION, KEY_ZOOM_STEP, applyViewKey, boxSelect, clipBounds, copyFeatures, deleteFeatures, featureKindOf, moveFeatures, pasteFeatures, selectionFromIds, selectionIds, toggleInSelection, viewKeyAction } from "@mapmaker/core";
 import { armItemsPaste, getClip, itemsCopied, setClip, unstack } from "./clipboard.ts";
@@ -27,6 +28,7 @@ import type { RiverMode } from "./WorldToolBar.tsx";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { realmCtl } from "./realmUi.ts";
 import { groundCtl } from "./groundUi.ts";
+import { unitsNow, useMapUnits } from "./units.tsx";
 import { measureCtl, worldLength } from "./measure.ts";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
@@ -115,6 +117,7 @@ interface RiverChunk {
 }
 
 export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, smooth, labelScale, showRivers, features, selectedId, onSelect, placeType, labelKind, showRegions, showLabels = true, showMarkers = true, showRealms = true, lineKind, lineAuto, onRouting, childMaps, onDetailArea, onBattleHere, onCityHere, selection, selectionLock, areaShape, onArea, onPoint, children, water = null, riverMode = "add", riverSize = "river", onWaterPick }: Props) {
+  const units = useMapUnits();
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offRef = useRef<HTMLCanvasElement | null>(null);
@@ -529,7 +532,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     hitsRef.current = drawFeatures(ctx, withWaterLabels(f, waterRef.current), { scale: v.scale, ox: v.ox, oy: v.oy, mapWidth: m.width, fitScale: Math.min(W / m.width, H / m.height) * 0.95, labelScale: optsRef.current.labelScale, labels: optsRef.current.showLabels, markers: optsRef.current.showMarkers, realms: optsRef.current.showRealms || optsRef.current.tool === "realm", faintGmOnly: true }, groupRef.current.length >= 2 ? new Set(groupRef.current) : selRef.current);
     drawSelectionOverlay(ctx, v, selectionRef.current.selection, selectionRef.current.lock, f, drag.current, pointer.current, optsRef.current.areaShape, toMapRef.current);
     // title, scale bar, compass and frame (what exports will show)
-    drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale) });
+    drawFurniture(ctx, m.furniture, { x: v.ox, y: v.oy, w: m.width * v.scale, h: m.height * v.scale, mapWidthPx: m.width, kmPerPx: m.kmPerPx, unit: viewUnit(m.width * v.scale), units: unitsNow() });
     // regional maps made from this one
     for (const cm of childMapsRef.current) {
       const r = cm.parent!.rect;
@@ -562,7 +565,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       ctx.fillRect(x0, y0, w, h);
       ctx.strokeRect(x0, y0, w, h);
       const text = "error" in plan ? "Too small or too large"
-        : `${plan.factor}× detail: ${plan.width}×${plan.height} px, ${(m.kmPerPx / plan.factor * 0.621371).toFixed(2)} mi per px`;
+        : `${plan.factor}× detail: ${plan.width}×${plan.height} px, ${fromKm(m.kmPerPx / plan.factor, unitsNow()).toFixed(2)} ${distUnit(unitsNow())} per px`;
       ctx.font = "600 12px system-ui, sans-serif";
       ctx.textBaseline = "top";
       ctx.lineWidth = 3;
@@ -1257,12 +1260,12 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       switches={onShowGrid ? [{ label: "Coordinates", on: showGrid, onToggle: onShowGrid, title: "The coordinate numbers along the edges (G)", testId: "bar-grid" }] : []}
       info={<>
         {hover && meta ? (
-          <>x {hover.x} · y {hover.y} · {hover.e >= 0 ? `${hover.e} m` : `${-hover.e} m deep`}</>
+          <>x {hover.x} · y {hover.y} · {hover.e >= 0 ? fmtHeight(hover.e, units) : `${fmtHeight(-hover.e, units)} deep`}</>
         ) : meta ? (
           <>{meta.width}×{meta.height} px</>
         ) : null}
         {gridTooFine && <> · <b>Grid cells are too small to draw here: zoom in</b></>}
-        {meta && <> · {meta.kmPerPx} km/px · {Math.round((meta.width * meta.kmPerPx) / 1.609).toLocaleString()} mi across</>}
+        {meta && <> · {+fromKm(meta.kmPerPx, units).toFixed(3)} {distUnit(units)}/px · {Math.round(fromKm(meta.width * meta.kmPerPx, units)).toLocaleString()} {distUnit(units)} across</>}
       </>}
     >
       <button onClick={() => setExportOpen(true)} title="Export the map as a PNG, or tiles for very large sizes" data-testid="export-button">⤓ Export</button>

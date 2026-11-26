@@ -11,6 +11,7 @@ import { applyPaintedGround } from "./groundPaint.ts";
 import { smoothstep } from "./noise.ts";
 import { desertWeight, jungleWeight } from "./painted.ts";
 import { MI_PER_KM } from "./grid.ts";
+import { type Units, distUnit, fmtHeight, fromKm } from "./units.ts";
 
 export type Pt = [number, number];
 
@@ -189,8 +190,8 @@ export interface TravelEstimate {
   note?: string;
 }
 
-/** The time a route takes each way of travelling, at the given paces (miles a day; missing ones take the usual pace). */
-export function travelEstimates(s: RouteSurvey, paces: Partial<Record<TravelModeId, number>> = {}, modes: TravelMode[] = TRAVEL_MODES): TravelEstimate[] {
+/** The time a route takes each way of travelling, at the given paces (miles a day; missing ones take the usual pace); its notes in the chosen units. */
+export function travelEstimates(s: RouteSurvey, paces: Partial<Record<TravelModeId, number>> = {}, modes: TravelMode[] = TRAVEL_MODES, u: Units = "imperial"): TravelEstimate[] {
   const mi = (km: number) => km * MI_PER_KM;
   return modes.map((m) => {
     const pace = Math.max(0.1, paces[m.id] ?? m.milesPerDay);
@@ -198,16 +199,16 @@ export function travelEstimates(s: RouteSurvey, paces: Partial<Record<TravelMode
     if (m.water) {
       days = mi(s.waterKm) / pace;
       const land = s.openKm + s.roughKm + s.roadKm;
-      if (land > Math.max(1, s.km * 0.05)) note = `and ${roundMi(mi(land))} over land, which a ship can't sail`;
+      if (land > Math.max(1, s.km * 0.05)) note = `and ${roundDist(land, u)} over land, which a ship can't sail`;
     } else {
       days = (mi(s.openKm + s.roadKm) + mi(s.roughKm) / m.rough) / pace;
-      if (s.waterKm > 0.5) note = `and ${roundMi(mi(s.waterKm))} of water to cross by boat`;
+      if (s.waterKm > 0.5) note = `and ${roundDist(s.waterKm, u)} of water to cross by boat`;
     }
     return { mode: m.id, name: m.name, days, time: describeTime(days, m.hours), ...(note && { note }) };
   });
 }
 
-const roundMi = (n: number) => `${n < 10 ? Math.round(n * 10) / 10 : Math.round(n).toLocaleString()} mi`;
+const roundDist = (km: number, u: Units) => { const n = fromKm(km, u); return `${n < 10 ? Math.round(n * 10) / 10 : Math.round(n).toLocaleString()} ${distUnit(u)}`; };
 
 /** "about 5 hours", "about 1 day", "about 3½ days", "about 12 days". */
 export function describeTime(days: number, hoursPerDay: number): string {
@@ -223,10 +224,10 @@ export function describeTime(days: number, hoursPerDay: number): string {
 }
 const fmtHalf = (n: number) => (n % 1 ? `${Math.floor(n) || ""}½` : String(n));
 
-/** One line about a route, for the ruler and Claude ("123 mi (198 km): 80 mi open, 30 mi forest, 13 mi along roads; crosses 2 rivers; climbs 640 m"). */
-export function describeRoute(s: RouteSurvey): string {
+/** One line about a route, for the ruler and Claude ("123 mi (198 km): 80 mi open, 30 mi forest, 13 mi along roads; crosses 2 rivers; climbs 2,100 ft"), in the chosen units. */
+export function describeRoute(s: RouteSurvey, u: Units = "imperial"): string {
   const parts: string[] = [];
-  const mi = (km: number) => roundMi(km * MI_PER_KM);
+  const mi = (km: number) => roundDist(km, u);
   if (s.openKm > 0.05) parts.push(`${mi(s.openKm)} open`);
   const r = s.rough;
   for (const [k, word] of [["forest", "forest"], ["jungle", "jungle"], ["marsh", "marsh"], ["mountains", "mountains"], ["steep", "steep slopes"], ["ice", "ice and snow"]] as [RoughKind, string][]) {
@@ -236,9 +237,9 @@ export function describeRoute(s: RouteSurvey): string {
   if (s.waterKm > 0.05) parts.push(`${mi(s.waterKm)} over water`);
   const extra: string[] = [];
   if (s.riversCrossed) extra.push(`crosses ${s.riversCrossed} river${s.riversCrossed === 1 ? "" : "s"}`);
-  if (s.climbM >= 50) extra.push(`climbs ${Math.round(s.climbM).toLocaleString()} m`);
-  const km = s.km < 10 ? Math.round(s.km * 10) / 10 : Math.round(s.km);
-  return `${roundMi(s.miles)} (${km.toLocaleString()} km)${parts.length ? `: ${parts.join(", ")}` : ""}${extra.length ? `; ${extra.join("; ")}` : ""}`;
+  if (s.climbM >= 50) extra.push(`climbs ${fmtHeight(s.climbM, u)}`);
+  const other: Units = u === "metric" ? "imperial" : "metric";
+  return `${roundDist(s.km, u)} (${roundDist(s.km, other)})${parts.length ? `: ${parts.join(", ")}` : ""}${extra.length ? `; ${extra.join("; ")}` : ""}`;
 }
 
 /** A battlemap route: its length in feet and in squares (along the line, a square being `feetPerSquare`). */

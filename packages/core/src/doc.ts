@@ -3,6 +3,7 @@ import { type Features, emptyFeatures } from "./features.ts";
 import type { Rect } from "./geom.ts";
 import type { MapFurniture } from "./furniture.ts";
 import type { MapGrid } from "./grid.ts";
+import type { Units } from "./units.ts";
 import type { BattleSpec } from "./battle.ts";
 import type { CitySpec } from "./city.ts";
 import type { BaseClimate, ParentLink } from "./regional.ts";
@@ -87,6 +88,8 @@ export interface MapMeta {
   grid?: MapGrid;
   /** Title, scale bar, compass and frame drawn over the map and in exports. */
   furniture?: MapFurniture;
+  /** This map's measurement system, over Settings' (units.ts; missing or null: as in Settings). Only what is shown: the map's own units inside never change. */
+  units?: Units | null;
   /** Set on a regional map: the map and area it was made from. */
   parent?: ParentLink;
   /**

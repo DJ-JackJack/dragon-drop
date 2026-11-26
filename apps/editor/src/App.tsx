@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { LAND_STARTS, type LandStart, citySizeForPlace, placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional } from "@mapmaker/core";
+import { LAND_STARTS, type LandStart, citySizeForPlace, placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional, MI_PER_KM, distUnit, distWord, fmtLen, fmtTable, fromFt, fromKm, fromM, lenUnit, lenWord, toFt, toKm, toM, unitsFor } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
 import { PICTURE_RULE, References } from "./References.tsx";
 import { onBeforeCopy, onBeforePaste, onCopyEvent, onPasteEvent } from "./clipboard.ts";
@@ -8,6 +8,7 @@ import { Brand } from "./Brand.tsx";
 import { type RightTab, RightPanel, defaultTab } from "./RightPanel.tsx";
 import { OtherMaps } from "./CompareMaps.tsx";
 import { DesktopSettings } from "./DesktopSettings.tsx";
+import { MapUnitsChoice, unitsNow, useUnitsPref } from "./units.tsx";
 import { AssetPanel } from "./AssetPanel.tsx";
 import { CityView } from "./CityView.tsx";
 import { CityInspector, CitySummary, CityToolBar } from "./CityPanels.tsx";
@@ -153,8 +154,8 @@ export function App() {
     if (!m) return;
     const plan = planRegional(rect, m.width, m.height);
     if ("error" in plan) { void notice(plan.error); return; }
-    const miles = (n: number) => Math.round(n * m.kmPerPx * 0.621371).toLocaleString();
-    void ask(`Name for this regional map (about ${miles(plan.rect.w)} × ${miles(plan.rect.h)} miles, ${plan.factor}× the detail):`, "", "Make map").then((name) => {
+    const u = unitsNow(), far = (n: number) => Math.round(fromKm(n * m.kmPerPx, u)).toLocaleString();
+    void ask(`Name for this regional map (about ${far(plan.rect.w)} × ${far(plan.rect.h)} ${distWord(u)}, ${plan.factor}× the detail):`, "", "Make map").then((name) => {
       if (!name) return;
       setMaking(name);
       store.send({ t: "create_regional", name, rect: plan.rect });
@@ -383,6 +384,7 @@ export function App() {
                 </button>
               ))}
             </div>
+            <MapUnitsChoice meta={s.meta} />
             <h3>Layers</h3>
             <label className="check eye"><input type="checkbox" checked={showRivers} onChange={(e) => setShowRivers(e.target.checked)} /> Rivers</label>
             <label className="check eye"><input type="checkbox" checked={showRegions} onChange={(e) => setShowRegions(e.target.checked)} /> Climate region outlines</label>
@@ -447,10 +449,10 @@ export function App() {
               <h3>Roads and borders</h3>
               <div className="places" data-testid="lines">
                 {(s.features.lines ?? []).map((l) => {
-                  const mi = Math.round(lineLengthKm(l.points, s.meta?.kmPerPx ?? 1, l.closed) * 0.621371);
+                  const far = Math.round(fromKm(lineLengthKm(l.points, s.meta?.kmPerPx ?? 1, l.closed), unitsFor(s.meta, s.unitsPref)));
                   return (
                     <button key={l.id} className={`place-row ${selectedId === l.id ? "on" : ""}`} onClick={() => { onSelect(l.id); setTool("select"); }}>
-                      <span>{l.name ?? l.kind}</span><span className="muted">{l.kind} · {mi.toLocaleString()} mi</span>
+                      <span>{l.name ?? l.kind}</span><span className="muted">{l.kind} · {far.toLocaleString()} {distUnit(unitsFor(s.meta, s.unitsPref))}</span>
                     </button>
                   );
                 })}
@@ -600,7 +602,8 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const pic = refs.find((r) => r.name === cityPic && r.w && r.h);
   const [cityW, cityH] = !pic ? [cw, ch] : (() => { const h = Math.round((cw * pic.h!) / pic.w!); return h > 6000 ? [Math.round((6000 * pic.w!) / pic.h!), 6000] : [cw, h]; })();
   const [size, setSize] = useState(1024);
-  const [miles, setMiles] = useState(1000);
+  const u = useUnitsPref();
+  const [widthKm, setWidthKm] = useState(1000 / MI_PER_KM);
   const [template, setTemplate] = useState("ocean");
   const [lakes, setLakes] = useState<"none" | "few" | "some" | "many">("few");
   const [sx, setSx] = useState(30);
@@ -608,7 +611,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
   const [feet, setFeet] = useState(5);
   const [grid, setGrid] = useState<"square" | "hex" | "none">("square");
   const [room, setRoom] = useState(true);
-  const kmPerPx = Number(((miles * 1.609344) / size).toFixed(3));
+  const kmPerPx = Number((widthKm / size).toFixed(3));
   const battleOk = sx >= 3 && sy >= 3 && sx <= 150 && sy <= 150 && sx * sy * 70 * 70 <= 25_000_000;
   const cityOk = cityW >= 50 && cityH >= 50 && cityW <= 6000 && cityH <= 6000;
   const switchKind = (k: "world" | "battle" | "city") => {
@@ -635,8 +638,8 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
                 <option value={2048}>2048 × 2048 (detailed, slower)</option>
               </select>
             </label>
-            <label>Width of the map in miles<input type="number" min={1} value={miles} onChange={(e) => setMiles(Number(e.target.value))} /></label>
-            <p className="muted">≈ {kmPerPx} km per pixel</p>
+            <label>Width of the map in {distWord(u)}<input type="number" min={1} value={Math.round(fromKm(widthKm, u))} onChange={(e) => setWidthKm(toKm(Number(e.target.value), u))} data-testid="new-width" /></label>
+            <p className="muted">≈ {u === "metric" ? `${kmPerPx} km` : `${+(kmPerPx * MI_PER_KM).toFixed(3)} mi`} per pixel</p>
             <label>Start from
               <select value={template} onChange={(e) => setTemplate(e.target.value)}>
                 <option value="ocean">Empty ocean</option>
@@ -666,24 +669,24 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
                 </select>
               </label>
             )}
-            <label>Width in metres<input type="number" min={50} max={6000} value={cw} onChange={(e) => setCw(Number(e.target.value))} data-testid="new-cw" /></label>
-            <label>Height in metres<input type="number" min={50} max={6000} value={pic ? cityH : ch} disabled={!!pic} title={pic ? "Follows the picture's shape" : undefined} onChange={(e) => setCh(Number(e.target.value))} data-testid="new-ch" /></label>
-            {pic && cityW !== cw && <p className="muted">The picture is tall: the map is {cityW.toLocaleString()} × {cityH.toLocaleString()} m (at most 6,000 a side).</p>}
+            <label>Width in {lenWord(u)}<input type="number" min={Math.round(fromM(50, u))} max={Math.round(fromM(6000, u))} value={Math.round(fromM(cw, u))} onChange={(e) => setCw(toM(Number(e.target.value), u))} data-testid="new-cw" /></label>
+            <label>Height in {lenWord(u)}<input type="number" min={Math.round(fromM(50, u))} max={Math.round(fromM(6000, u))} value={Math.round(fromM(pic ? cityH : ch, u))} disabled={!!pic} title={pic ? "Follows the picture's shape" : undefined} onChange={(e) => setCh(toM(Number(e.target.value), u))} data-testid="new-ch" /></label>
+            {pic && cityW !== cw && <p className="muted">The picture is tall: the map is {fmtLen(cityW, u)} × {fmtLen(cityH, u)} (at most {fmtLen(6000, u)} a side).</p>}
             <label title={LAND_STARTS.find((s) => s.id === cityLand)?.hint}>The land
               <select value={cityLand} onChange={(e) => setCityLand(e.target.value as LandStart)} data-testid="new-city-land">
                 {LAND_STARTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </label>
             <p className="muted">
-              {cityOk ? <>A village, a town or a city seen from above, made of buildings and streets on a ground. A village is about 300 × 200 m, a walled town 1,000 × 700, a big city 3,000 × 2,000.</>
-                : <>Between 50 and 6,000 metres each way.</>}
+              {cityOk ? <>A village, a town or a city seen from above, made of buildings and streets on a ground. {u === "metric" ? "A village is about 300 × 200 m, a walled town 1,000 × 700, a big city 3,000 × 2,000." : "A village is about 1,000 × 650 ft, a walled town 3,300 × 2,300, a big city 9,800 × 6,600."}</>
+                : <>Between {fmtLen(50, u)} and {fmtLen(6000, u)} each way.</>}
             </p>
           </>
         ) : (
           <>
             <label>Width in squares<input type="number" min={3} max={150} value={sx} onChange={(e) => setSx(Number(e.target.value))} data-testid="new-sx" /></label>
             <label>Height in squares<input type="number" min={3} max={150} value={sy} onChange={(e) => setSy(Number(e.target.value))} data-testid="new-sy" /></label>
-            <label>Feet per square<input type="number" min={1} max={100} value={feet} onChange={(e) => setFeet(Number(e.target.value))} /></label>
+            <label>{u === "metric" ? "Metres per square" : "Feet per square"}<input type="number" min={u === "metric" ? 0.3 : 1} max={u === "metric" ? 30 : 100} step={u === "metric" ? 0.5 : 1} value={+fromFt(feet, u).toFixed(2)} onChange={(e) => setFeet(toFt(Number(e.target.value), u))} data-testid="new-feet" /></label>
             <label>Grid
               <select value={grid} onChange={(e) => setGrid(e.target.value as "square" | "hex" | "none")}>
                 <option value="square">Square</option>
@@ -693,7 +696,7 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
             </label>
             <label className="check"><input type="checkbox" checked={room} onChange={(e) => setRoom(e.target.checked)} /> Start with a walled, floored room</label>
             <p className="muted">
-              {battleOk ? <>{sx * feet} × {sy * feet} ft. The image will be {sx * 70} × {sy * 70} px (70 px per square, what Foundry expects).</>
+              {battleOk ? <>{fmtTable(sx * feet, u)} × {fmtTable(sy * feet, u)}. The image will be {sx * 70} × {sy * 70} px (70 px per square, what Foundry expects).</>
                 : <>Between 3 and 150 squares each way, and no more than 25 megapixels in all.</>}
             </p>
           </>
@@ -704,9 +707,9 @@ function NewMapDialog({ onClose }: { onClose: () => void }) {
             className="primary" data-testid="new-create" disabled={(kind === "battle" && !battleOk) || (kind === "city" && !cityOk)}
             onClick={() => {
               if (kind === "city") {
-                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: cw, heightM: ch, land: cityLand, ...(pic && { picture: pic.name }) });
+                store.send({ t: "create_city", name: name.trim() || "New Settlement", widthM: Math.round(cw), heightM: Math.round(ch), land: cityLand, ...(pic && { picture: pic.name }) });
               } else if (kind === "battle") {
-                store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: feet, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
+                store.send({ t: "create_battle", name: name.trim() || "New Battlemap", squaresX: sx, squaresY: sy, feetPerSquare: Math.round(feet * 100) / 100, gridType: grid, ...(room && { roomMargin: Math.max(1, Math.min(2, Math.floor(Math.min(sx, sy) / 6))) }) });
               } else {
                 store.send({ t: "create_project", name: name.trim() || "New Map", width: size, height: size, kmPerPx, template, seed: Math.floor(Math.random() * 1e9), lakes });
               }
@@ -750,7 +753,8 @@ function CityHereDialog({ spot, onClose, onMake }: { spot: { x: number; y: numbe
   const size = citySizeForPlace(spot.place?.type);
   const [name, setName] = useState(spot.place?.name ?? "");
   const [w, setW] = useState(size.widthM), [h, setH] = useState(size.heightM);
-  const make = () => { const n = name.trim() || "Settlement"; store.send({ t: "create_city_here", name: n, x: spot.x, y: spot.y, widthM: w, heightM: h }); onMake(n); };
+  const u = unitsNow(), step = u === "metric" ? 50 : 100;
+  const make = () => { const n = name.trim() || "Settlement"; store.send({ t: "create_city_here", name: n, x: spot.x, y: spot.y, widthM: Math.round(w), heightM: Math.round(h) }); onMake(n); };
   return (
     <div className="modal-back" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-modal="true" data-testid="city-here-dialog" onMouseDown={(e) => e.stopPropagation()}>
@@ -758,8 +762,8 @@ function CityHereDialog({ spot, onClose, onMake }: { spot: { x: number; y: numbe
         <p className="muted">Its climate, height above the sea, slope, coast, river and woods come from this spot on the world map. A world-map pixel is a kilometre or more, so it is a rough start to shape.</p>
         <label>Name<input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && make()} data-testid="city-here-name" /></label>
         <div className="row">
-          <label>Width (m)<input type="number" min={50} max={6000} step={50} value={w} onChange={(e) => setW(Number(e.target.value))} data-testid="city-here-w" /></label>
-          <label>Height (m)<input type="number" min={50} max={6000} step={50} value={h} onChange={(e) => setH(Number(e.target.value))} data-testid="city-here-h" /></label>
+          <label>Width ({lenUnit(u)})<input type="number" min={Math.round(fromM(50, u))} max={Math.round(fromM(6000, u))} step={step} value={Math.round(fromM(w, u))} onChange={(e) => setW(toM(Number(e.target.value), u))} data-testid="city-here-w" /></label>
+          <label>Height ({lenUnit(u)})<input type="number" min={Math.round(fromM(50, u))} max={Math.round(fromM(6000, u))} step={step} value={Math.round(fromM(h, u))} onChange={(e) => setH(toM(Number(e.target.value), u))} data-testid="city-here-h" /></label>
         </div>
         <div className="row end">
           <button onClick={onClose}>Cancel</button>

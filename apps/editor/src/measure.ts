@@ -5,7 +5,7 @@
  * remembered on this computer.
  */
 import { useSyncExternalStore } from "react";
-import { MI_PER_KM, type RouteSurvey, TRAVEL_MODES, type TravelModeId, routeLength } from "@mapmaker/core";
+import { MI_PER_KM, type RouteSurvey, TRAVEL_MODES, type TravelModeId, routeLength, type Units, distUnit, fmtLenBoth, fromFt, fromKm, tableUnit } from "@mapmaker/core";
 import { store } from "./store.ts";
 
 type Pt = [number, number];
@@ -178,12 +178,13 @@ export function useMeasure(): MeasureState {
 }
 
 const tidy = (n: number) => (n < 10 ? Math.round(n * 10) / 10 : Math.round(n)).toLocaleString();
-/** A world-map length: "124 mi (200 km)". */
-export const worldLength = (km: number) => `${tidy(km * MI_PER_KM)} mi (${tidy(km)} km)`;
-/** A battlemap length: "35 ft (7 squares)". */
-export const battleLength = (squares: number, feetPerSquare: number) => `${tidy(squares * feetPerSquare)} ft (${tidy(squares)} square${Math.abs(squares - 1) < 0.05 ? "" : "s"})`;
-/** A settlement length: "120 m (394 ft)". */
-export const cityLength = (metres: number) => `${tidy(metres)} m (${tidy(metres * 3.28084)} ft)`;
+const other = (u: Units): Units => (u === "metric" ? "imperial" : "metric");
+/** A world-map length in the map's units, the other after it: "124 mi (200 km)", "200 km (124 mi)". */
+export const worldLength = (km: number, u: Units = "imperial") => `${tidy(fromKm(km, u))} ${distUnit(u)} (${tidy(fromKm(km, other(u)))} ${distUnit(other(u))})`;
+/** A battlemap length: "35 ft (7 squares)", "10.5 m (7 squares)". */
+export const battleLength = (squares: number, feetPerSquare: number, u: Units = "imperial") => `${tidy(fromFt(squares * feetPerSquare, u))} ${tableUnit(u)} (${tidy(squares)} square${Math.abs(squares - 1) < 0.05 ? "" : "s"})`;
+/** A settlement length: "394 ft (120 m)", "120 m (394 ft)". */
+export const cityLength = (metres: number, u: Units = "imperial") => fmtLenBoth(metres, u);
 
 /** What to do with the ruler, before there is a route. */
 export const MEASURE_HINT = "Click points along a route to measure it. Double-click or press Enter to finish; Backspace takes back the last point, Esc clears. A click after that starts a new route.";

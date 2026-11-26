@@ -1,9 +1,10 @@
 /** The world map's tool bar: the settings of the tool in use, and what to do next with it. */
 import { REALM_HINT, RealmToolBar } from "./RealmBar.tsx";
 import { GROUND_HINT, GroundToolBar } from "./GroundBar.tsx";
-import { type LabelKind, type LineKind, type PlaceType, type RiverSize, MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, describeRoute, placeKind, routeLength, travelEstimates } from "@mapmaker/core";
+import { type LabelKind, type LineKind, type PlaceType, type RiverSize, MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, describeRoute, placeKind, routeLength, travelEstimates, type Units, distUnit, paceFromMi, paceToMi } from "@mapmaker/core";
 import { MEASURE_HINT, measureCtl, useMeasure, worldLength } from "./measure.ts";
 import { store } from "./store.ts";
+import { unitsNow, useMapUnits } from "./units.tsx";
 import { RIVER_SIZE_NAMES } from "./WaterPanel.tsx";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { LABEL_KINDS } from "./Panels.tsx";
@@ -51,16 +52,19 @@ export function lineHint(kind: LineKind, auto: boolean): string {
 export const BRUSHES: Tool[] = ["raise", "lower", "smooth", "flatten", "land", "water"];
 
 /** The ruler's second line: what the route crosses once surveyed, else what to do. */
-function measureHint(ms: ReturnType<typeof useMeasure>): string {
-  if (ms.survey && ms.points.length >= 2) return `${describeRoute(ms.survey)}.${ms.survey.climateKnown ? "" : " (The climate isn't worked out yet: forest and marsh count as open ground.)"}`;
+function measureHint(ms: ReturnType<typeof useMeasure>, u: Units): string {
+  if (ms.survey && ms.points.length >= 2) return `${describeRoute(ms.survey, u)}.${ms.survey.climateKnown ? "" : " (The climate isn't worked out yet: forest and marsh count as open ground.)"}`;
   return MEASURE_HINT;
 }
 
 /** The ruler on a world map: how you travel, your pace, and how far and how long. */
 function WorldMeasure({ ms }: { ms: ReturnType<typeof useMeasure> }) {
   const km = routeLength(measureCtl.shown()) * (store.state.meta?.kmPerPx ?? 1);
+  const u = useMapUnits();
   const mode = TRAVEL_MODES.find((m) => m.id === ms.mode) ?? TRAVEL_MODES[0];
-  const est = ms.survey && ms.points.length >= 2 ? travelEstimates(ms.survey, ms.paces).find((t) => t.mode === ms.mode) : null;
+  const est = ms.survey && ms.points.length >= 2 ? travelEstimates(ms.survey, ms.paces, TRAVEL_MODES, u).find((t) => t.mode === ms.mode) : null;
+  // (paces are kept in miles a day; shown and typed in the map's units)
+  const usual = Math.round(paceFromMi(mode.milesPerDay, u));
   return (
     <>
       <label className="field">Travel
@@ -68,13 +72,13 @@ function WorldMeasure({ ms }: { ms: ReturnType<typeof useMeasure> }) {
           {TRAVEL_MODES.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
       </label>
-      <label className="field" title="Miles a day on open ground or a road (rough ground is slower). Change it to your own table's pace; it is remembered on this computer.">
-        <input type="number" min={1} max={999} step={1} value={ms.paces[mode.id] ?? mode.milesPerDay} style={{ width: 58 }} data-testid="measure-pace"
-          onChange={(e) => measureCtl.setPace(mode.id, Number(e.target.value) === mode.milesPerDay ? null : Number(e.target.value))} /> mi a day
+      <label className="field" title={`${u === "metric" ? "Kilometres" : "Miles"} a day on open ground or a road (rough ground is slower). Change it to your own table's pace; it is remembered on this computer.`}>
+        <input type="number" min={1} max={999} step={1} value={ms.paces[mode.id] ? Math.round(paceFromMi(ms.paces[mode.id]!, u)) : usual} style={{ width: 58 }} data-testid="measure-pace"
+          onChange={(e) => { const v = Number(e.target.value); measureCtl.setPace(mode.id, v === usual ? null : paceToMi(v, u)); }} /> {distUnit(u)} a day
       </label>
       <span className="measure-result" data-testid="measure-result">
         {ms.points.length < 2 && !ms.hover ? "Click to start a route" : <>
-          <b>{worldLength(km)}</b>
+          <b>{worldLength(km, u)}</b>
           {est && <> · {mode.name}: <b>{est.time}</b>{est.note ? ` (${est.note})` : ""}</>}
         </>}
       </span>
@@ -88,7 +92,7 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
   riverMode: RiverMode; onRiverMode: (m: RiverMode) => void; riverSize: RiverSize; onRiverSize: (s: RiverSize) => void;
 }) {
   const ms = useMeasure();
-  const hint = tool === "line" ? lineHint(lineKind, lineAuto) : tool === "river" ? riverHint(riverMode) : tool === "measure" ? measureHint(ms) : tool === "realm" ? REALM_HINT : tool === "biome" ? GROUND_HINT : TOOL_HINTS[tool];
+  const hint = tool === "line" ? lineHint(lineKind, lineAuto) : tool === "river" ? riverHint(riverMode) : tool === "measure" ? measureHint(ms, unitsNow()) : tool === "realm" ? REALM_HINT : tool === "biome" ? GROUND_HINT : TOOL_HINTS[tool];
   return (
     <ToolBar hint={hint || undefined} tool={{ id: tool, name: TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === tool)?.label ?? tool }}>
       {tool === "line" && (

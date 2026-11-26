@@ -13,7 +13,7 @@ import {
   type RoofPools, type BattleExportFormat, GROUND_INFO, PAINTABLE_GROUNDS, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
   type LakeShape, type NamedWater, type RiverNet, type LinkedMap, COPYABLE, copyFeaturesFrom, copyHeightsFrom, heightsFromState, mapTransform,
   MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, battleRoute, battleSpec, cityRoute, describeRoute, surveyRoute, travelEstimates,
-  cleanNameSize,
+  cleanNameSize, type Units, DEFAULT_UNITS, unitsFor, fmtTable, fmtLenBoth, tidy,
 } from "@mapmaker/core";
 import { ASSET_TOOLS, ASSET_BATTLE_TOOL_NAMES } from "./assetTools.ts";
 import { BATTLE_TOOLS, battleSummary } from "./battleTools.ts";
@@ -140,6 +140,8 @@ export interface ToolContext {
    * "nobody": no editor is open to answer.
    */
   confirm?(o: { tool: string; text: string; note?: string; undoable?: boolean }): Promise<"allowed" | "refused" | "timeout" | "nobody">;
+  /** Optional: Settings' measurement system (core units.ts; a map's own choice is its meta.units). Missing: imperial. */
+  unitsPref?(): Units;
   /** Optional: a context for another map (its id or name), only to look at it: the look-only tools run on it while the open map and the editor stay as they are. `level`: a battlemap's level (id or name) instead of its first. */
   peek?(map: string, level?: string): Promise<ToolContext>;
   /** Optional: how every map is linked to the others (core mapLinks.ts). */
@@ -389,6 +391,18 @@ const seedSchema = z.number().int().optional().describe("Random seed; omit for a
 const randSeed = () => Math.floor(Math.random() * 2 ** 31);
 const pts = (p: number[][]) => p.map((q) => [q[0], q[1]] as [number, number]);
 
+/** The units the open map is shown in (its own choice, else Settings'): Claude talks to the DM in them. */
+export function unitsOf(ctx: ToolContext): Units {
+  return unitsFor(ctx.session().doc.meta, ctx.unitsPref?.() ?? DEFAULT_UNITS);
+}
+
+const UNITS_SAID: Record<Units, string> = {
+  imperial: "Imperial: tell the DM distances in miles, heights and short lengths in feet (battlemaps: feet).",
+  metric: "Metric: tell the DM distances in kilometres, heights and short lengths in metres (battlemaps: metres, a 5 ft square being 1.5 m).",
+};
+/** What get_map_summary says about the units. */
+const unitsInfo = (ctx: ToolContext) => { const u = unitsOf(ctx); return { units: u, units_note: `${UNITS_SAID[u]} Tool inputs and results keep their own units (the field names say which: _m, _km, miles, squares, px): convert when you talk.` }; };
+
 function summary(ctx: ToolContext) {
   const s = ctx.session();
   if (isBattle(s.doc)) return battleSummary(ctx);
@@ -438,8 +452,8 @@ export const TOOLS = [
     schema: z.object({}),
     async run(ctx) {
       const doc = ctx.session().doc;
-      if (isBattle(doc) || isCity(doc)) return json(summary(ctx));
-      return json({ ...summary(ctx), style: doc.meta.style ?? "painted", climate: climateOf(doc), ...(doc.meta.grid && { grid: doc.meta.grid }), ...(doc.meta.furniture && { furniture: doc.meta.furniture }) });
+      if (isBattle(doc) || isCity(doc)) return json({ ...summary(ctx), ...unitsInfo(ctx) });
+      return json({ ...summary(ctx), ...unitsInfo(ctx), style: doc.meta.style ?? "painted", climate: climateOf(doc), ...(doc.meta.grid && { grid: doc.meta.grid }), ...(doc.meta.furniture && { furniture: doc.meta.furniture }) });
     },
   }),
 
@@ -524,22 +538,22 @@ export const TOOLS = [
       const pts = i.points as [number, number][];
       if (isBattle(doc)) {
         const ft = battleSpec(doc).feetPerSquare, r = battleRoute(pts, ft);
-        return json({ feet: Math.round(r.feet * 10) / 10, squares: Math.round(r.squares * 10) / 10, feet_per_square: ft, legs_feet: pts.slice(1).map((p, k) => Math.round(battleRoute([pts[k], p], ft).feet * 10) / 10) });
+        return json({ said: `${fmtTable(r.feet, unitsOf(ctx))} (${tidy(r.squares)} squares)`, feet: Math.round(r.feet * 10) / 10, squares: Math.round(r.squares * 10) / 10, feet_per_square: ft, legs_feet: pts.slice(1).map((p, k) => Math.round(battleRoute([pts[k], p], ft).feet * 10) / 10) });
       }
       if (isCity(doc)) {
         const r = cityRoute(pts);
-        return json({ metres: Math.round(r.metres), feet: Math.round(r.feet), walk: `about ${Math.max(1, Math.round(r.walkMinutes))} minutes on foot` });
+        return json({ said: fmtLenBoth(r.metres, unitsOf(ctx)), metres: Math.round(r.metres), feet: Math.round(r.feet), walk: `about ${Math.max(1, Math.round(r.walkMinutes))} minutes on foot` });
       }
       const s = surveyRoute(doc, (await ctx.derived?.()) ?? null, pts);
       const r1 = (n: number) => Math.round(n * 10) / 10;
       const mi = (km: number) => r1(km * MI_PER_KM);
       return json({
-        route: describeRoute(s),
+        route: describeRoute(s, unitsOf(ctx)),
         miles: mi(s.km), km: r1(s.km), legs_miles: s.legsKm.map(mi),
         ground_miles: { open: mi(s.openKm), rough: mi(s.roughKm), roads: mi(s.roadKm), water: mi(s.waterKm) },
         rough_miles: Object.fromEntries(Object.entries(s.rough).filter(([, v]) => v > 0.05).map(([k, v]) => [k, mi(v)])),
         rivers_crossed: s.riversCrossed, climb_m: Math.round(s.climbM), descent_m: Math.round(s.descentM), highest_m: Math.round(s.highestM),
-        travel: travelEstimates(s, i.paces as Partial<Record<TravelModeId, number>> | undefined).map((t) => ({ how: t.name, time: t.time, days: Math.round(t.days * 100) / 100, ...(t.note && { note: t.note }) })),
+        travel: travelEstimates(s, i.paces as Partial<Record<TravelModeId, number>> | undefined, TRAVEL_MODES, unitsOf(ctx)).map((t) => ({ how: t.name, time: t.time, days: Math.round(t.days * 100) / 100, ...(t.note && { note: t.note }) })),
         ...(!s.climateKnown && { note: "The climate isn't worked out yet, so forest, jungle and marsh count as open ground." }),
       });
     },
@@ -1566,7 +1580,7 @@ export const TOOLS = [
         type: i.type, sizeMi: clampGridSize(i.size_miles ?? cur?.sizeMi ?? niceGridSize(widthMi), widthMi),
         orient: i.orientation ?? cur?.orient ?? "pointy", opacity: i.opacity ?? cur?.opacity ?? 0.5,
       };
-      const r = ctx.execute({ op: "set_meta", patch: { grid }, label: describeGrid(grid) });
+      const r = ctx.execute({ op: "set_meta", patch: { grid }, label: describeGrid(grid, unitsOf(ctx) === "metric") });
       return json({ change: r.seq, grid, cells_across_map: grid.type === "off" ? undefined : Math.round(widthMi / grid.sizeMi), cell_px: +gridCellPx(grid, meta.kmPerPx).toFixed(2) });
     },
   }),

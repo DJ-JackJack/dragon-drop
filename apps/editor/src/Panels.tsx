@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { NoteLink } from "./NoteLink.tsx";
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { placeKind, withNameSize,
-  GROUND_INFO, MI_PER_KM, WIND_NAMES, type ClimateParams, type ClimateRegion, DEFAULT_CLIMATE, type Corner, type Features, type MapFurniture, type MapGrid, type MapLine, describeFurniture, lineLengthKm, clampGridSize, describeGrid, gridCellPx, niceGridSize, type LabelKind, type MapLabel, type MapMeta, type NamePos, type Place, type PlaceType,
+  GROUND_INFO, MI_PER_KM, WIND_NAMES, type ClimateParams, type ClimateRegion, DEFAULT_CLIMATE, type Corner, type Features, type MapFurniture, type MapGrid, type MapLine, describeFurniture, lineLengthKm, distUnit, distWord, fmtHeight, fromKm, type Units, clampGridSize, describeGrid, gridCellPx, niceGridSize, type LabelKind, type MapLabel, type MapMeta, type NamePos, type Place, type PlaceType,
 } from "@mapmaker/core";
 import { PlaceGlyph, PlaceKindPicker } from "./PlaceKindPicker.tsx";
 import { NameSizeSlider } from "./NameSize.tsx";
 import { type AppState, store } from "./store.ts";
 import { forAssistant } from "./assistantName.ts";
+import { useMapUnits } from "./units.tsx";
 import { SourceEditor, WaterEditor, deleteWaterThing } from "./WaterPanel.tsx";
 
 export const LABEL_KINDS: { id: LabelKind; label: string }[] = [
@@ -155,7 +156,7 @@ function LineEditor({ l, kmPerPx }: { l: MapLine; kmPerPx: number }) {
   const [notes, setNotes] = useState(l.notes ?? "");
   useEffect(() => { setName(l.name ?? ""); setNotes(l.notes ?? ""); }, [l.id, l.name, l.notes]);
   const km = lineLengthKm(l.points, kmPerPx, l.closed);
-  const miles = km * MI_PER_KM;
+  const u = useMapUnits(), far = (k: number, in_: Units = u) => `${Math.round(fromKm(k, in_)).toLocaleString()} ${distWord(in_)}`;
   const set = (patch: Partial<MapLine>, drop?: keyof MapLine) => {
     const next = { ...latest.current, ...patch };
     if (drop) delete next[drop];
@@ -179,8 +180,8 @@ function LineEditor({ l, kmPerPx }: { l: MapLine; kmPerPx: number }) {
         <label className="check"><input type="checkbox" checked={!!l.closed} onChange={(e) => (e.target.checked ? set({ closed: true }) : set({}, "closed"))} /> Closed (joins back to its start)</label>
       )}
       <p className="muted">
-        {Math.round(miles).toLocaleString()} miles ({Math.round(km).toLocaleString()} km)
-        {(l.kind === "road" || l.kind === "trail") && <> · about {(miles / 24).toFixed(1)} days on foot at 24 miles a day</>}
+        {far(km)} ({far(km, u === "metric" ? "imperial" : "metric")})
+        {(l.kind === "road" || l.kind === "trail") && <> · about {(km * MI_PER_KM / 24).toFixed(1)} days on foot at {far(24 / MI_PER_KM)} a day</>}
       </p>
       <label className="field">Notes<textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (l.notes ?? "") && set({ notes })} /></label>
       <p className="muted">Drag it with Select to move it.</p>
@@ -215,6 +216,7 @@ function useLatest<T>(value: T) {
 }
 
 function RegionEditor({ r }: { r: ClimateRegion }) {
+  const u = useMapUnits();
   const latest = useLatest(r);
   const [name, setName] = useState(r.name);
   const [owner, setOwner] = useState(r.owner ?? "");
@@ -244,7 +246,7 @@ function RegionEditor({ r }: { r: ClimateRegion }) {
         </select>
       </label>
       {(r.border ?? "soft") === "soft" && (
-        <Slider label="Blend width" value={r.blendKm ?? 80} min={10} max={600} step={5} fmt={(v) => `${Math.round(v)} km`} onCommit={(v) => set({ blendKm: v })} />
+        <Slider label="Blend width" value={r.blendKm ?? 80} min={10} max={600} step={5} fmt={(v) => `${Math.round(fromKm(v, u))} ${distUnit(u)}`} onCommit={(v) => set({ blendKm: v })} />
       )}
       <label className="field">Held by (optional)<input value={owner} placeholder="e.g. a spirit" onChange={(e) => setOwner(e.target.value)} onBlur={() => owner !== (r.owner ?? "") && (owner.trim() ? set({ owner: owner.trim() }) : set({}, "owner"))} /></label>
       <label className="field">Notes<textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => notes !== (r.notes ?? "") && set({ notes })} /></label>
@@ -260,6 +262,7 @@ const CORNERS: { id: Corner; label: string }[] = [
 
 /** Title, scale bar, compass and frame. They show on the map and in exports. Each change is undoable. */
 export function ExtrasPanel({ meta }: { meta: MapMeta }) {
+  const u = useMapUnits();
   const f: MapFurniture = meta.furniture ?? {};
   const [title, setTitle] = useState(f.title ?? "");
   useEffect(() => setTitle(f.title ?? ""), [f.title]);
@@ -292,7 +295,7 @@ export function ExtrasPanel({ meta }: { meta: MapMeta }) {
           <select value={f.scaleCorner ?? "bottom-left"} onChange={(e) => commit({ scaleCorner: e.target.value as Corner })} aria-label="Scale bar corner">
             {CORNERS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
-          <select value={f.units ?? "miles"} onChange={(e) => commit({ units: e.target.value as "miles" | "km" })} aria-label="Scale bar units">
+          <select value={f.units ?? (u === "metric" ? "km" : "miles")} onChange={(e) => commit({ units: e.target.value as "miles" | "km" })} aria-label="Scale bar units">
             <option value="miles">Miles</option><option value="km">Kilometres</option>
           </select>
         </div>
@@ -309,15 +312,19 @@ export function ExtrasPanel({ meta }: { meta: MapMeta }) {
 }
 
 const GRID_PRESETS_MI = [1, 5, 6, 12, 24, 60, 100, 200];
+const GRID_PRESETS_KM = [1, 5, 10, 20, 40, 100, 200, 300];
 
-/** Square or hex grid over the map: type, cell size in miles, hex orientation, line strength. Each change is undoable. */
+/** Square or hex grid over the map: type, cell size (kept in miles, shown in the map's units), hex orientation, line strength. Each change is undoable. */
 export function GridPanel({ meta }: { meta: MapMeta }) {
   const g = meta.grid;
+  const u = useMapUnits(), metric = u === "metric";
   const widthMi = meta.width * meta.kmPerPx * MI_PER_KM;
   const type = g?.type ?? "off";
-  const size = g?.sizeMi ?? niceGridSize(widthMi);
-  const [text, setText] = useState(String(+size.toFixed(3)));
-  useEffect(() => setText(String(+size.toFixed(3))), [size]);
+  const size = g?.sizeMi ?? (metric ? niceGridSize(widthMi / MI_PER_KM) * MI_PER_KM : niceGridSize(widthMi));
+  // (shown in km on a metric map; typed in them too)
+  const shown = (mi: number) => (metric ? mi / MI_PER_KM : mi), kept = (v: number) => (metric ? v * MI_PER_KM : v);
+  const [text, setText] = useState(String(+shown(size).toFixed(3)));
+  useEffect(() => setText(String(+shown(size).toFixed(3))), [size, metric]);
   const latest = useRef<MapGrid | undefined>(g);
   useEffect(() => { latest.current = meta.grid; }, [meta.grid]);
   const commit = (patch: Partial<MapGrid>) => {
@@ -325,15 +332,15 @@ export function GridPanel({ meta }: { meta: MapMeta }) {
     const next: MapGrid = { type: cur?.type ?? "off", sizeMi: cur?.sizeMi ?? size, orient: cur?.orient ?? "pointy", opacity: cur?.opacity ?? 0.5, ...patch };
     next.sizeMi = clampGridSize(next.sizeMi, widthMi);
     latest.current = next;
-    store.send({ t: "cmd", cmd: { op: "set_meta", patch: { grid: next }, label: describeGrid(next) } });
+    store.send({ t: "cmd", cmd: { op: "set_meta", patch: { grid: next }, label: describeGrid(next, u === "metric") } });
   };
   const commitText = () => {
     const v = Number(text);
-    if (!Number.isFinite(v) || v <= 0) { setText(String(+size.toFixed(3))); return; }
+    if (!Number.isFinite(v) || v <= 0) { setText(String(+shown(size).toFixed(3))); return; }
     // compare with what we last sent, not the (not yet echoed) prop: Enter commits and then blur would commit the same size again
     const cur = latest.current?.sizeMi ?? size;
-    if (Math.abs(clampGridSize(v, widthMi) - cur) > 1e-9) commit({ sizeMi: v });
-    else setText(String(+cur.toFixed(3)));
+    if (Math.abs(clampGridSize(kept(v), widthMi) - cur) > 1e-6) commit({ sizeMi: kept(v) });
+    else setText(String(+shown(cur).toFixed(3)));
   };
   const cellPx = gridCellPx({ type: "square", sizeMi: size }, meta.kmPerPx);
   const across = widthMi / size;
@@ -349,7 +356,7 @@ export function GridPanel({ meta }: { meta: MapMeta }) {
       </div>
       {type !== "off" && (
         <>
-          <label className="field">{type === "hex" ? "Hex size across the flats (miles)" : "Square size (miles)"}
+          <label className="field">{type === "hex" ? `Hex size across the flats (${distWord(u)})` : `Square size (${distWord(u)})`}
             <input
               type="number" min={0.1} step="any" value={text} data-testid="grid-size"
               onChange={(e) => setText(e.target.value)} onBlur={commitText}
@@ -357,8 +364,8 @@ export function GridPanel({ meta }: { meta: MapMeta }) {
             />
           </label>
           <div className="chips">
-            {GRID_PRESETS_MI.filter((p) => p <= widthMi / 2).map((p) => (
-              <button key={p} className={Math.abs(p - size) < 1e-6 ? "on" : ""} onClick={() => commit({ sizeMi: p })}>{p} mi</button>
+            {(metric ? GRID_PRESETS_KM : GRID_PRESETS_MI).filter((p) => kept(p) <= widthMi / 2).map((p) => (
+              <button key={p} className={Math.abs(p - shown(size)) < 1e-3 ? "on" : ""} onClick={() => commit({ sizeMi: kept(p) })}>{p} {distUnit(u)}</button>
             ))}
           </div>
           {type === "hex" && (
@@ -370,7 +377,7 @@ export function GridPanel({ meta }: { meta: MapMeta }) {
             </label>
           )}
           <Slider label="Line strength" value={g?.opacity ?? 0.5} min={0.1} max={1} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onCommit={(v) => commit({ opacity: v })} />
-          <p className="muted">One cell = {+size.toFixed(2)} mi ({cellPx.toFixed(1)} map px). About {Math.round(across)} cells across the map.</p>
+          <p className="muted">One cell = {+shown(size).toFixed(2)} {distUnit(u)} ({cellPx.toFixed(1)} map px). About {Math.round(across)} cells across the map.</p>
           {cellPx < 12 && <p className="muted">Small cells only show once you zoom in. For cells under about 4 map px, a <b>Detail map</b> of the area (more pixels) gives cleaner results.</p>}
         </>
       )}
@@ -380,6 +387,7 @@ export function GridPanel({ meta }: { meta: MapMeta }) {
 
 /** Climate settings for the painted style. Each slider release is one undoable change. */
 export function ClimatePanel({ meta }: { meta: MapMeta }) {
+  const u = useMapUnits();
   const c: ClimateParams = { ...DEFAULT_CLIMATE, ...(meta.climate ?? {}) };
   const set = (patch: Partial<ClimateParams>) =>
     store.send({ t: "cmd", cmd: { op: "set_meta", patch: { climate: { ...(meta.climate ?? {}), ...patch } }, label: "Change climate" } });
@@ -392,7 +400,7 @@ export function ClimatePanel({ meta }: { meta: MapMeta }) {
         <summary><h3>Climate</h3></summary>
         <p className="muted">Temperature and moisture come from {meta.parent.name}{there ? "" : " as it was before it was deleted"}, refined by this map's finer terrain. Climate regions drawn here still apply on top.</p>
         {there && <button onClick={() => store.send({ t: "regional_refresh" })} title="Use this after changing the parent map's climate or climate regions">Update from {meta.parent.name}</button>}
-        <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => `${Math.round(v)} m`} onCommit={(v) => set({ snowlineM: v })} />
+        <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => fmtHeight(v, u)} onCommit={(v) => set({ snowlineM: v })} />
         <Slider label="Rivers" value={c.riverDensity} min={0} max={1} step={0.01} fmt={(v) => (v < 0.34 ? "few" : v < 0.67 ? "some" : "many")} onCommit={(v) => set({ riverDensity: v })} />
         <label className="check" title="A river needs real rain, not just a share of the map's water: dry land has few rivers, however small the map (new maps and detail maps start with this on)"><input type="checkbox" checked={!!c.riversFollowRain} onChange={(e) => set({ riversFollowRain: e.target.checked })} data-testid="rivers-follow-rain" /> Dry land has few rivers</label>
         <label className="check" title="Take away every river the rain makes. Lakes stay, and so do rivers from a river source or drawn with the Rivers tool"><input type="checkbox" checked={!!c.noRainRivers} onChange={(e) => set({ noRainRivers: e.target.checked })} data-testid="no-rain-rivers" /> No rivers from the rain</label>
@@ -414,7 +422,7 @@ export function ClimatePanel({ meta }: { meta: MapMeta }) {
       <Slider label="Patchiness" value={c.moistureNoise} min={0} max={1.1} step={0.01} fmt={(v) => v.toFixed(2)} onCommit={(v) => set({ moistureNoise: v })} />
       <Slider label="Coastal wetness" value={c.coastMoisture} min={0} max={0.8} step={0.01} fmt={(v) => v.toFixed(2)} onCommit={(v) => set({ coastMoisture: v })} />
       <Slider label="Wetter toward" value={c.moistureLat} min={-1.2} max={1.2} step={0.02} fmt={(v) => (v > 0.02 ? "cold edge" : v < -0.02 ? "warm edge" : "neither")} onCommit={(v) => set({ moistureLat: v })} />
-      <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => `${Math.round(v)} m`} onCommit={(v) => set({ snowlineM: v })} />
+      <Slider label="Snowline" value={c.snowlineM} min={500} max={6000} step={20} fmt={(v) => fmtHeight(v, u)} onCommit={(v) => set({ snowlineM: v })} />
       <Slider label="Snowline drop toward poles" value={c.snowLat} min={0} max={1.2} step={0.01} fmt={(v) => v.toFixed(2)} onCommit={(v) => set({ snowLat: v })} />
       <Slider label="Rivers" value={c.riverDensity} min={0} max={1} step={0.01} fmt={(v) => (v < 0.34 ? "few" : v < 0.67 ? "some" : "many")} onCommit={(v) => set({ riverDensity: v })} />
         <label className="check" title="A river needs real rain, not just a share of the map's water: dry land has few rivers, however small the map (new maps and detail maps start with this on)"><input type="checkbox" checked={!!c.riversFollowRain} onChange={(e) => set({ riversFollowRain: e.target.checked })} data-testid="rivers-follow-rain" /> Dry land has few rivers</label>

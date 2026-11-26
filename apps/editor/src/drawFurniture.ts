@@ -1,5 +1,5 @@
 /** Title banner, scale bar, compass rose and frame, drawn over a map (editor view and exports). */
-import { type Corner, type MapFurniture, DEFAULT_FURNITURE, hasFurniture, scaleBarFor } from "@mapmaker/core";
+import { type Corner, type MapFurniture, type Units, DEFAULT_FURNITURE, hasFurniture, scaleBarFor } from "@mapmaker/core";
 
 const INK = "#17171c";
 const PAPER = "rgba(247, 240, 221, 0.86)";
@@ -16,6 +16,8 @@ export interface FurnitureTarget {
   kmPerPx: number;
   /** Size unit in canvas px: everything scales with it. A good value is about 1.25% of the map's width on the canvas. */
   unit: number;
+  /** The map's measurement system: the scale bar's units unless the map extras chose (km when metric). */
+  units?: Units;
 }
 
 function cornerXY(t: FurnitureTarget, corner: Corner, w: number, h: number, margin: number): [number, number] {
@@ -139,7 +141,7 @@ export function drawFurniture(ctx: CanvasRenderingContext2D, f: MapFurniture | u
   ctx.clip();
   if (f.frame) drawFrame(ctx, t);
   if (f.title?.trim()) drawTitle(ctx, t, f.title.trim(), f.titlePos ?? DEFAULT_FURNITURE.titlePos);
-  if (f.scaleBar) drawScaleBar(ctx, t, f.scaleCorner ?? DEFAULT_FURNITURE.scaleCorner, f.units ?? DEFAULT_FURNITURE.units);
+  if (f.scaleBar) drawScaleBar(ctx, t, f.scaleCorner ?? DEFAULT_FURNITURE.scaleCorner, f.units ?? (t.units === "metric" ? "km" : DEFAULT_FURNITURE.units));
   if (f.compass) {
     const r = t.unit * 4.6;
     const [x, y] = cornerXY(t, f.compassCorner ?? DEFAULT_FURNITURE.compassCorner, r * 2.4, r * 2.7, t.unit * 2.2);

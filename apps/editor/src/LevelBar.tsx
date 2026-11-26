@@ -3,25 +3,28 @@
  * below, renamed, given other elevations, or removed. (Page Up and Page Down also change level.) The floor, walls and lights on screen are those of the lit level;
  * the level just below it shows faintly where it has no floor. See docs/FOUNDRY.md, "Stage 2 design".
  */
-import { type BattleLevel, type LevelsFile, MAX_LEVELS, levelsByHeight } from "@mapmaker/core";
+import { type BattleLevel, type LevelsFile, MAX_LEVELS, levelsByHeight, fmtTable, fromFt, tidy, toFt } from "@mapmaker/core";
+import { unitsNow } from "./units.tsx";
 import { ask, confirmBox, notice } from "./dialogs.tsx";
 import { store } from "./store.ts";
 
-/** Ask for a number of feet; null if cancelled or not a number. */
+/** Ask for a height (kept in feet; asked in the map's units: feet, or the tabletop's metres); null if cancelled or not a number. */
 async function askFeet(message: string, value: number): Promise<number | null> {
-  const text = await ask(message, String(value), "Next");
+  const u = unitsNow(), metric = u === "metric";
+  const text = await ask(message, tidy(fromFt(value, u)).replace(/,/g, ""), "Next");
   if (text === null) return null;
-  const n = Number(text.replace(/\s*(ft|feet)?\s*$/i, ""));
-  if (!Number.isFinite(n)) { await notice(`"${text}" isn't a number of feet.`); return null; }
-  return n;
+  const n = Number(text.replace(metric ? /\s*(m|metres?|meters?)?\s*$/i : /\s*(ft|feet)?\s*$/i, ""));
+  if (!Number.isFinite(n)) { await notice(`"${text}" isn't a number of ${metric ? "metres" : "feet"}.`); return null; }
+  return Math.round(toFt(n, u) * 100) / 100;
 }
 
 async function editLevel(l: BattleLevel) {
   const name = await ask("Name of this level", l.name, "Next");
   if (name === null) return;
-  const bottom = await askFeet(`Where is the floor of "${name}"? (feet; 0 is the ground, below it is negative)`, l.bottom);
+  const unit = unitsNow() === "metric" ? "metres" : "feet";
+  const bottom = await askFeet(`Where is the floor of "${name}"? (${unit}; 0 is the ground, below it is negative)`, l.bottom);
   if (bottom === null) return;
-  const top = await askFeet(`Where is the ceiling of "${name}"? (feet; above the floor)`, l.top);
+  const top = await askFeet(`Where is the ceiling of "${name}"? (${unit}; above the floor)`, l.top);
   if (top === null) return;
   store.updateLevel(l.id, { name, bottom, top });
 }
@@ -44,7 +47,7 @@ export function LevelBar({ levels }: { levels: LevelsFile }) {
           <button className="level-pick" onClick={() => store.setLevel(l.id)} aria-current={l.id === levels.active ? "true" : undefined}
             title={l.id === levels.active ? "The level you are working on" : "Switch to this level (Page Up / Page Down)"}>
             <span className="level-name">{l.name}</span>
-            <span className="level-ft">{l.bottom} to {l.top} ft</span>
+            <span className="level-ft">{tidy(fromFt(l.bottom, unitsNow()))} to {fmtTable(l.top, unitsNow())}</span>
           </button>
           <button className="level-small" onClick={() => void editLevel(l)} title="Rename, or change its elevations" aria-label={`Edit ${l.name}`}>✎</button>
           <button className="level-small" disabled={l.id === first} onClick={() => void removeLevel(l)} aria-label={`Remove ${l.name}`}

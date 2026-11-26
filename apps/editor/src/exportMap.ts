@@ -3,6 +3,7 @@ import { playerView } from "@mapmaker/core";
 import { type Features, type MapMeta, MAX_SINGLE_PX, createZip, planExport } from "@mapmaker/core";
 import { drawFeatures } from "./drawFeatures.ts";
 import { drawFurniture } from "./drawFurniture.ts";
+import { unitsNow } from "./units.tsx";
 import { drawMapGrid } from "./drawMapGrid.ts";
 
 export interface ExportSource {
@@ -52,7 +53,7 @@ function renderRegion(ctx: CanvasRenderingContext2D, src: ExportSource, o: Expor
   if (o.furniture) {
     ctx.save();
     ctx.translate(-x, -y);
-    drawFurniture(ctx, meta.furniture, { x: 0, y: 0, w: fullW, h: fullH, mapWidthPx: meta.width, kmPerPx: meta.kmPerPx, unit: fullW * 0.0125 });
+    drawFurniture(ctx, meta.furniture, { x: 0, y: 0, w: fullW, h: fullH, mapWidthPx: meta.width, kmPerPx: meta.kmPerPx, unit: fullW * 0.0125, units: unitsNow() });
     ctx.restore();
   }
 }

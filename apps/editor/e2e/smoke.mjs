@@ -425,7 +425,7 @@ try {
   }
   // climate panel opens and shows its sliders
   await page.locator("details.climate").filter({ hasText: "Top edge latitude" }).locator("summary").click();
-  await page.getByText(/^Snowline \d+ m/).waitFor();
+  await page.getByText(/^Snowline [\d,]+ ft/).waitFor(); // (Settings' imperial: heights in feet)
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(shots, "e2e-3-places.png") });
 
@@ -741,6 +741,12 @@ try {
     await page.getByTestId("battle-canvas").waitFor({ timeout: 15000 });
     await page.waitForFunction(() => !document.querySelector(".mapview-empty") && !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
     await page.getByTestId("battle-summary").getByText(/24 × 16 squares/).waitFor({ timeout: 5000 });
+    // Imperial or metric: Settings' choice is imperial here; the map can choose metric for itself (the tabletop's 1.5 m a 5 ft square), and back
+    await page.getByTestId("battle-summary").getByText(/at 5 ft = 120 ft × 80 ft/).waitFor({ timeout: 5000 });
+    await page.getByTestId("map-units").selectOption("metric");
+    await page.getByTestId("battle-summary").getByText(/at 1\.5 m = 36 m × 24 m/).waitFor({ timeout: 5000 });
+    await page.getByTestId("map-units").selectOption("");
+    await page.getByTestId("battle-summary").getByText(/at 5 ft = 120 ft × 80 ft/).waitFor({ timeout: 5000 });
     const box = await page.getByTestId("battle-canvas").boundingBox();
     // where a grid square is on screen (the view fits the map at 95%)
     const k = Math.min(box.width / 24, box.height / 16) * 0.95;
@@ -1468,7 +1474,11 @@ try {
     await page.getByTestId("new-city-land").selectOption("flat"); // (the steps below shape the land by hand)
     await page.getByTestId("new-create").click();
     await page.getByTestId("city-canvas").waitFor({ timeout: 20000 });
-    await page.getByTestId("city-status").getByText(/600 × 400 m · 0 buildings · 0 streets/).waitFor({ timeout: 10000 });
+    // Imperial or metric: in Settings' imperial the settlement's size is in feet; it chooses metric for itself (one undo step), and the rest of this part reads metres
+    await page.getByTestId("city-status").getByText(/1,969 ft × 1,312 ft · 0 buildings · 0 streets/).waitFor({ timeout: 10000 });
+    await page.getByTestId("map-units").selectOption("metric");
+    await page.getByTestId("history").getByText("Measurements: metric").first().waitFor({ timeout: 5000 });
+    await page.getByTestId("city-status").getByText(/600 m × 400 m · 0 buildings · 0 streets/).waitFor({ timeout: 10000 });
     const cb = await page.getByTestId("city-canvas").boundingBox();
     const fitS = Math.min(cb.width / 600, cb.height / 400) * 0.95;
     const cx = (m) => cb.x + (cb.width - 600 * fitS) / 2 + m * fitS, cy = (m) => cb.y + (cb.height - 400 * fitS) / 2 + m * fitS;
@@ -1817,13 +1827,13 @@ try {
   {
     await page.keyboard.press("0");
     const cb = await page.getByTestId("map-canvas").boundingBox();
-    // find land a little way inland: the bottom bar says the height under the pointer ("120 m", or "40 m deep" at sea)
+    // find land a little way inland: the bottom bar says the height under the pointer ("390 ft" or "120 m", "40 m deep" at sea)
     let land = null;
     for (let gy = 0.3; gy <= 0.7 && !land; gy += 0.1) for (let gx = 0.3; gx <= 0.7 && !land; gx += 0.05) {
       await page.mouse.move(cb.x + cb.width * gx, cb.y + cb.height * gy);
       const t = await page.getByTestId("status-bar").first().innerText();
-      const m = /y \d+ · (\d+) m(?! deep)/.exec(t);
-      if (m && Number(m[1]) >= 60) land = { x: cb.x + cb.width * gx, y: cb.y + cb.height * gy };
+      const m = /y \d+ · ([\d,]+) (m|ft)(?! deep)/.exec(t);
+      if (m && Number(m[1].replace(/,/g, "")) / (m[2] === "ft" ? 3.28084 : 1) >= 60) land = { x: cb.x + cb.width * gx, y: cb.y + cb.height * gy };
     }
     if (!land) fail("no land found on the first map for the River tool");
     await page.keyboard.press("i");
@@ -1848,7 +1858,7 @@ try {
       }
     }
     if (!box) fail("clicking near the new river never found it with the River tool");
-    await page.getByTestId("water-facts").getByText(/km .* long/).waitFor({ timeout: 5000 });
+    await page.getByTestId("water-facts").getByText(/[\d,]+ mi \([\d,]+ km\) long/).waitFor({ timeout: 5000 });
     await page.getByTestId("water-name-input").fill("E2E River");
     await page.getByTestId("water-name-save").click();
     await page.getByTestId("inspector").getByRole("heading", { name: "River" }).waitFor({ timeout: 10000 });

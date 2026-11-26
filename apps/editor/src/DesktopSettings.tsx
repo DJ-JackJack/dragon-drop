@@ -5,6 +5,7 @@ import { useClaudeLauncher } from "./ClaudeButton.tsx";
 import { ASSISTANT_NEEDS_CHECKED, ASSISTANT_PRESETS as PRESETS } from "./assistantPresets.ts";
 import { refreshAssistantName } from "./assistantName.ts";
 import { HELP_LINKS } from "./helpLinks.ts";
+import { UnitsPrefChoice } from "./units.tsx";
 
 type Settings = NonNullable<Awaited<ReturnType<DragonDropBridge["getSettings"]>>>;
 
@@ -156,6 +157,12 @@ export function DesktopSettings({ onClose }: { onClose: () => void }) {
                 <button onClick={() => void bridge.openProjectsFolder()}>Open folder</button>
                 <button onClick={() => void run("Switching…", async () => { await bridge.chooseProjectsFolder(); })}>Change…</button>
               </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Measurements</legend>
+              <p className="muted">How every map shows distances, heights and sizes: miles and feet, or kilometres and metres (on battlemaps, 1.5 m a 5 ft square). A map can choose for itself in its Map panel. Only what is shown changes: no map is changed by it. Claude talks in them too.</p>
+              <UnitsPrefChoice />
             </fieldset>
 
             <fieldset disabled={!!busy}>

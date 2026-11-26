@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import {
   type BattleSpec, type ConnectorKind, type Features, type MapRoof, type RoofStyle, type LevelsFile, type MapAmbientZone, type MapConnector, type MapDoc, type MapLight, type MapMeta, type MapNote, type MapProp, type MapWall, type PaletteEntry, type Rect, type TileSource, type WallKind,
   CUSTOM_MATERIAL_BASE, PROP_SHADOW, layeredProps, propPickable, type MapReveal, revealFrom, rectPoints, type MapPath, type PathLook, renderPathLayer, smoothPath, WALL_BASE, type WallLook, type WallStyle, portalOf, wallStyleOf, LIGHT_PRESETS, ROOF_STYLES, ROOF_STYLE_NAMES, ROOF_BASE, type RoofTileSource, type WallPicture, type WallPictureSource, renderRoofLayer, roofColour, connectorTo, levelBelow, levelsByHeight, LIGHT_PRESET_NAMES, MATERIALS, PROP_PX_PER_SQUARE, ambientOf, applyLightPreset, assetLabel, battleSpec, circlePolygon, floorAtFn, hexToRgb, insertDoor, lightPresetName, lightVisibility, newFeatureId, nextNoteNumber, noteBadge, readingOrderNumbers, sortedNotes, parseAssetId, pointInPolygon, renderBattleFloor, renderWallLayer, roomWalls, visibilityPolygon, wallSegments, wallsAroundFloor,
+  fmtTable, fromFt, fromM, lenUnit, tidy,
 } from "@mapmaker/core";
 import { LevelBar } from "./LevelBar.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
@@ -28,6 +29,7 @@ import { makeResizeKeeper } from "./viewResize.ts";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { focusBus, viewForBox } from "./focusBus.ts";
 import { MEASURE_HINT, battleLength, measureCtl, useMeasure } from "./measure.ts";
+import { MapUnitsChoice, unitsNow } from "./units.tsx";
 import { DEFAULT_SCATTER, type ScatterSettings, ScatterStroke } from "./scatterUi.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
 import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, prefabSpot } from "./PrefabBar.tsx";
@@ -119,7 +121,7 @@ export const BATTLE_TOOL_GROUPS: { name: string; tools: { id: BattleTool; label:
   { name: "Move", tools: [
     { id: "pan", label: "Pan", key: "H", tip: "Drag to move the map (or hold Space / right-drag with any tool)" },
     { id: "select", label: "Select", key: "V", tip: "Click a wall, door, light or object to edit it. Shift-click, or drag a box round bare ground, to select several; drag to move what is selected (hold Shift or Alt once you are dragging to put it anywhere, not snapped). Delete removes it" },
-    { id: "measure", label: "Ruler", key: "M", tip: "Click points to measure a distance in feet and squares. Double-click or Enter finishes, Backspace takes back a point, Esc clears" },
+    { id: "measure", label: "Ruler", key: "M", tip: "Click points to measure a distance in squares and feet (or metres). Double-click or Enter finishes, Backspace takes back a point, Esc clears" },
   ] },
   { name: "Floor", tools: [
     { id: "brush", label: "Brush", key: "B", tip: "Paint the chosen floor material. Choose \"void\" to erase" },
@@ -872,7 +874,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.save();
       ctx.fillStyle = "rgba(255, 255, 255, 0.1)"; ctx.strokeStyle = "rgba(255, 255, 255, 0.95)"; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(v.ox + c.ax * v.scale, v.oy + c.ay * v.scale, r * v.scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      const text = `radius ${r} squares · ${r * spec.feetPerSquare} ft`;
+      const text = `radius ${r} squares · ${fmtTable(r * spec.feetPerSquare, unitsNow())}`;
       ctx.font = "600 12px system-ui, sans-serif"; ctx.textBaseline = "top"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(15, 18, 28, 0.9)"; ctx.fillStyle = "#fff";
       ctx.strokeText(text, v.ox + c.ax * v.scale + 6, v.oy + c.ay * v.scale + r * v.scale + 5); ctx.fillText(text, v.ox + c.ax * v.scale + 6, v.oy + c.ay * v.scale + r * v.scale + 5);
       ctx.restore();
@@ -888,7 +890,7 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       ctx.lineWidth = 1.5;
       ctx.fillRect(v.ox + x0 * v.scale, v.oy + y0 * v.scale, w * v.scale, h * v.scale);
       ctx.strokeRect(v.ox + x0 * v.scale, v.oy + y0 * v.scale, w * v.scale, h * v.scale);
-      const text = `${w} × ${h} squares · ${w * spec.feetPerSquare} × ${h * spec.feetPerSquare} ft`;
+      const text = `${w} × ${h} squares · ${fmtTable(w * spec.feetPerSquare, unitsNow())} × ${fmtTable(h * spec.feetPerSquare, unitsNow())}`;
       ctx.font = "600 12px system-ui, sans-serif";
       ctx.textBaseline = "top";
       ctx.lineWidth = 3;
@@ -1451,9 +1453,9 @@ export function BattleView({ meta, features, levels, ui, onUi }: ViewProps) {
       onFit={() => { fittedFor.current = null; fit(); requestDraw(); }}
       switches={[{ label: "Grid", on: ui.showGrid, onToggle: () => onUi({ showGrid: !ui.showGrid }), title: "Show the grid (G)", testId: "bar-grid" }]}
       info={hover && spec ? (
-        <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} squares · {Math.round(hover.x * spec.feetPerSquare)} ft, {Math.round(hover.y * spec.feetPerSquare)} ft · {materialLabel(meta, hover.m)}</>
+        <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} squares · {fmtTable(Math.round(hover.x * spec.feetPerSquare), unitsNow())}, {fmtTable(Math.round(hover.y * spec.feetPerSquare), unitsNow())} · {materialLabel(meta, hover.m)}</>
       ) : spec ? (
-        <>{spec.squaresX}×{spec.squaresY} squares · {spec.squaresX * spec.feetPerSquare}×{spec.squaresY * spec.feetPerSquare} ft</>
+        <>{spec.squaresX}×{spec.squaresY} squares · {tidy(fromFt(spec.squaresX * spec.feetPerSquare, unitsNow()))}×{fmtTable(spec.squaresY * spec.feetPerSquare, unitsNow())}</>
       ) : null}
     >
       <button onClick={() => void openPlayerScreen()} title="Open the player screen: a window for a TV or second screen that shows the players this level (with the fog on, only what you reveal with the Reveal tool)" data-testid="bar-player-screen"><span aria-hidden="true">▣</span><span className="bar-word"> Player screen</span></button>
@@ -1701,7 +1703,7 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
     <ToolBar hint={ui.tool === "measure" ? `${MEASURE_HINT} Points go to the middle of a square; hold Shift for the exact spot.` : ui.tool === "prop" && ui.propScatter ? SCATTER_HINT : ui.tool === "prefab" ? (ui.prefabMode === "save" ? PREFAB_HINT_SAVE : PREFAB_HINT_PLACE) : ui.tool === "reveal" ? REVEAL_HINTS[ui.revealMode] : BATTLE_HINTS[ui.tool]} tool={{ id: ui.tool, name: BATTLE_TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === ui.tool)?.label ?? ui.tool }}>
       {ui.tool === "measure" && (
         <span className="measure-result" data-testid="measure-result">
-          {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5)}</b>}
+          {measureCtl.shown().length < 2 ? "Click to start measuring" : <b>{battleLength(routeLength(measureCtl.shown()), meta?.battle?.feetPerSquare ?? 5, unitsNow())}</b>}
           {ms.points.length > 2 && <span className="muted"> · {ms.points.length - 1} legs</span>}
         </span>
       )}
@@ -2312,7 +2314,7 @@ function LightEditor({ l, onClear }: { l: MapLight; onClear: () => void }) {
   };
   return (
     <>
-      <label className="slider"><span>Reach <b>{l.radius}</b> squares ({Math.round(l.radius * 5)} ft at 5 ft squares)</span>
+      <label className="slider"><span>Reach <b>{l.radius}</b> squares ({fmtTable(Math.round(l.radius * 5), unitsNow())} at {fmtTable(5, unitsNow())} squares)</span>
         <input type="range" min={1} max={30} step={0.5} value={l.radius} onChange={(e) => set({ radius: Number(e.target.value), bright: Math.min(l.bright ?? Number(e.target.value) / 2, Number(e.target.value)) })} data-testid="light-radius" />
       </label>
       <label className="slider"><span>Bright part <b>{l.bright ?? l.radius / 2}</b> squares</span>
@@ -2482,7 +2484,7 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       {meta.origin && (
         <>
           <h3>Where it's from</h3>
-          <p className="muted" data-testid="battle-origin">Made from <b>{meta.origin.name}</b> {meta.origin.unit === "m" ? <>around ({meta.origin.x}, {meta.origin.y}) m</> : <>at map px ({meta.origin.x}, {meta.origin.y})</>}.</p>
+          <p className="muted" data-testid="battle-origin">Made from <b>{meta.origin.name}</b> {meta.origin.unit === "m" ? <>around ({tidy(fromM(meta.origin.x, unitsNow()))}, {tidy(fromM(meta.origin.y, unitsNow()))}) {lenUnit(unitsNow())}</> : <>at map px ({meta.origin.x}, {meta.origin.y})</>}.</p>
           {store.getState().projects.some((p) => p.id === meta.origin!.id)
             ? <div className="row"><button onClick={() => store.send({ t: "open_project", id: meta.origin!.id })} title={meta.origin.unit === "m" ? "Open the settlement map this scene came from" : "Open the world map this scene came from"}>↑ Back to {meta.origin.name}</button></div>
             : <p className="muted" data-testid="origin-gone">{meta.origin.name} was deleted (its folder is under Deleted maps in your maps folder).</p>}
@@ -2490,10 +2492,11 @@ export function BattleSettings({ meta, features, ui, onUi }: { meta: MapMeta; fe
       )}
       <h3>This map</h3>
       <p className="muted" data-testid="battle-summary">
-        {spec.squaresX} × {spec.squaresY} squares at {spec.feetPerSquare} ft = {spec.squaresX * spec.feetPerSquare} × {spec.squaresY * spec.feetPerSquare} ft.
+        {spec.squaresX} × {spec.squaresY} squares at {fmtTable(spec.feetPerSquare, unitsNow())} = {fmtTable(spec.squaresX * spec.feetPerSquare, unitsNow())} × {fmtTable(spec.squaresY * spec.feetPerSquare, unitsNow())}.
         Image {spec.squaresX * spec.pxPerSquare} × {spec.squaresY * spec.pxPerSquare} px ({spec.pxPerSquare} px per square).
         {" "}{count("wall")} wall piece{count("wall") === 1 ? "" : "s"}, {count("door") + count("secret")} door{count("door") + count("secret") === 1 ? "" : "s"}, {count("window")} window{count("window") === 1 ? "" : "s"}, {(features.lights ?? []).length} light{(features.lights ?? []).length === 1 ? "" : "s"}, {(features.props ?? []).length} object{(features.props ?? []).length === 1 ? "" : "s"}{(features.roofs ?? []).length ? `, ${(features.roofs ?? []).length} roof${(features.roofs ?? []).length === 1 ? "" : "s"}` : ""}{(features.connectors ?? []).length ? `, ${(features.connectors ?? []).length} stair${(features.connectors ?? []).length === 1 ? "" : "s"}, ladder${(features.connectors ?? []).length === 1 ? "" : "s"} or hole${(features.connectors ?? []).length === 1 ? "" : "s"}` : ""}.
       </p>
+      <MapUnitsChoice meta={meta} />
     </section>
   );
 }
@@ -2544,7 +2547,7 @@ export function BattleExportDialog({ meta, levels, onClose }: { meta: MapMeta; l
     <div className="modal-back" onMouseDown={() => !busy && onClose()}>
       <div className="modal wide" role="dialog" aria-modal="true" data-testid="battle-export-dialog" onMouseDown={(e) => e.stopPropagation()}>
         <h2>Export the battlemap</h2>
-        {spec && <p className="muted">{spec.squaresX * spec.pxPerSquare} × {spec.squaresY * spec.pxPerSquare} px, {spec.pxPerSquare} px per {spec.feetPerSquare}-ft square. Preparing a big map takes a few seconds.</p>}
+        {spec && <p className="muted">{spec.squaresX * spec.pxPerSquare} × {spec.squaresY * spec.pxPerSquare} px, {spec.pxPerSquare} px per {fmtTable(spec.feetPerSquare, unitsNow()).replace(" ", "-")} square. Preparing a big map takes a few seconds.</p>}
         {many && levels && (
           <label className="field" data-testid="export-level">Level for the picture and the Universal VTT file
             <select value={levelId} onChange={(e) => setLevelId(e.target.value)}>

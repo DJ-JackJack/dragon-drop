@@ -2,7 +2,7 @@
  * The editor's side of named rivers and lakes (core waterNames.ts): what the River tool finds under the pointer, the words that describe it, and the names drawn as labels.
  * The rivers are the latest climate frame's; the lakes' shores and the names' rivers come from the server's `water` message, worked out from the same frame.
  */
-import { type Features, type LakeShape, MI_PER_KM, type NamedWater, type RiverNet, type RiverPath, namedWaterAt, riverCourse, riverNet, riverOwner, seaNear, waterAt } from "@mapmaker/core";
+import { type Features, type LakeShape, MI_PER_KM, type NamedWater, type RiverNet, type RiverPath, type Units, distUnit, fmtArea, fromKm, namedWaterAt, riverCourse, riverNet, riverOwner, seaNear, waterAt } from "@mapmaker/core";
 import type { AppState } from "./store.ts";
 
 let cache: { rivers: RiverPath[]; net: RiverNet } | null = null;
@@ -55,17 +55,18 @@ export function namedShape(rivers: RiverPath[], water: NonNullable<AppState["wat
   return { course: riverCourse(netFor(rivers), w.head, water.lakes).pts };
 }
 
-const km = (n: number) => `${Math.round(n).toLocaleString()} km (${Math.round(n * MI_PER_KM).toLocaleString()} mi)`;
+const other = (u: Units): Units => (u === "metric" ? "imperial" : "metric");
+const far = (km: number, u: Units) => `${Math.round(fromKm(km, u)).toLocaleString()} ${distUnit(u)}`;
 
 /** One line about a river or lake: how long and where it goes, or how big and what leaves it. */
-export function describeWater(p: { kind: "river" | "lake"; lengthKm?: number; end?: string; joins?: string; areaKm2?: number; outflow?: string }): string {
+export function describeWater(p: { kind: "river" | "lake"; lengthKm?: number; end?: string; joins?: string; areaKm2?: number; outflow?: string }, u: Units = "imperial"): string {
   if (p.kind === "lake") {
-    const a = p.areaKm2 ?? 0, sq = Math.round(a * MI_PER_KM * MI_PER_KM);
+    const a = p.areaKm2 ?? 0;
     const out = p.outflow === "river" ? "a river flows out of it" : p.outflow === "stream" ? "a stream drains it" : "nothing flows out of it";
-    return `About ${a.toLocaleString()} km² (${sq.toLocaleString()} sq mi); ${out}.`;
+    return `About ${fmtArea(a, u)} (${fmtArea(a, other(u))}); ${out}.`;
   }
   const where = p.end === "sea" ? "flows into the sea" : p.end === "lake" ? "ends in a lake" : p.end === "river" ? (p.joins ? `joins the ${p.joins}` : "joins a bigger river") : "runs off the edge of the map";
-  return `About ${km(p.lengthKm ?? 0)} long; ${where}.`;
+  return `About ${far(p.lengthKm ?? 0, u)} (${far(p.lengthKm ?? 0, other(u))}) long; ${where}.`;
 }
 
 /** The map's features with the river and lake names added as labels (for drawing: they aren't features of their own). */

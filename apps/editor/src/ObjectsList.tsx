@@ -3,9 +3,10 @@
  * view (focusBus). A city can hold thousands of buildings, so each kind lists at most LIST_CAP rows; the filter finds the rest.
  */
 import { useState } from "react";
-import { type Features, type MapWall, STREET_KINDS, WALL_KINDS, assetLabel, districtColour, pointsBounds, polygonArea , PATH_LOOK_NAMES } from "@mapmaker/core";
+import { type Features, type MapWall, STREET_KINDS, WALL_KINDS, assetLabel, districtColour, pointsBounds, polygonArea, fmtLen, fmtLenArea, PATH_LOOK_NAMES } from "@mapmaker/core";
 import { type FocusBox, focusBus } from "./focusBus.ts";
 import { landName } from "./cityUi.ts";
+import { unitsNow } from "./units.tsx";
 
 type Pt = [number, number];
 interface Row { id: string; name: string; what: string; box: FocusBox; swatch?: string }
@@ -22,15 +23,15 @@ const byName = (a: Row, b: Row) => a.name.localeCompare(b.name);
 /** The groups of a city map's things. */
 function cityGroups(f: Features): Group[] {
   const streetKind = (k?: string) => STREET_KINDS.find((x) => x.id === k)?.name ?? "Street";
-  const buildings = (f.buildings ?? []).map((b) => ({ id: b.id, name: b.name ?? "", what: `${b.kind ?? "building"} · ${Math.round(polygonArea(b.points as Pt[]))} m²`, box: boxOf(b.points, 4) }));
+  const buildings = (f.buildings ?? []).map((b) => ({ id: b.id, name: b.name ?? "", what: `${b.kind ?? "building"} · ${fmtLenArea(polygonArea(b.points as Pt[]), unitsNow())}`, box: boxOf(b.points, 4) }));
   return [
     { title: "Districts", rows: (f.districts ?? []).map((d) => ({ id: d.id, name: d.name ?? "District", what: `${Math.round(polygonArea(d.points) / 100) / 100} ha`, box: boxOf(d.points), swatch: districtColour(d) })).sort(byName) },
     { title: "Names", rows: (f.labels ?? []).map((l) => ({ id: l.id, name: l.text, what: l.kind === "region" ? "district" : l.kind === "sea" ? "water" : "landmark", box: around(l.x, l.y, 30) })).sort(byName) },
-    { title: "Walls", rows: (f.cityWalls ?? []).map((w) => ({ id: w.id, name: w.name ?? (WALL_KINDS.find((k) => k.id === (w.kind ?? "stone"))?.name ?? "Wall"), what: `${Math.round(length(w.points, w.closed))} m`, box: boxOf(w.points, 5) })) },
-    { title: "Streets", rows: (f.streets ?? []).map((s) => ({ id: s.id, name: s.name ?? "", what: `${streetKind(s.kind).toLowerCase()} · ${Math.round(length(s.points))} m`, box: boxOf(s.points, s.width) })) },
+    { title: "Walls", rows: (f.cityWalls ?? []).map((w) => ({ id: w.id, name: w.name ?? (WALL_KINDS.find((k) => k.id === (w.kind ?? "stone"))?.name ?? "Wall"), what: fmtLen(length(w.points, w.closed), unitsNow()), box: boxOf(w.points, 5) })) },
+    { title: "Streets", rows: (f.streets ?? []).map((s) => ({ id: s.id, name: s.name ?? "", what: `${streetKind(s.kind).toLowerCase()} · ${fmtLen(length(s.points), unitsNow())}`, box: boxOf(s.points, s.width) })) },
     { title: "Buildings", rows: buildings },
     { title: "Trees", rows: (f.trees ?? []).map((t) => ({ id: t.id, name: t.name ?? "", what: t.kind === "tree" ? "a tree" : t.kind, box: boxOf(t.points, (t.size ?? 8) / 2 + 2) })) },
-    { title: "Land", rows: (f.land ?? []).map((l) => ({ id: l.id, name: l.name ?? "", what: `${landName(l).toLowerCase()} · ${l.height > 0 ? "+" : ""}${l.height} m`, box: l.kind === "hill" ? around(l.points[0][0], l.points[0][1], l.radius) : boxOf(l.points, Math.min(60, l.radius)) })) },
+    { title: "Land", rows: (f.land ?? []).map((l) => ({ id: l.id, name: l.name ?? "", what: `${landName(l).toLowerCase()} · ${l.height > 0 ? "+" : ""}${fmtLen(l.height, unitsNow())}`, box: l.kind === "hill" ? around(l.points[0][0], l.points[0][1], l.radius) : boxOf(l.points, Math.min(60, l.radius)) })) },
   ];
 }
 

@@ -7,7 +7,7 @@ import {
   type ChangeEntry, type ChatItem, type ChatSettings, type CheckpointInfo, type ClaudeState, type ClientMsg, type Features, type LevelsFile, type MapMeta,
   type ProjectInfo, type Rect, type RefInfo, type Selection, type ServerMsg, type Usage, type PrefabInfo, type GenerateRequest, HeightField, type RiverPath, decodeFrame, decodeFrameHeader, emptyUsage, selectionShape,
   PICTURE_HEAD_BYTES, pictureKind, referencePictureProblem, type LakeShape, type MapLabel, type NamedWater, type RiverSize, EDIT_MESSAGES, IMAGE_HEAD_BYTES, imageSize,
-  type CompareResult,
+  type CompareResult, type Units, cleanUnits, DEFAULT_UNITS, distUnit, fmtHeight, fromKm, unitsFor,
 } from "@mapmaker/core";
 import { repaintNeeded } from "./metaDiff.ts";
 
@@ -61,6 +61,8 @@ export interface AppState {
   asks: { id: string; via: "chat" | "mcp"; tool: string; text: string; waitMs: number; at: number; map?: string; note?: string; undoable?: boolean }[];
   /** "Allow all" is on: that assistant's risky changes that Undo can take back go ahead without asking until it finishes the request (or `until`). */
   allowAll: { via: "chat" | "mcp"; until: number } | null;
+  /** Settings' measurement system (per computer, localStorage dd.units): what every map shows unless it has its own (MapMeta.units; units.ts). */
+  unitsPref: Units;
   /** The DM's prefabs (core prefabs.ts; null until asked for), the files that couldn't be read, a save waiting for "replace?", and the one saved last. */
   prefabs: PrefabInfo[] | null;
   prefabsSkipped: string[];
@@ -72,6 +74,10 @@ export interface AppState {
   playerRect: { x: number; y: number; w: number; h: number } | null;
 }
 
+function loadUnitsPref(): Units {
+  try { return cleanUnits(localStorage.getItem("dd.units")) ?? DEFAULT_UNITS; } catch { return DEFAULT_UNITS; }
+}
+
 function loadLockPref(): boolean {
   try { return localStorage.getItem("dd.selectionLock") !== "0"; } catch { return true; }
 }
@@ -80,7 +86,7 @@ const initial: AppState = {
   connected: false, meta: null, projects: [], changes: [], earlierChanges: [], seq: 0, canUndo: false, canRedo: false, refs: [],
   chat: [], chatSettings: { model: "claude-opus-5-5", effort: "medium" }, chatBusy: false, usage: emptyUsage(),
   apiKeyConfigured: false, error: null, savedAt: 0, storedAt: 0, changedAt: 0, saveFailed: false, checkpoints: [], derivedVersion: 0, features: { places: [], labels: [] }, levels: null, claude: "unknown",
-  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, traceCompare: { busy: false, result: null, metric: "roofs", shown: false, at: 0 }, water: null, carving: false, asks: [], allowAll: null,
+  selection: null, selectionLock: false, lockPref: loadLockPref(), pictureNote: null, groundBusy: false, traceCompare: { busy: false, result: null, metric: "roofs", shown: false, at: 0 }, water: null, carving: false, asks: [], allowAll: null, unitsPref: loadUnitsPref(),
   prefabs: null, prefabsSkipped: [], prefabAsk: null, prefabSaved: null, generated: null, playerRect: null,
 };
 
@@ -208,6 +214,7 @@ class Store {
     ws.onopen = () => {
       this.retry = 0;
       this.set({ connected: true, error: null });
+      this.send({ t: "units_pref", units: this.state.unitsPref }); // (so Claude talks in them too)
     };
     ws.onclose = () => {
       this.set({ connected: false, asks: [], allowAll: null }); // (questions still open, and Allow all, are sent again on reconnecting)
@@ -271,6 +278,13 @@ class Store {
   stopAllowAll() {
     this.send({ t: "allow_all_stop" });
     this.set({ allowAll: null });
+  }
+
+  /** Settings' measurement system: remembered on this computer and told to the server (Claude talks in the map's units). */
+  setUnitsPref(units: Units) {
+    try { localStorage.setItem("dd.units", units); } catch { /* private window */ }
+    this.set({ unitsPref: units });
+    this.send({ t: "units_pref", units });
   }
 
   dismissError() {
@@ -451,11 +465,11 @@ class Store {
         this.set({ asks: this.state.asks.filter((a) => a.id !== m.id) });
         break;
       case "river_drawn": {
-        const mi = Math.round(m.lengthKm * 0.621371);
+        const u = unitsFor(this.state.meta, this.state.unitsPref), far = `${Math.round(fromKm(m.lengthKm, u)).toLocaleString()} ${distUnit(u)}`;
         const ends = m.end === "sea" ? "to the sea" : m.end === "edge" ? "to the map's edge" : "ending on land, where it carries on downhill (or fills a hollow into a lake)";
-        const cut = m.deepestM >= 40 ? ` Through high ground it cut up to ${m.deepestM.toLocaleString()} m deep.` : "";
+        const cut = m.deepestM >= 40 ? ` Through high ground it cut up to ${fmtHeight(m.deepestM, u)} deep.` : "";
         const turned = m.reversed ? " You drew it from the mouth up, so it runs the other way." : "";
-        this.set({ pictureNote: { text: `River drawn: about ${mi.toLocaleString()} mi, ${ends}.${turned}${cut} The rivers are worked out again in a moment. Undo takes it back.`, busy: false, at: Date.now(), ms: 9000 } });
+        this.set({ pictureNote: { text: `River drawn: about ${far}, ${ends}.${turned}${cut} The rivers are worked out again in a moment. Undo takes it back.`, busy: false, at: Date.now(), ms: 9000 } });
         break;
       }
       case "map_deleted":

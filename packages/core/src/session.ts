@@ -43,7 +43,7 @@ export type Command =
   | { op: "erode"; params: ErodeParams }
   | { op: "paint_floor"; params: PaintFloorParams }
   | { op: "set_sea_level"; levelM: number }
-  | { op: "set_meta"; patch: Pick<Partial<MapMeta>, "style" | "climate" | "name" | "notes" | "grid" | "furniture" | "battle" | "city">; label?: string }
+  | { op: "set_meta"; patch: Pick<Partial<MapMeta>, "style" | "climate" | "name" | "notes" | "grid" | "furniture" | "battle" | "city" | "units">; label?: string }
   | { op: "restore"; data: Float32Array; meta: Pick<Partial<MapMeta>, "seaLevel" | "style" | "climate">; features?: Features; label: string }
   | { op: "features"; patch: FeaturesPatch; label?: string }
   | { op: "replace_heights"; data: Float32Array; label?: string }
@@ -240,7 +240,7 @@ export class MapSession {
       heldBy: lock,
     };
     if (metaChanged) {
-      const keys = ["seaLevel", "style", "climate", "name", "notes", "grid", "furniture", "battle", "city"] as const;
+      const keys = ["seaLevel", "style", "climate", "name", "notes", "grid", "furniture", "battle", "city", "units"] as const;
       entry.metaBefore = {};
       entry.metaAfter = {};
       for (const key of keys) {

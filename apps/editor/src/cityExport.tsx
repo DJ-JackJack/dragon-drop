@@ -5,7 +5,8 @@
 import { hasGmOnly } from "@mapmaker/core";
 import { store } from "./store.ts";
 import { useState } from "react";
-import { type MapMeta, createZip, planExport } from "@mapmaker/core";
+import { type MapMeta, createZip, planExport, scaleLength } from "@mapmaker/core";
+import { unitsNow } from "./units.tsx";
 import type { CityPaintTarget } from "./CityView.tsx";
 import { ExportLabelSize } from "./NameSize.tsx";
 import { canvasBlob, downloadBlob, safeName } from "./exportMap.ts";
@@ -24,7 +25,7 @@ function niceLength(max: number): number {
 
 /** A scale bar at the bottom left of the whole picture (drawn into each tile at its offset, so it lands in the one that holds it). */
 function drawScaleBar(ctx: CanvasRenderingContext2D, k: number, fullW: number, fullH: number, x: number, y: number) {
-  const len = niceLength((fullW * 0.2) / k), w = len * k, h = Math.max(14, Math.round(fullW / 120)), m = Math.max(16, Math.round(fullW / 60));
+  const sb = scaleLength((fullW * 0.2) / k, unitsNow()), len = sb.metres, w = len * k, h = Math.max(14, Math.round(fullW / 120)), m = Math.max(16, Math.round(fullW / 60));
   ctx.save();
   ctx.translate(-x, -y);
   const bx = m, by = fullH - m - h * 2.6;
@@ -32,7 +33,7 @@ function drawScaleBar(ctx: CanvasRenderingContext2D, k: number, fullW: number, f
   ctx.fillStyle = "#17171c"; ctx.fillRect(bx, by + h * 0.6, w, h * 0.35);
   for (const t of [0, 0.5, 1]) ctx.fillRect(bx + w * t - 1, by + h * 0.3, 2, h * 0.9);
   ctx.font = `700 ${Math.round(h * 0.75)}px Cinzel, Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  ctx.fillText(len >= 1000 ? `${len / 1000} km` : `${len} m`, bx + w / 2, by + h * 0.15);
+  ctx.fillText(sb.label, bx + w / 2, by + h * 0.15);
   ctx.restore();
 }
 

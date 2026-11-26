@@ -5,6 +5,7 @@
 import type { ClaudeState } from "./assist.ts";
 import type { RiverSize, RoofStyle, StreetKind } from "./features.ts";
 import type { MapMeta } from "./doc.ts";
+import type { Units } from "./units.ts";
 import type { CompareResult } from "./cityCompare.ts";
 import type { Rect } from "./geom.ts";
 import type { ChangeEntry, Command } from "./session.ts";
@@ -106,6 +107,8 @@ export type ClientMsg =
   | { t: "confirm_answer"; id: string; allow: boolean; all?: boolean }
   /** Stop allowing all: the assistant asks again before each risky change. */
   | { t: "allow_all_stop" }
+  /** Settings' measurement system (units.ts), sent on connecting and when it changes: the maps without their own choice are shown in it, and Claude talks in it. */
+  | { t: "units_pref"; units: Units }
   | { t: "open_project"; id: string }
   /** The city picture reader: read buildings out of the city's trace picture (all in metres; the answer is `picture_read`, to this editor only; nothing is added until it accepts). */
   | { t: "read_picture"; area: [number, number][]; roofs: { x: number; y: number; look: RoofStyle }[]; ground: [number, number][]; tolerance: number }

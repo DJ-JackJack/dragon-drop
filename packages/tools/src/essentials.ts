@@ -57,7 +57,7 @@ export const ESSENTIAL_INSTRUCTIONS = `You help a Dungeons & Dragons game master
 - World maps: units are map pixels (get_map_summary gives the km per pixel). Land is heights; rivers and lakes are worked out from the land and the rain.
 - Battlemaps: units are grid squares (5 ft each unless the summary says otherwise).
 - City maps: units are metres from the top-left corner.
-Tools for one kind refuse on the others. get_map_summary says which kind is open.
+Tools for one kind refuse on the others. get_map_summary says which kind is open, and its "units" whether the DM uses imperial (miles, feet) or metric (km, metres): talk in those, but give the tools their own units.
 
 # How to work
 - At the start of each turn call get_changes_since with the last change number you saw: the DM may have edited by hand. undo takes back only your own changes, never theirs.

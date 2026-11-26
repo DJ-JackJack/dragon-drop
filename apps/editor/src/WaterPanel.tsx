@@ -3,11 +3,12 @@
  * with the River tool, and the inspector's editors for a named river or lake and for a river source.
  */
 import { useEffect, useState } from "react";
-import { type Features, type MapMeta, type RiverSize, type RiverSource, type Selection, type WaterName, newFeatureId, withNameSize } from "@mapmaker/core";
+import { type Features, type MapMeta, type RiverSize, type RiverSource, type Selection, type WaterName, distUnit, fmtArea, fromKm, newFeatureId, withNameSize } from "@mapmaker/core";
 import { NameSizeSlider } from "./NameSize.tsx";
 import { confirmBox } from "./dialogs.tsx";
 import { type AppState, store } from "./store.ts";
 import { type WaterPick, describeWater } from "./waterUi.ts";
+import { unitsNow } from "./units.tsx";
 
 export const RIVER_SIZE_NAMES: { id: RiverSize; label: string }[] = [
   { id: "stream", label: "Stream" }, { id: "river", label: "River" }, { id: "major", label: "Major river" }, { id: "great", label: "Great river" },
@@ -29,7 +30,7 @@ export function WaterSection({ meta, features, water, carving, selectedId, selec
         {names.length === 0 && <p className="muted">The Rivers tool (I) adds rivers (drag to draw one, or click to start one) and names them (Name and select: point at a river or lake and click). Rivers come from the land and the rain, so a name follows its river when the land changes.</p>}
         {[...names].sort((a, b) => a.name.localeCompare(b.name)).map((w) => {
           const n = water?.named.find((x) => x.id === w.id);
-          const what = !n ? w.kind : !n.found ? `${w.kind}, not found` : w.kind === "river" ? `river · ${Math.round((n.lengthKm ?? 0) * 0.621371).toLocaleString()} mi` : `lake · ${Math.round((n.areaKm2 ?? 0) * 0.386102).toLocaleString()} sq mi`;
+          const what = !n ? w.kind : !n.found ? `${w.kind}, not found` : w.kind === "river" ? `river · ${Math.round(fromKm(n.lengthKm ?? 0, unitsNow())).toLocaleString()} ${distUnit(unitsNow())}` : `lake · ${fmtArea(n.areaKm2 ?? 0, unitsNow())}`;
           return (
             <button key={w.id} className={`place-row ${selectedId === w.id ? "on" : ""}`} onClick={() => onPick(w.id)}>
               <span>{w.name}</span><span className="muted">{what}</span>
@@ -118,7 +119,7 @@ export function WaterNameBox({ pick, onClose, onNamed }: { pick: WaterPick; onCl
     <div className="modal-back" onMouseDown={onClose}>
       <div className="modal" role="dialog" aria-modal="true" data-testid="water-name-box" onMouseDown={(e) => e.stopPropagation()}>
         <h2>{pick.kind === "river" ? "A river" : "A lake"}</h2>
-        <p className="muted" data-testid="water-facts">{describeWater(pick)}</p>
+        <p className="muted" data-testid="water-facts">{describeWater(pick, unitsNow())}</p>
         <label>Name<input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} data-testid="water-name-input" /></label>
         <p className="muted">The name is drawn along the river (or in the lake) and follows it when the land changes.</p>
         <div className="row end">

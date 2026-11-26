@@ -6,8 +6,9 @@
  * settlement's settings (sliders when let go), so Undo takes it back.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { type GroundLook, type GroundPattern, type MapMeta, GROUND_PATTERNS, GROUND_SIZE_MAX, GROUND_SIZE_MIN, GROUND_TILE_MAX, GROUND_TILE_MIN, MATERIALS, groundHex, groundLooks, groundTileMetres } from "@mapmaker/core";
+import { type GroundLook, type GroundPattern, type MapMeta, GROUND_PATTERNS, GROUND_SIZE_MAX, GROUND_SIZE_MIN, GROUND_TILE_MAX, GROUND_TILE_MIN, MATERIALS, fmtLen, groundHex, groundLooks, groundTileMetres } from "@mapmaker/core";
 import { store } from "./store.ts";
+import { unitsNow } from "./units.tsx";
 import { PackGrid } from "./PackGrid.tsx";
 import { assetUrl } from "./assetsApi.ts";
 
@@ -29,7 +30,7 @@ function LookSlider({ label, value, min, max, step, unit, onCommit, testid }: { 
   const commit = () => { if (v !== value) onCommit(v); };
   return (
     <label className="slider">
-      <span>{label} <b>{v}{unit}</b></span>
+      <span>{label} <b>{unit === " m" ? fmtLen(v, unitsNow()) : `${v}${unit}`}</b></span>
       <input type="range" min={min} max={max} step={step} value={v} onChange={(e) => setV(Number(e.target.value))} onPointerUp={commit} onKeyUp={commit} onBlur={commit} data-testid={testid} />
     </label>
   );

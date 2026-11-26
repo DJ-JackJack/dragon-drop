@@ -37,9 +37,10 @@ export function clampGridSize(sizeMi: number, mapWidthMi: number): number {
   return Math.min(mapWidthMi / 2, Math.max(0.1, +sizeMi.toFixed(3)));
 }
 
-export function describeGrid(g: MapGrid | undefined): string {
+/** "Hex grid, 6 mi" (or in km on a metric map: "Hex grid, 9.66 km"). */
+export function describeGrid(g: MapGrid | undefined, metric = false): string {
   if (!g || g.type === "off") return "Grid off";
-  return `${g.type === "hex" ? "Hex" : "Square"} grid, ${+g.sizeMi.toFixed(2)} mi`;
+  return `${g.type === "hex" ? "Hex" : "Square"} grid, ${metric ? `${+(g.sizeMi / MI_PER_KM).toFixed(2)} km` : `${+g.sizeMi.toFixed(2)} mi`}`;
 }
 
 /** The corners of one hex (map px), given its centre and the distance across the flats. */

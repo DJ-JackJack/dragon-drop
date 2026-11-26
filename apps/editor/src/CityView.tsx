@@ -11,11 +11,13 @@ import {
   type Rect, type TreeCrown, type ViewKeyAction, applyViewKey, buildingColour, cityClimate, cityGroundColours, cleanLandform, cleanTrees, contourLines, distToPolyline, distToSegment,
   landAt, landGrid, landShade, newFeatureId, streetBridges, opaqueRowCount, pointInPolygon, pointsBounds, polygonCentroid, rectPolygon, roofTurn, snowCover, streetWidthFor, treeColour, treeCrowns,
   viewKeyAction, groundCellColours, groundLooks, groundTextures, gradientShade, textureDetail, type MapDoc, squareScore,
+  fmtHeight, fmtLen, fmtTable, scaleLength,
 } from "@mapmaker/core";
 import { type CityUi, DEFAULT_HOUSE, cityViewBox, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { assetUrl } from "./assetsApi.ts";
 import { loadRoofPools, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 import { noShiftTextSelect } from "./noShiftSelect.ts";
+import { unitsNow } from "./units.tsx";
 import { store } from "./store.ts";
 import { makeResizeKeeper } from "./viewResize.ts";
 import { traceCtl } from "./trace.ts";
@@ -559,10 +561,10 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     drawTools(ctx, v, o, W, H);
     if (readerCtl.state.on) drawReader(ctx, v);
     // the scale bar
-    const bar = niceLength(90 / v.scale);
+    const sb = scaleLength(90 / v.scale, unitsNow()), bar = sb.metres;
     ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(W - 24 - bar * v.scale - 8, H - 62, bar * v.scale + 16, 22);
     ctx.fillStyle = "#fff"; ctx.fillRect(W - 24 - bar * v.scale, H - 49, bar * v.scale, 2);
-    ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillText(bar >= 1000 ? `${bar / 1000} km` : `${bar} m`, W - 24 - (bar * v.scale) / 2, H - 53); ctx.restore();
+    ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillText(sb.label, W - 24 - (bar * v.scale) / 2, H - 53); ctx.restore();
   }
 
   /** Contour lines: every interval faintly (once they are far enough apart to read), every fifth a little stronger; only those in view. */
@@ -800,7 +802,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       } else { pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); if (l.kind === "plateau") ctx.closePath(); ctx.stroke(); }
       const at = l.kind === "slope" ? pts[1] : l.kind === "hill" ? pts[0] : pts[Math.floor(pts.length / 2)];
       ctx.setLineDash([]); ctx.font = "bold 11px sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.fillStyle = "#fff";
-      const label = `${landName(l)} ${l.height > 0 ? "+" : ""}${l.height} m`;
+      const label = `${landName(l)} ${l.height > 0 ? "+" : ""}${fmtLen(l.height, unitsNow())}`;
       ctx.strokeText(label, at[0] + 7, at[1] - 7); ctx.fillText(label, at[0] + 7, at[1] - 7);
     }
     ctx.restore();
@@ -868,7 +870,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       if (o.tool === "building") {
         const poly = d?.mode === "rect" ? rectFromDrag(d.ax, d.ay, m.x, m.y, o.angle) : rectPolygon(m.x, m.y, DEFAULT_HOUSE.w, DEFAULT_HOUSE.h, o.angle);
         line(poly, true, GOLD, 1.5, d?.mode === "rect" ? [] : [4, 3]);
-        if (d?.mode === "rect") { const w = Math.hypot(poly[1][0] - poly[0][0], poly[1][1] - poly[0][1]), h = Math.hypot(poly[2][0] - poly[1][0], poly[2][1] - poly[1][1]); label(`${w.toFixed(1)} × ${h.toFixed(1)} m`, p.x + 12, p.y - 10); }
+        if (d?.mode === "rect") { const w = Math.hypot(poly[1][0] - poly[0][0], poly[1][1] - poly[0][1]), h = Math.hypot(poly[2][0] - poly[1][0], poly[2][1] - poly[1][1]); label(`${fmtLen(w, unitsNow())} × ${fmtLen(h, unitsNow())}`, p.x + 12, p.y - 10); }
       }
       if (o.tool === "outline" && outline.current?.length) {
         line([...outline.current, [m.x, m.y]], false, GOLD, 1.8, [6, 4]);
@@ -907,9 +909,9 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       if (o.tool === "hills" && d?.mode === "hill") {
         const r = Math.max(4, Math.hypot(m.x - d.ax, m.y - d.ay)) * v.scale;
         ctx.beginPath(); ctx.arc(px(d.ax), py(d.ay), r, 0, Math.PI * 2); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.6; ctx.stroke();
-        label(`${(r / v.scale).toFixed(0)} m across ${o.landMode === "hill" ? "the top" : ""}`.trim(), p.x + 12, p.y - 10);
+        label(`${fmtLen(Math.round(r / v.scale), unitsNow())} across ${o.landMode === "hill" ? "the top" : ""}`.trim(), p.x + 12, p.y - 10);
       }
-      if (o.tool === "hills" && d?.mode === "slope") { line([[d.ax, d.ay], [m.x, m.y]], false, GOLD, 2); label(`rises ${o.landHeight} m this way`, p.x + 12, p.y - 10); }
+      if (o.tool === "hills" && d?.mode === "slope") { line([[d.ax, d.ay], [m.x, m.y]], false, GOLD, 2); label(`rises ${fmtLen(o.landHeight, unitsNow())} this way`, p.x + 12, p.y - 10); }
       if (o.tool === "hills" && !d && !landDraft.current && o.landMode === "hill") {
         ctx.beginPath(); ctx.arc(p.x, p.y, o.landSize * v.scale, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
       }
@@ -927,7 +929,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       const x = Math.min(d.sx, p.x), y = Math.min(d.sy, p.y);
       ctx.save(); ctx.fillStyle = big ? "rgba(220, 60, 50, 0.15)" : "rgba(255, 224, 120, 0.12)"; ctx.fillRect(x, y, Math.abs(p.x - d.sx), Math.abs(p.y - d.sy));
       ctx.setLineDash([7, 5]); ctx.lineWidth = 2; ctx.strokeStyle = big ? "rgba(240, 90, 80, 0.95)" : GOLD; ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(p.x - d.sx), Math.abs(p.y - d.sy)); ctx.restore();
-      label(`${Math.round(w)} × ${Math.round(h)} m · ${sq.squaresX} × ${sq.squaresY} squares${big ? " (too big: 150 at most)" : ""}`, p.x + 12, p.y - 10);
+      label(`${fmtLen(Math.round(w), unitsNow())} × ${fmtLen(Math.round(h), unitsNow())} · ${sq.squaresX} × ${sq.squaresY} squares${big ? " (too big: 150 at most)" : ""}`, p.x + 12, p.y - 10);
     }
     if (d?.mode === "marquee" && p) {
       const x = Math.min(d.sx, p.x), y = Math.min(d.sy, p.y), w = Math.abs(p.x - d.sx), h = Math.abs(p.y - d.sy);
@@ -1049,8 +1051,8 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
   async function makeBattle(rect: { x: number; y: number; w: number; h: number }) {
     const m = metaRef.current, sq = cityBattleSquares(rect);
     if (!m) return;
-    if (sq.squaresX > 150 || sq.squaresY > 150) { await notice(`That box is ${Math.round(rect.w)} × ${Math.round(rect.h)} m: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, and a battlemap can be at most 150 squares a side (about 228 m). Drag a smaller box.`); return; }
-    const name = await ask(`A battlemap of ${Math.round(rect.w)} × ${Math.round(rect.h)} m here: ${sq.squaresX} × ${sq.squaresY} squares of 5 ft, with the buildings as walls, doors and roofs (in pictures from your asset packs where they fit). Its name:`, `${m.name} scene`, "Make it");
+    if (sq.squaresX > 150 || sq.squaresY > 150) { await notice(`That box is ${fmtLen(Math.round(rect.w), unitsNow())} × ${fmtLen(Math.round(rect.h), unitsNow())}: ${sq.squaresX} × ${sq.squaresY} squares of ${fmtTable(5, unitsNow())}, and a battlemap can be at most 150 squares a side (about ${fmtLen(228, unitsNow())}). Drag a smaller box.`); return; }
+    const name = await ask(`A battlemap of ${fmtLen(Math.round(rect.w), unitsNow())} × ${fmtLen(Math.round(rect.h), unitsNow())} here: ${sq.squaresX} × ${sq.squaresY} squares of ${fmtTable(5, unitsNow())}, with the buildings as walls, doors and roofs (in pictures from your asset packs where they fit). Its name:`, `${m.name} scene`, "Make it");
     if (!name?.trim()) return;
     store.send({ t: "create_battle_from_city", name: name.trim(), rect });
   }
@@ -1356,7 +1358,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
     if (m?.city && hf && q.x >= 0 && q.y >= 0 && q.x < m.city.widthM && q.y < m.city.heightM) {
       const id = Math.round(hf.data[Math.floor(q.y / m.city.cellM) * hf.w + Math.floor(q.x / m.city.cellM)]);
       const f = featRef.current, at = (f.land?.length || m.city.elevation) ? landAt({ meta: m, features: f }, q.x, q.y) : null;
-      setHover({ x: q.x, y: q.y, ground: MATERIALS[id]?.name ?? "", land: at ? `${Math.round(at.height)} m above the sea${at.slope >= 0.5 ? `, ${Math.round(at.slope)}% slope` : ""}` : "" });
+      setHover({ x: q.x, y: q.y, ground: MATERIALS[id]?.name ?? "", land: at ? `${fmtHeight(at.height, unitsNow())} above the sea${at.slope >= 0.5 ? `, ${Math.round(at.slope)}% slope` : ""}` : "" });
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "trace") { traceCtl.move(q); return; }
@@ -1449,7 +1451,7 @@ export function CityView({ meta, features, ui, onUi, labelScale = 1 }: Props) {
       ]}
       infoTestId="city-status"
       info={<>
-        {hover ? <>x {hover.x.toFixed(1)} · y {hover.y.toFixed(1)} m · {hover.ground}{hover.land && <> · {hover.land}</>}</> : spec ? <>{spec.widthM} × {spec.heightM} m · {counts}</> : null}
+        {hover ? <>x {fmtLen(hover.x, unitsNow())} · y {fmtLen(hover.y, unitsNow())} · {hover.ground}{hover.land && <> · {hover.land}</>}</> : spec ? <>{fmtLen(spec.widthM, unitsNow())} × {fmtLen(spec.heightM, unitsNow())} · {counts}</> : null}
         {hover && <> · {counts}</>}
       </>}
     >

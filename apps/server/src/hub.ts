@@ -18,6 +18,7 @@ import {
   type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand, fitTrace, imageSize, IMAGE_HEAD_BYTES,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
   groundHex, groundMaterialId, groundSamplePoints, type sampleGroundColours, MATERIALS, groundTextures,
+  type Units, DEFAULT_UNITS, cleanUnits, unitsFor, fmtDist,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -1545,6 +1546,9 @@ export class Hub {
    */
   private allowAll: { via: "chat" | "mcp"; until: number; timer: ReturnType<typeof setTimeout> } | null = null;
 
+  /** Settings' measurement system, as the editor said (units_pref): Claude talks in it on maps without their own (core units.ts). */
+  unitsPref: Units = DEFAULT_UNITS;
+
   private startAllowAll(via: "chat" | "mcp") {
     this.endAllowAll(false);
     const until = Date.now() + ALLOW_ALL_MAX_MS;
@@ -1655,6 +1659,9 @@ export class Hub {
         }
         case "allow_all_stop":
           this.endAllowAll();
+          return;
+        case "units_pref":
+          this.unitsPref = cleanUnits(msg.units) ?? DEFAULT_UNITS;
           return;
         case "open_project":
           return this.openProject(msg.id);
@@ -1815,8 +1822,8 @@ export class Hub {
           const r = routeWaypoints(op.session.doc, d, msg.points, { steepOk: msg.kind === "trail" });
           if ("error" in r) throw new Error(r.error);
           const line = { id: msg.id && /^m-[a-z0-9-]{4,40}$/.test(msg.id) ? msg.id : newFeatureId("m"), kind: msg.kind, points: r.points, ...(msg.name && { name: msg.name }) };
-          const miles = Math.round(r.lengthKm * 0.621371);
-          return op.session.execute({ op: "features", patch: { upsertLines: [line] }, label: `Add ${msg.kind}${msg.name ? ` ${msg.name}` : ""} (${miles} mi)` }, "user");
+          const long = fmtDist(r.lengthKm, unitsFor(op.session.doc.meta, this.unitsPref)).replace(/\.\d+ /, " ");
+          return op.session.execute({ op: "features", patch: { upsertLines: [line] }, label: `Add ${msg.kind}${msg.name ? ` ${msg.name}` : ""} (${long})` }, "user");
         }
         case "cmd":
           return this.session.execute(msg.cmd, "user", msg.label);
@@ -1947,6 +1954,7 @@ export class Hub {
         return { seq: r.seq, label: r.label };
       },
       confirm: (o) => self.askDm(via, o.tool, o.text, o),
+      unitsPref: () => self.unitsPref,
       undo: () => self.session.undo(author),
       redo: () => self.session.redo(author),
       listProjects: () => self.projectsCache,

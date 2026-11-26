@@ -5,12 +5,14 @@ import {
   BUILDING_KINDS, CITY_CLIMATES, CITY_LABEL_KINDS, MATERIALS, ROOF_BASE, ROOF_STYLES, ROOF_STYLE_NAMES, STREET_KINDS, TREE_SPECIES, WALL_KINDS, cityClimate, climatePreset, polygonArea, pointsBounds, type BuildingKind,
   type CityClimate, type CityLabelKind, type CityWallKind, type Features, type MapBuilding, type MapCityWall, type MapDistrict, type MapLabel, cityLabelKind, districtColour, pointInPolygon, polygonCentroid, type MapLandform, type MapMeta, type MapStreet, type MapTrees, type RoofStyle, type StreetKind, type TreeGroup, type TreeSpecies,
   cityWallPieces, wallPieces, wallSettings, cityRoute, LAND_STARTS, type LandStart, newSeed, startLand, withNameSize,
+  fmtLen, fmtLenArea, fromM, lenUnit, toM,
 } from "@mapmaker/core";
 import { LABEL_SIZE_MIN, LABEL_SIZE_MAX, NameSizeSlider } from "./NameSize.tsx";
 import { GroundPanel } from "./GroundPanel.tsx";
 import { CITY_TOOL_DEFS, type CityUi, type LandMode, landName, removeSelected, selectedOf, sendCityFeatures } from "./cityUi.ts";
 import { MEASURE_HINT, cityLength, measureCtl, useMeasure } from "./measure.ts";
 import { GmOnlyBox } from "./GmOnly.tsx";
+import { MapUnitsChoice, unitsNow } from "./units.tsx";
 import { store } from "./store.ts";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
@@ -25,7 +27,7 @@ const HINTS: Partial<Record<CityUi["tool"], string>> = {
   building: "Click to place a house, or drag a rectangle to size one. Q and E turn it. Pick its roof above.",
   outline: "Click the corners of a building of any shape. Double-click, click the first corner or press Enter to finish.",
   street: "Click the points a street passes through. Double-click or press Enter to finish.",
-  citybattle: "Click a spot for a battlemap of 30 × 20 squares round it, as on the world map, or drag a box round the place of a fight or scene (up to about 228 m across at 5 ft a square): a battlemap of it opens, with its ground, streets, buildings as walls with doors and roofs, and walls.",
+  citybattle: "Click a spot for a battlemap of 30 × 20 squares round it, as on the world map, or drag a box round the place of a fight or scene (up to 150 squares a side: about 228 m, 750 ft): a battlemap of it opens, with its ground, streets, buildings as walls with doors and roofs, and walls.",
   district: "Click the corners of a district (a quarter, a ward, the docks); click the first corner, double-click or press Enter to finish, then name it. Its name is drawn over its middle.",
   citylabel: "Click a street, building or wall to name it. Click open ground to write a name there: pick what it names above. Names are yours: Claude only uses names you gave.",
   citywall: "Click the points of the wall. Click the first point to close it into a ring, or double-click or press Enter to end it. Where a street crosses it, a gate appears.",
@@ -66,7 +68,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
     <ToolBar tool={{ id: ui.tool, name: CITY_TOOL_DEFS.find((t) => t.id === ui.tool)?.label ?? ui.tool }} hint={ui.tool === "hills" ? LAND_MODES.find((m) => m.id === ui.landMode)?.hint : ui.tool === "trees" ? TREE_KINDS.find((k) => k.id === ui.treeKind)?.hint : ui.tool === "measure" ? MEASURE_HINT : HINTS[ui.tool]}>
       {ui.tool === "measure" && (
         <span className="measure-result" data-testid="measure-result">
-          {walked ? <><b>{cityLength(walked.metres)}</b> · about {Math.max(1, Math.round(walked.walkMinutes))} minute{Math.round(walked.walkMinutes) > 1 ? "s" : ""} on foot</> : "Click to start measuring"}
+          {walked ? <><b>{cityLength(walked.metres, unitsNow())}</b> · about {Math.max(1, Math.round(walked.walkMinutes))} minute{Math.round(walked.walkMinutes) > 1 ? "s" : ""} on foot</> : "Click to start measuring"}
         </span>
       )}
       {building && (
@@ -105,7 +107,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
         <>
           <label className="field">Kind of street
             <select value={ui.streetKind} onChange={(e) => onUi({ streetKind: e.target.value as StreetKind })} data-testid="city-street-kind">
-              {STREET_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name} ({k.width} m wide)</option>)}
+              {STREET_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name} ({fmtLen(k.width, unitsNow())} wide)</option>)}
             </select>
           </label>
           <label className="field">Over water
@@ -121,7 +123,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
             {WALL_KINDS.map((k) => <button key={k.id} className={ui.wallKind === k.id ? "on" : ""} onClick={() => onUi({ wallKind: k.id, wallTowers: k.towers })} title={`A ${k.hint}`} data-testid={`city-wall-${k.id}`}>{k.name}</button>)}
           </div>
           <label className="slider">
-            <span>Towers {ui.wallTowers ? <>every <b>{ui.wallTowers}</b> m</> : <b>none</b>}</span>
+            <span>Towers {ui.wallTowers ? <>every <b>{Math.round(fromM(ui.wallTowers, unitsNow()))}</b> {lenUnit(unitsNow())}</> : <b>none</b>}</span>
             <input type="range" min={0} max={120} step={5} value={ui.wallTowers} onChange={(e) => { const v = Number(e.target.value); onUi({ wallTowers: v > 0 && v < 10 ? 10 : v }); }} data-testid="city-wall-towers" />
           </label>
         </>
@@ -149,7 +151,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
             )}
           </Popover>
           <label className="slider">
-            <span>Brush size <b>{(ui.brush * 2).toFixed(0)}</b> m across</span>
+            <span>Brush size <b>{Math.round(fromM(ui.brush * 2, unitsNow()))}</b> {lenUnit(unitsNow())} across</span>
             <input type="range" min={1} max={60} step={1} value={ui.brush} onChange={(e) => onUi({ brush: Number(e.target.value) })} data-testid="city-brush" />
           </label>
         </>
@@ -160,12 +162,12 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
             {LAND_MODES.map((m) => <button key={m.id} className={ui.landMode === m.id ? "on" : ""} onClick={() => onUi({ landMode: m.id })} data-testid={`city-land-${m.id}`}>{m.name}</button>)}
           </div>
           <label className="slider">
-            <span>{ui.landMode === "valley" || ui.landMode === "hollow" ? "Depth" : ui.landMode === "slope" ? "Rise" : "Height"} <b>{ui.landHeight}</b> m</span>
+            <span>{ui.landMode === "valley" || ui.landMode === "hollow" ? "Depth" : ui.landMode === "slope" ? "Rise" : "Height"} <b>{Math.round(fromM(ui.landHeight, unitsNow()))}</b> {lenUnit(unitsNow())}</span>
             <input type="range" min={1} max={80} step={1} value={ui.landHeight} onChange={(e) => onUi({ landHeight: Number(e.target.value) })} data-testid="city-land-height" />
           </label>
           {ui.landMode !== "slope" && (
             <label className="slider">
-              <span>{ui.landMode === "hill" ? "Radius" : ui.landMode === "ridge" || ui.landMode === "valley" ? "Half its width" : "Soft edge"} <b>{ui.landSize}</b> m</span>
+              <span>{ui.landMode === "hill" ? "Radius" : ui.landMode === "ridge" || ui.landMode === "valley" ? "Half its width" : "Soft edge"} <b>{Math.round(fromM(ui.landSize, unitsNow()))}</b> {lenUnit(unitsNow())}</span>
               <input type="range" min={5} max={400} step={5} value={ui.landSize} onChange={(e) => onUi({ landSize: Number(e.target.value) })} data-testid="city-land-size" />
             </label>
           )}
@@ -183,7 +185,7 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
             </select>
           </label>
           <label className="slider">
-            <span>Crown <b>{ui.treeSize || "usual"}</b>{ui.treeSize ? " m" : ""}</span>
+            <span>Crown <b>{ui.treeSize ? Math.round(fromM(ui.treeSize, unitsNow())) : "usual"}</b>{ui.treeSize ? ` ${lenUnit(unitsNow())}` : ""}</span>
             <input type="range" min={0} max={20} step={1} value={ui.treeSize} onChange={(e) => onUi({ treeSize: Number(e.target.value) })} data-testid="city-tree-size" />
           </label>
         </>
@@ -203,7 +205,7 @@ export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSi
     <>
       <section data-testid="city-summary">
         <h3>This settlement</h3>
-        {row("Size", `${c.widthM.toLocaleString()} × ${c.heightM.toLocaleString()} m`)}
+        {row("Size", `${fmtLen(c.widthM, unitsNow())} × ${fmtLen(c.heightM, unitsNow())}`)}
         {row("Buildings", (features.buildings ?? []).length.toLocaleString())}
         {row("Streets", (features.streets ?? []).length.toLocaleString())}
         {row("Trees", `${(features.trees ?? []).length.toLocaleString()} group${(features.trees ?? []).length === 1 ? "" : "s"}`)}
@@ -218,6 +220,7 @@ export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSi
               : <p className="muted" data-testid="origin-gone">{meta!.origin.name} was deleted (its folder is under Deleted maps in your maps folder).</p>}
           </>
         )}
+        <MapUnitsChoice meta={meta} />
       </section>
       <section>
         <GenerateBox kind="city" hasContent={(features.streets ?? []).length > 0 || (features.buildings ?? []).length > 0} />
@@ -231,9 +234,9 @@ export function CitySummary({ meta, features, ui, onUi, labelSize = 1, onLabelSi
           </select>
         </label>
         <p className="muted">{CITY_CLIMATES.find((p) => p.id === preset)?.hint ?? `Temperature ${climate.temperature}, moisture ${climate.moisture} (0 to 1).`}</p>
-        <label className="field">Height above the sea (m)
-          <input key={`${meta!.id}-${c.elevation ?? 0}`} type="number" min={-500} max={9000} step={10} defaultValue={c.elevation ?? 0} data-testid="city-elevation"
-            onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && v !== (c.elevation ?? 0)) setCity({ elevation: Math.max(-500, Math.min(9000, v)) }, `Height above the sea: ${v} m`); }} />
+        <label className="field">Height above the sea ({lenUnit(unitsNow())})
+          <input key={`${meta!.id}-${c.elevation ?? 0}-${unitsNow()}`} type="number" min={Math.round(fromM(-500, unitsNow()))} max={Math.round(fromM(9000, unitsNow()))} step={10} defaultValue={Math.round(fromM(c.elevation ?? 0, unitsNow()))} data-testid="city-elevation"
+            onBlur={(e) => { const u = unitsNow(), v = Math.round(Number(e.target.value)), m = Math.round(toM(v, u)); if (Number.isFinite(v) && m !== (c.elevation ?? 0)) setCity({ elevation: Math.max(-500, Math.min(9000, m)) }, `Height above the sea: ${v} ${lenUnit(u)}`); }} />
         </label>
         <LandStartBox spec={c} land={features.land ?? []} onUi={onUi} />
         <GroundPanel spec={c} hasTrace={!!features.trace} />
@@ -359,7 +362,7 @@ function BuildingEditor({ b, roofSource, onClear, onRemove }: { b: MapBuilding; 
   return (
     <section data-testid="city-inspector">
       <h3>Building</h3>
-      <p className="muted">{(bb.x1 - bb.x0).toFixed(1)} × {(bb.y1 - bb.y0).toFixed(1)} m across · {Math.round(polygonArea(b.points as [number, number][]))} m²</p>
+      <p className="muted">{fmtLen(bb.x1 - bb.x0, unitsNow())} × {fmtLen(bb.y1 - bb.y0, unitsNow())} across · {fmtLenArea(polygonArea(b.points as [number, number][]), unitsNow())}</p>
       <label className="field">Name (only a name you chose)
         <input key={b.id + (b.name ?? "")} defaultValue={b.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (b.name ?? "")) { const { name: _n, ...rest } = b; sendCityFeatures({ upsertBuildings: [v ? { ...rest, name: v } : rest] }, v ? `Name building ${v}` : "Clear building name"); } }} data-testid="city-name" />
       </label>
@@ -414,7 +417,7 @@ function StreetEditor({ s, onClear, onRemove }: { s: MapStreet; onClear: () => v
   return (
     <section data-testid="city-inspector">
       <h3>Street</h3>
-      <p className="muted">{Math.round(len)} m long · {s.points.length} points</p>
+      <p className="muted">{fmtLen(len, unitsNow())} long · {s.points.length} points</p>
       <label className="field">Name (only a name you chose)
         <input key={s.id + (s.name ?? "")} defaultValue={s.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.name ?? "")) { const { name: _n, ...rest } = s; sendCityFeatures({ upsertStreets: [v ? { ...rest, name: v } : rest] }, v ? `Name street ${v}` : "Clear street name"); } }} data-testid="city-name" />
       </label>
@@ -496,7 +499,7 @@ function WallEditor({ w, streets, cellM, onClear, onRemove }: { w: MapCityWall; 
   return (
     <section data-testid="city-inspector">
       <h3>{w.name ?? kind.name}</h3>
-      <p className="muted" data-testid="city-wall-info">{Math.round(p.length)} m {p.closed ? "round" : "long"} · {p.towers.length} tower{p.towers.length === 1 ? "" : "s"} · {p.gates.length} gate{p.gates.length === 1 ? "" : "s"}</p>
+      <p className="muted" data-testid="city-wall-info">{fmtLen(p.length, unitsNow())} {p.closed ? "round" : "long"} · {p.towers.length} tower{p.towers.length === 1 ? "" : "s"} · {p.gates.length} gate{p.gates.length === 1 ? "" : "s"}</p>
       {p.gates.length > 0 && <p className="muted">Gates: {p.gates.map((g) => (g.water ? "a water gate" : `${streetName(g.streetId ?? "")}${g.gatehouse ? " (gatehouse)" : ""}`)).join(", ")}.</p>}
       {p.closed && !p.gates.length && <p className="muted">No street crosses this ring yet, so it has no gate.</p>}
       <label className="field">Name (only a name you chose)
@@ -507,13 +510,13 @@ function WallEditor({ w, streets, cellM, onClear, onRemove }: { w: MapCityWall; 
           {WALL_KINDS.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
       </label>
-      <label className="field">Thickness (m)
-        <input key={`${w.id}-t-${s.thickness}`} type="number" min={0.3} max={30} step={0.1} defaultValue={s.thickness} data-testid="city-wall-thickness"
-          onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0.3 && v <= 30 && v !== s.thickness) set({ thickness: v }, `Wall: ${v} m thick`); }} />
+      <label className="field">Thickness ({lenUnit(unitsNow())})
+        <input key={`${w.id}-t-${s.thickness}-${unitsNow()}`} type="number" min={+fromM(0.3, unitsNow()).toFixed(1)} max={Math.round(fromM(30, unitsNow()))} step={0.1} defaultValue={+fromM(s.thickness, unitsNow()).toFixed(1)} data-testid="city-wall-thickness"
+          onBlur={(e) => { const u = unitsNow(), v = Number(e.target.value), m = Math.round(toM(v, u) * 100) / 100; if (Number.isFinite(v) && m >= 0.3 && m <= 30 && Math.abs(m - s.thickness) > 0.01) set({ thickness: m }, `Wall: ${v} ${lenUnit(u)} thick`); }} />
       </label>
-      <label className="field">Towers every (m, 0 for none)
-        <input key={`${w.id}-w-${s.towers}`} type="number" min={0} max={500} step={5} defaultValue={s.towers} data-testid="city-wall-edit-towers"
-          onBlur={(e) => { const v = Math.round(Number(e.target.value)); if (Number.isFinite(v) && (v === 0 || (v >= 8 && v <= 500)) && v !== s.towers) set({ towers: v }, v ? `Towers every ${v} m` : "No towers"); }} />
+      <label className="field">Towers every ({lenUnit(unitsNow())}, 0 for none)
+        <input key={`${w.id}-w-${s.towers}-${unitsNow()}`} type="number" min={0} max={Math.round(fromM(500, unitsNow()))} step={5} defaultValue={Math.round(fromM(s.towers, unitsNow()))} data-testid="city-wall-edit-towers"
+          onBlur={(e) => { const u = unitsNow(), v = Math.round(Number(e.target.value)), m = Math.round(toM(v, u)); if (Number.isFinite(v) && (m === 0 || (m >= 8 && m <= 500)) && m !== s.towers) set({ towers: m }, m ? `Towers every ${v} ${lenUnit(u)}` : "No towers"); }} />
       </label>
       {w.points.length >= 3 && (
         <label className="check" title="Join the last point back to the first"><input type="checkbox" checked={!!w.closed} onChange={(e) => { const { closed: _c, ...rest } = w; sendCityFeatures({ upsertCityWalls: [e.target.checked ? { ...rest, closed: true } : rest] }, e.target.checked ? "Close the wall" : "Open the wall"); }} data-testid="city-wall-ring" /> A ring (closed)</label>
@@ -537,9 +540,9 @@ function TreesEditor({ t, onClear, onRemove }: { t: MapTrees; onClear: () => voi
           {TREE_SPECIES.map((sp) => <option key={sp} value={sp}>{SPECIES_NAMES[sp]}</option>)}
         </select>
       </label>
-      <label className="field">Crown across (m)
-        <input key={`${t.id}-${t.size ?? 0}`} type="number" min={1} max={40} step={0.5} defaultValue={t.size ?? ""} placeholder="usual" data-testid="city-trees-size"
-          onBlur={(e) => { const v = Number(e.target.value); if (e.target.value && Number.isFinite(v) && v >= 1 && v <= 40 && v !== t.size) set({ size: v }, "Tree size"); }} />
+      <label className="field">Crown across ({lenUnit(unitsNow())})
+        <input key={`${t.id}-${t.size ?? 0}-${unitsNow()}`} type="number" min={Math.round(fromM(1, unitsNow()))} max={Math.round(fromM(40, unitsNow()))} step={0.5} defaultValue={t.size ? +fromM(t.size, unitsNow()).toFixed(1) : ""} placeholder="usual" data-testid="city-trees-size"
+          onBlur={(e) => { const v = Number(e.target.value), m = Math.round(toM(v, unitsNow()) * 10) / 10; if (e.target.value && Number.isFinite(v) && m >= 1 && m <= 40 && m !== t.size) set({ size: m }, "Tree size"); }} />
       </label>
       <label className="field">Name
         <input key={`${t.id}-${t.name ?? ""}`} defaultValue={t.name ?? ""} maxLength={80} onBlur={(e) => { const v = e.target.value.trim(); if (v !== (t.name ?? "")) { const { name: _n, ...rest } = t; set(v ? { ...rest, name: v } : rest, "Name trees"); } }} />
@@ -552,17 +555,19 @@ function TreesEditor({ t, onClear, onRemove }: { t: MapTrees; onClear: () => voi
 /** One landform: how high (or deep) and how big. */
 function LandEditor({ l, onClear, onRemove }: { l: MapLandform; onClear: () => void; onRemove: () => void }) {
   const set = (patch: Partial<MapLandform>, label: string) => sendCityFeatures({ upsertLand: [{ ...l, ...patch }] }, label);
-  const sunk = l.height < 0, num = (key: string, label: string, value: number, min: number, max: number, apply: (v: number) => void, testId: string) => (
-    <label className="field">{label}
-      <input key={`${l.id}-${key}-${value}`} type="number" min={min} max={max} step={1} defaultValue={value} data-testid={testId}
-        onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= min && v <= max && v !== value) apply(v); }} />
+  const u = unitsNow(), unit = lenUnit(u);
+  // (value, min and max in metres; the box shows the map's units, and `apply` is given metres and the number as typed)
+  const sunk = l.height < 0, num = (key: string, label: string, value: number, min: number, max: number, apply: (m: number, typed: number) => void, testId: string) => (
+    <label className="field">{label} ({unit})
+      <input key={`${l.id}-${key}-${value}-${u}`} type="number" min={+fromM(min, u).toFixed(1)} max={Math.round(fromM(max, u))} step={1} defaultValue={+fromM(value, u).toFixed(1)} data-testid={testId}
+        onBlur={(e) => { const v = Number(e.target.value), m = Math.round(toM(v, u) * 100) / 100; if (Number.isFinite(v) && m >= min && m <= max && Math.abs(m - value) > 0.005) apply(m, v); }} />
     </label>
   );
   return (
     <section data-testid="city-inspector">
       <h3>{landName(l)}</h3>
-      {num("h", l.kind === "slope" ? "Rise (m)" : sunk ? "Depth (m)" : "Height (m)", Math.abs(l.height), 0.1, 1500, (v) => set({ height: sunk ? -v : v }, `${landName(l)}: ${v} m`), "city-land-edit-height")}
-      {l.kind !== "slope" && num("r", l.kind === "hill" ? "Radius (m)" : l.kind === "ridge" ? "Half its width (m)" : "Soft edge (m)", l.radius, 1, 10000, (v) => set({ radius: v }, `${landName(l)}: ${v} m wide`), "city-land-edit-size")}
+      {num("h", l.kind === "slope" ? "Rise" : sunk ? "Depth" : "Height", Math.abs(l.height), 0.1, 1500, (m, v) => set({ height: sunk ? -m : m }, `${landName(l)}: ${v} ${unit}`), "city-land-edit-height")}
+      {l.kind !== "slope" && num("r", l.kind === "hill" ? "Radius" : l.kind === "ridge" ? "Half its width" : "Soft edge", l.radius, 1, 10000, (m, v) => set({ radius: m }, `${landName(l)}: ${v} ${unit} wide`), "city-land-edit-size")}
       {(l.kind === "ridge" || l.kind === "plateau") && (
         <div className="row"><button onClick={() => set({ height: -l.height }, sunk ? (l.kind === "ridge" ? "Make a ridge" : "Make a plateau") : (l.kind === "ridge" ? "Make a valley" : "Make a hollow"))} data-testid="city-land-flip">
           {sunk ? (l.kind === "ridge" ? "Make it a ridge" : "Make it a plateau") : (l.kind === "ridge" ? "Make it a valley" : "Make it a hollow")}

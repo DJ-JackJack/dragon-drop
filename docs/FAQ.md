@@ -94,6 +94,9 @@ Yes. In the Map panel's **Ground colours and textures** (under Land and climate)
 **My notes are in another program. Can a place open them?**
 Yes: in the place's panel, **Your notes** takes a web address, an Obsidian or OneNote link, or a file or folder on your PC, and **Open** opens it in its own program.
 
+**Can I use kilometres and metres instead of miles and feet?**
+Yes: **Settings → Maps and assets → Measurements** sets it for every map, and a map can choose for itself with **Measurements** in its Map panel. Battlemaps then use the table's 1.5 m for a 5 ft square. Only how lengths are shown changes: the map itself stays exactly as it was, so you can switch back and forth. Claude answers in the same units.
+
 **Can I choose where a forest, desert or moor is, instead of the climate?**
 Yes: the world map's **Ground** tool (`N`) paints a kind of ground over what the climate makes there, with a brush. **Erase** gives the climate its say again. It changes only how the ground looks, not the rain or the rivers, and shows in the Painted style.
 
