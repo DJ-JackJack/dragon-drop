@@ -10,7 +10,7 @@ import {
   isBattle, isCity, routeWaypoints, sketchToHeights, textWidth, LAKE_AMOUNTS, type LakeAmount, type RoofStyle, type StreetKind,
   WIND_NAMES, type WindName, findStraits, findOuterCoasts, type StraitsResult,
   RIVER_SIZE_SHARE, type HydroSummary, type RiverSize, type RiverSource, landCellNear, resolveRiverSources,
-  type RoofPools, type BattleExportFormat, GROUND_INFO, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
+  type RoofPools, type BattleExportFormat, GROUND_INFO, PAINTABLE_GROUNDS, PLACE_KINDS, PLACE_TYPE_IDS, type Selection, type ViewInfo, cleanSelection, describeSelection, selectionFocusRect, selectionReport, selectionShape,
   type LakeShape, type NamedWater, type RiverNet, type LinkedMap, COPYABLE, copyFeaturesFrom, copyHeightsFrom, heightsFromState, mapTransform,
   MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, battleRoute, battleSpec, cityRoute, describeRoute, surveyRoute, travelEstimates,
   cleanNameSize,
@@ -25,6 +25,7 @@ import { CITY_NAME_TOOLS, CITY_NAME_TOOL_NAMES } from "./cityNameTools.ts";
 import { TRACE_TOOLS, traceOverlay } from "./traceTools.ts";
 import { WATER_TOOLS, WATER_TOOL_NAMES } from "./waterTools.ts";
 import { REALM_TOOLS, REALM_TOOL_NAMES } from "./realmTools.ts";
+import { GROUND_TOOLS, GROUND_TOOL_NAMES } from "./groundTools.ts";
 import { MAP_TOOLS } from "./mapTools.ts";
 import { type PictureWork, encodeJpeg, inlinePictures, toBase64 } from "./images.ts";
 import { refusal, riskNote, riskOf } from "./risky.ts";
@@ -1410,12 +1411,14 @@ export const TOOLS = [
       "Use it when the user asks what grounds or biomes the map has, or wants a place to look a certain way (a tundra island, a steppe, a marsh): set the climate with add_climate_region or set_climate, then check what grew with get_selection (its `biomes` shares) and render_preview. It changes nothing.",
     schema: z.object({ group: z.enum(["Forest", "Open land", "Cold", "Dry", "Water's edge", "Set by a region"]).optional().describe("Only this group") }),
     async run(_ctx, a) {
-      const list = GROUND_INFO.filter((g) => !a.group || g.group === a.group).map((g) => ({ id: g.id, name: g.name, group: g.group, where: g.where, how_to_get_it: g.recipe }));
+      const paintable = new Set<string>(PAINTABLE_GROUNDS.map((g) => g.id));
+      const list = GROUND_INFO.filter((g) => !a.group || g.group === a.group).map((g) => ({ id: g.id, name: g.name, group: g.group, where: g.where, how_to_get_it: g.recipe, ...(paintable.has(g.id) && { paintable: true }) }));
       return json({
         grounds: list,
         notes: [
           "Temperature and moisture run 0..1 on a climate region; the ground follows them and the height (trees stop at about 700 m up, snow and glacier lie on high cold ground), so the same region looks different on a mountain and on a plain.",
           "Ground is only paint: it names no place and records no lore. Use only names the DM gave.",
+          "Grounds marked paintable can also be painted by hand where the DM asks (paint_biome, or the DM's Ground brush, N): over the climate's choice, without changing the rain or the rivers.",
           "The Painted style shows all of this; the Relief style does not.",
         ],
       });
@@ -1812,6 +1815,7 @@ export const TOOLS = [
   ...CITY_NAME_TOOLS,
   ...WATER_TOOLS,
   ...REALM_TOOLS,
+  ...GROUND_TOOLS,
   ...MAP_TOOLS,
 ] as const;
 
@@ -1833,7 +1837,7 @@ const WORLD_ONLY = new Set([
   "list_labels", "add_climate_region", "update_climate_region", "remove_climate_region", "list_climate_regions", "set_map_furniture", "set_grid", "route_road",
   "add_line", "update_line", "remove_line", "list_lines", "export_gazetteer", "find_straits", "add_strait_reefs", "add_coast_reefs",
   "add_river_source", "update_river_source", "remove_river_source", "list_river_sources", "check_hydrology",
-  "get_selection", "select_area", "clear_selection", "restore_area", "copy_from_map", ...WATER_TOOL_NAMES, ...REALM_TOOL_NAMES,
+  "get_selection", "select_area", "clear_selection", "restore_area", "copy_from_map", ...WATER_TOOL_NAMES, ...REALM_TOOL_NAMES, ...GROUND_TOOL_NAMES,
 ]);
 const CITY_ONLY = new Set([...CITY_TOOL_NAMES.filter((n) => n !== "create_city" && n !== "create_city_here"), ...CITY_LAND_TOOL_NAMES, ...CITY_PLAN_TOOL_NAMES, ...CITY_WALL_TOOL_NAMES, ...CITY_NAME_TOOL_NAMES]);
 const BATTLE_ONLY = new Set([...BATTLE_TOOLS.map((t) => t.name).filter((n) => n !== "create_battlemap" && n !== "create_battlemap_here"), ...ASSET_BATTLE_TOOL_NAMES]);

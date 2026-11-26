@@ -35,6 +35,8 @@ const P: Record<string, ReactNode> = {
   zone: <><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" /></>,
   note: <><path d="M5 4h14v12l-5 4H5z" /><path d="M14 20v-4h5" /></>,
   prop: <><path d="M12 3l8 4v10l-8 4-8-4V7z" /><path d="M12 12l8-5M12 12v9M12 12L4 7" /></>,
+  // a tree on a strip of ground: painting the kind of ground
+  biome: <><path d="M3 20h18" /><path d="M12 20v-4" /><path d="M12 4l5 8H7z" /><path d="M12 9l4 7H8z" /></>,
   // a banner on a pole: a realm
   realm: <><path d="M5 21V3" /><path d="M5 4h12l-3 4 3 4H5" /></>,
   // an eye: what the players see

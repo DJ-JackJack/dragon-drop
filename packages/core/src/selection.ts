@@ -11,6 +11,7 @@ import type { Derived } from "./climate.ts";
 import type { MapDoc } from "./doc.ts";
 import type { FeaturesPatch, Features, RiverSource } from "./features.ts";
 import { BIOMES, GROUNDS, biomeWeights, dominantBiome, emptyBiomeWeights } from "./biomeLook.ts";
+import { applyPaintedGround } from "./groundPaint.ts";
 import { resolveWaterNames, riverNet, seaNear } from "./waterNames.ts";
 import { smoothstep } from "./noise.ts";
 import { desertWeight, jungleWeight } from "./painted.ts";
@@ -373,8 +374,11 @@ export function selectionReport(doc: MapDoc, derived: Derived | null, sel: Selec
     if (derived) {
       t += derived.temp[c]; m += derived.moist[c]; if (derived.lakes[c]) lakeCells++;
       if (e > doc.meta.seaLevel) {
-        const tt = derived.temp[c] / 255, mm = derived.moist[c] / 255, ee = Math.max(0, (e - doc.meta.seaLevel) / 4000), jw = jungleWeight(tt, mm), dw = desertWeight(tt, mm);
+        const tt = derived.temp[c] / 255, mm = derived.moist[c] / 255, ee = Math.max(0, (e - doc.meta.seaLevel) / 4000);
+        let jw = jungleWeight(tt, mm), dw = desertWeight(tt, mm);
         biomeWeights(tt, mm, ee, smoothstep(0.1, 0.4, ee), bw, 0, { ld: derived.landDist[c] || 255, shore: 99 });
+        // (ground painted by hand counts as what is there)
+        if (derived.ground && derived.groundW && derived.groundW[c]) { const jd = [jw, dw]; applyPaintedGround(derived.ground[c], derived.groundW[c] / 255, bw, jd); jw = jd[0]; dw = jd[1]; }
         const open = (1 - jw) * (1 - dw);
         for (const b of kinds) bsum[b] += bw[b] * open;
         bsum.jungle += jw; bsum.desert += dw * (1 - jw);

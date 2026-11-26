@@ -9,6 +9,7 @@ import { type RiverInflow, type RiverPath, computeHydrology } from "./hydrology.
 import { type HydroSummary, summariseHydrology } from "./hydroSummary.ts";
 import { type ClimateNoise, styleScale } from "./noisecache.ts";
 import { applyClimateRegions, regionRock, regionVolcanic } from "./regions.ts";
+import { groundPaintPlanes } from "./groundPaint.ts";
 import { upsampleBase } from "./regional.ts";
 import { smoothstep } from "./noise.ts";
 
@@ -92,6 +93,9 @@ export interface Derived {
   rock?: Uint8Array;
   /** Volcanic ground cover from climate regions, 0..255 (absent when no region has it). */
   volcanic?: Uint8Array;
+  /** Ground painted by hand (groundPaint.ts): each pixel's ground code (0 none) and how much it replaces the climate's ground (0..255). */
+  ground?: Uint8Array;
+  groundW?: Uint8Array;
   rivers: RiverPath[];
   /** An account of the water (not sent to the editor). */
   hydro?: HydroSummary;
@@ -184,6 +188,7 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
     const snow = applyClimateRegions(doc.features?.regions, tB, mB, W, H, doc.meta.kmPerPx);
     const rock = regionRock(doc.features?.regions, W, H, doc.meta.kmPerPx);
     const volcanic = regionVolcanic(doc.features?.regions, W, H, doc.meta.kmPerPx);
+    const gp = groundPaintPlanes(doc);
     for (let i = 0; i < N; i++) snow[i] = Math.max(snow[i], Math.round(sB[i]));
     // lakes only where the parent has them (with a little slack for the finer shoreline)
     const lb = upsampleBase(b.lakes, b.w, b.h, W, H);
@@ -194,7 +199,7 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
       W, H, seq,
       temp: q(tB, 255), moist: q(mB, 255),
       seaDist: q(seaDist, 1), landDist: q(landDist, 1),
-      lakes: withOxbows(hy), snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }),
+      lakes: withOxbows(hy), snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }), ...(gp && { ground: gp.code, groundW: gp.weight }),
       hydro: summariseHydrology({ h: data, W, H, sea, kmPerPx: doc.meta.kmPerPx, hy, moist: mB, inflows: extras.inflows }),
     };
   }
@@ -237,13 +242,14 @@ export function computeDerived(doc: MapDoc, noise: ClimateNoise, seq: number, ex
   const snow = applyClimateRegions(doc.features?.regions, tB, mB, W, H, doc.meta.kmPerPx);
   const rock = regionRock(doc.features?.regions, W, H, doc.meta.kmPerPx);
   const volcanic = regionVolcanic(doc.features?.regions, W, H, doc.meta.kmPerPx);
+  const gp = groundPaintPlanes(doc);
 
   const hy = computeHydrology(data, W, H, sea, { riverDensity: c.riverDensity, seed: doc.meta.seed, runoff: runoffField(data, sea, tB, mB), inflows: extras.inflows, lowland: c.lowlandRivers, followRain: c.riversFollowRain, noRainRivers: c.noRainRivers });
   return {
     W, H, seq,
     temp: q(tB, 255), moist: q(mB, 255),
     seaDist: q(seaDist, 1), landDist: q(landDist, 1),
-    lakes: withOxbows(hy), snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }),
+    lakes: withOxbows(hy), snow, rivers: hy.rivers, ...(rock && { rock }), ...(volcanic && { volcanic }), ...(gp && { ground: gp.code, groundW: gp.weight }),
     hydro: summariseHydrology({ h: data, W, H, sea, kmPerPx: doc.meta.kmPerPx, hy, moist: mB, inflows: extras.inflows }),
   };
 }

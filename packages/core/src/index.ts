@@ -87,6 +87,7 @@ export * from "./prefabs.ts";
 export * from "./generators.ts";
 export * from "./fog.ts";
 export * from "./realms.ts";
+export * from "./groundPaint.ts";
 export * from "./links.ts";
 export * from "./inkStyle.ts";
 export * from "./objectLayers.ts";

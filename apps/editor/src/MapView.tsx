@@ -26,12 +26,13 @@ import { type WaterPick, namedShape, pickWater, withWaterLabels } from "./waterU
 import type { RiverMode } from "./WorldToolBar.tsx";
 import { StatusBar, zoomPercent } from "./StatusBar.tsx";
 import { realmCtl } from "./realmUi.ts";
+import { groundCtl } from "./groundUi.ts";
 import { measureCtl, worldLength } from "./measure.ts";
 
 export type BrushTool = "raise" | "lower" | "smooth" | "flatten" | "land" | "water";
 /** Most screen px per map px (so a very fine grid can still be inspected). */
 const MAX_ZOOM = 80;
-export type Tool = "pan" | "select" | "area" | "measure" | "place" | "label" | "region" | "realm" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
+export type Tool = "pan" | "select" | "area" | "measure" | "place" | "label" | "region" | "realm" | "biome" | "detail" | "line" | "river" | "battlehere" | "cityhere" | BrushTool;
 /** The shape the Select area tool drags out. */
 export type AreaShape = "rect" | "circle" | "free" | "poly";
 const isBrush = (t: Tool): t is BrushTool => ["raise", "lower", "smooth", "flatten", "land", "water"].includes(t);
@@ -124,7 +125,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
   const drawQueued = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{
-    mode: "pan" | "brush" | "move" | "draw" | "river" | "rect" | "area" | "marquee" | "trace" | "realm"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
+    mode: "pan" | "brush" | "move" | "draw" | "river" | "rect" | "area" | "marquee" | "trace" | "realm" | "biome"; sx: number; sy: number; ox: number; oy: number; lastX: number; lastY: number; target?: number;
     hit?: Hit;
     /** move: the places and labels moving together (when there are two or more), whether the pointer has really moved yet, and whether it went down on one of a group (a click without a drag then picks that one). marquee: whether it adds to the group, and what was in it before. */
     ids?: string[]; moved?: boolean; groupClick?: boolean; add?: boolean; base?: string[];
@@ -620,10 +621,11 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.moveTo(q.x - 15, q.y); ctx.lineTo(q.x + 15, q.y); ctx.moveTo(q.x, q.y - 15); ctx.lineTo(q.x, q.y + 15); ctx.stroke();
       ctx.restore();
     }
-    // a realm being painted, and the Realm tool's brush
+    // a realm or ground being painted, and the Realm or Ground tool's brush
     realmCtl.draw(ctx, v);
-    if (optsRef.current.tool === "realm" && pointer.current && !spaceDownRef.current) {
-      const q = pointer.current, r = Math.max(2, realmCtl.state.radius * v.scale);
+    groundCtl.draw(ctx, v);
+    if ((optsRef.current.tool === "realm" || optsRef.current.tool === "biome") && pointer.current && !spaceDownRef.current) {
+      const q = pointer.current, r = Math.max(2, (optsRef.current.tool === "realm" ? realmCtl.state.radius : groundCtl.state.radius) * v.scale);
       ctx.save();
       ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.beginPath(); ctx.arc(q.x, q.y, r + 1.5, 0, Math.PI * 2); ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
@@ -828,6 +830,13 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       requestDraw();
       return;
     }
+    if (tl === "biome") {
+      const why = groundCtl.down(m);
+      if (why) { store.note(why); return; }
+      drag.current = { mode: "biome", sx: p.x, sy: p.y, ox: v.ox, oy: v.oy, lastX: m.x, lastY: m.y };
+      requestDraw();
+      return;
+    }
     if (tl === "battlehere") {
       onBattleRef.current(m.x, m.y);
       return;
@@ -970,6 +979,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     } else setHover(null);
     const d = drag.current;
     if (d?.mode === "realm") { realmCtl.move(m); requestDraw(); return; }
+    if (d?.mode === "biome") { groundCtl.move(m); requestDraw(); return; }
     if (d?.mode === "trace") { traceCtl.move(m); return; }
     if (optsRef.current.tool === "river") waterHover.current = !d && riverRef.current.mode === "name" ? pickAt(m.x, m.y) : null;
     if (optsRef.current.tool === "measure" && !d) measureCtl.move(m);
@@ -1011,6 +1021,7 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     const d = drag.current;
     if (d?.mode === "trace") { drag.current = null; traceCtl.up(); return; }
     if (d?.mode === "realm") { drag.current = null; realmCtl.up(); requestDraw(); return; }
+    if (d?.mode === "biome") { drag.current = null; groundCtl.up(); requestDraw(); return; }
     if (d?.mode === "brush") store.send({ t: "txn_end" });
     if (d?.mode === "pan" && d.pick && optsRef.current.tool === "select") {
       const pp = pointer.current;

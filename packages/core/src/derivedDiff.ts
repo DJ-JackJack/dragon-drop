@@ -11,7 +11,7 @@ import { RIVER_REACH } from "./riverPaint.ts";
 /** "none": nothing a pixel depends on changed; "all": not comparable (a different size); otherwise the box around every changed cell. */
 export type DerivedChange = Rect | "none" | "all";
 
-const PLANES = ["temp", "moist", "seaDist", "landDist", "lakes", "snow", "rock", "volcanic"] as const;
+const PLANES = ["temp", "moist", "seaDist", "landDist", "lakes", "snow", "rock", "volcanic", "ground", "groundW"] as const;
 
 export function derivedChange(a: Derived, b: Derived): DerivedChange {
   if (a.W !== b.W || a.H !== b.H) return "all";
@@ -20,7 +20,7 @@ export function derivedChange(a: Derived, b: Derived): DerivedChange {
   let zero: Uint8Array | null = null;
   for (const name of PLANES) {
     // the stone and volcanic layers only exist when a region has them
-    const optional = name === "rock" || name === "volcanic";
+    const optional = name === "rock" || name === "volcanic" || name === "ground" || name === "groundW";
     const pa = a[name] ?? (optional ? (zero ??= new Uint8Array(W * H)) : undefined);
     const pb = b[name] ?? (optional ? (zero ??= new Uint8Array(W * H)) : undefined);
     if (!pa || !pb) return "all";

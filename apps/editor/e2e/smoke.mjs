@@ -611,6 +611,23 @@ try {
     await page.getByLabel("Land only").check();
     await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByRole("button", { name: /Undo/ }).click();
+    // the Ground brush (biome brushes): a kind of ground painted over the climate's, one undo step a stroke, and Clear all
+    await page.getByRole("button", { name: "Ground", exact: true }).click();
+    await page.getByTestId("ground-menu").click();
+    await page.getByTestId("ground-desert").click();
+    await page.getByLabel("Land only").uncheck();
+    await page.mouse.move(sx(320), sy(320));
+    await page.mouse.down();
+    await page.mouse.move(sx(520), sy(440), { steps: 8 });
+    await page.mouse.up();
+    await page.getByTestId("history").getByText("Paint ground: Desert").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("ground-clear").click();
+    await page.getByTestId("dialog").getByRole("button", { name: "Clear all" }).click();
+    await page.getByTestId("history").getByText("Clear painted ground").first().waitFor({ timeout: 10000 });
+    await page.getByTestId("ground-clear").waitFor({ state: "detached", timeout: 5000 });
+    await page.getByLabel("Land only").check();
+    await page.getByRole("button", { name: /Undo/ }).click();
+    await page.getByRole("button", { name: /Undo/ }).click();
     await page.getByRole("button", { name: "Select", exact: true }).click();
   }
 

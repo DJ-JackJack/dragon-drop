@@ -354,7 +354,8 @@ export class Hub {
         if (active) this.broadcast({ t: "features", features: e.features });
         this.markDirty(op, rt);
         if (active) this.syncSelection(op);
-        const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features)]); // regions and river sources (and where their places are) feed the climate and rivers
+        // regions and river sources (and where their places are) feed the climate and rivers; the ground painted by hand is worked out with them (groundPaint.ts)
+        const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features), e.features.groundCells ?? null]);
         if (active && !isWorld(session.doc)) this.contentChanged(op); // (a battlemap's or a city's picture is its features: pictures of it are out of date)
         else if (active && key !== op.regionsKey) {
           op.regionsKey = key;

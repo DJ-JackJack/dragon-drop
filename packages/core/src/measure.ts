@@ -7,6 +7,7 @@ import type { Derived } from "./climate.ts";
 import type { MapDoc } from "./doc.ts";
 import type { MapLine } from "./features.ts";
 import { biomeWeights, emptyBiomeWeights } from "./biomeLook.ts";
+import { applyPaintedGround } from "./groundPaint.ts";
 import { smoothstep } from "./noise.ts";
 import { desertWeight, jungleWeight } from "./painted.ts";
 import { MI_PER_KM } from "./grid.ts";
@@ -126,9 +127,11 @@ function roughness(hf: MapDoc["height"], derived: Derived | null, bw: ReturnType
   if (!derived) return null;
   if (derived.snow[c] > 150) return "ice";
   const t = derived.temp[c] / 255, m = derived.moist[c] / 255, ee = Math.max(0, above / 4000);
-  const jw = jungleWeight(t, m), dw = desertWeight(t, m);
-  if (jw > 0.5) return "jungle";
+  let jw = jungleWeight(t, m), dw = desertWeight(t, m);
   biomeWeights(t, m, ee, smoothstep(0.1, 0.4, ee), bw, 0, { ld: derived.landDist[c] || 255, shore: 99 });
+  // (ground painted by hand: a painted forest is rough going, a painted grassland open)
+  if (derived.ground && derived.groundW && derived.groundW[c]) { const jd = [jw, dw]; applyPaintedGround(derived.ground[c], derived.groundW[c] / 255, bw, jd); jw = jd[0]; dw = jd[1]; }
+  if (jw > 0.5) return "jungle";
   const open = (1 - jw) * (1 - dw);
   if (bw.marsh * open > 0.45) return "marsh";
   if ((bw.boreal + bw.temperate + bw.warm) * open > 0.5) return "forest";

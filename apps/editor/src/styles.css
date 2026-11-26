@@ -723,6 +723,13 @@ button.built-of b { flex: 1; min-width: 0; overflow: hidden; text-overflow: elli
 .player-wait { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255, 255, 255, 0.35); font: 600 18px system-ui, sans-serif; letter-spacing: 0.04em; }
 
 /* the Realm tool's list (RealmBar.tsx) */
+/* the Ground tool's picker (GroundBar.tsx): the kinds of ground by group, with their swatches */
+.ground-pick { width: 520px; max-width: 80vw; display: flex; flex-direction: column; gap: 6px; }
+.ground-group-name { font-size: 11.5px; margin-bottom: 2px; }
+.ground-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 3px; }
+.ground-kind { display: flex; align-items: center; gap: 6px; text-align: left; padding: 3px 6px; font-size: 12.5px; }
+.ground-kind.on { border-color: var(--accent, #d4af37); }
+.ground-kind .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,0.4); }
 .realm-list { width: 460px; max-width: 80vw; display: flex; flex-direction: column; gap: 4px; }
 /* (the name on its own line and the buttons under it: in one line, Remove was pushed out of the list, the 0.1.13 playtest) */
 .realm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; border-radius: 6px; padding: 2px; }

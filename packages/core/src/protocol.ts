@@ -321,12 +321,13 @@ export function decodeFrame(buf: ArrayBuffer): { header: FrameHeader; payload: F
 }
 
 /** Pack derived layers for the wire (rivers travel in the frame header). */
-export function packDerived(d: { temp: Uint8Array; moist: Uint8Array; seaDist: Uint8Array; landDist: Uint8Array; lakes: Uint8Array; snow: Uint8Array; rock?: Uint8Array; volcanic?: Uint8Array }): Uint8Array {
+export function packDerived(d: { temp: Uint8Array; moist: Uint8Array; seaDist: Uint8Array; landDist: Uint8Array; lakes: Uint8Array; snow: Uint8Array; rock?: Uint8Array; volcanic?: Uint8Array; ground?: Uint8Array; groundW?: Uint8Array }): Uint8Array {
   const n = d.temp.length;
-  // the stone plane comes first when either optional plane is there (all zeros when only volcanic ground is), then the volcanic plane
-  const out = new Uint8Array(n * (d.volcanic ? 8 : d.rock ? 7 : 6));
+  // the optional planes in order, each one there (all zeros) when a later one is: stone, volcanic, then the painted ground's two (groundPaint.ts)
+  const out = new Uint8Array(n * (d.ground ? 10 : d.volcanic ? 8 : d.rock ? 7 : 6));
   if (d.rock) out.set(d.rock, 6 * n);
   if (d.volcanic) out.set(d.volcanic, 7 * n);
+  if (d.ground) { out.set(d.ground, 8 * n); if (d.groundW) out.set(d.groundW, 9 * n); }
   out.set(d.temp, 0); out.set(d.moist, n); out.set(d.seaDist, 2 * n); out.set(d.landDist, 3 * n); out.set(d.lakes, 4 * n); out.set(d.snow, 5 * n);
   return out;
 }
@@ -340,6 +341,7 @@ export function unpackDerived(bytes: Uint8Array, W: number, H: number, seq: numb
     snow: bytes.length >= 6 * n ? bytes.subarray(5 * n, 6 * n) : new Uint8Array(n),
     ...(bytes.length >= 7 * n && { rock: bytes.subarray(6 * n, 7 * n) }),
     ...(bytes.length >= 8 * n && { volcanic: bytes.subarray(7 * n, 8 * n) }),
+    ...(bytes.length >= 10 * n && { ground: bytes.subarray(8 * n, 9 * n), groundW: bytes.subarray(9 * n, 10 * n) }),
   };
 }
 

@@ -511,6 +511,8 @@ export interface Features {
   /** World maps: the realms (realms.ts), and where each is painted. */
   realms?: MapRealm[];
   realmCells?: RealmGrid;
+  /** World maps: ground painted by hand over the climate's choice (groundPaint.ts: each cell a ground's code, 0 = as the climate makes it). */
+  groundCells?: RealmGrid;
   /** Battlemaps: stairs, ladders and holes between levels. */
   connectors?: MapConnector[];
   /** Battlemaps: roofs over this level. */
@@ -568,6 +570,8 @@ export interface FeaturesPatch {
   removeRealms?: string[];
   /** The whole painting of the realms (it is small: run-length coded), or null to clear it. */
   setRealmCells?: RealmGrid | null;
+  /** The whole painting of grounds (groundPaint.ts; run-length coded), or null to clear it. Like the realms', a patch that doesn't set it keeps it. */
+  setGroundCells?: RealmGrid | null;
   /** Reveals are added at the end (their order matters); `removeReveals: ["*"]` takes every one away. */
   upsertReveals?: MapReveal[];
   removeReveals?: string[];
@@ -665,6 +669,8 @@ export function applyFeaturesPatch(f: Features, p: FeaturesPatch): Features {
   // (the painting is kept as it was unless this patch sets it)
   if (p.setRealmCells !== undefined) { if (p.setRealmCells) out.realmCells = p.setRealmCells; }
   else if (f.realmCells) out.realmCells = f.realmCells;
+  if (p.setGroundCells !== undefined) { if (p.setGroundCells) out.groundCells = p.setGroundCells; }
+  else if (f.groundCells) out.groundCells = f.groundCells;
   if (f.reveals || p.upsertReveals || p.removeReveals) {
     const all = p.removeReveals?.includes("*");
     const reveals = new Map(all ? [] : (f.reveals ?? []).map((x) => [x.id, x]));

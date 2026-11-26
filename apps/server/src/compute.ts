@@ -4,7 +4,7 @@
  */
 import { Worker } from "node:worker_threads";
 import {
-  type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
+  type BaseClimate, type ClimateNoise, type ClimateRegion, type Derived, type RealmGrid, type MapDoc, type MapMeta, type NoiseCache, type RegionalPlan, type RiverInflow,
   type Features, type SpriteData, type TileData, HeightField, boxResize, type ShrinkJob, type ShrunkPicture, shrinkPicture, pictureKindHint, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
   type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator, inkSymbols, renderInk,
@@ -94,7 +94,7 @@ export function thumbnailOf(bytes: Uint8Array, max: number): Thumbnail | null {
 
 // ------------------------------------------------------------------ shared job runner
 export type Job =
-  | { op: "derive"; W: number; H: number; heights: Float32Array; meta: MapMeta; regions?: ClimateRegion[]; baseClimate?: BaseClimate; inflows?: RiverInflow[]; seq: number }
+  | { op: "derive"; W: number; H: number; heights: Float32Array; meta: MapMeta; regions?: ClimateRegion[]; groundCells?: RealmGrid; baseClimate?: BaseClimate; inflows?: RiverInflow[]; seq: number }
   | { op: "regional"; W: number; H: number; heights: Float32Array; meta: MapMeta; plan: RegionalPlan; seed: number }
   | { op: "paint"; W: number; H: number; heights: Float32Array; meta: MapMeta; derived: Derived }
   | ({ op: "battle"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features } & BattleRenderOpts)
@@ -197,7 +197,7 @@ export class JobRunner {
     }
     const doc: MapDoc = {
       meta: job.meta, height: new HeightField(job.W, job.H, job.heights),
-      ...(job.op === "derive" && job.regions && { features: { places: [], labels: [], regions: job.regions } }),
+      ...(job.op === "derive" && (job.regions || job.groundCells) && { features: { places: [], labels: [], ...(job.regions && { regions: job.regions }), ...(job.groundCells && { groundCells: job.groundCells }) } }),
       ...(job.op === "derive" && job.baseClimate && { baseClimate: job.baseClimate }),
     };
     if (job.op === "derive") return computeDerived(doc, this.climateNoise(job.W, job.H, job.meta.seed), job.seq, { inflows: job.inflows });
@@ -210,6 +210,8 @@ export class JobRunner {
 
 const snapshot = (doc: MapDoc) => ({ W: doc.height.w, H: doc.height.h, heights: new Float32Array(doc.height.data), meta: structuredClone(doc.meta) });
 const regionsOf = (doc: MapDoc) => (doc.features?.regions?.length ? structuredClone(doc.features.regions) : undefined);
+/** The ground painted by hand (core groundPaint.ts): worked out with the climate. */
+const groundOf = (doc: MapDoc) => (doc.features?.groundCells ? structuredClone(doc.features.groundCells) : undefined);
 const inflowsOf = (doc: MapDoc) => { const r = resolveRiverSources(doc.features); return r.length ? r : undefined; };
 
 /** Same thread (tests, tools). */
@@ -219,7 +221,7 @@ export class InlineCompute implements MapCompute {
     this.runner = new JobRunner(storage);
   }
   async derive(doc: MapDoc, seq: number) {
-    return this.runner.run({ op: "derive", ...snapshot(doc), regions: regionsOf(doc), baseClimate: doc.baseClimate, inflows: inflowsOf(doc), seq }) as Derived;
+    return this.runner.run({ op: "derive", ...snapshot(doc), regions: regionsOf(doc), groundCells: groundOf(doc), baseClimate: doc.baseClimate, inflows: inflowsOf(doc), seq }) as Derived;
   }
   async regional(doc: MapDoc, plan: RegionalPlan, seed: number) {
     return this.runner.run({ op: "regional", ...snapshot(doc), plan, seed }) as Float32Array;
@@ -276,7 +278,7 @@ export class InlineCompute implements MapCompute {
 }
 
 export function derivedBuffers(d: Derived): ArrayBuffer[] {
-  return [d.temp, d.moist, d.seaDist, d.landDist, d.lakes, d.snow, ...(d.rock ? [d.rock] : []), ...(d.volcanic ? [d.volcanic] : [])].map((a) => a.buffer as ArrayBuffer);
+  return [d.temp, d.moist, d.seaDist, d.landDist, d.lakes, d.snow, ...(d.rock ? [d.rock] : []), ...(d.volcanic ? [d.volcanic] : []), ...(d.ground ? [d.ground] : []), ...(d.groundW ? [d.groundW] : [])].map((a) => a.buffer as ArrayBuffer);
 }
 
 /** One worker thread running jobs in order. */
@@ -338,7 +340,7 @@ export class WorkerCompute implements MapCompute {
   derive(doc: MapDoc, seq: number): Promise<Derived> {
     if (this.deriver.dead) return this.inline.derive(doc, seq);
     const s = snapshot(doc);
-    return this.deriver.call<Derived>({ op: "derive", ...s, regions: regionsOf(doc), baseClimate: doc.baseClimate, inflows: inflowsOf(doc), seq }, [s.heights.buffer as ArrayBuffer]);
+    return this.deriver.call<Derived>({ op: "derive", ...s, regions: regionsOf(doc), groundCells: groundOf(doc), baseClimate: doc.baseClimate, inflows: inflowsOf(doc), seq }, [s.heights.buffer as ArrayBuffer]);
   }
 
   regional(doc: MapDoc, plan: RegionalPlan, seed: number): Promise<Float32Array> {

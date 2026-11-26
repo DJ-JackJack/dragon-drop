@@ -94,6 +94,9 @@ Yes. In the Map panel's **Ground colours and textures** (under Land and climate)
 **My notes are in another program. Can a place open them?**
 Yes: in the place's panel, **Your notes** takes a web address, an Obsidian or OneNote link, or a file or folder on your PC, and **Open** opens it in its own program.
 
+**Can I choose where a forest, desert or moor is, instead of the climate?**
+Yes: the world map's **Ground** tool (`N`) paints a kind of ground over what the climate makes there, with a brush. **Erase** gives the climate its say again. It changes only how the ground looks, not the rain or the rivers, and shows in the Painted style.
+
 **Can I colour in kingdoms and provinces?**
 Yes: the world map's **Realm** tool (`B`) paints realms onto the land, each in its own colour with its name in the middle. **+ New realm** in the tool's bar starts one under your name for it. They stop at the coast and meet their neighbours exactly.
 

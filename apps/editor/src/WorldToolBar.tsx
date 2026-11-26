@@ -1,5 +1,6 @@
 /** The world map's tool bar: the settings of the tool in use, and what to do next with it. */
 import { REALM_HINT, RealmToolBar } from "./RealmBar.tsx";
+import { GROUND_HINT, GroundToolBar } from "./GroundBar.tsx";
 import { type LabelKind, type LineKind, type PlaceType, type RiverSize, MAX_SMOOTH_REACH_PX, TRAVEL_MODES, type TravelModeId, describeRoute, placeKind, routeLength, travelEstimates } from "@mapmaker/core";
 import { MEASURE_HINT, measureCtl, useMeasure, worldLength } from "./measure.ts";
 import { store } from "./store.ts";
@@ -87,7 +88,7 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
   riverMode: RiverMode; onRiverMode: (m: RiverMode) => void; riverSize: RiverSize; onRiverSize: (s: RiverSize) => void;
 }) {
   const ms = useMeasure();
-  const hint = tool === "line" ? lineHint(lineKind, lineAuto) : tool === "river" ? riverHint(riverMode) : tool === "measure" ? measureHint(ms) : tool === "realm" ? REALM_HINT : TOOL_HINTS[tool];
+  const hint = tool === "line" ? lineHint(lineKind, lineAuto) : tool === "river" ? riverHint(riverMode) : tool === "measure" ? measureHint(ms) : tool === "realm" ? REALM_HINT : tool === "biome" ? GROUND_HINT : TOOL_HINTS[tool];
   return (
     <ToolBar hint={hint || undefined} tool={{ id: tool, name: TOOL_GROUPS.flatMap((g) => g.tools).find((t) => t.id === tool)?.label ?? tool }}>
       {tool === "line" && (
@@ -122,6 +123,7 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
       )}
       {tool === "measure" && <WorldMeasure ms={ms} />}
       {tool === "realm" && <RealmToolBar />}
+      {tool === "biome" && <GroundToolBar />}
       {tool === "area" && (
         <div className="seg" role="group" aria-label="Area shape" data-testid="area-shapes">
           {AREA_SHAPES.map((a) => (

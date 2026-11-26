@@ -18,6 +18,7 @@ import { type NoiseCache, styleScale } from "./noisecache.ts";
 import { smoothstep } from "./noise.ts";
 import type { RGBAImage } from "./render.ts";
 import { type BiomePixel, type Site, biomeWeights, emptyBiomeWeights, lakeShoreDistance, paintBiomes, paintGlacier } from "./biomeLook.ts";
+import { applyPaintedGround } from "./groundPaint.ts";
 import { type RiverPixel, RIVER_REACH, paintRiverPixel, rasterRivers, shoreTone, valleyDepth, valleyProfile } from "./riverPaint.ts";
 import { LAVA_REACH, lavaOf, rasterLava } from "./lava.ts";
 
@@ -191,7 +192,7 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
   const SHORE_REACH = 8;
   const LS = d.lakes ? lakeShoreDistance(d.lakes, W, H, r, SHORE_REACH) : null; // how far each pixel is from a lake
   const lsW = LS ? LS.r.w : 0;
-  const gcol = [0, 0, 0], scol = [0, 0, 0];
+  const gcol = [0, 0, 0], scol = [0, 0, 0], JD = [0, 0];
 
   for (let y = r.y; y < r.y + r.h; y++) {
     const ty = y - T.y;
@@ -228,12 +229,14 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
         const grain = 1 + (n.fine[gi] / 127) * 0.08 * (1 - veg) + (n.clump[gi] / 127) * 0.07 * (1 - veg);
         R *= grain; G *= grain * (1 + hu * 0.02 * (1 - veg)); B *= grain;
         // The ground of each climate: tundra, conifer, mixed and warm forest, savanna, steppe and marsh (jungle and desert paint themselves below)
-        const jw = jungleWeight(t, m), dw = desertWeight(t, m);
+        let jw = jungleWeight(t, m), dw = desertWeight(t, m);
         // low flat ground beside a big river is wetland (the river's floodplain)
         const wet = nearRiver && RR ? (1 - smoothstep(0, 4 + 10 * RR.size[ri], re > 0 ? re : 0)) * (0.35 + 0.65 * RR.size[ri]) : 0;
         site.ld = d.landDist[gi] || 255; // (0 means "was sea when derived": treated as far inland)
         if (LS) { const sd = LS.dist[(y - LS.r.y) * lsW + (x - LS.r.x)]; site.shore = sd > SHORE_REACH ? 99 : sd; } else site.shore = 99;
         biomeWeights(t, m, e, rg, bw, wet, site);
+        // ground painted by hand over the climate's choice (groundPaint.ts)
+        if (d.ground && d.groundW && d.groundW[gi]) { JD[0] = jw; JD[1] = dw; applyPaintedGround(d.ground[gi], d.groundW[gi] / 255, bw, JD); jw = JD[0]; dw = JD[1]; }
         bp.t = t; bp.m = m; bp.cn = n.canopy[gi] / 127; bp.cl = n.clump[gi] / 127; bp.hu = hu; bp.rk = n.rock[gi] / 127; bp.fine = n.fine[gi] / 127; bp.hills = n.hills[gi]; bp.e = e; bp.rg = rg; bp.x = x; bp.y = y;
         bcol[0] = R; bcol[1] = G; bcol[2] = B;
         const open = (1 - jw) * (1 - dw);
