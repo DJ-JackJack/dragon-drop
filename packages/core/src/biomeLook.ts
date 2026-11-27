@@ -39,12 +39,17 @@ const INLAND: Site = { ld: 255, shore: 99 };
  * desertWeight): they take over at the hot and the very dry ends.
  */
 export function biomeWeights(t: number, m: number, e: number, rugged: number, out: BiomeWeights = emptyBiomeWeights(), nearWater = 0, site: Site = INLAND): BiomeWeights {
+  // (the painter calls this for every pixel, and its sixty smoothsteps were a good part of painting a brush patch, docs/BRUSH-SPEED.md: the ones used
+  // more than once are worked out once, and each product stops at its first zero factor, `(v = a) && (v *= b) && ...`. The numbers are exactly those
+  // of the plain formulas: the same factors, multiplied in the same order.)
+  let v = 0;
   const wet = smoothstep(0.4, 0.7, m);
-  const cold = 1 - smoothstep(0.14, 0.26, t);
-  const cool = smoothstep(0.14, 0.26, t) * (1 - smoothstep(0.34, 0.46, t));
-  const mild = smoothstep(0.34, 0.46, t) * (1 - smoothstep(0.58, 0.72, t));
-  const warm = smoothstep(0.58, 0.72, t);
-  const dry = (1 - wet) * smoothstep(0.12, 0.26, m);
+  const t1426 = smoothstep(0.14, 0.26, t), t3446 = smoothstep(0.34, 0.46, t), t5872 = smoothstep(0.58, 0.72, t), t5568 = smoothstep(0.55, 0.68, t);
+  const cold = 1 - t1426;
+  const cool = t1426 * (1 - t3446);
+  const mild = t3446 * (1 - t5872);
+  const warm = t5872;
+  const dry = (v = 1 - wet) && (v *= smoothstep(0.12, 0.26, m));
   // trees thin out and stop at about 700 m up (normalised 0.17 to 0.3): above that the forest's share becomes alpine meadow
   const high = smoothstep(0.17, 0.3, e);
   out.tundra = cold;
@@ -52,33 +57,34 @@ export function biomeWeights(t: number, m: number, e: number, rugged: number, ou
   out.temperate = mild * wet * (1 - high);
   out.warm = warm * wet * (1 - high);
   out.alpine = (cool + mild + warm) * wet * high;
-  out.steppe = dry * (1 - smoothstep(0.55, 0.68, t)) * (1 - cold);
-  out.savanna = dry * smoothstep(0.55, 0.68, t);
+  out.steppe = dry * (1 - t5568) * (1 - cold);
+  out.savanna = dry * t5568;
   // marsh: low, gentle ground in a very wet climate (not where it is frozen)
   const lowFlat = (1 - rugged) * (1 - 0.6 * cold) * smoothstep(0.1, 0.2, t);
-  const lakeWet = (1 - smoothstep(1, 6, site.shore)) * smoothstep(0.55, 0.8, m) * (1 - smoothstep(0.03, 0.1, e)) * lowFlat; // low flat ground round a lake
-  out.marsh = Math.max(smoothstep(0.72, 0.9, m) * (1 - smoothstep(0.012, 0.05, e)) * lowFlat, smoothstep(0.55, 0.8, m) * (1 - smoothstep(0.03, 0.1, e)) * lowFlat * nearWater, lakeWet);
+  const m5580 = smoothstep(0.55, 0.8, m), e0310 = 1 - smoothstep(0.03, 0.1, e);
+  const lakeWet = (v = 1 - smoothstep(1, 6, site.shore)) && (v *= m5580) && (v *= e0310) && (v *= lowFlat); // low flat ground round a lake
+  out.marsh = Math.max((v = smoothstep(0.72, 0.9, m)) && (v *= 1 - smoothstep(0.012, 0.05, e)) && (v *= lowFlat), m5580 * e0310 * lowFlat * nearWater, lakeWet);
 
   const flat = 1 - rugged;
   // the water's edge: a beach on low gentle coast, mangrove where it is warm and wet (further in along a river), reeds along a lake's shore
-  out.beach = (1 - smoothstep(1, 3, site.ld)) * (1 - smoothstep(0.02, 0.06, e)) * flat;
-  out.mangrove = smoothstep(0.55, 0.68, t) * smoothstep(0.7, 0.9, m) * (1 - smoothstep(0.012, 0.04, e)) * flat * (1 - smoothstep(4, 10 + 8 * nearWater, site.ld));
-  out.reeds = (1 - smoothstep(1.2, 4.5, site.shore)) * smoothstep(0.3, 0.5, m) * smoothstep(0.05, 0.15, t);
+  out.beach = (v = 1 - smoothstep(1, 3, site.ld)) && (v *= 1 - smoothstep(0.02, 0.06, e)) && (v *= flat);
+  out.mangrove = (v = t5568) && (v *= smoothstep(0.7, 0.9, m)) && (v *= 1 - smoothstep(0.012, 0.04, e)) && (v *= flat) && (v *= 1 - smoothstep(4, 10 + 8 * nearWater, site.ld));
+  out.reeds = (v = 1 - smoothstep(1.2, 4.5, site.shore)) && (v *= smoothstep(0.3, 0.5, m)) && (v *= smoothstep(0.05, 0.15, t));
   // the cold heights: glacier on the highest, coldest, snowiest ground; heather moor and peat bog on cool wet uplands
-  out.glacier = (1 - smoothstep(0.05, 0.12, t)) * smoothstep(0.18, 0.32, e) * smoothstep(0.3, 0.55, m);
-  out.moor = smoothstep(0.18, 0.28, t) * (1 - smoothstep(0.4, 0.5, t)) * smoothstep(0.55, 0.8, m) * smoothstep(0.06, 0.1, e) * (1 - smoothstep(0.17, 0.26, e));
+  out.glacier = (v = 1 - smoothstep(0.05, 0.12, t)) && (v *= smoothstep(0.18, 0.32, e)) && (v *= smoothstep(0.3, 0.55, m));
+  out.moor = (v = smoothstep(0.18, 0.28, t)) && (v *= 1 - smoothstep(0.4, 0.5, t)) && (v *= m5580) && (v *= smoothstep(0.06, 0.1, e)) && (v *= 1 - smoothstep(0.17, 0.26, e));
   // dry country: scrub where it is warm and not quite dry, badlands where dry ground is rugged, salt flats on very dry low flats, stony ground on rugged desert
-  out.chaparral = smoothstep(0.45, 0.58, t) * (1 - smoothstep(0.76, 0.86, t)) * smoothstep(0.3, 0.4, m) * (1 - smoothstep(0.5, 0.62, m));
-  out.badlands = smoothstep(0.08, 0.16, m) * (1 - smoothstep(0.2, 0.4, m)) * smoothstep(0.35, 0.7, rugged) * smoothstep(0.45, 0.6, t);
-  out.saltflat = (1 - smoothstep(0.05, 0.2, m)) * flat * (1 - smoothstep(0.02, 0.08, e)) * smoothstep(0.4, 0.6, t);
+  out.chaparral = (v = smoothstep(0.45, 0.58, t)) && (v *= 1 - smoothstep(0.76, 0.86, t)) && (v *= smoothstep(0.3, 0.4, m)) && (v *= 1 - smoothstep(0.5, 0.62, m));
+  out.badlands = (v = smoothstep(0.08, 0.16, m)) && (v *= 1 - smoothstep(0.2, 0.4, m)) && (v *= smoothstep(0.35, 0.7, rugged)) && (v *= smoothstep(0.45, 0.6, t));
+  out.saltflat = (v = 1 - smoothstep(0.05, 0.2, m)) && (v *= flat) && (v *= 1 - smoothstep(0.02, 0.08, e)) && (v *= smoothstep(0.4, 0.6, t));
   out.stony = smoothstep(0.25, 0.6, rugged);
   // the wet forests: temperate rainforest on a wet cool-to-mild coast below the treeline, cloud forest on warm wet mountainsides, bamboo in warm lowland woods,
   // and autumn colour in the cooler half of the mixed woods (these three are patchy: the painter breaks them up with noise)
   const below = 1 - high;
-  out.rainforest = smoothstep(0.28, 0.4, t) * (1 - smoothstep(0.52, 0.62, t)) * smoothstep(0.85, 0.97, m) * (1 - smoothstep(12, 36, site.ld)) * below;
-  out.cloud = smoothstep(0.5, 0.6, t) * smoothstep(0.7, 0.9, m) * smoothstep(0.1, 0.14, e) * (1 - smoothstep(0.2, 0.3, e));
-  out.bamboo = smoothstep(0.45, 0.55, t) * (1 - smoothstep(0.72, 0.82, t)) * smoothstep(0.6, 0.85, m) * (1 - smoothstep(0.1, 0.17, e));
-  out.autumn = smoothstep(0.3, 0.38, t) * (1 - smoothstep(0.5, 0.58, t)) * smoothstep(0.5, 0.75, m) * below;
+  out.rainforest = (v = smoothstep(0.28, 0.4, t)) && (v *= 1 - smoothstep(0.52, 0.62, t)) && (v *= smoothstep(0.85, 0.97, m)) && (v *= 1 - smoothstep(12, 36, site.ld)) && (v *= below);
+  out.cloud = (v = smoothstep(0.5, 0.6, t)) && (v *= smoothstep(0.7, 0.9, m)) && (v *= smoothstep(0.1, 0.14, e)) && (v *= 1 - smoothstep(0.2, 0.3, e));
+  out.bamboo = (v = smoothstep(0.45, 0.55, t)) && (v *= 1 - smoothstep(0.72, 0.82, t)) && (v *= smoothstep(0.6, 0.85, m)) && (v *= 1 - smoothstep(0.1, 0.17, e));
+  out.autumn = (v = smoothstep(0.3, 0.38, t)) && (v *= 1 - smoothstep(0.5, 0.58, t)) && (v *= smoothstep(0.5, 0.75, m)) && (v *= below);
   // standing water leaves no room for woodland colour
   const dryLand = 1 - out.marsh;
   out.rainforest *= dryLand; out.cloud *= dryLand; out.bamboo *= dryLand; out.autumn *= dryLand;

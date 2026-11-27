@@ -117,7 +117,10 @@ export class Simplex2D {
 }
 
 export function smoothstep(e0: number, e1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  // (called many times for every pixel painted: the early returns outside the edges are a good part of a brush patch's time, docs/BRUSH-SPEED.md)
+  const t = (x - e0) / (e1 - e0);
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
   return t * t * (3 - 2 * t);
 }
 

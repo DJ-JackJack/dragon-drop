@@ -74,57 +74,97 @@ const halfWidth = (size: number, drop: number) => 0.5 * (1.8 + 2.4 * size) * (1.
  * Distance, edge, size and drop for every pixel within reach of a river, in and around `tile`. Null when no river comes near. Heights below `sea` count
  * as the sea's (a river reaching the sea doesn't "fall" down the seabed: that made white water at river mouths).
  */
+/**
+ * What doesn't change from one tile to the next for a river (until the rivers are worked out again: a new path): the distance along it at each point,
+ * the points about half a pixel apart that its segments run between, and the box round it.
+ */
+interface RiverGeom { s: Float32Array; keep: Int32Array; x0: number; y0: number; x1: number; y1: number }
+const GEOM = new WeakMap<RiverPath, RiverGeom>();
+function riverGeom(rv: RiverPath): RiverGeom {
+  let g = GEOM.get(rv);
+  if (g) return g;
+  const p = rv.pts, n = p.length >> 1, s = new Float32Array(n);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < n; k++) {
+    const x = p[2 * k], y = p[2 * k + 1];
+    if (k) { const dx = x - p[2 * k - 2], dy = y - p[2 * k - 1]; s[k] = s[k - 1] + Math.sqrt(dx * dx + dy * dy); }
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  // work on points about half a pixel apart (the path is much denser than a pixel)
+  const keep: number[] = [0];
+  for (let k = 1; k < n - 1; k++) if (s[k] - s[keep[keep.length - 1]] >= 0.5) keep.push(k);
+  keep.push(n - 1);
+  g = { s, keep: Int32Array.from(keep), x0, y0, x1, y1 };
+  GEOM.set(rv, g);
+  return g;
+}
+
 export function rasterRivers(rivers: RiverPath[], hf: HeightField, kmPerPx: number, tile: Rect, sea = -Infinity): RiverRaster | null {
   const r = clipRect(expandRect(tile, 2), hf.w, hf.h);
   if (!r || !rivers.length) return null;
-  // a river matters if some part of it is within reach of the tile
+  // a river matters if some point of it is within this margin of the tile
   const m = RIVER_REACH + 3, wx0 = tile.x - m, wy0 = tile.y - m, wx1 = tile.x + tile.w + m, wy1 = tile.y + tile.h + m;
+  // and its segments that can reach the tile's pixels (2 px round it) are those with a point within this one: a segment's reach is at most
+  // halfWidth + RIVER_REACH (20.35 px) from its line, and its ends are half a pixel apart
+  const m2 = RIVER_REACH + 6, vx0 = tile.x - m2, vy0 = tile.y - m2, vx1 = tile.x + tile.w + m2, vy1 = tile.y + tile.h + m2;
   let edge: Float32Array | null = null, size: Float32Array | null = null, drop: Float32Array | null = null, along: Float32Array | null = null;
 
   for (const rv of rivers) {
     const p = rv.pts, n = p.length >> 1;
     if (n < 2) continue;
-    let touches = false;
-    for (let k = 0; k < n && !touches; k++) { const x = p[2 * k], y = p[2 * k + 1]; if (x >= wx0 && x <= wx1 && y >= wy0 && y <= wy1) touches = true; }
+    const g = riverGeom(rv);
+    if (g.x1 < wx0 || g.x0 > wx1 || g.y1 < wy0 || g.y0 > wy1) continue;
+    // the part of the river near the tile (only that part is worked on: a long river crosses many tiles)
+    let touches = false, kLo = -1, kHi = -1;
+    for (let k = 0; k < n; k++) {
+      const x = p[2 * k], y = p[2 * k + 1];
+      if (x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1) { if (kLo < 0) kLo = k; kHi = k; if (!touches && x >= wx0 && x <= wx1 && y >= wy0 && y <= wy1) touches = true; }
+    }
     if (!touches) continue;
     if (!edge) { edge = new Float32Array(r.w * r.h).fill(NO_RIVER); size = new Float32Array(r.w * r.h); drop = new Float32Array(r.w * r.h); along = new Float32Array(r.w * r.h); }
+    const { s, keep } = g;
+    // out to the segment ends round that part
+    let qLo = 0, qHi = keep.length - 1;
+    while (qLo + 1 < keep.length && keep[qLo + 1] <= kLo) qLo++;
+    while (qHi - 1 >= 0 && keep[qHi - 1] >= kHi) qHi--;
+    kLo = keep[qLo]; kHi = keep[qHi];
 
-    // height and distance along the river at each point, then how steeply it drops over a few px either side of each point
-    const z = new Float32Array(n), s = new Float32Array(n), dr = new Float32Array(n);
-    for (let k = 0; k < n; k++) {
-      z[k] = Math.max(sea, hf.sample(p[2 * k], p[2 * k + 1]));
-      if (k) s[k] = s[k - 1] + Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]);
-    }
-    // (over 6 px either side: a carved channel's small steps don't read as falls)
-    let a = 0, b = 0;
-    for (let k = 0; k < n; k++) {
+    // heights 6 px along the river either side of that part, then how steeply it drops at each point (over 6 px either side: a carved channel's small
+    // steps don't read as falls)
+    let a0 = kLo, b0 = kHi;
+    while (a0 > 0 && s[kLo] - s[a0] <= 6) a0--;
+    while (b0 < n - 1 && s[b0] - s[kHi] < 6) b0++;
+    const z = new Float32Array(b0 - a0 + 1), dr = new Float32Array(kHi - kLo + 1);
+    for (let k = a0; k <= b0; k++) z[k - a0] = Math.max(sea, hf.sample(p[2 * k], p[2 * k + 1]));
+    let a = a0, b = kLo;
+    for (let k = kLo; k <= kHi; k++) {
       while (s[k] - s[a] > 6) a++;
       while (b < n - 1 && s[b] - s[k] < 6) b++;
       const run = (s[b] - s[a]) * kmPerPx;
-      dr[k] = run > 1e-6 ? Math.max(0, (z[a] - z[b]) / run) : 0;
+      dr[k - kLo] = run > 1e-6 ? Math.max(0, (z[a - a0] - z[b - a0]) / run) : 0;
     }
-    // work on points about half a pixel apart (the path is much denser than a pixel)
-    const keep: number[] = [0];
-    for (let k = 1; k < n - 1; k++) if (s[k] - s[keep[keep.length - 1]] >= 0.5) keep.push(k);
-    keep.push(n - 1);
 
-    for (let q = 0; q + 1 < keep.length; q++) {
+    for (let q = qLo; q < qHi; q++) {
       const i0 = keep[q], i1 = keep[q + 1];
       const ax = p[2 * i0], ay = p[2 * i0 + 1], bx = p[2 * i1], by = p[2 * i1 + 1];
-      const sz = (sizeOf(rv.widths[i0]) + sizeOf(rv.widths[i1])) / 2, dd = (dr[i0] + dr[i1]) / 2;
+      const sz = (sizeOf(rv.widths[i0]) + sizeOf(rv.widths[i1])) / 2, dd = (dr[i0 - kLo] + dr[i1 - kLo]) / 2;
       const hw = halfWidth(sz, dd), reach = hw + RIVER_REACH;
       const x0 = Math.max(r.x, Math.floor(Math.min(ax, bx) - reach)), x1 = Math.min(r.x + r.w - 1, Math.ceil(Math.max(ax, bx) + reach));
       const y0 = Math.max(r.y, Math.floor(Math.min(ay, by) - reach)), y1 = Math.min(r.y + r.h - 1, Math.ceil(Math.max(ay, by) + reach));
-      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy || 1e-9;
+      if (x0 > x1 || y0 > y1) continue;
+      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy || 1e-9, s0 = s[i0], ds = s[i1] - s[i0];
       for (let y = y0; y <= y1; y++) {
-        const row = (y - r.y) * r.w - r.x;
+        const row = (y - r.y) * r.w - r.x, py = y + 0.5;
         for (let x = x0; x <= x1; x++) {
-          const px = x + 0.5, py = y + 0.5;
+          const px = x + 0.5;
           let t = ((px - ax) * dx + (py - ay) * dy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const e = Math.hypot(ax + t * dx - px, ay + t * dy - py) - hw;
+          const ex = ax + t * dx - px, ey = ay + t * dy - py, d2 = ex * ex + ey * ey;
           const i = row + x;
-          if (e < edge![i]) { edge![i] = e; size![i] = sz; drop![i] = dd; along![i] = s[i0] + t * (s[i1] - s[i0]); }
+          // (only a pixel this segment brings closer needs the square root: most already have a nearer one)
+          const lim = edge![i] + hw;
+          if (lim <= 0 || d2 >= lim * lim) continue;
+          edge![i] = Math.sqrt(d2) - hw; size![i] = sz; drop![i] = dd; along![i] = s0 + t * ds;
         }
       }
     }

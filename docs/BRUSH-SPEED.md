@@ -59,7 +59,27 @@ lands after a newer Ground stroke keeps the newer planes (`groundApplied`). The 
 3. **Send the dabs of one mouse move together.** One `sculpt` command with all its dabs (or the server merging the patches of one message) gives one
    patch per mouse move instead of up to 20: fewer messages and fewer, larger rects for step 1 to merge.
 
-### Stage 2: paint a patch faster
+### Stage 2: paint a patch faster *(steps 4 done 2026-11-26; 5 and 6 not needed yet)*
+
+The profile (`node --cpu-prof`, Node's own TypeScript so the lines stay) of brush-sized patches on a 2048 map: the river raster 29%, `smoothstep` 24%
+(called about sixty times a pixel from `biomeWeights` alone and not inlined there), the painter's own loop 13%, the grounds' weights and textures 13%, the
+blurs worked out for each patch 6%. Three changes, **each giving exactly the same picture** (a whole map and 24 patches rendered before and after,
+compared byte for byte):
+
+- `rasterRivers` works only on the part of each river near the patch (heights sampled there and 6 px either side, not along the whole river), keeps each
+  river's lengths, segments and box between patches (`riverGeom`, by path), and takes a square root only when a pixel gets closer (squared distances
+  first; no `Math.hypot`): 3.5 times faster, identical output.
+- `smoothstep` returns early outside its edges.
+- `biomeWeights` works out the smoothsteps it uses more than once once, and stops each product at its first zero factor (same factors, same order).
+
+| | After stage 1 | After stage 2 |
+|---|---|---|
+| A patch at radius 20 / 60 / 150 | 22 / 89 / 301 ms | **16 / 45 / 186 ms** |
+| A 16-dab stroke at radius 60, joined | 138 ms | **92 ms** |
+| A whole-map repaint | 4,530 ms | **3,340 ms** |
+
+A radius-60 stroke now keeps within about a tenth of a second of the mouse. What is left of a patch's time is spread thinly over the painter's long
+per-pixel loop and the grounds' textures; the blur's margin (3 sigma, 87 px on a 2048 map) could only shrink by changing the picture.
 
 4. **Find where a patch's paint goes** (`node --cpu-prof` on `PaintEngine.tile`). Suspects: each tile works out the blurred layers again (`paintPrep`:
    the climate's blurs don't change while sculpting, so they can be kept between dabs), the rivers rasterised for every tile (`rasterRivers`), and the
