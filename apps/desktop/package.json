@@ -14,7 +14,7 @@
     "dist:dir": "node scripts/prepare.mjs && electron-builder --win --dir --x64 --publish never"
   },
   "devDependencies": {
-    "electron": "45.3.2",
+    "electron": "45.4.1",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2"
   },

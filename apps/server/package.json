@@ -8,7 +8,7 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "1.8.0",
+    "@anthropic-ai/sdk": "1.11.0",
     "@mapmaker/core": "workspace:*",
     "@mapmaker/tools": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
