@@ -33,10 +33,15 @@ The asset packs everywhere (floors, walls, doors, windows, paths, roofs, light s
 - [ ] The person: update the installed Dragon Drop and check it reads 0.1.13; then try round 3's two lines there (the Object tool's **Layers…**, and **Esc** / **Close it** for the player screen).
 - [ ] **The playtest form** (`docs/playtest/Dragon Drop 0.1.13 Playtest.pdf`, made by `docs/playtest/make_playtest_form.py`: 15 features, each with exact keys and buttons, easy to find / did it work / useful, and comments) to the two playtesters, with the install steps for a new one (`docs/playtest/INSTALL.md`); read their answers back when they return it.
 
-## Next release (0.1.15)
+## Next release (0.1.16)
 
-**2026-11-26, the person, after 0.1.14: "Two things that need fixed asap"**, then a plan for faster brushes. The other two 0.1.13 playtest reports, and what is still open under 0.1.14 below, come with this release too.
+The speed plan below (`docs/BRUSH-SPEED.md`), the other two 0.1.13 playtest reports, and what is still open under 0.1.14.
 
+## Release 0.1.15 (2026-11-26)
+
+**The person, after 0.1.14: "Two things that need fixed asap"**, then a plan for faster brushes; the two fixes went out at once ("Release them now").
+
+- [ ] **The release of 0.1.15**: release notes (the two fixes), `selling-prep` fast-forwarded onto `main` and pushed, a green build, the tag `v0.1.15`, the notes on the Release with the installer's SHA-256 hash.
 - [x] **Brush sizes you can dial in** ("The brush size control sliders are finnicky and hard to actually dial in ... possibly an auxiliary option like a manual input field next to the slider") *(2026-11-26: every brush size is one control (`BrushSize.tsx`): a slider on a log scale, so 1 to 10 px has as much of its travel as 30 to 300; a box beside it to type the exact size (Enter or leaving the box sets it, Esc puts it back, the arrow keys step it); the arrow keys on the slider step by one (Shift: a tenth); `[` and `]` now also size the Ground and Realm brushes. The sculpt brush goes to 300 px like its keys did (the slider stopped at 150). Used for the world map's sculpt, Ground and Realm brushes, the battlemap's floor and scatter brushes, and the settlement's ground brush and land size)*
 - [x] **The Ground brush changes the shoreline bands too** ("if you make a desert where a grassland used to be, the shoreline is still grassy") *(2026-11-26: cause found: the river painter pulls a bank band towards fixed greens (plants along the water, a desert's oasis, the floodplain) whatever the ground is; where ground is painted by hand, those greens now fade by how much is painted (`RiverPixel.painted`), leaving a damp version of the painted ground with its shoreline. Lakes' shores and the waterside grounds (marsh, reeds) already followed the paint. A before/after on a generated map, and a test)*
 - [ ] **Faster painting and sculpting** ("often I'm waiting several seconds for the brush to catch up with me"): measured and planned in `docs/BRUSH-SPEED.md` (`pnpm bench:brush`). On a 2048 map a dab's patch takes 21 to 304 ms to paint by brush size and every pixel of a stroke is painted 3 to 7 times, so the painting queues up; a Ground stroke sets off the whole climate and rivers (2.3 s) and a 42 MB frame though it changes neither. In order:
