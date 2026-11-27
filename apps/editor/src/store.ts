@@ -153,6 +153,8 @@ class Store {
     return () => { this.measureListeners.delete(cb); };
   }
   private derivedListeners = new Set<(frame: DerivedFrame) => void>();
+  /** A box of the ground painted by hand (after a Ground stroke: the rest of the climate layers are unchanged). */
+  private groundListeners = new Set<(rect: Rect, planes: Uint8Array) => void>();
   /** A climate frame that arrived while nobody was listening (the map view mounts a moment after the first frames). */
   private pendingDerived: DerivedFrame | null = null;
   private retry = 0;
@@ -172,6 +174,11 @@ class Store {
    * New climate frames, to be handed to the paint worker (the first listener takes the buffer: it is transferred, not copied). A frame that
    * arrived before anyone listened is delivered as soon as someone does.
    */
+  onGround(cb: (rect: Rect, planes: Uint8Array) => void) {
+    this.groundListeners.add(cb);
+    return () => { this.groundListeners.delete(cb); };
+  }
+
   onDerived(cb: (frame: DerivedFrame) => void) {
     this.derivedListeners.add(cb);
     const waiting = this.pendingDerived;
@@ -353,7 +360,11 @@ class Store {
       else { this.pendingDerived = null; for (const cb of this.derivedListeners) cb(frame); }
       return;
     }
-    const { header, payload } = decodeFrame(buf);
+    const { header, payload, bytes } = decodeFrame(buf);
+    if (header.t === "ground") {
+      for (const cb of this.groundListeners) cb(header.rect, bytes);
+      return;
+    }
     if (header.t === "snapshot") {
       this.heights = new HeightField(header.rect.w, header.rect.h, payload);
       this.patched(null, "snapshot");

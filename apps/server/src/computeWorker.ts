@@ -17,6 +17,7 @@ parentPort!.on("message", ({ id, job }: { id: number; job: Job }) => {
       : job.op === "reference" ? [(value as PreparedReference).jpeg.buffer as ArrayBuffer]
       : job.op === "thumb" ? [(value as Thumbnail).png.buffer as ArrayBuffer]
       : job.op === "shrink" ? [] // (its pixels may be the decoded picture's own, inside a bigger buffer: copied)
+      : job.op === "ground_planes" ? ((value as { planes: { code: Uint8Array; weight: Uint8Array } | null }).planes ? [(value as { planes: { code: Uint8Array; weight: Uint8Array } }).planes.code.buffer as ArrayBuffer, (value as { planes: { code: Uint8Array; weight: Uint8Array } }).planes.weight.buffer as ArrayBuffer] : [])
       : job.op === "carve" || job.op === "drain" ? [(value as CarveResult).heights.buffer as ArrayBuffer]
       : job.op === "generate" ? ("data" in (value as object) ? [(value as unknown as { data: Float32Array }).data.buffer as ArrayBuffer] : [])
       : value instanceof Uint8ClampedArray || value instanceof Float32Array ? [value.buffer as ArrayBuffer]

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   type Features, type LabelKind, type MapLabel, type MapMeta, type PaintView, type PlaceType, type ProjectInfo, type Rect,
-  type SculptMode, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
+  type SculptMode, type SculptParams, type SelectableShape, type Selection, gridCellPx, moveLabel, newFeatureId, pathMidpoint, planRegional, selectionShape, simplifyPath,
   type RiverSize, type RiverSource,
   distUnit, fmtHeight, fromKm,
 } from "@mapmaker/core";
@@ -680,6 +680,11 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     const v = paintView();
     if (v) clientRef.current?.derived(frame, v);
   }), [requestDraw, paintView]);
+  // after a Ground stroke only the painted ground changed: that box goes to the paint worker
+  useEffect(() => store.onGround((r, planes) => {
+    const v = paintView();
+    if (v) clientRef.current?.ground(r, planes, v);
+  }), [paintView]);
   useEffect(() => store.onPatch((r, why) => {
     const c = clientRef.current, hf = store.heights, v = paintView();
     if (why === "snapshot") { buildRivers(); openMap(); return; }
@@ -791,15 +796,18 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  function dab(mx: number, my: number, target?: number) {
+  /** One dab of the sculpt brush at (mx, my), or none when the tool isn't a brush. */
+  function dabParams(mx: number, my: number, target?: number): SculptParams | null {
     const { tool: t, brush: b } = optsRef.current;
-    if (!isBrush(t)) return;
+    if (!isBrush(t)) return null;
     const mode: SculptMode = t;
     const amount = t === "land" || t === "water" ? 40 + b.strength * 200 : 15 + b.strength * 400; // metres per dab
     const reach = t === "smooth" && (b.reach ?? 0) >= 2 ? { reachPx: b.reach } : {}; // (a wide reach softens steps; the coast stays where it is)
-    store.send({ t: "cmd", cmd: { op: "sculpt", params: {
-      mode, shape: { type: "circle", x: mx, y: my, r: b.radius }, amountM: amount, strength: b.strength, falloff: 0.6, targetM: target, ...reach,
-    } } });
+    return { mode, shape: { type: "circle", x: mx, y: my, r: b.radius }, amountM: amount, strength: b.strength, falloff: 0.6, targetM: target, ...reach };
+  }
+  function dab(mx: number, my: number, target?: number) {
+    const params = dabParams(mx, my, target);
+    if (params) store.send({ t: "cmd", cmd: { op: "sculpt", params } });
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -1009,10 +1017,15 @@ export function MapView({ meta, tool, brush, showGrid, onShowGrid, hillshade, sm
       const spacing = Math.max(0.75, r * 0.3);
       if (dist >= spacing) {
         const steps = Math.min(20, Math.floor(dist / spacing));
+        // (the dabs of one mouse move go as one message: one patch back from the server instead of up to 20)
+        const dabs: SculptParams[] = [];
         for (let i = 1; i <= steps; i++) {
           const t = i / steps;
-          dab(d.lastX + (m.x - d.lastX) * t, d.lastY + (m.y - d.lastY) * t, d.target);
+          const p = dabParams(d.lastX + (m.x - d.lastX) * t, d.lastY + (m.y - d.lastY) * t, d.target);
+          if (p) dabs.push(p);
         }
+        if (dabs.length === 1) store.send({ t: "cmd", cmd: { op: "sculpt", params: dabs[0] } });
+        else if (dabs.length > 1) store.send({ t: "cmd", cmd: { op: "sculpt_dabs", dabs } });
         d.lastX = m.x;
         d.lastY = m.y;
       }

@@ -4,8 +4,9 @@
 // numbers from 2026-11-26 and the plan they led to. (A 2048 map needs a few GB: NODE_OPTIONS=--max-old-space-size=8192 if it runs out.)
 import {
   MapSession, PaintEngine, buildClimateNoise, buildNoiseCache, computeDerived, createDoc, decodeRealmCells, derivedChange, encodeRealmCells, generateTerrain,
-  groundCode, groundGridOf, groundPaintPlanes, packDerived, paintRealmCells, renderPainted,
+  groundCode, groundGridOf, groundPaintPlanes, packDerived, paintRealmCells, renderPainted, cropGroundPlanes, groundPlanesBox,
 } from "../packages/core/src/index.ts";
+import { type Waiting, addRect } from "../apps/editor/src/rectQueue.ts";
 
 const N = Number(process.argv[2] ?? 2048);
 const med = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
@@ -59,6 +60,18 @@ for (const r of [20, 60, 150]) {
   const pad = 4, rect = { x: Math.round(N / 2 - r - pad), y: Math.round(N / 3 - r - pad), w: 2 * (r + pad), h: 2 * (r + pad) };
   out[`paint_patch_r${r}`] = time(() => eng.tile(rect, view), 5);
 }
+// stage 1: a stroke of 16 dabs at radius 60, 0.3 r apart, painted dab by dab (before) and as the paint worker now paints it (waiting patches joined)
+const dabRect = (x: number, y: number, r: number) => ({ x: Math.round(x - r - 1), y: Math.round(y - r - 1), w: 2 * r + 2, h: 2 * r + 2 });
+const stroke = Array.from({ length: 16 }, (_, i) => dabRect(N / 2 - 150 + i * 18, N / 3, 60));
+out.stroke_r60_dab_by_dab = time(() => { for (const r of stroke) eng.tile(r, view); }, 3);
+out.stroke_r60_joined = time(() => { let w: Waiting[] = []; for (const r of stroke) w = addRect(w, r); for (const x of w) eng.tile(x.r, view); }, 3);
+// stage 1: a Ground stroke now works out only its planes and the box that changed, and sends that box
+const before = groundPaintPlanes(doc);
+paintRealmCells(cells, g, { n: groundCode("moor"), circle: { x: N / 3, y: (2 * N) / 3, r: 60 } });
+doc.features = { places: [], labels: [], groundCells: encodeRealmCells(g, cells) };
+let box: ReturnType<typeof groundPlanesBox> = null, after: ReturnType<typeof groundPaintPlanes> = null;
+out.ground_stroke_now = time(() => { after = groundPaintPlanes(doc); box = groundPlanesBox(before, after, N, N); }, 3);
+out.ground_frame_KB = box ? Math.round(cropGroundPlanes(after, N, box).byteLength / 1024) : 0;
 const px = new Uint8ClampedArray(N * N * 4);
 out.whole_map_repaint = time(() => renderPainted(doc, d1, noise, null, px), 1);
 console.log(JSON.stringify(out, null, 1));

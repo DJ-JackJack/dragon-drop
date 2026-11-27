@@ -33,7 +33,22 @@ whatever changed, which is large when the rivers move.
 
 ## The plan, in order
 
-### Stage 1: never fall behind (small changes, the biggest gain)
+### Stage 1: never fall behind (small changes, the biggest gain) *(done 2026-11-26)*
+
+Measured the same way (`pnpm bench:brush`, 2048 map):
+
+| | Before | After |
+|---|---|---|
+| A stroke of 16 dabs at radius 60 (0.3 r apart), painted | 865 ms, dab by dab | **138 ms**, the waiting patches joined |
+| A Ground stroke: work on the server | 2,300 ms (the whole climate and rivers) | **86 ms** (its planes and the box that changed) |
+| A Ground stroke: sent to the editor | 42 MB (every layer of the whole map) | **33 KB** (the two planes, in the box that changed) |
+
+How: the paint worker keeps waiting patches (`rectQueue.ts`: a new one joins a box only while the box stays close to what its patches cover, so a
+straight stroke is one box and a diagonal one a chain of small ones) and paints them with `setTimeout(0)`, after the messages waiting for it; the hub
+keeps the painted ground out of the climate's inputs (`regionsKey`), works out `groundPaintPlanes` and the changed box (`groundPlanesBox`) on the painter
+thread (compute job `ground_planes`), puts them in its climate layers and sends a `ground` frame (`cropGroundPlanes`; the editor's
+`PaintEngine.setGroundRect`), and a request for the layers (get_selection, the ruler) waits for one in progress (`groundJob`); a whole recompute that
+lands after a newer Ground stroke keeps the newer planes (`groundApplied`). The sculpt brush sends a mouse move's dabs as one `sculpt_dabs` command.
 
 1. **The paint worker merges patches.** On a patch: take the heights at once (cheap), add the rect to what is waiting, and paint what is waiting once the
    worker's queue is empty (a `setTimeout(0)` after the last message), as one rect or a few. A stroke then paints each pixel about once per frame

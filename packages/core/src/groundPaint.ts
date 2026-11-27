@@ -135,3 +135,37 @@ export function applyPaintedGround(code: number, k: number, bw: BiomeWeights, jd
   else if (id === "glacier") { w.glacier += k; w.tundra += k; }
   else w[id] += k;
 }
+
+/** The planes of the painted ground (`groundPaintPlanes`), or none. */
+export type GroundPlanes = { code: Uint8Array; weight: Uint8Array } | null;
+
+/**
+ * The box (map px) where two paintings' planes differ, code or weight, or null when they are the same; a missing painting counts as nothing painted. A
+ * Ground stroke sends the editors only this part (docs/BRUSH-SPEED.md, stage 1).
+ */
+export function groundPlanesBox(a: GroundPlanes | undefined, b: GroundPlanes | undefined, W: number, H: number): { x: number; y: number; w: number; h: number } | null {
+  const ac = a?.code, aw = a?.weight, bc = b?.code, bw = b?.weight;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) {
+    const o = y * W;
+    let first = -1, last = -1;
+    for (let x = 0; x < W; x++) {
+      const i = o + x;
+      if ((ac ? ac[i] : 0) !== (bc ? bc[i] : 0) || (aw ? aw[i] : 0) !== (bw ? bw[i] : 0)) { if (first < 0) first = x; last = x; }
+    }
+    if (first >= 0) { if (first < x0) x0 = first; if (last > x1) x1 = last; if (y < y0) y0 = y; y1 = y; }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/** The part `rect` of the planes, code then weight (rect.w * rect.h bytes each), for the editors' `ground` frame. */
+export function cropGroundPlanes(p: GroundPlanes, W: number, rect: { x: number; y: number; w: number; h: number }): Uint8Array {
+  const n = rect.w * rect.h, out = new Uint8Array(2 * n);
+  if (!p) return out;
+  for (let y = 0; y < rect.h; y++) {
+    const from = (rect.y + y) * W + rect.x;
+    out.set(p.code.subarray(from, from + rect.w), y * rect.w);
+    out.set(p.weight.subarray(from, from + rect.w), n + y * rect.w);
+  }
+  return out;
+}

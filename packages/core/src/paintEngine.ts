@@ -67,6 +67,24 @@ export class PaintEngine {
     return prev ? derivedChange(prev, d) : "all";
   }
 
+  /**
+   * A box of the ground painted by hand (a `ground` frame: code then weight, rect.w * rect.h bytes each) into the climate layers held here, after a
+   * Ground stroke. False when there are no layers yet (the next whole frame brings it).
+   */
+  setGroundRect(rect: Rect, planes: Uint8Array): boolean {
+    const d = this.derived;
+    if (!d) return false;
+    const n = this.W * this.H, k = rect.w * rect.h;
+    if (!d.ground || !d.groundW) { d.ground = new Uint8Array(n); d.groundW = new Uint8Array(n); }
+    for (let y = 0; y < rect.h; y++) {
+      const to = (rect.y + y) * this.W + rect.x;
+      d.ground.set(planes.subarray(y * rect.w, (y + 1) * rect.w), to);
+      d.groundW.set(planes.subarray(k + y * rect.w, k + (y + 1) * rect.w), to);
+    }
+    this.ink = null;
+    return true;
+  }
+
   patch(rect: Rect, data: Float32Array) {
     this.heights.pasteRect(rect, data);
     this.ink = null;

@@ -8,6 +8,7 @@ import {
   type Features, type SpriteData, type TileData, HeightField, boxResize, type ShrinkJob, type ShrunkPicture, shrinkPicture, pictureKindHint, buildClimateNoise, buildNoiseCache, computeDerived, regionalHeights, renderBattle, renderBattleRoofPictures, renderPainted, resolveRiverSources,
   type CarveOptions, type CarveResult, type RiverPath, carveValleys, type DrainLakeResult, drainLakeAt,
   type GenerateRequest, type GeneratedLevel, type GeneratedVillage, runGenerator, inkSymbols, renderInk,
+  type GroundPlanes, type Rect, groundPaintPlanes, groundPlanesBox,
 } from "@mapmaker/core";
 import { type ReadResult, type ReaderOptions, type RGBAImage, type StreetReadOptions, type WaterReadOptions, readBuildings, readStreets, readWater, renderCity, sampleGroundColours, type CompareOptions, type CompareResult, compareHeatMap, compareToTrace } from "@mapmaker/core";
 
@@ -24,6 +25,8 @@ import { NoiseStore } from "./noiseStore.ts";
 export interface MapCompute {
   /** Climate, coast distances, lakes and rivers for the doc as it is now. */
   derive(doc: MapDoc, seq: number): Promise<Derived>;
+  /** Only the ground painted by hand (core groundPaintPlanes), and the box where it differs from `prev`: all a Ground stroke changes. */
+  groundPlanes(doc: MapDoc, prev: GroundPlanes): Promise<{ planes: GroundPlanes; box: Rect | null }>;
   /** Painted Relief render (RGBA) of the whole map. */
   paint(doc: MapDoc, d: Derived): Promise<Uint8ClampedArray>;
   /** Battlemap image (RGBA, battleImageSize(spec) pixels). */
@@ -95,6 +98,7 @@ export function thumbnailOf(bytes: Uint8Array, max: number): Thumbnail | null {
 // ------------------------------------------------------------------ shared job runner
 export type Job =
   | { op: "derive"; W: number; H: number; heights: Float32Array; meta: MapMeta; regions?: ClimateRegion[]; groundCells?: RealmGrid; baseClimate?: BaseClimate; inflows?: RiverInflow[]; seq: number }
+  | { op: "ground_planes"; meta: MapMeta; groundCells?: RealmGrid; prev: GroundPlanes }
   | { op: "regional"; W: number; H: number; heights: Float32Array; meta: MapMeta; plan: RegionalPlan; seed: number }
   | { op: "paint"; W: number; H: number; heights: Float32Array; meta: MapMeta; derived: Derived }
   | ({ op: "battle"; W: number; H: number; heights: Float32Array; meta: MapMeta; features: Features } & BattleRenderOpts)
@@ -149,8 +153,12 @@ export class JobRunner {
     return this.climate!;
   }
 
-  run(job: Job): Derived | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | ShrunkPicture | PictureKindHint | GeneratedLevel | GeneratedVillage | { error: string } | null {
+  run(job: Job): Derived | { planes: GroundPlanes; box: Rect | null } | Uint8ClampedArray | Float32Array | ReadResult | ReadAnswer | RGBAImage | CarveResult | (DrainLakeResult & { heights: Float32Array }) | PreparedReference | Thumbnail | ShrunkPicture | PictureKindHint | GeneratedLevel | GeneratedVillage | { error: string } | null {
     if (job.op === "decode") return decodeImage(job.bytes);
+    if (job.op === "ground_planes") {
+      const planes = groundPaintPlanes({ meta: job.meta, features: { places: [], labels: [], ...(job.groundCells && { groundCells: job.groundCells }) } });
+      return { planes, box: groundPlanesBox(job.prev, planes, job.meta.width, job.meta.height) };
+    }
     if (job.op === "thumb") return thumbnailOf(job.bytes, job.max);
     if (job.op === "shrink") { const img = decodeImage(job.bytes); return img ? shrinkPicture(img, job.job) : null; }
     if (job.op === "look") { const img = decodeImage(job.bytes); return img ? pictureKindHint(img) : null; }
@@ -219,6 +227,9 @@ export class InlineCompute implements MapCompute {
   private runner: JobRunner;
   constructor(storage?: NoiseStorage) {
     this.runner = new JobRunner(storage);
+  }
+  async groundPlanes(doc: MapDoc, prev: GroundPlanes) {
+    return this.runner.run({ op: "ground_planes", meta: structuredClone(doc.meta), groundCells: groundOf(doc), prev }) as { planes: GroundPlanes; box: Rect | null };
   }
   async derive(doc: MapDoc, seq: number) {
     return this.runner.run({ op: "derive", ...snapshot(doc), regions: regionsOf(doc), groundCells: groundOf(doc), baseClimate: doc.baseClimate, inflows: inflowsOf(doc), seq }) as Derived;
@@ -341,6 +352,12 @@ export class WorkerCompute implements MapCompute {
     if (this.deriver.dead) return this.inline.derive(doc, seq);
     const s = snapshot(doc);
     return this.deriver.call<Derived>({ op: "derive", ...s, regions: regionsOf(doc), groundCells: groundOf(doc), baseClimate: doc.baseClimate, inflows: inflowsOf(doc), seq }, [s.heights.buffer as ArrayBuffer]);
+  }
+
+  /** (on the painter thread: the deriver may be busy with the whole climate for a minute's edits) */
+  groundPlanes(doc: MapDoc, prev: GroundPlanes): Promise<{ planes: GroundPlanes; box: Rect | null }> {
+    if (this.painter.dead) return this.inline.groundPlanes(doc, prev);
+    return this.painter.call({ op: "ground_planes", meta: structuredClone(doc.meta), groundCells: groundOf(doc), prev });
   }
 
   regional(doc: MapDoc, plan: RegionalPlan, seed: number): Promise<Float32Array> {

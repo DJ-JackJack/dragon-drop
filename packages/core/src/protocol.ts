@@ -289,7 +289,8 @@ export type ServerMsg =
   | { t: "error"; message: string };
 
 export interface FrameHeader {
-  t: "snapshot" | "patch" | "derived";
+  /** ground: the painted ground's two planes (code, then weight) in `rect` only, after a Ground stroke (the rest of the climate is unchanged). */
+  t: "snapshot" | "patch" | "derived" | "ground";
   projectId: string;
   rect: Rect;
   seq: number;
@@ -320,7 +321,7 @@ export function decodeFrame(buf: ArrayBuffer): { header: FrameHeader; payload: F
   const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, len))) as FrameHeader;
   const off = (4 + len + 3) & ~3;
   const body = buf.slice(off);
-  return { header, payload: header.t === "derived" ? new Float32Array(0) : new Float32Array(body), bytes: new Uint8Array(body) };
+  return { header, payload: header.t === "derived" || header.t === "ground" ? new Float32Array(0) : new Float32Array(body), bytes: new Uint8Array(body) };
 }
 
 /** Pack derived layers for the wire (rivers travel in the frame header). */

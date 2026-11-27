@@ -1311,7 +1311,16 @@ try {
       return [r / n, g / n, b / n];
     }, [x, y]);
     const apart = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]);
-    const before = await probe(spot);
+    // the land's colour once the picture has settled: no repaint in progress, and the same over a second (a climate frame from an earlier step can still
+    // be on its way; a "before" read ahead of it made Undo look as if it never painted the land back)
+    await page.waitForFunction(() => !document.querySelector(".mapview-busy"), null, { timeout: 30000 });
+    let before = await probe(spot);
+    for (let i = 0, steady = 0; i < 60 && steady < 6; i++) { // (steady for 3 s: longer than the climate's wait and its work on this map)
+      await page.waitForTimeout(500);
+      const now = await probe(spot);
+      steady = apart(now, before) < 3 ? steady + 1 : 0;
+      before = now;
+    }
     await page.getByRole("button", { name: "Raise", exact: true }).click();
     await page.mouse.move(spot[0] - 30, spot[1]);
     await page.mouse.down();

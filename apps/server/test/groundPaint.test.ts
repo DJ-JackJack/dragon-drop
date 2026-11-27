@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runTool } from "@mapmaker/tools";
 import { Hub } from "../src/hub.ts";
+import { InlineCompute } from "../src/compute.ts";
 import { ProjectStore } from "../src/store.ts";
 
 const root = mkdtempSync(path.join(tmpdir(), "dd-groundpaint-"));
@@ -48,5 +49,37 @@ describe("painting ground by hand (paint_biome)", () => {
     await hub.createCity?.({ name: "Town", widthM: 400, heightM: 300 } as never).catch(() => {});
     if (hub.session.doc.meta.kind === "city") expect((await call("paint_biome", { ground: "desert", circle: { x: 10, y: 10, r: 5 } })).error).toBe(true);
     await hub.close();
+  });
+});
+
+describe("a Ground stroke is quick (docs/BRUSH-SPEED.md, stage 1)", () => {
+  it("works out only the painted ground, not the whole climate and rivers, and Claude still sees it at once", async () => {
+    const dir = path.join(root, "quick");
+    mkdirSync(dir, { recursive: true });
+    let derives = 0;
+    const compute = new InlineCompute();
+    const derive = compute.derive.bind(compute);
+    compute.derive = (doc, seq) => { derives++; return derive(doc, seq); };
+    const hub = new Hub(new ProjectStore(dir), null, compute);
+    const call = async (name: string, input: Record<string, unknown>) => {
+      const r = await runTool(hub.toolContext("mcp"), name, input);
+      const t = (r.content as { type: string; text?: string }[]).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+      return { error: !!r.isError, json: r.isError ? null : (() => { try { return JSON.parse(t); } catch { return null; } })() };
+    };
+    await hub.createProject({ name: "Quick World", width: 256, height: 256, kmPerPx: 4 });
+    expect((await call("add_landmass", { shape: { type: "circle", x: 128, y: 128, r: 100 }, seed: 2 })).error).toBe(false);
+    expect((await call("add_climate_region", { name: "Wet", shape: { type: "rect", x: 20, y: 20, w: 216, h: 216 }, temperature: 0.5, moisture: 0.85 })).error).toBe(false);
+    expect((await call("get_selection", {})).error).toBe(false); // (the climate worked out once)
+    await new Promise((r) => setTimeout(r, 900)); // (and any recompute the edits above set off: longer than the climate's debounce)
+    const before = derives;
+
+    expect((await call("paint_biome", { ground: "desert", circle: { x: 128, y: 128, r: 30 } })).error).toBe(false);
+    expect((await call("select_area", { shape: { type: "circle", x: 128, y: 128, r: 15 } })).error).toBe(false);
+    const sel = await call("get_selection", {});
+    expect((sel.json.biomes as { name: string }[])[0]).toMatchObject({ name: "desert" }); // (seen at once)
+    await new Promise((r) => setTimeout(r, 900));
+    expect(derives).toBe(before); // the whole climate and rivers were not worked out again
+    const op = (hub as unknown as { open: { derived: { ground?: Uint8Array; groundW?: Uint8Array } } }).open;
+    expect(op.derived.groundW![128 * 256 + 128]).toBeGreaterThan(200);
   });
 });

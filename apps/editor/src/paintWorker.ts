@@ -4,6 +4,7 @@
 import {
   type NoiseBand, type PaintView, type Rect, type RiverPath, PaintEngine, TILE_AREA_LIMIT, deserializeNoise, mergeNoiseBands, serializeNoise, unpackDerived,
 } from "@mapmaker/core";
+import { type Waiting, addRect } from "./rectQueue.ts";
 
 export type PaintIn =
   /** A new map (or a reopened one): the worker paints a quick preview of these heights at once, and fetches the map's noise from the server (`noiseQuery`). */
@@ -11,6 +12,8 @@ export type PaintIn =
   /** The texture noise worked out in bands by several workers (the server had none). */
   | { t: "bands"; gen: number; bands: NoiseBand[] }
   | { t: "patch"; gen: number; rect: Rect; data: Float32Array; view: PaintView }
+  /** A box of the ground painted by hand after a Ground stroke (code then weight): only that part of the climate layers changed. */
+  | { t: "ground"; gen: number; rect: Rect; planes: Uint8Array; view: PaintView }
   /** A climate frame as received from the server: the layers start at `offset`. */
   | { t: "derived"; gen: number; buf: ArrayBuffer; offset: number; length: number; W: number; H: number; seq: number; rivers: RiverPath[]; view: PaintView }
   /** Repaint an area, or the whole map (rect null) after a change of style or settings. */
@@ -57,6 +60,25 @@ function tileOf(rect: Rect) {
   if (px) post({ t: "pixels", gen, rect: px.rect, data: px.data }, [px.data.buffer]);
 }
 
+// Areas waiting to be painted (rectQueue.ts): a brush stroke's patches are taken at once but painted together, once every message that came in meanwhile
+// has been read, so each pixel is painted about once and the picture is never more than one paint behind the mouse (docs/BRUSH-SPEED.md).
+let waiting: Waiting[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | 0 = 0;
+function queueTile(rect: Rect) {
+  waiting = addRect(waiting, rect);
+  if (!flushTimer) flushTimer = setTimeout(flushTiles, 0);
+}
+function flushTiles() {
+  flushTimer = 0;
+  const list = waiting;
+  waiting = [];
+  for (const w of list) tileOf(w.r);
+}
+function dropWaiting() {
+  waiting = [];
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = 0; }
+}
+
 /** Repaint the whole map band by band; a newer request (or a new map) cancels this one. */
 async function runFull() {
   if (!engine || !view) return;
@@ -98,6 +120,7 @@ self.onmessage = (e: MessageEvent<PaintIn>) => {
   const m = e.data;
   if (m.t === "init") {
     gen = m.gen; view = m.view; token++; running = false; lastStatus = undefined;
+    dropWaiting();
     engine = new PaintEngine(m.W, m.H, m.heights);
     void runFull(); // not ready for the painted style yet, so this is the quick preview
     void loadNoise(m.gen, m.noiseQuery);
@@ -115,8 +138,14 @@ self.onmessage = (e: MessageEvent<PaintIn>) => {
     }
     case "patch": {
       engine.patch(m.rect, m.data);
-      tileOf(grow(m.rect));
+      queueTile(grow(m.rect));
       if (running) void runFull(); // a whole-map pass in progress was working from the old heights: start it again
+      break;
+    }
+    case "ground": {
+      if (!engine.setGroundRect(m.rect, m.planes) || !engine.noise) { reportStatus(); break; }
+      if (m.rect.w * m.rect.h > TILE_AREA_LIMIT) void runFull();
+      else queueTile(grow(m.rect));
       break;
     }
     case "derived": {
@@ -124,12 +153,12 @@ self.onmessage = (e: MessageEvent<PaintIn>) => {
       try { change = engine.setDerived(unpackDerived(new Uint8Array(m.buf, m.offset, m.length), m.W, m.H, m.seq, m.rivers)); } catch { break; }
       if (!engine.noise) { reportStatus(); break; } // the painted style comes when the noise does
       if (change === "all" || (change !== "none" && change.w * change.h > TILE_AREA_LIMIT)) void runFull();
-      else if (change !== "none") tileOf(grow(change)); // (a pass in progress paints the rest with the new layers)
+      else if (change !== "none") queueTile(grow(change)); // (a pass in progress paints the rest with the new layers)
       else reportStatus();
       break;
     }
     case "repaint": {
-      if (m.rect) tileOf(m.rect);
+      if (m.rect) queueTile(m.rect);
       else void runFull();
       break;
     }

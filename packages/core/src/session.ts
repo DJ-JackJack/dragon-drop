@@ -40,6 +40,8 @@ export type Command =
   | { op: "add_landmass"; params: AddLandmassParams }
   | { op: "add_mountain_range"; params: MountainRangeParams }
   | { op: "sculpt"; params: SculptParams }
+  /** Several dabs of a brush stroke at once (one mouse move): one change, one patch for the editors. */
+  | { op: "sculpt_dabs"; dabs: SculptParams[] }
   | { op: "erode"; params: ErodeParams }
   | { op: "paint_floor"; params: PaintFloorParams }
   | { op: "set_sea_level"; levelM: number }
@@ -96,6 +98,10 @@ export function describeCommand(cmd: Command): string {
       const where = s.type === "circle" ? ` at ${r(s.x)},${r(s.y)}` : "";
       return `${cmd.params.mode[0].toUpperCase()}${cmd.params.mode.slice(1)} terrain${where}`;
     }
+    case "sculpt_dabs": {
+      const m = cmd.dabs[0]?.mode ?? "sculpt";
+      return `${m[0].toUpperCase()}${m.slice(1)} terrain (${cmd.dabs.length} dabs)`;
+    }
     case "erode":
       return `Erode terrain (${cmd.params.passes ?? 4} passes)`;
     case "paint_floor":
@@ -117,7 +123,7 @@ export function describeCommand(cmd: Command): string {
 
 const MAX_HISTORY_BYTES = 384 * 1024 * 1024;
 /** The commands that change heights and so can be clipped to a lock. */
-const LOCK_CLIPS = new Set<Command["op"]>(["generate_terrain", "add_landmass", "add_mountain_range", "sculpt", "erode", "replace_heights", "patch_heights"]);
+const LOCK_CLIPS = new Set<Command["op"]>(["generate_terrain", "add_landmass", "add_mountain_range", "sculpt", "sculpt_dabs", "erode", "replace_heights", "patch_heights"]);
 
 export class MapSession {
   doc: MapDoc;
@@ -173,6 +179,7 @@ export class MapSession {
       case "add_landmass": rect = addLandmass(this.doc, cmd.params); break;
       case "add_mountain_range": rect = addMountainRange(this.doc, cmd.params); break;
       case "sculpt": rect = sculpt(this.doc, cmd.params); break;
+      case "sculpt_dabs": for (const p of cmd.dabs.slice(0, 64)) rect = rectUnion(rect, sculpt(this.doc, p)); break;
       case "paint_floor": rect = paintFloor(this.doc, cmd.params); break;
       case "erode":
         rect = erodeTerrainWithin(hf.data, hf.w, hf.h, this.doc.meta.seaLevel, cmd.params);

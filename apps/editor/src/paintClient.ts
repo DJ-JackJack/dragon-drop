@@ -50,6 +50,12 @@ export class PaintClient {
     if (this.opened) this.post({ t: "patch", gen: this.gen, rect, data, view }, [data.buffer]);
   }
 
+  /** A box of the ground painted by hand (a `ground` frame's planes: code then weight). */
+  ground(rect: Rect, planes: Uint8Array, view: PaintView) {
+    const copy = planes.slice();
+    if (this.opened) this.post({ t: "ground", gen: this.gen, rect, planes: copy, view }, [copy.buffer]);
+  }
+
   derived(frame: DerivedFrame, view: PaintView) {
     if (!this.opened) { this.waiting = { frame, view }; return; }
     this.post({ t: "derived", gen: this.gen, buf: frame.buf, offset: frame.offset, length: frame.length, W: frame.W, H: frame.H, seq: frame.seq, rivers: frame.rivers, view }, [frame.buf]);

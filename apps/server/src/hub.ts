@@ -18,7 +18,7 @@ import {
   type PrefabTurn, makePrefab, placePrefab, prefabDoc, type GenerateRequest, cleanGenerateRequest, chooseRoof, cleanBuilding, cleanStreet, isLandStart, startLand, fitTrace, imageSize, IMAGE_HEAD_BYTES,
   surveyRoute, playerView, type PrintOptions, MAX_PRINT_PAGES, boxResize, describePlan, inkSaver, planPrint, printPages, writePdf,
   groundHex, groundMaterialId, groundSamplePoints, type sampleGroundColours, MATERIALS, groundTextures,
-  type Units, DEFAULT_UNITS, cleanUnits, unitsFor, fmtDist,
+  type Units, DEFAULT_UNITS, cleanUnits, unitsFor, fmtDist, type GroundPlanes, cropGroundPlanes,
 } from "@mapmaker/core";
 import { type ToolContext, encodeJpeg, encodePng, encodePngRgba } from "@mapmaker/tools";
 import { type ChatState, type ModelCall, ChatAgent } from "./agent.ts";
@@ -102,6 +102,15 @@ interface OpenProject {
   derivedTimer: NodeJS.Timeout | null;
   /** Climate regions as last seen (a change means the climate must be recomputed). */
   regionsKey: string;
+  /**
+   * The ground painted by hand as last seen, and how many times it has changed: a change works out only its planes (groundPaintPlanes, on a compute
+   * thread) and sends the editors only the box that changed; `groundApplied` is the change whose planes are in `derived` now (docs/BRUSH-SPEED.md).
+   */
+  groundKey: string;
+  groundVersion: number;
+  groundApplied: number;
+  /** The painted-ground update in progress, which a request for the climate layers waits for (so get_selection right after paint_biome sees it). */
+  groundJob: Promise<void> | null;
   /** Meta settings the climate and server render depend on, as last seen. */
   metaKey: string;
   /** The river and lake names as last seen (a change is sent to the editors), and how the latest rivers join up (waterNames.ts). */
@@ -355,13 +364,17 @@ export class Hub {
         if (active) this.broadcast({ t: "features", features: e.features });
         this.markDirty(op, rt);
         if (active) this.syncSelection(op);
-        // regions and river sources (and where their places are) feed the climate and rivers; the ground painted by hand is worked out with them (groundPaint.ts)
-        const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features), e.features.groundCells ?? null]);
+        // regions and river sources (and where their places are) feed the climate and rivers
+        const key = JSON.stringify([e.features.regions ?? [], resolveRiverSources(e.features)]);
+        // the ground painted by hand is paint only: a change to it alone needs only its own planes, not the whole climate and rivers (2 s on a big map)
+        const gkey = JSON.stringify(e.features.groundCells ?? null);
+        const groundChanged = active && isWorld(session.doc) && gkey !== op.groundKey;
+        if (groundChanged) { op.groundKey = gkey; op.groundVersion++; }
         if (active && !isWorld(session.doc)) this.contentChanged(op); // (a battlemap's or a city's picture is its features: pictures of it are out of date)
         else if (active && key !== op.regionsKey) {
           op.regionsKey = key;
-          this.contentChanged(op); // climate regions feed the climate model
-        }
+          this.contentChanged(op); // climate regions feed the climate model (and the painted ground comes with it)
+        } else if (groundChanged) op.groundJob = this.refreshGround(op);
         const wkey = JSON.stringify(e.features.waterNames ?? []);
         if (active && isWorld(session.doc) && wkey !== op.waterKey) {
           op.waterKey = wkey;
@@ -400,6 +413,7 @@ export class Hub {
         id, session, levels, runtime, levelsDirty: false, agent, saveTimer: null, dirty: false, saving: Promise.resolve(), saveFailures: 0, lastAutoBackup: await this.store.lastAutoCheckpointTime(id),
         derived: null, derivedVersion: -1, deriving: null, derivingVersion: -1, contentVersion: 0, derivedTimer: null,
         regionsKey: JSON.stringify([doc.features?.regions ?? [], resolveRiverSources(doc.features)]),
+        groundKey: JSON.stringify(doc.features?.groundCells ?? null), groundVersion: 0, groundApplied: 0, groundJob: null,
         metaKey: JSON.stringify([doc.meta.seaLevel, doc.meta.climate, doc.meta.style]),
         waterKey: JSON.stringify(doc.features?.waterNames ?? []), net: null,
       };
@@ -1134,11 +1148,14 @@ export class Hub {
       }
       return null;
     }
+    if (op.groundJob && op.groundApplied < op.groundVersion) await op.groundJob; // (a Ground stroke being worked out: its planes are part of the answer)
     if (op.derived && op.derivedVersion === op.contentVersion) return op.derived;
     if (op.session.inTransaction && !force) return op.derived; // mid-brush-stroke: wait for the stroke to end
     if (op.deriving && op.derivingVersion === op.contentVersion) return op.deriving;
-    const version = op.contentVersion;
+    const version = op.contentVersion, groundAt = op.groundVersion;
     const job = this.compute.derive(op.session.doc, version).then((d) => {
+      // (painted ground worked out since this job started is newer than what it brings: keep that)
+      if (op.groundApplied > groundAt && op.derived) d = { ...d, ground: op.derived.ground, groundW: op.derived.groundW };
       if (version > op.derivedVersion) {
         op.derived = d;
         op.derivedVersion = version;
@@ -1161,6 +1178,27 @@ export class Hub {
     } finally {
       if (op.deriving === job) op.deriving = null;
     }
+  }
+
+  /**
+   * The ground painted by hand changed, and nothing else the climate depends on: work out only its planes (on a compute thread), put them in the
+   * climate layers the server holds, and send the editors just the box that changed (a `ground` frame). A newer change, or a whole recompute that
+   * lands meanwhile, wins.
+   */
+  private async refreshGround(op: OpenProject) {
+    const v = op.groundVersion, base = op.derived;
+    const prev: GroundPlanes = base?.ground && base.groundW ? { code: base.ground, weight: base.groundW } : null;
+    let r: { planes: GroundPlanes; box: Rect | null };
+    try { r = await this.compute.groundPlanes(op.session.doc, prev); } catch (e) { console.error("Couldn't work out the painted ground:", e); this.contentChanged(op); return; }
+    if (this.open !== op || v !== op.groundVersion || !op.derived) return; // (another map, a newer stroke on its way, or no climate yet: it brings the ground with it)
+    const d = op.derived;
+    op.derived = { ...d, ground: r.planes?.code, groundW: r.planes?.weight };
+    op.groundApplied = v;
+    // (if the climate was worked out again meanwhile, the editors may hold its planes: send the whole map's)
+    const box = d === base ? r.box : { x: 0, y: 0, w: d.W, h: d.H };
+    if (!box) return;
+    const frame = encodeFrame({ t: "ground", projectId: op.id, rect: box, seq: d.seq }, cropGroundPlanes(r.planes, d.W, box));
+    for (const c of this.clients) if (c.readyState === c.OPEN) c.send(frame);
   }
 
   /** The named rivers and lakes as the water is now (waterNames.ts), with every lake's shore. Null before the rivers are worked out, and on battlemaps and cities. */
