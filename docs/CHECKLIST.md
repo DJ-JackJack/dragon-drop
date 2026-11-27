@@ -33,9 +33,16 @@ The asset packs everywhere (floors, walls, doors, windows, paths, roofs, light s
 - [ ] The person: update the installed Dragon Drop and check it reads 0.1.13; then try round 3's two lines there (the Object tool's **Layers…**, and **Esc** / **Close it** for the player screen).
 - [ ] **The playtest form** (`docs/playtest/Dragon Drop 0.1.13 Playtest.pdf`, made by `docs/playtest/make_playtest_form.py`: 15 features, each with exact keys and buttons, easy to find / did it work / useful, and comments) to the two playtesters, with the install steps for a new one (`docs/playtest/INSTALL.md`); read their answers back when they return it.
 
-## Next release (0.1.16)
+## Next release (0.1.17)
 
-The speed plan below (`docs/BRUSH-SPEED.md`), the other two 0.1.13 playtest reports, and what is still open under 0.1.14.
+Stage 3 of the speed plan below (`docs/BRUSH-SPEED.md`), the other two 0.1.13 playtest reports, and what is still open under 0.1.14.
+
+## Release 0.1.16 (2026-11-26)
+
+Stages 1 and 2 of the speed plan (ticked below, under 0.1.15's fixes), released on the person's "Release 0.1.16".
+
+- [ ] **The release of 0.1.16**: release notes (faster brushes), `selling-prep` fast-forwarded onto `main` and pushed, a green build, the tag `v0.1.16`, the notes on the Release with the installer's SHA-256 hash.
+- [ ] The person: update to 0.1.16 and try a big sculpt brush and the Ground brush on a big map: does the picture keep up with the mouse now?
 
 ## Release 0.1.15 (2026-11-26)
 
