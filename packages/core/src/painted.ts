@@ -183,7 +183,7 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
   // lava flows on volcanic ground (worked out like rivers, from the heights and the volcanic plane; the same for every tile)
   const LV = d.volcanic ? rasterLava(lavaOf(d, doc.height, sea, d.volcanic, doc.meta.kmPerPx), doc.height, r) : null;
   const lvW = LV ? LV.r.w : 0;
-  const rp: RiverPixel = { re: 0, size: 0, drop: 0, e: 0, t: 0, m: 0, jw: 0, dw: 0, veg: 0, rw: 0, sw: 0, f: 1, fine: 0, crown: 0, ld: 255, along: 0, stone: 0 };
+  const rp: RiverPixel = { re: 0, size: 0, drop: 0, e: 0, t: 0, m: 0, jw: 0, dw: 0, veg: 0, rw: 0, sw: 0, f: 1, fine: 0, crown: 0, ld: 255, along: 0, stone: 0, painted: 0 };
   const rcol = [0, 0, 0];
   // the ground of the land that is neither jungle nor desert (tundra, conifer, mixed and warm forest, savanna, steppe, marsh)
   const bw = emptyBiomeWeights(), bcol = [0, 0, 0];
@@ -359,7 +359,7 @@ export function renderPainted(doc: MapDoc, d: Derived, n: NoiseCache, rect: Rect
         if (nearRiver && RR && !d.lakes[gi]) {
           rp.re = re; rp.size = RR.size[ri]; rp.drop = RR.drop[ri]; rp.e = e; rp.t = t; rp.m = m;
           rp.jw = jw; rp.dw = dw; rp.veg = veg; rp.rw = rw; rp.sw = sw; rp.f = f;
-          rp.fine = n.fine[gi] / 127; rp.crown = (n.canopy[gi] / 127) * 0.8 + (n.clump[gi] / 127) * 0.4; rp.ld = d.landDist[gi]; rp.along = RR.along[ri]; rp.stone = Math.max(rk, d.volcanic ? d.volcanic[gi] / 255 : 0);
+          rp.fine = n.fine[gi] / 127; rp.crown = (n.canopy[gi] / 127) * 0.8 + (n.clump[gi] / 127) * 0.4; rp.ld = d.landDist[gi]; rp.along = RR.along[ri]; rp.painted = d.ground && d.groundW && d.ground[gi] ? d.groundW[gi] / 255 : 0; rp.stone = Math.max(rk, d.volcanic ? d.volcanic[gi] / 255 : 0);
           rcol[0] = R; rcol[1] = G; rcol[2] = B;
           paintRiverPixel(rcol, rp);
           R = rcol[0]; G = rcol[1]; B = rcol[2];

@@ -564,6 +564,11 @@ label.check.eye:has(input:not(:checked)) { color: var(--muted); }
 .toolbar .slider { display: flex; align-items: center; gap: 8px; margin: 0; }
 .toolbar .slider span { display: inline; white-space: nowrap; }
 .toolbar .slider input { width: 120px; }
+/* a brush size (BrushSize.tsx): its name, a slider that is fine at small sizes, a box to type the size, and its unit */
+.brush-size { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.brush-size input[type="range"] { width: 120px; }
+.brush-size .brush-size-box { width: 58px; padding: 2px 4px; font-size: 12.5px; color: var(--text); }
+.brush-size .brush-size-unit { color: var(--muted); }
 .toolbar .check { margin: 0; }
 .toolbar .muted { margin: 0; }
 .toolbar .tool-hint { margin: 0; padding: 3px 8px; font-size: 12px; min-height: 22px; }

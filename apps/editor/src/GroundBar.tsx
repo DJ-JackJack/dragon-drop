@@ -8,6 +8,7 @@ import { store } from "./store.ts";
 import { Popover } from "./ToolBar.tsx";
 import { confirmBox } from "./dialogs.tsx";
 import { groundCtl, groundInfo, useGroundSettings } from "./groundUi.ts";
+import { BrushSize, across, half } from "./BrushSize.tsx";
 
 export const GROUND_HINT = "Paint a kind of ground where you want it, over what the climate makes there: choose it above, then drag. Erase gives the climate its say again. It is paint only: the rain, rivers and climate stay as they are. It shows in the Painted style. Each stroke is one undo step.";
 
@@ -44,10 +45,8 @@ export function GroundToolBar() {
         <button className={st.erase ? "" : "on"} onClick={() => groundCtl.set({ erase: false })} data-testid="ground-paint">Paint</button>
         <button className={st.erase ? "on" : ""} onClick={() => groundCtl.set({ erase: true })} title="Take painted ground away under the brush: the climate decides there again" data-testid="ground-erase">Erase</button>
       </div>
-      <label className="slider">
-        <span>Brush <b>{Math.round(st.radius * 2)}</b> px across</span>
-        <input type="range" min={4} max={300} value={st.radius} onChange={(e) => groundCtl.set({ radius: Number(e.target.value) })} data-testid="ground-brush" />
-      </label>
+      <BrushSize label="Brush" value={st.radius} min={2} max={300} show={across} unshow={half} unit="px across" testId="ground-brush" title="How wide the brush is, in map pixels. [ and ] change it too."
+        onChange={(v) => groundCtl.set({ radius: v })} />
       <label className="check" title="Keep the sea and lakes out: the ground stops at the coast"><input type="checkbox" checked={st.landOnly} onChange={(e) => groundCtl.set({ landOnly: e.target.checked })} /> Land only</label>
       {painted && (
         <button onClick={async () => { if (await confirmBox("Take all the painted ground off this map? The climate decides the ground everywhere again. Undo brings it back.", "Clear all")) groundCtl.clearAll(); }} data-testid="ground-clear">Clear all</button>

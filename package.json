@@ -17,7 +17,8 @@
     "formats": "tsx scripts/write-formats-doc.ts",
     "model-check": "node scripts/model-check.mjs",
     "foundry-kit": "tsx scripts/foundry-test-kit.ts",
-    "help-repo": "node scripts/help-repo.mjs"
+    "help-repo": "node scripts/help-repo.mjs",
+    "bench:brush": "tsx scripts/brush-bench.ts"
   },
   "devDependencies": {
     "@types/node": "26.6.6",

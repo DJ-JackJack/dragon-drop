@@ -615,6 +615,12 @@ try {
     await page.getByRole("button", { name: "Ground", exact: true }).click();
     await page.getByTestId("ground-menu").click();
     await page.getByTestId("ground-desert").click();
+    // the brush size can be typed, and ] makes the active brush (here the Ground brush) larger
+    await page.getByTestId("ground-brush-box").fill("100");
+    await page.getByTestId("ground-brush-box").press("Enter");
+    if ((await page.getByTestId("ground-brush-box").inputValue()) !== "100") fail("typing 100 into the Ground brush's size box should set it");
+    await page.keyboard.press("]");
+    await page.waitForFunction(() => Number(document.querySelector('[data-testid="ground-brush-box"]')?.value) > 100, null, { timeout: 5000 });
     await page.getByLabel("Land only").uncheck();
     await page.mouse.move(sx(320), sy(320));
     await page.mouse.down();

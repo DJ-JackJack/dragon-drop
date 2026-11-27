@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { groundCtl } from "./groundUi.ts";
+import { realmCtl } from "./realmUi.ts";
 import { LAND_STARTS, type LandStart, citySizeForPlace, placeKind, selectionFromIds, type Features, type LabelKind, type LineKind, type MapMeta, type PlaceType, type Rect, type RefInfo, type SelectableShape, type SelectedFeatureKind, lineLengthKm, planRegional, MI_PER_KM, distUnit, distWord, fmtLen, fmtTable, fromFt, fromKm, fromM, lenUnit, lenWord, toFt, toKm, toM, unitsFor } from "@mapmaker/core";
 import { SketchDialog } from "./SketchDialog.tsx";
 import { PICTURE_RULE, References } from "./References.tsx";
@@ -55,6 +57,8 @@ export function App() {
   const s = useSyncExternalStore(store.subscribe, store.getState);
   useAssistantName(); // (the words that name the assistant follow a change in Settings)
   const [tool, setTool] = useState<Tool>("pan");
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   const [brush, setBrush] = useState<Brush>({ radius: 12, strength: 0.5 });
   const [showGrid, setShowGrid] = useState(false);
   const [hillshade, setHillshade] = useState(true);
@@ -292,8 +296,13 @@ export function App() {
       if (e.key === "Escape") { clearSelection(); return; }
       const found = TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
       if (found) setTool(found.id);
-      if (e.key === "[") setBrush((b) => ({ ...b, radius: Math.max(1, Math.round(b.radius / 1.25)) }));
-      if (e.key === "]") setBrush((b) => ({ ...b, radius: Math.min(300, Math.round(b.radius * 1.25 + 1)) }));
+      // [ and ]: the active brush smaller or larger (the Ground and Realm brushes have their own size)
+      const bigger = (r: number, min: number) => (e.key === "]" ? Math.min(300, Math.round(r * 1.25 + 1)) : Math.max(min, Math.round(r / 1.25)));
+      if (e.key === "[" || e.key === "]") {
+        if (toolRef.current === "biome") groundCtl.set({ radius: bigger(groundCtl.state.radius, 2) });
+        else if (toolRef.current === "realm") realmCtl.set({ radius: bigger(realmCtl.state.radius, 2) });
+        else setBrush((b) => ({ ...b, radius: bigger(b.radius, 1) }));
+      }
       if (e.key.toLowerCase() === "g") setShowGrid((g) => !g);
     };
     window.addEventListener("keydown", onKey);

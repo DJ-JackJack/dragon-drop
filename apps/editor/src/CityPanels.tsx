@@ -18,6 +18,7 @@ import { Popover, ToolBar } from "./ToolBar.tsx";
 import { nextRoofPicture, roofAssetsStore, roofChoiceFor } from "./roofAssetsClient.ts";
 import { RoofPicturePicker, roofPictureName } from "./RoofPicturePicker.tsx";
 import { assetUrl } from "./assetsApi.ts";
+import { BrushSize } from "./BrushSize.tsx";
 
 /** A roof picture's name for people: "Roof Texture Tile Red A1". */
 const pictureName = (asset: string) => (asset.split("/").pop() ?? asset).replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
@@ -150,10 +151,8 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
               </div>
             )}
           </Popover>
-          <label className="slider">
-            <span>Brush size <b>{Math.round(fromM(ui.brush * 2, unitsNow()))}</b> {lenUnit(unitsNow())} across</span>
-            <input type="range" min={1} max={60} step={1} value={ui.brush} onChange={(e) => onUi({ brush: Number(e.target.value) })} data-testid="city-brush" />
-          </label>
+          <BrushSize label="Brush size" value={ui.brush} min={1} max={60} step={0.5} show={(v) => Math.round(fromM(v * 2, unitsNow()))} unshow={(n) => toM(n, unitsNow()) / 2}
+            unit={`${lenUnit(unitsNow())} across`} testId="city-brush" title="How wide the brush is. [ and ] change it too." onChange={(v) => onUi({ brush: v })} />
         </>
       )}
       {ui.tool === "hills" && (
@@ -166,10 +165,8 @@ export function CityToolBar({ ui, onUi }: { ui: CityUi; onUi: (p: Partial<CityUi
             <input type="range" min={1} max={80} step={1} value={ui.landHeight} onChange={(e) => onUi({ landHeight: Number(e.target.value) })} data-testid="city-land-height" />
           </label>
           {ui.landMode !== "slope" && (
-            <label className="slider">
-              <span>{ui.landMode === "hill" ? "Radius" : ui.landMode === "ridge" || ui.landMode === "valley" ? "Half its width" : "Soft edge"} <b>{Math.round(fromM(ui.landSize, unitsNow()))}</b> {lenUnit(unitsNow())}</span>
-              <input type="range" min={5} max={400} step={5} value={ui.landSize} onChange={(e) => onUi({ landSize: Number(e.target.value) })} data-testid="city-land-size" />
-            </label>
+            <BrushSize label={ui.landMode === "hill" ? "Radius" : ui.landMode === "ridge" || ui.landMode === "valley" ? "Half its width" : "Soft edge"} value={ui.landSize} min={5} max={400} step={1}
+              show={(v) => Math.round(fromM(v, unitsNow()))} unshow={(n) => toM(n, unitsNow())} unit={lenUnit(unitsNow())} testId="city-land-size" onChange={(v) => onUi({ landSize: v })} />
           )}
         </>
       )}

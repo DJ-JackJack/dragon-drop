@@ -35,7 +35,7 @@ A settlement map has its own tools (the sheet from `?` lists them): `H` Pan, `V`
 | Copy, paste, duplicate | `Ctrl+C`, `Ctrl+V` (lands under the pointer), `Ctrl+D` (a copy a little along and down). Battlemap: objects, lights, walls and light zones; room notes (they are numbered) and floors are not copied. World map: places (the copy is named "<name> (copy)") and labels. Each is one undo step. If you copied a picture (in a browser or another program) after copying map things, `Ctrl+V` adds the picture to References instead: whichever you copied last is pasted |
 | Show or hide the trace picture | `U` (the trace picture is a reference picture laid over the map with **Trace over map**; its bar under the map lines it up) |
 | Save now | `Ctrl+S` (the map also saves itself a moment after every change; you get a "Saved" note when it is on disk) |
-| Brush size | `[` and `]` (and the slider) |
+| Brush size | `[` and `]` (also the Ground and Realm brushes), the slider, or type it in the box beside the slider |
 | Grid on or off | `G` |
 | Cancel, clear the selection (and stop comparing with another map) | `Esc` |
 | Finish a wall, line or outline | `Enter` or double-click; `Backspace` takes back the last point |

@@ -36,6 +36,7 @@ import { PREFAB_HINT_PLACE, PREFAB_HINT_SAVE, PrefabToolBar, prefabPicture, pref
 import { GenerateBox } from "./GenerateBox.tsx";
 import { closePlayerScreen, drawFog, drawRevealOutlines, openPlayerScreen } from "./fogDraw.ts";
 import { LayerSelect, ObjectLayers } from "./ObjectLayers.tsx";
+import { BrushSize, across, half } from "./BrushSize.tsx";
 
 export type BattleTool = "pan" | "select" | "measure" | "brush" | "area" | "path" | "room" | "wall" | "invisible" | "door" | "secret" | "window" | "light" | "zone" | "note" | "prop" | "prefab" | "stairs" | "ladder" | "hole" | "roof" | "reveal";
 
@@ -1780,9 +1781,8 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
           {!ui.propScatter && <label className="check" title="New objects are for your eyes only (a trap, a hidden chest): faint with a GM tag here, left out of the player screen and of exports for players (each object's panel can change it)"><input type="checkbox" checked={ui.propGmOnly} onChange={(e) => onUi({ propGmOnly: e.target.checked })} data-testid="prop-new-gm" /> GM only</label>}
           {ui.propScatter && (
             <>
-              <label className="slider"><span>Brush <b>{ui.scatter.radius}</b> sq</span>
-                <input type="range" min={0.5} max={8} step={0.5} value={ui.scatter.radius} onChange={(e) => onUi({ scatter: { ...ui.scatter, radius: Number(e.target.value) } })} data-testid="scatter-radius" />
-              </label>
+              <BrushSize label="Brush" value={ui.scatter.radius} min={0.5} max={8} step={0.25} unit="sq" testId="scatter-radius" title="The scatter brush's radius in squares"
+                onChange={(v) => onUi({ scatter: { ...ui.scatter, radius: v } })} />
               <label className="slider" title="Squares between the objects' centres (and from objects already there)"><span>Spacing <b>{ui.scatter.spacing}</b> sq</span>
                 <input type="range" min={0.2} max={4} step={0.1} value={ui.scatter.spacing} onChange={(e) => onUi({ scatter: { ...ui.scatter, spacing: Number(e.target.value) } })} data-testid="scatter-spacing" />
               </label>
@@ -1838,10 +1838,8 @@ export function BattleToolBar({ ui, onUi, meta, assetsOn, onOpenAssets }: { ui: 
         </>
       )}
       {ui.tool === "brush" && (
-        <label className="slider">
-          <span>Brush size <b>{(ui.brush * 2).toFixed(1)}</b> squares across</span>
-          <input type="range" min={1} max={40} value={Math.round(ui.brush * 4)} onChange={(e) => onUi({ brush: Number(e.target.value) / 4 })} />
-        </label>
+        <BrushSize label="Brush size" value={ui.brush} min={0.25} max={10} step={0.25} show={across} unshow={half} unit="squares across" testId="battle-brush" title="How wide the brush is. [ and ] change it too."
+          onChange={(v) => onUi({ brush: v })} />
       )}
       {(isFloorTool(ui.tool) || ui.tool === "wall") && <div className="cavewalls" data-testid="cave-walls">
         <button onClick={() => buildWallsAroundFloor(meta, newWallStyle(ui))} title="Draw a wall along the edge of all the floor: handy for caves and anything you painted freehand" data-testid="walls-around-floor">▢ Walls around the floor</button>

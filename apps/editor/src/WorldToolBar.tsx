@@ -11,6 +11,7 @@ import { LABEL_KINDS } from "./Panels.tsx";
 import type { AreaShape, Brush, Tool } from "./MapView.tsx";
 import { Popover, ToolBar } from "./ToolBar.tsx";
 import { TOOL_GROUPS } from "./toolDefs.ts";
+import { BrushSize } from "./BrushSize.tsx";
 
 export const AREA_SHAPES: { id: AreaShape; label: string; tip: string }[] = [
   { id: "rect", label: "Rectangle", tip: "Drag from one corner to the opposite one" },
@@ -151,10 +152,8 @@ export function WorldToolBar({ tool, brush, onBrush, lineKind, onLineKind, lineA
       )}
       {BRUSHES.includes(tool) && (
         <>
-          <label className="slider">
-            <span>Brush size <b>{brush.radius}</b> px</span>
-            <input type="range" min={1} max={150} value={brush.radius} onChange={(e) => onBrush({ ...brush, radius: Number(e.target.value) })} />
-          </label>
+          <BrushSize label="Brush size" value={brush.radius} min={1} max={300} unit="px" testId="brush-size" title="The brush's radius in map pixels. [ and ] change it too."
+            onChange={(v) => onBrush({ ...brush, radius: v })} />
           <label className="slider">
             <span>Strength <b>{Math.round(brush.strength * 100)}%</b></span>
             <input type="range" min={5} max={100} value={Math.round(brush.strength * 100)} onChange={(e) => onBrush({ ...brush, strength: Number(e.target.value) / 100 })} />

@@ -10,6 +10,7 @@ import { Popover } from "./ToolBar.tsx";
 import { realmCtl, useRealmSettings } from "./realmUi.ts";
 import { NoteLink, openNoteLink } from "./NoteLink.tsx";
 import { ask } from "./dialogs.tsx";
+import { BrushSize, across, half } from "./BrushSize.tsx";
 
 export const REALM_HINT = "Paint a realm onto the land: choose it above (or make one with + New realm, under your own name for it), then drag. Land only keeps the sea out, so a realm stops at the coast; Round neighbours paints only land nobody has yet. Each stroke is one undo step.";
 
@@ -51,10 +52,8 @@ export function RealmToolBar() {
           <input type="checkbox" checked={st.eraseOnly} onChange={(e) => realmCtl.set({ eraseOnly: e.target.checked })} data-testid="realm-erase-only" /> Only {chosen.name}
         </label>
       )}
-      <label className="slider">
-        <span>Brush <b>{Math.round(st.radius * 2)}</b> px across</span>
-        <input type="range" min={4} max={300} value={st.radius} onChange={(e) => realmCtl.set({ radius: Number(e.target.value) })} data-testid="realm-brush" />
-      </label>
+      <BrushSize label="Brush" value={st.radius} min={2} max={300} show={across} unshow={half} unit="px across" testId="realm-brush" title="How wide the brush is, in map pixels. [ and ] change it too."
+        onChange={(v) => realmCtl.set({ radius: v })} />
       <label className="check"><input type="checkbox" checked={st.landOnly} onChange={(e) => realmCtl.set({ landOnly: e.target.checked })} /> Land only</label>
       {!st.erase && <label className="check" title="Paint only land that belongs to no realm yet: a stroke along a neighbour fills up to its border without taking its land"><input type="checkbox" checked={st.onlyEmpty} onChange={(e) => realmCtl.set({ onlyEmpty: e.target.checked })} /> Round neighbours</label>}
     </>

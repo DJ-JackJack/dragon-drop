@@ -180,6 +180,12 @@ export interface RiverPixel {
   along: number;
   /** Bare stone cover 0..1 from a climate region (a ring of rocky islets, say): where it is high, the banks stay stone instead of turning green or damp. */
   stone: number;
+  /**
+   * How much of the ground here is painted by hand (groundPaint.ts), 0..1. The banks then follow the painted ground: their own greens (plants along
+   * the water, a desert's oasis, the floodplain) fade, and what is left is a damp version of the painted ground with its shoreline (the person,
+   * 2026-11-26: a desert painted over grassland kept a grassy band along its rivers).
+   */
+  painted?: number;
 }
 
 /** Paint the banks and the water of a river over the ground colour in `col` (RGB 0..255, changed in place). */
@@ -199,13 +205,14 @@ export function paintRiverPixel(col: number[], p: RiverPixel) {
 
   // wet ground along the banks: damp and darker, green where plants can grow, rock where it is steep or high, an oasis in the desert
   const growth = 1 - 0.95 * p.stone; // bare stone grows nothing
+  const plants = growth * (1 - (p.painted ?? 0)); // (the climate's greens: none where ground is painted)
   const damp = 1 - 0.36 * bank * (0.6 + 0.4 * bank) * (1 + 0.4 * p.jw) * growth;
   R *= damp; G *= damp; B *= damp;
-  toward(0.72 * growth * bank * (1 - 0.7 * p.jw) * (1 - 0.92 * p.sw) * (1 - 0.8 * p.rw) * (1 - 0.6 * hi), 34 + 14 * p.t, 80 + 8 * p.t, 36 - 10 * p.t);
+  toward(0.72 * plants * bank * (1 - 0.7 * p.jw) * (1 - 0.92 * p.sw) * (1 - 0.8 * p.rw) * (1 - 0.6 * hi), 34 + 14 * p.t, 80 + 8 * p.t, 36 - 10 * p.t);
   toward(0.4 * growth * bank * p.jw * (1 - p.sw), 22, 56, 32); // wet, dark jungle along a river
-  toward(0.62 * growth * bank * p.dw * (1 - p.sw), 92, 124, 56);
+  toward(0.62 * plants * bank * p.dw * (1 - p.sw), 92, 124, 56);
   toward(bank * (0.55 * rapid + 0.5 * hi + 0.25 * brisk) * (1 - 0.6 * p.jw) * (1 - p.sw) * 0.7, 134, 126, 114);
-  toward(0.22 * growth * bank * flat * (1 - p.jw) * (1 - p.dw), 96, 114, 64);
+  toward(0.22 * plants * bank * flat * (1 - p.jw) * (1 - p.dw), 96, 114, 64);
   toward(0.25 * growth * bank * est, 178, 164, 124);
   toward(0.25 * fall * (1 - smoothstep(0, 2, re)), 228, 235, 238); // a little spray right beside a fall
 

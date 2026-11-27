@@ -221,3 +221,16 @@ describe("how a river runs", () => {
     expect(joins).toBeGreaterThan(0);
   });
 });
+
+describe("river banks under ground painted by hand", () => {
+  it("drops the climate's greens where ground is painted: a painted desert keeps no green band along its rivers", async () => {
+    const { paintRiverPixel } = await import("../src/riverPaint.ts");
+    const bank = (painted: number) => {
+      const col = [196, 166, 112]; // desert sand
+      paintRiverPixel(col, { re: 1.5, size: 0.6, drop: 0.2, e: 0.05, t: 0.7, m: 0.3, jw: 0, dw: 1, veg: 0.1, rw: 0, sw: 0, f: 1, fine: 0, crown: 0, ld: 80, along: 40, stone: 0, painted });
+      return col[1] - (col[0] + col[2]) / 2; // how green it is
+    };
+    expect(bank(0)).toBeGreaterThan(bank(1) + 15); // (the climate's desert: an oasis ribbon of green)
+    expect(bank(1)).toBeLessThan(15); // (painted desert: a damp sandy bank)
+  });
+});
